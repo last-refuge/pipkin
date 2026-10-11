@@ -255,8 +255,8 @@ pub enum Call {
         items: Vec<String>,
     },
     /// Merge the named providers' saved credentials into the native credential store (explicit
-    /// consent). Existing native entries are never overwritten; reserved subscription
-    /// credentials are not imported as usable.
+    /// consent). Existing native entries are never overwritten. Supported subscription
+    /// credentials retain their OAuth kind and metadata.
     ImportCredentials {
         #[serde(default, rename = "agentDir")]
         agent_dir: Option<String>,

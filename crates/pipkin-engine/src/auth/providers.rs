@@ -10,9 +10,6 @@ use serde_json::{Map, Value};
 use crate::config::Env;
 use crate::provider::Credential;
 
-/// Shown wherever the Claude subscription path would be taken.
-pub const RESERVED_MESSAGE: &str = "Claude subscription sign-in is reserved for a later integration and is not implemented in this engine.";
-
 /// API-key environment variables per provider (reference `env-api-keys.ts:73-127`).
 pub fn env_vars(provider: &str) -> Option<&'static [&'static str]> {
     Some(match provider {
@@ -70,8 +67,6 @@ pub fn has_api_key_auth(provider: &str) -> bool {
 pub enum KeyAuth {
     Resolved(KeyResolution),
     NotConfigured,
-    /// The configuration points at the reserved Claude subscription path.
-    Reserved,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -147,10 +142,17 @@ pub fn resolve_builtin(provider: &str, input: &KeyInput, env: &Env) -> Option<Ke
                     source: "ANTHROPIC_AUTH_TOKEN".into(),
                 });
             }
-            // A subscription token in the environment takes the reserved path; it is never
-            // swapped for ANTHROPIC_API_KEY billing.
-            if env.get("ANTHROPIC_OAUTH_TOKEN").is_some() {
-                return Some(KeyAuth::Reserved);
+            // Explicit subscription auth takes precedence over API-key billing.
+            if let Some(access) = env.get("ANTHROPIC_OAUTH_TOKEN") {
+                return resolved(KeyResolution {
+                    credential: Credential::OAuth {
+                        access,
+                        metadata: Map::new(),
+                    },
+                    headers: BTreeMap::new(),
+                    env: BTreeMap::new(),
+                    source: "ANTHROPIC_OAUTH_TOKEN".into(),
+                });
             }
             if let Some(k) = env.get("ANTHROPIC_API_KEY") {
                 return resolved(KeyResolution::key(&k, BTreeMap::new(), "ANTHROPIC_API_KEY"));
@@ -369,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn anthropic_env_rules_and_the_reserved_token() {
+    fn anthropic_env_rules_and_subscription_token_precedence() {
         let KeyAuth::Resolved(r) = resolve_key_auth(
             "anthropic",
             &KeyInput::default(),
@@ -380,12 +382,15 @@ mod tests {
         assert_eq!(r.credential, Credential::None);
         assert_eq!(r.headers["Authorization"].as_deref(), Some("Bearer t"));
         assert_eq!(
-            resolve_key_auth(
+            cred(resolve_key_auth(
                 "anthropic",
                 &KeyInput::default(),
                 &env(&[("ANTHROPIC_OAUTH_TOKEN", "o"), ("ANTHROPIC_API_KEY", "k")])
-            ),
-            KeyAuth::Reserved
+            )),
+            Credential::OAuth {
+                access: "o".into(),
+                metadata: Map::new()
+            }
         );
         assert_eq!(
             cred(resolve_key_auth(

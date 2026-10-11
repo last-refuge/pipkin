@@ -1,4 +1,4 @@
-//! Full-window first-run surface. Only Pi-confirmed auth and model states advance it.
+//! Full-window first-run surface. Only engine-confirmed auth and model states advance it.
 use gpui::{
     Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
     StyledImage, Window, div, img, px,
@@ -178,7 +178,7 @@ impl Workspace {
                 ),
                 SetupStage::ConnectingProvider => (
                     "Continue with your provider.",
-                    "Finish sign-in in your browser, then return here. Pipkin will wait for Pi to confirm your connection.",
+                    "Finish sign-in in your browser, then return here. Pipkin will confirm your connection.",
                 ),
                 SetupStage::ProviderFailed => (
                     "That connection didn't finish.",
@@ -326,8 +326,13 @@ impl Workspace {
                 }
                 if managing {
                     if !auth.message.is_empty() {
-                        body =
-                            body.child(div().text_color(c.text_muted).child(auth.message.clone()));
+                        let message = if auth.status == pipkin_core::onboarding::SignInStatus::Done
+                        {
+                            "Connected. Return to your workspace to continue."
+                        } else {
+                            &auth.message
+                        };
+                        body = body.child(div().text_color(c.text_muted).child(message.to_owned()));
                     }
                     for (provider, label, id) in [
                         (
@@ -355,7 +360,7 @@ impl Workspace {
                         }
                     }
                     if let Some(provider) = pending_removal {
-                        body = body.child(div().text_color(c.warning).child(format!("Remove the saved {} connection from Pi's local credential storage?", provider.pi_id())))
+                        body = body.child(div().text_color(c.warning).child(format!("Remove the saved {} connection from Pipkin's local credential storage?", provider.pi_id())))
                             .child(self.setup_action("confirm-remove", "Remove saved connection", BtnKind::Danger, connection.is_ready(), move |m, cx| {
                                 m.pending_removal = None;
                                 m.accepted_provider = None;

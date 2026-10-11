@@ -1310,7 +1310,7 @@ fn credentials_and_config_are_listed_without_values() {
     assert_eq!(
         creds,
         vec![
-            ("anthropic".into(), "oauth".into(), true),
+            ("anthropic".into(), "oauth".into(), false),
             ("openai-codex".into(), "oauth".into(), false),
             ("openrouter".into(), "api_key".into(), false),
         ]
@@ -1319,8 +1319,8 @@ fn credentials_and_config_are_listed_without_values() {
     assert_eq!(names, vec!["models.json", "AGENTS.md", "skills"]);
 
     let entries = credential_entries(&agent.root).unwrap();
-    assert_eq!(entries.len(), 2);
-    assert!(!entries.contains_key("anthropic"));
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries["anthropic"]["access"], "sub-SECRET");
     assert_eq!(entries["openrouter"]["key"], "sk-or-SECRET");
 
     let files = config_files(&agent.root);

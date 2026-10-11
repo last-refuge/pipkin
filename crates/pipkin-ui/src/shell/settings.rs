@@ -34,7 +34,7 @@ impl SettingsSection {
         match self {
             Self::Appearance => "Make the workspace comfortable to read and use.",
             Self::Session => "Choose what Pi may do in this session.",
-            Self::Connections => "Manage the accounts Pi uses for models.",
+            Self::Connections => "Manage the accounts Pipkin uses for models.",
         }
     }
 

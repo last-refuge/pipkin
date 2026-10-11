@@ -1824,14 +1824,11 @@ fn pi_credentials_are_imported_only_after_their_own_confirmation() {
     h.dispatch(Command::ImportFromPi(ImportKind::Credentials));
     h.until("the offer", |s| offer(s).is_some());
     let o = offer(&h.state).unwrap().clone();
-    assert_eq!(o.providers, vec!["openrouter"]);
+    assert_eq!(o.providers, vec!["openrouter", "anthropic"]);
     assert_eq!(o.config, vec!["models.json"]);
     let notice = h.state.notice.clone().unwrap();
     assert!(!notice.contains("SECRET"));
-    assert!(
-        notice.contains("later integration, not imported: anthropic"),
-        "{notice}"
-    );
+    assert!(!notice.contains("later integration"), "{notice}");
     let native_auth = fx.root.join("engine-config/auth.json");
     assert!(!native_auth.exists(), "an offer writes nothing");
 
@@ -1845,7 +1842,7 @@ fn pi_credentials_are_imported_only_after_their_own_confirmation() {
     h.until("the import finished", |s| s.import == ImportFlow::Idle);
     let notice = h.state.notice.clone().unwrap();
     assert!(
-        notice.contains("Imported saved credentials for openrouter."),
+        notice.contains("Imported saved credentials for openrouter, anthropic."),
         "{notice}"
     );
     assert!(notice.contains("Copied models.json."), "{notice}");
@@ -1853,7 +1850,8 @@ fn pi_credentials_are_imported_only_after_their_own_confirmation() {
     let saved: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&native_auth).unwrap()).unwrap();
     assert_eq!(saved["openrouter"]["key"], "sk-or-SECRET");
-    assert!(saved.get("anthropic").is_none());
+    assert_eq!(saved["anthropic"]["type"], "oauth");
+    assert_eq!(saved["anthropic"]["access"], "sub-SECRET");
     assert!(fx.root.join("engine-config/models.json").is_file());
     h.stop();
 }

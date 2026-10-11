@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-11",
+  "method": "Release pipkin --engine-worker using the same native protocol as the desktop; isolated real-account profile",
+  "checks": {
+    "saved_signin_after_worker_restart": {
+      "outcome": {
+        "reason": "completed"
+      },
+      "models": [
+        "claude-opus-5-5"
+      ],
+      "text": "SAVED_SIGN_IN_OK"
+    },
+    "forced_expiry_live_refresh": {
+      "expiry_moved_to_past_for_test": true,
+      "new_expiry_in_future": true,
+      "access_rotated": true,
+      "refresh_rotated": true,
+      "file_mode": "0o600"
+    },
+    "request_after_refresh": {
+      "outcome": {
+        "reason": "completed"
+      },
+      "models": [
+        "claude-opus-5-5"
+      ],
+      "text": "REFRESH_OK"
+    },
+    "pi_fixture_continued_with_claude": {
+      "outcome": {
+        "reason": "completed"
+      },
+      "models": [
+        "claude-opus-5-5"
+      ]
+    },
+    "stop_during_real_claude_tool": {
+      "observed_active_bash": true,
+      "outcome": {
+        "reason": "aborted"
+      }
+    },
+    "imported_session_reopened_after_stop": {
+      "stop_still_aborted": true,
+      "retired_entries": 1,
+      "continuation": {
+        "outcome": {
+          "reason": "completed"
+        },
+        "models": [
+          "claude-opus-5-5"
+        ],
+        "text": "REOPEN_AFTER_STOP_OK"
+      }
+    },
+    "copy_code_login": {
+      "user_submitted_fresh_code": true,
+      "observed_native_ui": "Connected; saved Claude connection shown",
+      "request_after_login": {
+        "after_desktop_restart": true,
+        "provider": "anthropic",
+        "model": "claude-opus-5-5",
+        "outcome": "completed",
+        "reply": "COPY_CODE_RESTART_OK"
+      }
+    }
+  },
+  "limitations": [
+    "Expiry was forced into the past in the isolated profile; no wait for natural expiry.",
+    "Imported source was a copied frozen Pi fixture, not private production session history.",
+    "Lifecycle calls used the release native worker protocol; desktop sign-in is covered separately."
+  ],
+  "harness_corrections": [
+    "First refresh assertion ran after metadata-only AuthReuse and before a model request; corrected to send a request before inspecting rotation. No provider refresh failure was observed.",
+    "A sandboxed ps check hid the running host process. A redundant desktop launch then hit the intentional single-writer engine lock, showing the restart cap. Host-visible process/lock inspection confirmed the original worker was healthy; closed only the duplicate test window and resumed the original sign-in."
+  ],
+  "regressions_found": [
+    {
+      "issue": "Native desktop discarded manual_code auth challenges, leaving instructions without an input.",
+      "fix": "Accept the actual engine manual_code kind as well as legacy code in native mapping.",
+      "test": "adapters::native::mapping::tests::the_engine_manual_code_prompt_reaches_the_desktop_input",
+      "status": "Regression test passed; user pasted a fresh code and the native UI displayed Connected."
+    },
+    {
+      "issue": "Connection management showed Choose a model to continue after success, but has no model picker.",
+      "fix": "Show Connected. Return to your workspace to continue. on the management page; onboarding retains its model step.",
+      "status": "Full tests and Clippy passed; formatted after final rustfmt check."
+    }
+  ],
+  "validation": {
+    "workspace_tests": "1304 passed, 0 failed, 53 ignored",
+    "clippy": "passed",
+    "format": "passed after formatting the new UI branch"
+  }
+}

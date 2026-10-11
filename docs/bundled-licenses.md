@@ -74,6 +74,14 @@ license/provenance task complete until those findings are resolved or an explici
 recorded. Regenerate/review the inventory for every changed candidate; a prior snapshot is not clearance of a new
 app/engine pair.
 
+## Native Pi source port
+
+The native Claude subscription OAuth and request conversion contain an MIT-licensed port of
+Pi source at `d2a311097cbcf669e699479587332ae3988a49d0` (copyright 2025 Mario Zechner).
+The notice is retained in `packaging/upstream-notices/pi/LICENSE`; native packages install it
+as `usr/share/licenses/pipkin/pi-MIT-LICENSE`. This source attribution remains necessary even
+though the native package contains no Pi or Node runtime.
+
 ## Native runtime inspection
 
 Packages also carry `usr/share/doc/pipkin/runtime-inventory.json`, generated using **readelf without executing any

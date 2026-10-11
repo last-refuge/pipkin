@@ -42,9 +42,6 @@ pub const LOCK_STALE: Duration = Duration::from_secs(30);
 
 const META_FILE: &str = "meta.json";
 const STORAGE_FILE: &str = "session.sqlite";
-/// Reserved for a different implementer: subscription credentials are never copied here.
-const RESERVED_CREDENTIAL: &str =
-    "reserved: the Claude subscription sign-in is not implemented by this engine";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SessionStatus {
@@ -350,8 +347,7 @@ pub fn discover(agent_dir: &Path, store: &Store) -> DiscoveryReport {
                     .and_then(Value::as_str)
                     .unwrap_or("unknown")
                     .to_owned();
-                let reserved = is_reserved_credential(&provider, &kind)
-                    .then(|| RESERVED_CREDENTIAL.to_owned());
+                let reserved = None;
                 report.credentials.push(CredentialInfo {
                     provider,
                     kind,
@@ -702,10 +698,6 @@ fn write_plan(
 
 // ---------------------------------------------------------------------------- credentials, config
 
-fn is_reserved_credential(provider: &str, kind: &str) -> bool {
-    provider == "anthropic" && kind == "oauth"
-}
-
 /// `auth.json` entries, or `None` when there is no file. Error text never includes contents.
 fn read_auth(agent_dir: &Path) -> Result<Option<Map<String, Value>>, String> {
     let path = agent_dir.join("auth.json");
@@ -726,16 +718,10 @@ fn read_auth(agent_dir: &Path) -> Result<Option<Map<String, Value>>, String> {
 }
 
 /// The raw `auth.json` entries, for an explicit, user-approved credential import. The caller
-/// merges them into the native credential store and must never log the values. Subscription
-/// credentials reserved for a different integration (Anthropic OAuth) are left out; discovery
-/// lists them as reserved. Missing file: an empty map.
+/// merges them into the native credential store and must never log the values. Claude
+/// subscription entries retain their OAuth kind and extras. Missing file: an empty map.
 pub fn credential_entries(agent_dir: &Path) -> Result<Map<String, Value>, String> {
-    let mut entries = read_auth(agent_dir)?.unwrap_or_default();
-    entries.retain(|provider, value| {
-        let kind = value.get("type").and_then(Value::as_str).unwrap_or("");
-        !is_reserved_credential(provider, kind)
-    });
-    Ok(entries)
+    Ok(read_auth(agent_dir)?.unwrap_or_default())
 }
 
 /// Files to copy for an explicit configuration import: `(source, destination relative to the

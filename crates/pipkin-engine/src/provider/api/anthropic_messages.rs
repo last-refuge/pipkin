@@ -9,8 +9,9 @@
 //! Auth: `x-api-key` for API keys; `Authorization: Bearer` for `Credential::Bearer`
 //! (`ANTHROPIC_AUTH_TOKEN`) and for GitHub Copilot tokens (plus Copilot's dynamic headers);
 //! configured `authorization` / `x-api-key` / `cf-aig-authorization` headers may carry auth
-//! instead. The Claude subscription credential path is **reserved**: a `Credential::OAuth` for
-//! provider `anthropic` fails with an error before any request is sent.
+//! instead. Claude subscription OAuth uses Pi-compatible identity, betas and tool naming.
+//! Subscription portions ported from Pi d2a311097cbcf669e699479587332ae3988a49d0,
+//! Copyright (c) 2025 Mario Zechner, MIT (packaging/upstream-notices/pi/LICENSE).
 //!
 //! Request options read from `ProviderRequest::options` (reference option names): `temperature`,
 //! `toolChoice`, `metadata`, `thinkingDisplay`, `interleavedThinking`, `thinkingBudgets`,
@@ -37,9 +38,65 @@ use crate::provider::{
     ThinkingLevel,
 };
 
-/// The error for a Claude subscription credential (reserved for a separate integration).
-pub(crate) const RESERVED_SUBSCRIPTION: &str =
-    "Claude subscription requests are reserved and not implemented in this engine";
+// Pinned with the reference adapter; provider protocol compatibility, not a Pipkin version.
+const CLAUDE_CODE_VERSION: &str = "2.1.280";
+const SUBSCRIPTION_SYSTEM: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
+const CLAUDE_TOOLS: &[&str] = &[
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+    "Grep",
+    "Glob",
+    "AskUserQuestion",
+    "EnterPlanMode",
+    "ExitPlanMode",
+    "KillShell",
+    "NotebookEdit",
+    "Skill",
+    "Task",
+    "TaskOutput",
+    "TodoWrite",
+    "WebFetch",
+    "WebSearch",
+];
+
+fn is_subscription(req: &ProviderRequest) -> bool {
+    if req.model.provider == "github-copilot" {
+        return false;
+    }
+    match &req.credential {
+        Credential::OAuth { access, .. } if req.model.provider == "anthropic" => !access.is_empty(),
+        Credential::ApiKey(access) | Credential::OAuth { access, .. } => {
+            access.contains("sk-ant-oat")
+        }
+        _ => false,
+    }
+}
+
+fn wire_tool_name<'a>(req: &ProviderRequest, name: &'a str) -> &'a str {
+    if is_subscription(req) {
+        CLAUDE_TOOLS
+            .iter()
+            .copied()
+            .find(|n| n.eq_ignore_ascii_case(name))
+            .unwrap_or(name)
+    } else {
+        name
+    }
+}
+
+fn local_tool_name<'a>(req: &'a ProviderRequest, name: &'a str) -> &'a str {
+    if is_subscription(req) {
+        req.tools
+            .iter()
+            .find(|t| t.name.eq_ignore_ascii_case(name))
+            .map(|t| t.name.as_str())
+            .unwrap_or(name)
+    } else {
+        name
+    }
+}
 
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 const FINE_GRAINED_TOOL_STREAMING_BETA: &str = "fine-grained-tool-streaming-2025-05-14";
@@ -124,6 +181,7 @@ fn compat(model: &Model) -> Compat {
 enum Auth {
     ApiKey(String),
     Bearer(String),
+    Subscription(String),
     /// Configured headers carry auth.
     Headers,
 }
@@ -138,14 +196,15 @@ fn resolve_auth(req: &ProviderRequest) -> Result<Auth, String> {
     let provider = req.model.provider.as_str();
     let copilot = provider == "github-copilot";
     let key = |k: &str| {
-        if copilot {
+        if is_subscription(req) {
+            Auth::Subscription(k.to_owned())
+        } else if copilot {
             Auth::Bearer(k.to_owned())
         } else {
             Auth::ApiKey(k.to_owned())
         }
     };
     match &req.credential {
-        Credential::OAuth { .. } if provider == "anthropic" => Err(RESERVED_SUBSCRIPTION.into()),
         Credential::OAuth { access, .. } if !access.is_empty() => Ok(key(access)),
         Credential::ApiKey(k) if !k.is_empty() => Ok(key(k)),
         Credential::Bearer(t) if !t.is_empty() => Ok(Auth::Bearer(t.clone())),
@@ -344,7 +403,7 @@ fn convert_messages(
                                 arguments.clone()
                             };
                             blocks.push(
-                                json!({"type": "tool_use", "id": id, "name": name, "input": input}),
+                                json!({"type": "tool_use", "id": id, "name": wire_tool_name(req, name), "input": input}),
                             );
                         }
                         Block::Image { .. } => {}
@@ -485,7 +544,7 @@ fn convert_tools(
             legacy
         };
         let mut t = Map::new();
-        t.insert("name".into(), json!(tool.name));
+        t.insert("name".into(), json!(wire_tool_name(req, &tool.name)));
         t.insert("description".into(), json!(tool.description));
         if c.supports_eager_tool_input_streaming {
             t.insert("eager_input_streaming".into(), json!(true));
@@ -547,6 +606,9 @@ fn betas(
         None => {}
     }
     let mut features = Vec::new();
+    if is_subscription(req) {
+        features.extend(["claude-code-20250219", "oauth-2025-04-20"]);
+    }
     if !req.tools.is_empty() && !c.supports_eager_tool_input_streaming {
         features.push(FINE_GRAINED_TOOL_STREAMING_BETA);
     }
@@ -604,12 +666,25 @@ fn build_params(
     );
     p.insert("max_tokens".into(), json!(thinking.max_tokens));
     p.insert("stream".into(), json!(true));
+    let mut system = Vec::new();
+    if is_subscription(req) {
+        system.push(SUBSCRIPTION_SYSTEM);
+    }
     if !req.system.is_empty() {
-        let mut block = json!({"type": "text", "text": req.system});
-        if let Some(cc) = &cc {
-            block["cache_control"] = cc.clone();
-        }
-        p.insert("system".into(), json!([block]));
+        system.push(&req.system);
+    }
+    if !system.is_empty() {
+        let blocks: Vec<Value> = system
+            .into_iter()
+            .map(|text| {
+                let mut block = json!({"type": "text", "text": text});
+                if let Some(cc) = &cc {
+                    block["cache_control"] = cc.clone();
+                }
+                block
+            })
+            .collect();
+        p.insert("system".into(), json!(blocks));
     }
     if let Some(t) = opt(req, "temperature").filter(|v| v.is_number())
         && !thinking.enabled
@@ -717,6 +792,11 @@ fn build_headers(req: &ProviderRequest, c: &Compat, auth: &Auth, betas: &[String
     match auth {
         Auth::ApiKey(k) => h.set("x-api-key", k.clone()),
         Auth::Bearer(t) => h.set("authorization", format!("Bearer {t}")),
+        Auth::Subscription(t) => {
+            h.set("authorization", format!("Bearer {t}"));
+            h.set("user-agent", format!("claude-cli/{CLAUDE_CODE_VERSION}"));
+            h.set("x-app", "cli");
+        }
         Auth::Headers => {}
     }
     if req.model.provider == "github-copilot" {
@@ -725,7 +805,8 @@ fn build_headers(req: &ProviderRequest, c: &Compat, auth: &Auth, betas: &[String
             h.set(k, v);
         }
     } else {
-        if req.cache_retention != CacheRetention::None
+        if !is_subscription(req)
+            && req.cache_retention != CacheRetention::None
             && !req.session_id.is_empty()
             && c.send_session_affinity_headers
         {
@@ -852,7 +933,7 @@ impl AnthropicStream {
                 self.message_start(e, req, &event);
                 Ok(())
             }
-            "content_block_start" => self.block_start(e, &event),
+            "content_block_start" => self.block_start(e, req, &event),
             "content_block_delta" => {
                 self.block_delta(e, &event);
                 Ok(())
@@ -917,7 +998,12 @@ impl AnthropicStream {
         u.total_tokens = u.input + u.output + u.cache_read + u.cache_write;
     }
 
-    fn block_start(&mut self, e: &mut Emitter, event: &Value) -> Result<(), String> {
+    fn block_start(
+        &mut self,
+        e: &mut Emitter,
+        req: &ProviderRequest,
+        event: &Value,
+    ) -> Result<(), String> {
         let index = n(event, "index").unwrap_or(0);
         let block = &event["content_block"];
         let str_of = |k: &str| block.get(k).and_then(Value::as_str);
@@ -946,7 +1032,10 @@ impl AnthropicStream {
                 Kind::Thinking,
             ),
             "tool_use" => {
-                let i = e.start_tool_call(str_of("id").unwrap_or(""), str_of("name").unwrap_or(""));
+                let i = e.start_tool_call(
+                    str_of("id").unwrap_or(""),
+                    local_tool_name(req, str_of("name").unwrap_or("")),
+                );
                 self.tool_json.insert(i, String::new());
                 (i, Kind::Tool)
             }
@@ -1040,10 +1129,6 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
     let c = compat(&req.model);
     let auth = match resolve_auth(req) {
         Ok(a) => a,
-        // The reserved path never sends anything and is never reported as a cancellation.
-        Err(err) if err == RESERVED_SUBSCRIPTION => {
-            return e.finish(req, StopReason::Error, Some(err));
-        }
         Err(err) => return ctx.failed(e, err),
     };
     let thinking = plan_thinking(req, &c);
@@ -1220,20 +1305,161 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn claude_subscription_credentials_are_reserved_and_send_nothing() {
+    async fn claude_subscription_uses_bearer_identity_betas_and_separate_cached_system() {
         let server = MockServer::start(|_, _| MockResponse::sse(vec![simple_reply("hi")])).await;
         let mut req = request(claude("anthropic", json!({})));
         req.base_url = Some(server.url.clone());
         req.credential = Credential::OAuth {
-            access: "token".into(),
+            access: "subscription-token".into(),
             metadata: Map::new(),
         };
+        req.system = "Pipkin project instructions".into();
+        req.tools = vec![read_tool()];
+        req.cache_retention = CacheRetention::Long;
+        let (m, _) = run_with(&req, CancellationToken::new()).await;
+        assert!(matches!(
+            m,
+            Message::Assistant {
+                stop_reason: StopReason::Stop,
+                ..
+            }
+        ));
+        let requests = server.requests();
+        let sent = &requests[0];
+        assert_eq!(
+            sent.header("authorization"),
+            Some("Bearer subscription-token")
+        );
+        assert!(sent.header("x-api-key").is_none());
+        assert_eq!(sent.header("user-agent"), Some("claude-cli/2.1.280"));
+        assert_eq!(sent.header("x-app"), Some("cli"));
+        assert!(
+            sent.header("anthropic-beta")
+                .unwrap()
+                .contains("oauth-2025-04-20")
+        );
+        assert!(
+            sent.header("anthropic-beta")
+                .unwrap()
+                .contains("claude-code-20250219")
+        );
+        let body: Value = serde_json::from_slice(&sent.body).unwrap();
+        assert_eq!(body["system"][0]["text"], SUBSCRIPTION_SYSTEM);
+        assert_eq!(body["system"][1]["text"], req.system);
+        assert_eq!(body["system"][0]["cache_control"]["ttl"], "1h");
+        assert_eq!(body["system"][1]["cache_control"]["ttl"], "1h");
+        assert_eq!(body["tools"][0]["name"], "Read");
+    }
+
+    #[tokio::test]
+    async fn subscription_tool_names_round_trip_with_history_and_cache_usage() {
+        let reply = sse(&[
+            json!({"type":"message_start","message":{"usage":{"input_tokens":7,"output_tokens":1,"cache_read_input_tokens":20,"cache_creation_input_tokens":8,"cache_creation":{"ephemeral_1h_input_tokens":3}}}}),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call-new","name":"Read","input":{}}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\":\"file.rs\"}"}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":4}}),
+            json!({"type":"message_stop"}),
+        ]);
+        let server = MockServer::start(move |_, _| fragmented(&reply, 3)).await;
+        let mut req = request(claude("anthropic", json!({})));
+        req.base_url = Some(server.url.clone());
+        // Pi also detects subscription tokens stored as legacy API-key entries.
+        req.credential = Credential::ApiKey("sk-ant-oat-legacy".into());
+        req.tools = vec![read_tool()];
+        req.tools.push(ToolSpec {
+            name: "myCustomTool".into(),
+            description: "Custom".into(),
+            parameters: json!({"type":"object"}),
+        });
+        req.messages = vec![
+            Message::user_text("inspect", 1),
+            assistant(
+                "anthropic",
+                "anthropic-messages",
+                "claude-test",
+                vec![Block::ToolCall {
+                    id: "old".into(),
+                    name: "read".into(),
+                    arguments: json!({"path":"old.rs"}),
+                    extra: Map::new(),
+                }],
+            ),
+            tool_result("old", "read", vec![Block::text("old contents")], false),
+        ];
+        let (message, _) = run_with(&req, CancellationToken::new()).await;
+        let Message::Assistant {
+            content,
+            stop_reason,
+            usage,
+            ..
+        } = message
+        else {
+            panic!()
+        };
+        assert_eq!(stop_reason, StopReason::ToolUse);
+        assert!(
+            matches!(&content[0],Block::ToolCall { name,arguments,.. } if name=="read" && arguments["path"]=="file.rs")
+        );
+        assert_eq!(
+            (
+                usage.input,
+                usage.output,
+                usage.cache_read,
+                usage.cache_write
+            ),
+            (7, 4, 20, 8)
+        );
+        let requests = server.requests();
+        let sent = &requests[0];
+        assert_eq!(
+            sent.header("authorization"),
+            Some("Bearer sk-ant-oat-legacy")
+        );
+        assert!(sent.header("x-api-key").is_none());
+        let body = sent.json();
+        assert_eq!(body["messages"][1]["content"][0]["name"], "Read");
+        assert_eq!(body["tools"][1]["name"], "myCustomTool");
+        assert_eq!(
+            req.tools[0].name, "read",
+            "wire conversion must not mutate local tools"
+        );
+        assert_eq!(wire_tool_name(&req, "gReP"), "Grep");
+        assert_eq!(local_tool_name(&req, "UnknownTool"), "UnknownTool");
+    }
+
+    #[tokio::test]
+    async fn subscription_honors_header_overrides_and_cancellation_without_api_fallback() {
+        let server =
+            MockServer::start(|_, _| MockResponse::json(401, &json!({"error":"expired"}))).await;
+        let mut req = request(claude("anthropic", json!({})));
+        req.base_url = Some(server.url.clone());
+        req.credential = Credential::OAuth {
+            access: "expired-subscription".into(),
+            metadata: Map::new(),
+        };
+        req.headers.insert("anthropic-beta".into(), None);
+        req.headers
+            .insert("user-agent".into(), Some("configured-agent".into()));
+        req.options.insert("maxRetries".into(), json!(0));
+        let message = run_req(&req).await;
+        assert!(error_text(&message).contains("401"));
+        let requests = server.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].header("user-agent"), Some("configured-agent"));
+        assert!(requests[0].header("anthropic-beta").is_none());
+        assert!(requests[0].header("x-api-key").is_none());
         let cancel = CancellationToken::new();
-        cancel.cancel(); // even a cancelled request reports the reservation, not an abort
-        let (m, events) = run_with(&req, cancel).await;
-        assert_eq!(error_text(&m), RESERVED_SUBSCRIPTION);
-        assert!(events.is_empty());
-        assert!(server.requests().is_empty(), "no request may be sent");
+        cancel.cancel();
+        let (message, _) = run_with(&req, cancel).await;
+        assert!(matches!(
+            message,
+            Message::Assistant {
+                stop_reason: StopReason::Aborted,
+                ..
+            }
+        ));
+        assert_eq!(server.requests().len(), 1);
     }
 
     #[tokio::test]

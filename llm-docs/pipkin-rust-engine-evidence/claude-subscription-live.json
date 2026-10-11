@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-11",
+  "engine": "native",
+  "provider": "anthropic",
+  "model": [
+    "claude-opus-5-5"
+  ],
+  "request_state": "settled",
+  "outcome": {
+    "reason": "completed"
+  },
+  "elapsed_ms": 5623,
+  "tools": [
+    {
+      "name": "bash",
+      "state": "done"
+    },
+    {
+      "name": "write",
+      "state": "done"
+    },
+    {
+      "name": "bash",
+      "state": "done"
+    }
+  ],
+  "assistant_messages": 3,
+  "final_stop_reason": "stop",
+  "usage_totals": {
+    "input": 8,
+    "output": 550,
+    "cacheRead": 10727,
+    "cacheWrite": 1314,
+    "totalTokens": 12599
+  },
+  "scratch_tests": {
+    "before": {
+      "passed": 1,
+      "failed": 3
+    },
+    "after": {
+      "passed": 4,
+      "failed": 0
+    },
+    "independent_rerun": "passed"
+  },
+  "notes": [
+    "Browser authorization completed by user.",
+    "Isolated native profile; Anthropic API key/auth-token/OAuth-token environment variables removed before launch.",
+    "Only credential type/provider metadata inspected; token values not displayed.",
+    "Usage counters are provider telemetry, not an assertion of subscription billing.",
+    "No token refresh or copy-code live test performed."
+  ]
+}

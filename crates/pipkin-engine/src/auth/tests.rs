@@ -503,46 +503,38 @@ async fn another_process_refreshing_under_the_lock_wins() {
     assert_eq!(count.load(Ordering::SeqCst), 0);
 }
 
-// ------------------------------------------------------------------------------------ reserved
+// --------------------------------------------------------------------- Claude subscription
 
 #[tokio::test]
-async fn reserved_subscription_credentials_are_never_swapped_for_api_keys() {
+async fn subscription_credentials_are_reused_removed_and_never_swapped_for_api_keys() {
     let f = Fixture::new(&[("ANTHROPIC_API_KEY", "billing-key")]);
-    let stored = "{\n  \"anthropic\": {\"type\":\"oauth\",\"access\":\"a\",\"refresh\":\"r\",\"expires\":1,\"x\":[1,2]},\n  \"openai\": {\"type\":\"api_key\",\"key\":\"o\"}\n}";
-    f.write_auth_text(stored);
+    let stored = format!(
+        r#"{{"anthropic": {{"type":"oauth","access":"a","refresh":"r","expires":{},"x":[1,2]}}, "openai": {{"type":"api_key","key":"o"}}}}"#,
+        far_future()
+    );
+    f.write_auth_text(&stored);
     let auth = f.auth();
     let m = model(&auth, "anthropic");
+    assert!(auth.availability(&m).is_ok());
     assert_eq!(
-        auth.availability(&m),
-        Err(AuthError::Unavailable(RESERVED_MESSAGE.into()))
+        auth.resolve(&m, &http()).await.unwrap().credential,
+        Credential::OAuth {
+            access: "a".into(),
+            metadata: serde_json::from_value(json!({"x":[1,2]})).unwrap()
+        }
     );
-    assert_eq!(
-        auth.resolve(&m, &http()).await.unwrap_err(),
-        AuthError::Unavailable(RESERVED_MESSAGE.into())
-    );
-    for r in [
-        auth.start(1, "anthropic").await,
-        auth.reuse(1, "anthropic").await,
-    ] {
-        let e = r.unwrap_err();
-        assert_eq!(e.code, ErrorCode::Unsupported);
-        assert_eq!(e.message, RESERVED_MESSAGE);
-    }
+    auth.reuse(1, "anthropic").await.unwrap();
     let snap = auth.snapshot(1);
+    assert_eq!(snap.status, AuthStatus::Done);
     let a = snap.providers.iter().find(|p| p.id == "anthropic").unwrap();
-    assert!(!a.available);
-    assert_eq!(a.unavailable_reason.as_deref(), Some(RESERVED_MESSAGE));
-    assert!(a.has_credentials);
-    // Saving an API key never replaces the reserved credential implicitly.
+    assert!(a.available && a.has_credentials && a.unavailable_reason.is_none());
     let e = auth.set_api_key("anthropic", "sk-ant".into()).unwrap_err();
     assert_eq!(e.code, ErrorCode::Conflict);
-    // Writing another provider keeps the reserved entry byte-for-byte.
     auth.set_api_key("xai", "xk".into()).unwrap();
-    let text = std::fs::read_to_string(f.auth_path()).unwrap();
-    assert!(text.contains(
-        "\"anthropic\": {\"type\":\"oauth\",\"access\":\"a\",\"refresh\":\"r\",\"expires\":1,\"x\":[1,2]},"
-    ));
-    // Removing it is generic.
+    assert_eq!(
+        f.read_auth()["anthropic"],
+        serde_json::from_str::<Value>(&stored).unwrap()["anthropic"]
+    );
     auth.remove("anthropic").unwrap();
     assert!(f.read_auth().get("anthropic").is_none());
     assert_eq!(
@@ -566,8 +558,11 @@ async fn ordinary_anthropic_api_keys_work() {
     ]);
     let auth = f.auth();
     assert_eq!(
-        resolve(&auth, "anthropic").await.unwrap_err(),
-        AuthError::Unavailable(RESERVED_MESSAGE.into())
+        resolve(&auth, "anthropic").await.unwrap().credential,
+        Credential::OAuth {
+            access: "sk-ant-oat".into(),
+            metadata: Default::default()
+        }
     );
 }
 

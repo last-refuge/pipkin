@@ -722,3 +722,210 @@ async fn xai_device_flow_and_cancellation() {
     assert_eq!(server2.requests().len(), n, "polling stopped");
     assert!(!f.auth_path().exists());
 }
+
+// Claude subscription port: no live accounts, credentials or provider requests.
+fn anthropic_fixture(url: &str) -> Fixture {
+    fixture(&[
+        ("PIPKIN_OAUTH_ANTHROPIC_AUTHORIZE_URL", url),
+        ("PIPKIN_OAUTH_ANTHROPIC_PLATFORM_URL", url),
+        ("ANTHROPIC_API_KEY", "must-not-fallback"),
+    ])
+}
+fn anthropic_tokens(n: usize) -> Value {
+    json!({"access_token": format!("sk-ant-oat-test-{n}"),
+        "refresh_token": format!("refresh-{n}"), "expires_in":3600})
+}
+async fn anthropic_prompt(
+    auth: &Auth,
+    client: u64,
+    method: &str,
+) -> pipkin_engine_protocol::AuthSnapshot {
+    auth.start(client, "anthropic").await.unwrap();
+    answer(auth, client, "select", method).await;
+    wait_for(auth, client, "Claude callback or pasted code", |s| {
+        s.url.is_some() && s.challenge.is_some()
+    })
+    .await
+}
+
+#[tokio::test]
+async fn anthropic_browser_login_validates_state_and_exchanges_pkce() {
+    let server = MockServer::start(|req, n| {
+        assert_eq!(req.path, "/v1/oauth/token");
+        MockResponse::json(200, &anthropic_tokens(n))
+    })
+    .await;
+    let f = anthropic_fixture(&server.url);
+    let auth = f.auth();
+    let s = anthropic_prompt(&auth, 1, "browser").await;
+    let q = query(s.url.as_ref().unwrap());
+    assert_eq!(q["client_id"], "9d1c250a-e61b-44d9-88ed-5944d1962f5e");
+    assert_eq!(q["code_challenge_method"], "S256");
+    assert!(q["scope"].contains("user:inference"));
+    let redirect = &q["redirect_uri"];
+    assert!(redirect.starts_with("http://localhost:") && redirect.ends_with("/callback"));
+    assert_eq!(
+        browser_get(&format!("{redirect}?code=code&state=wrong"))
+            .await
+            .0,
+        400
+    );
+    assert!(server.requests().is_empty());
+    assert_eq!(
+        browser_get(&format!("{redirect}?code=code&state={}", q["state"]))
+            .await
+            .0,
+        200
+    );
+    done(&auth, 1).await;
+    let body = server.requests()[0].json();
+    assert_eq!(body["grant_type"], "authorization_code");
+    assert_eq!(body["code"], "code");
+    assert_eq!(body["state"], q["state"]);
+    assert_eq!(body["redirect_uri"], *redirect);
+    assert_eq!(
+        super::pkce::challenge_for(body["code_verifier"].as_str().unwrap()),
+        q["code_challenge"]
+    );
+    assert_eq!(stored(&f, "anthropic").access, "sk-ant-oat-test-0");
+    assert!(
+        http()
+            .get(redirect.replace("://localhost:", "://127.0.0.1:"))
+            .send()
+            .await
+            .is_err()
+    );
+    assert_eq!(auth.snapshot(2).status, AuthStatus::Idle);
+}
+
+#[tokio::test]
+async fn anthropic_copy_code_accepts_reference_paste_forms() {
+    for form in ["pair", "url", "query", "code"] {
+        let server = MockServer::start(|_, n| MockResponse::json(200, &anthropic_tokens(n))).await;
+        let f = anthropic_fixture(&server.url);
+        let auth = f.auth();
+        let s = anthropic_prompt(&auth, 1, "copy_code").await;
+        let q = query(s.url.as_ref().unwrap());
+        assert_eq!(
+            q["redirect_uri"],
+            format!("{}/oauth/code/callback", server.url)
+        );
+        assert_eq!(s.challenge.as_ref().unwrap().kind, "manual_code");
+        let code = match form {
+            "pair" => format!("code#{}", q["state"]),
+            "url" => format!(
+                "https://example.test/callback?code=code&state={}",
+                q["state"]
+            ),
+            "query" => format!("code=code&state={}", q["state"]),
+            _ => "code".into(),
+        };
+        answer(&auth, 1, "manual_code", &code).await;
+        done(&auth, 1).await;
+        let body = server.requests()[0].json();
+        assert_eq!(body["code"], "code");
+        assert_eq!(body["state"], q["state"]);
+        assert_eq!(body["redirect_uri"], q["redirect_uri"]);
+        assert_eq!(
+            super::pkce::challenge_for(body["code_verifier"].as_str().unwrap()),
+            q["code_challenge"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn anthropic_wrong_state_cancel_and_retry_never_save_stale_credentials() {
+    let server = MockServer::start(|_, n| MockResponse::json(200, &anthropic_tokens(n))).await;
+    let f = anthropic_fixture(&server.url);
+    let auth = f.auth();
+    let stale = anthropic_prompt(&auth, 1, "copy_code").await;
+    answer(&auth, 1, "manual_code", "code#wrong-state").await;
+    let failed = wait_for(&auth, 1, "failed state", |s| s.status == AuthStatus::Failed).await;
+    assert!(failed.url.is_none() && failed.challenge.is_none());
+    assert!(server.requests().is_empty());
+    let current = anthropic_prompt(&auth, 1, "copy_code").await;
+    assert!(
+        auth.answer(
+            1,
+            stale.attempt.as_deref().unwrap(),
+            &stale.challenge.unwrap().id,
+            "code".into()
+        )
+        .is_err()
+    );
+    auth.cancel(1, current.attempt.as_deref().unwrap());
+    assert!(!f.auth_path().exists());
+    assert!(server.requests().is_empty());
+    anthropic_prompt(&auth, 1, "copy_code").await;
+    answer(&auth, 1, "manual_code", "new-code").await;
+    done(&auth, 1).await;
+    assert_eq!(server.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn anthropic_refresh_is_serialized_persists_rotation_and_preserves_metadata() {
+    let server = MockServer::start(|req, n| {
+        assert_eq!(req.json()["grant_type"], "refresh_token");
+        assert_eq!(req.json()["refresh_token"], "old-refresh");
+        MockResponse::json(200, &anthropic_tokens(n))
+    })
+    .await;
+    let f = anthropic_fixture(&server.url);
+    f.write_auth(&json!({"anthropic":{"type":"oauth","access":"old","refresh":"old-refresh","expires":1,"custom":"preserved"}}));
+    // Separate Auth instances exercise the file lock as well as the in-process mutex.
+    let first = Arc::new(f.auth());
+    let second = Arc::new(f.auth());
+    let mut tasks = Vec::new();
+    for i in 0..8 {
+        let auth = if i % 2 == 0 {
+            first.clone()
+        } else {
+            second.clone()
+        };
+        tasks.push(tokio::spawn(async move {
+            auth.resolve(&model(&auth, "anthropic"), &http())
+                .await
+                .unwrap()
+        }));
+    }
+    for t in tasks {
+        let r = t.await.unwrap();
+        assert!(
+            matches!(r.credential,Credential::OAuth { ref access,.. } if access=="sk-ant-oat-test-0")
+        );
+    }
+    assert_eq!(server.requests().len(), 1);
+    let saved = stored(&f, "anthropic");
+    assert_eq!(saved.refresh, "refresh-0");
+    assert_eq!(saved.extra["custom"], "preserved");
+    let lifetime = saved.expires - crate::util::now_ms();
+    assert!(
+        lifetime > 3_500_000 && lifetime <= 3_600_000,
+        "margin is applied by Auth, not twice: {lifetime}"
+    );
+}
+
+#[tokio::test]
+async fn anthropic_refresh_failure_is_redacted_and_never_uses_api_key_billing() {
+    for response in [
+        MockResponse::json(401, &json!({"error":"SECRET access-token refresh-token"})),
+        MockResponse::json(
+            200,
+            &json!({"access_token":"SECRET","refresh_token":"r","expires_in":-1}),
+        ),
+    ] {
+        let server = MockServer::start(move |_, _| response.clone()).await;
+        let f = anthropic_fixture(&server.url);
+        let initial = json!({"anthropic":{"type":"oauth","access":"old","refresh":"old-refresh","expires":1}});
+        f.write_auth(&initial);
+        let auth = f.auth();
+        let err = auth
+            .resolve(&model(&auth, "anthropic"), &http())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, crate::auth::AuthError::Failed(_)));
+        assert!(!format!("{err:?}").contains("SECRET"));
+        assert_eq!(f.read_auth(), initial);
+        assert_eq!(server.requests().len(), 1);
+    }
+}

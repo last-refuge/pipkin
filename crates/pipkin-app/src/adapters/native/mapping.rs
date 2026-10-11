@@ -203,7 +203,7 @@ pub fn sign_in(snapshot: &AuthSnapshot) -> SignInSnapshot {
             .cloned()
             .collect();
         let kind = match c.kind.as_str() {
-            "code" => "manual_code",
+            "code" | "manual_code" => "manual_code",
             "select" | "confirm" if !options.is_empty() => "select",
             "text" | "confirm" => "text",
             _ => return None,
@@ -611,6 +611,36 @@ mod tests {
             ..AuthSnapshot::default()
         });
         assert!(bare.unavailable_reason(SignInProvider::Claude).is_some());
+    }
+
+    #[test]
+    fn the_engine_manual_code_prompt_reaches_the_desktop_input() {
+        let prompt = pipkin_engine::auth::oauth::Prompt::manual_code(
+            "Paste the code Anthropic shows after you sign in:",
+            "code#state",
+        );
+        let snapshot = AuthSnapshot {
+            attempt: Some("claude-attempt".into()),
+            provider: Some("anthropic".into()),
+            status: AuthStatus::Prompt,
+            challenge: Some(AuthChallenge {
+                id: "claude-code".into(),
+                kind: prompt.kind.as_str().into(),
+                message: prompt.message.clone(),
+                placeholder: prompt.placeholder.clone(),
+                options: prompt.options,
+            }),
+            ..AuthSnapshot::default()
+        };
+        let view = sign_in(&snapshot);
+        assert_eq!(view.status, SignInStatus::Prompt);
+        assert_eq!(view.provider, Some(SignInProvider::Claude));
+        assert_eq!(view.attempt, snapshot.attempt);
+        let challenge = view.challenge.expect("manual-code input must be shown");
+        assert_eq!(challenge.kind, "manual_code");
+        assert_eq!(challenge.id, "claude-code");
+        assert_eq!(challenge.message, prompt.message);
+        assert_eq!(challenge.placeholder, prompt.placeholder);
     }
 
     #[test]

@@ -16,7 +16,6 @@ use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 use super::oauth::{self, AuthEvent, Interaction, InteractionSink, Prompt, PromptKind};
-use super::providers::RESERVED_MESSAGE;
 use super::store::StoredCredential;
 use super::{Inner, lock};
 use crate::provider::BoxFuture;
@@ -246,14 +245,7 @@ impl Inner {
             Err(_) => (vec![], true),
         };
         let has = |id: &str| stored.iter().any(|i| i.provider == id);
-        let mut views = vec![AuthProviderView {
-            id: "anthropic".into(),
-            name: "Anthropic (Claude subscription)".into(),
-            kind: CredentialKind::OAuth,
-            available: false,
-            unavailable_reason: Some(RESERVED_MESSAGE.into()),
-            has_credentials: has("anthropic"),
-        }];
+        let mut views = Vec::new();
         for (id, name) in oauth::BUILTIN_OAUTH_PROVIDERS {
             views.push(AuthProviderView {
                 id: (*id).into(),
@@ -345,9 +337,6 @@ impl Inner {
         client: u64,
         provider: &str,
     ) -> Result<String, ProtoError> {
-        if provider == "anthropic" {
-            return Err(err(ErrorCode::Unsupported, RESERVED_MESSAGE));
-        }
         let flow = self
             .flow(provider)
             .ok_or_else(|| err(ErrorCode::Unsupported, MSG_NOT_AVAILABLE))?;
@@ -408,9 +397,6 @@ impl Inner {
     }
 
     pub(super) fn reuse(&self, client: u64, provider: &str) -> Result<String, ProtoError> {
-        if provider == "anthropic" {
-            return Err(err(ErrorCode::Unsupported, RESERVED_MESSAGE));
-        }
         if self.flow(provider).is_none() {
             return Err(err(ErrorCode::Unsupported, MSG_NOT_AVAILABLE));
         }
@@ -554,7 +540,7 @@ impl Inner {
             let mut txn = self.store.begin()?;
             let (env, extra) = match txn.get(provider) {
                 Some(StoredCredential::OAuth(_)) if provider == "anthropic" => {
-                    // The reserved subscription credential is never replaced implicitly.
+                    // A subscription credential is never replaced implicitly by API billing.
                     return Ok(Err(err(
                         ErrorCode::Conflict,
                         "A saved Claude subscription sign-in exists for anthropic; remove it before saving an API key.",

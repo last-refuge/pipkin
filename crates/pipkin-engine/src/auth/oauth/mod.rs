@@ -1,4 +1,4 @@
-//! OAuth flows for the non-reserved providers (reference `packages/ai/src/auth/oauth/*`).
+//! OAuth flows for the built-in providers (reference `packages/ai/src/auth/oauth/*`).
 //!
 //! A flow implements [`OAuthFlow`]: `login` drives an [`Interaction`] (prompts answered by the
 //! user through the sign-in lifecycle, notifications for URLs and device codes), `refresh`
@@ -11,6 +11,8 @@
 //! |---|---|---|
 //! | `PI_OAUTH_CALLBACK_HOST` | `127.0.0.1` | loopback host (Codex, ChatGPT, OpenRouter) |
 //! | `PIPKIN_OAUTH_CALLBACK_PORT` | flow's fixed port (1455, 1456) | loopback port; `0` = any free port |
+//! | `PIPKIN_OAUTH_ANTHROPIC_AUTHORIZE_URL` | `https://claude.ai` | Claude authorization |
+//! | `PIPKIN_OAUTH_ANTHROPIC_PLATFORM_URL` | `https://platform.claude.com` | Claude token exchange and copy-code callback |
 //! | `PIPKIN_OAUTH_OPENAI_URL` | `https://auth.openai.com` | Codex, Sign in with ChatGPT |
 //! | `PIPKIN_OAUTH_GITHUB_URL` | `https://<domain>` | Copilot device + token endpoints |
 //! | `PIPKIN_OAUTH_GITHUB_API_URL` | `https://api.<domain>` | Copilot token exchange |
@@ -24,6 +26,7 @@
 //! | `PIPKIN_OAUTH_POLL_INTERVAL_MS` | server interval | fixed device-code poll interval |
 //! | `PIPKIN_OAUTH_RETRY_BASE_MS` | reference delays | base of refresh/429 retry delays |
 
+mod anthropic;
 pub mod callback;
 pub mod device;
 mod github_copilot;
@@ -217,6 +220,8 @@ impl std::fmt::Debug for ModelAuth {
 pub struct Endpoints {
     pub callback_host: String,
     pub callback_port: Option<u16>,
+    pub anthropic_authorize: String,
+    pub anthropic_platform: String,
     pub openai_auth: String,
     pub github: Option<String>,
     pub github_api: Option<String>,
@@ -250,6 +255,10 @@ impl Endpoints {
             callback_port: env
                 .get("PIPKIN_OAUTH_CALLBACK_PORT")
                 .and_then(|p| p.trim().parse().ok()),
+            anthropic_authorize: get("PIPKIN_OAUTH_ANTHROPIC_AUTHORIZE_URL")
+                .unwrap_or_else(|| "https://claude.ai".into()),
+            anthropic_platform: get("PIPKIN_OAUTH_ANTHROPIC_PLATFORM_URL")
+                .unwrap_or_else(|| "https://platform.claude.com".into()),
             openai_auth: get("PIPKIN_OAUTH_OPENAI_URL")
                 .unwrap_or_else(|| "https://auth.openai.com".into()),
             github: get("PIPKIN_OAUTH_GITHUB_URL"),
@@ -318,9 +327,9 @@ pub trait OAuthFlow: Send + Sync {
     fn to_auth(&self, credential: &OAuthCredential) -> ModelAuth;
 }
 
-/// The built-in OAuth providers in display order, with names. `anthropic` is listed by the
-/// sign-in lifecycle separately as reserved.
+/// The built-in OAuth providers in display order, with names.
 pub const BUILTIN_OAUTH_PROVIDERS: &[(&str, &str)] = &[
+    ("anthropic", "Anthropic (Claude Pro/Max)"),
     ("openai-codex", "OpenAI (ChatGPT Plus/Pro)"),
     ("openai", "OpenAI (ChatGPT subscription)"),
     ("github-copilot", "GitHub Copilot"),
@@ -342,6 +351,7 @@ pub fn flow_for(
         return Some(Arc::new(radius::Radius::new(name, gateway)));
     }
     Some(match provider {
+        "anthropic" => Arc::new(anthropic::Anthropic),
         "openai-codex" => Arc::new(openai_codex::OpenAICodex),
         "openai" => Arc::new(openai_chatgpt::OpenAIChatGPT),
         "github-copilot" => Arc::new(github_copilot::GitHubCopilot),

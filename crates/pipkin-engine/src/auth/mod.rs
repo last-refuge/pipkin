@@ -14,10 +14,8 @@
 //! - **Sign-in lifecycle** (`start`/`reuse`/`answer`/`cancel`/`remove`/`snapshot`): per-client
 //!   attempts with challenges and stale-attempt guards; volatile, never persisted or logged.
 //!
-//! The Claude subscription sign-in and its request path are **reserved** for a later
-//! integration: the provider is listed with `available: false`, starting it is refused with
-//! `Unsupported`, and a stored subscription credential makes affected models unavailable
-//! rather than silently using an API key. Ordinary Anthropic API keys work normally.
+//! Claude subscription credentials use their own OAuth flow and request behavior. A stored
+//! sign-in or configured subscription token never falls back to API-key billing.
 //!
 //! Storage: `auth.json` via [`store::FileStore`] (0600 file, 0700 dir, atomic writes, `flock`).
 //! An OS secret store (Secret Service, Keychain) is not yet qualified; it would implement
@@ -45,7 +43,7 @@ use crate::provider::{BoxFuture, Credential, Model};
 
 use models_json::{ModelsConfig, ProviderConfig};
 use oauth::{Endpoints, FlowCtx, OAuthFlow};
-use providers::{KeyAuth, KeyInput, RESERVED_MESSAGE};
+use providers::{KeyAuth, KeyInput};
 use store::{CredentialStore, FileStore, OAuthCredential, StoredCredential};
 
 /// Why a model cannot be used right now.
@@ -337,11 +335,8 @@ impl Inner {
         catalog
     }
 
-    /// The OAuth flow for `provider` (never the reserved Claude subscription).
+    /// The OAuth flow for `provider`.
     fn flow(&self, provider: &str) -> Option<Arc<dyn OAuthFlow>> {
-        if provider == "anthropic" {
-            return None;
-        }
         let models = self.models_config();
         let radius = models
             .provider(provider)
@@ -373,17 +368,12 @@ impl Inner {
         let pc = models.provider(provider);
         let env = &self.config.env;
         match self.store.read(provider).map_err(store_failed)? {
-            Some(StoredCredential::OAuth(_)) => {
-                if provider == "anthropic" {
-                    return Err(AuthError::Unavailable(RESERVED_MESSAGE.into()));
-                }
-                match self.flow(provider) {
-                    Some(_) => Ok(()),
-                    None => Err(AuthError::Unavailable(format!(
-                        "The saved sign-in for {provider} is not supported by this engine"
-                    ))),
-                }
-            }
+            Some(StoredCredential::OAuth(_)) => match self.flow(provider) {
+                Some(_) => Ok(()),
+                None => Err(AuthError::Unavailable(format!(
+                    "The saved sign-in for {provider} is not supported by this engine"
+                ))),
+            },
             Some(StoredCredential::Unsupported(_)) => Err(unsupported_saved(provider)),
             Some(StoredCredential::ApiKey {
                 key, env: cred_env, ..
@@ -431,9 +421,6 @@ impl Inner {
         let env = &self.config.env;
         let base = match self.store.read(provider).map_err(store_failed)? {
             Some(StoredCredential::OAuth(stored)) => {
-                if provider == "anthropic" {
-                    return Err(AuthError::Unavailable(RESERVED_MESSAGE.into()));
-                }
                 let flow = self.flow(provider).ok_or_else(|| {
                     AuthError::Unavailable(format!(
                         "The saved sign-in for {provider} is not supported by this engine"
@@ -680,7 +667,6 @@ fn key_auth_ok(provider: &str, auth: KeyAuth) -> Result<(), AuthError> {
     match auth {
         KeyAuth::Resolved(_) => Ok(()),
         KeyAuth::NotConfigured => Err(not_configured(provider)),
-        KeyAuth::Reserved => Err(AuthError::Unavailable(RESERVED_MESSAGE.into())),
     }
 }
 
@@ -698,7 +684,6 @@ fn key_base(
             cred_env,
         }),
         KeyAuth::NotConfigured => Err(not_configured(provider)),
-        KeyAuth::Reserved => Err(AuthError::Unavailable(RESERVED_MESSAGE.into())),
     }
 }
 

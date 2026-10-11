@@ -5,11 +5,21 @@ records decisions, identities, status, commands, evidence, blockers and the next
 It does not qualify anything by itself: a gate closes only with the execution evidence the plan
 requires. Failed runs are recorded here, not replaced by later successes.
 
-**Current state (2026-10-11, `native-engine` at `4fc4060`):** the main implementation has landed
+**Historical handoff state (2026-10-11, `native-engine` at `4fc4060`):** the main implementation has landed
 on `native-engine` and every wave-2 worker branch is merged. The native engine is an opt-in
 candidate (`--engine native`); Pi remains the default and only shipped engine. **Nothing is
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
+
+## Codex follow-up on 2026-10-11
+
+The reserved Claude subscription path has been ported on top of `852a5df`:
+[implementation/evidence](pipkin-rust-engine-evidence/claude-subscription.md). RE-03B was
+reviewed against official guidance; the user confirmed approval and requested the Pi port.
+RE-13B is implemented; the native release binary passed user-completed browser sign-in and a real Claude Opus 5.5 coding turn (4 scratch tests passed). Full live qualification remains pending. Native onboarding capability, saved-credential
+reuse/removal, concurrent refresh, subscription request conversion and explicit credential
+import now have local-fixture coverage. No default cutover or parity qualification occurred.
+The older module reports below remain historical evidence, including their independent gaps.
 
 ## 1. Architecture decisions
 
@@ -57,7 +67,7 @@ platform gate has closed it.
 | RE-01 | Pinned-source/overlay inventory and complete parity ledger | Opus | in progress | Ledger refreshed at `4fc4060`; open: 37 `PA` rows, provider-id count (D-09), owner decisions D-01..D-11 |
 | RE-02 | Frozen behavioral fixtures and performance baseline | Opus | implemented-but-unverified | `b2ff206`: `fixtures/pi-sessions/` 8 scenarios + `BASELINE.md`; reference package/runtime artifact hashes still TODO (§4) |
 | RE-03A | Non-reserved provider/auth feasibility and inventory | Opus | implemented-but-unverified | All non-reserved adapters and OAuth flows implemented and tested against local mocks (ledger §3–§6); no live provider call |
-| RE-03B | Claude subscription feasibility review | Codex | planned (reserved) | Reserved for Codex — not implemented or qualified; handoff §3–§8 |
+| RE-03B | Claude subscription feasibility review | Codex | reviewed; user-confirmed approval | `pipkin-rust-engine-evidence/claude-subscription.md`; no independent agreement or live-access verification |
 | RE-04 | Context, durable-task and extension-state import spike | Opus | implemented-but-unverified | `8290556`; all 8 reference fixtures import and continue equivalently (`rti::reference_fixtures_import_open_and_continue_equivalently`); plugin state not read (IMP-PLUGIN-STATE) |
 | RE-05 | Extension compatibility spike and ADRs | Opus | in progress | ADR 0006 still Proposed; native ports of the two baseline examples (`ext::`, `extp::`); TS facets blocked |
 | RE-06 | Typed engine contract and private worker transport | Opus | in progress | Protocol v2 + frame and import-call round-trip tests (`frm::`, `P/view.rs`); gap detection (`ncl::sequencer_detects_gaps_and_new_epochs`); durable outbox/acknowledged cursor missing (XPORT-OUTBOX) |
@@ -68,7 +78,7 @@ platform gate has closed it.
 | RE-11 | Coding tools and execution environments | Opus | implemented-but-unverified | `5768dda`; `trd::`/`twr::`/`ted::`/`tbs::`/`tout::`/`trun::`/`tsch::` incl. reference-captured goldens; corpus tests ignored with no recorded run; tool rounds always parallel (GEN-03) |
 | RE-12 | First provider and real coding slice | Opus | implemented-but-unverified | Walkthrough §3 (real `write` tool via an `openai-completions` custom provider to a local stub); perf harness uses the same path; no live provider |
 | RE-13A | Generic credentials and non-reserved providers | Opus | implemented-but-unverified | `dd43920`, 10 wire adapters + `provider/api/common`; `auth::`, `oauth::`, adapter suites; Codex adapter goldens are reference captures |
-| RE-13B | Claude subscription integration | Codex | planned (reserved) | Reserved for Codex — not implemented or qualified; boundary measured (`CLS-BOUNDARY`) |
+| RE-13B | Claude subscription integration | Codex | implemented; live smoke passed | `pipkin-rust-engine-evidence/claude-subscription.md`; browser/copy-code sign-in, refresh, saved reuse and Pi-fixture Stop/reopen passed; full qualification pending |
 | RE-14 | Context/resources, attachments, models and accounting | Opus | implemented-but-unverified | `384da75`, `e4fe919`; `drv::`/`prm::`/`res::`/`cmp::`; gap: no `reasoning`/`cacheWrite1h` usage counters |
 | RE-15 | Durable subagent/task scheduler and recovery | Opus | implemented-but-unverified | `rt::subagents_run_once_per_call_deliver_their_answer_and_are_listed`, `rt::a_subagent_call_interrupted_by_a_restart_resumes_its_one_child`; overlay recovery tests (disabled, contract mismatch) not ported |
 | RE-16 | Native extension compatibility implementation | Opus | implemented-but-unverified (native) / blocked (TS facets) | `01e0511`, `e4fe919`; `--engine-extension`; TypeScript facet packages stay `BL / LB` (ADR 0006) |

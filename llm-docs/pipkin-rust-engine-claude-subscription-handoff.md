@@ -1,5 +1,21 @@
 # Claude subscription handoff: native engine (Opus → Codex)
 
+## Codex implementation update on 2026-10-11
+
+The reserved native path is now implemented and undergoing qualification. See
+[implementation and evidence](pipkin-rust-engine-evidence/claude-subscription.md) for the
+pinned source, OAuth/request/import changes, tests and remaining live-account acceptance.
+The user confirmed approval and directed the Pi port. The production default remains Pi.
+
+**The original Opus handoff below is a historical snapshot.** Its absent-adapter descriptions,
+reserved checks and credential-exclusion instructions are superseded by this implementation.
+Current entry point: `crates/pipkin-engine/src/auth/oauth/anthropic.rs`, registered by
+`auth/oauth/mod.rs`; the Anthropic adapter handles subscription requests and explicit import
+includes OAuth credentials. Follow the evidence record for the remaining work, rather than
+removing the old checks again. A subsequent native release smoke test passed browser sign-in and a real Claude Opus 5.5 coding turn (four scratch tests passed). Saved-sign-in restart, forced-expiry live refresh, copy-code login, and copied-Pi-fixture continuation with Stop/reopen subsequently passed. The copy-code desktop mapping and completion copy were fixed during validation. Installed interactive acceptance and full parity remain pending; see the evidence record.
+
+---
+
 This is the section 13 handoff from `llm-docs/pipkin-rust-engine-plan.md`. It is for Codex to finish the reserved Claude subscription integration (RE-03B / RE-13B) on top of the native Rust engine. It contains no credentials, account material, callback codes or private session data.
 
 **Status of the reserved work:** the Claude subscription integration is **reserved for Codex — not implemented or qualified.** No subscription request, sign-in, refresh, import activation or model availability has been implemented, researched or tested by Opus. Everything below is the generic boundary it plugs into.

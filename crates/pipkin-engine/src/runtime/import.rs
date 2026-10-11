@@ -13,7 +13,7 @@
 //! - Credentials are merged into the native credential store through its transactional API:
 //!   an existing native entry is never overwritten, the imported entry's JSON value is stored
 //!   exactly as it was read, other entries keep their bytes (the store guarantees this), and
-//!   reserved subscription credentials are reported but stay where they are, unimported. Values
+//!   credentials are copied only for explicitly selected providers. Values
 //!   are never logged or returned.
 
 use std::collections::{BTreeSet, HashMap};

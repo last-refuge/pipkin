@@ -9,7 +9,7 @@ use pipkin_engine_protocol::*;
 use serde_json::{Value, json};
 
 use super::super::tests::{Engine, Fixture};
-use super::{RESERVED_KEPT, agent_dir, utc_stamp};
+use super::{agent_dir, utc_stamp};
 use crate::config::Env;
 use crate::provider::scripted::Scripted;
 
@@ -477,7 +477,7 @@ fn locked_blocked_and_unknown_sessions_are_reported_and_nothing_is_written() {
 const NATIVE_AUTH: &str = "{\n  \"groq\": {\"type\":\"api_key\",   \"key\": \"gsk-NATIVE\"},\n  \"custom\": {\"type\": \"bespoke\", \"x\": [1,2,3]}\n}";
 
 #[test]
-fn credentials_merge_without_overwriting_and_keep_reserved_ones_where_they_are() {
+fn credentials_merge_including_claude_oauth_without_overwriting_or_changing_the_source() {
     let fx = Fixture::new();
     let agent = agent_with(fx.dir.path(), &[]);
     let pi_auth = r#"{
@@ -513,7 +513,7 @@ fn credentials_merge_without_overwriting_and_keep_reserved_ones_where_they_are()
     assert!(!format!("{found:?}").contains("SECRET"));
     assert!(!serde_json::to_string(&found).unwrap().contains("SECRET"));
     let cred = |p: &str| found.credentials.iter().find(|c| c.provider == p).unwrap();
-    assert_eq!(cred("anthropic").reserved.as_deref(), Some(RESERVED_KEPT));
+    assert!(cred("anthropic").reserved.is_none());
     assert!(cred("groq").native_exists);
     assert!(!cred("openrouter").native_exists);
     assert_eq!(cred("openai-codex").kind, "oauth");
@@ -544,12 +544,7 @@ fn credentials_merge_without_overwriting_and_keep_reserved_ones_where_they_are()
     assert_eq!(view.providers.len(), 5);
     assert_eq!(got["openrouter"], &CredentialImportOutcome::Imported);
     assert_eq!(got["openai-codex"], &CredentialImportOutcome::Imported);
-    assert_eq!(
-        got["anthropic"],
-        &CredentialImportOutcome::Reserved {
-            reason: RESERVED_KEPT.into()
-        }
-    );
+    assert_eq!(got["anthropic"], &CredentialImportOutcome::Imported);
     assert_eq!(got["groq"], &CredentialImportOutcome::KeptExisting);
     assert_eq!(got["missing"], &CredentialImportOutcome::NotFound);
     e.until("the models were refreshed", |ev| {
@@ -575,10 +570,7 @@ fn credentials_merge_without_overwriting_and_keep_reserved_ones_where_they_are()
         serde_json::to_string_pretty(&source["openai-codex"]).unwrap(),
         "the imported entry keeps its field order"
     );
-    assert!(
-        saved.get("anthropic").is_none(),
-        "the reserved credential is not imported"
-    );
+    assert_eq!(saved["anthropic"], source["anthropic"]);
     assert_eq!(saved["groq"]["key"], "gsk-NATIVE");
     // The Pi profile is untouched.
     assert_eq!(
