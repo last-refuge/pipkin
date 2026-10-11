@@ -451,7 +451,7 @@ fn an_engine_restart_mid_run_resumes_the_run_without_duplicating_the_prompt() {
     }
     let answer = Scripted::echo("resumed answer");
     let mut e = fx.start(&answer);
-    assert_eq!(e.settled("r1"), RunOutcome::Completed);
+    wait_settled_by_lookup(&mut e, &s, "r1", RunOutcome::Completed);
     let snap = e.snapshot(&s);
     let users: Vec<_> = texts(&snap).into_iter().filter(|t| t.0 == "user").collect();
     assert_eq!(users.len(), 1);
@@ -478,7 +478,23 @@ fn a_durable_stop_survives_a_restart_and_settles_aborted() {
     }
     let never = Scripted::echo("must not run");
     let mut e = fx.start(&never);
-    assert_eq!(e.settled("r1"), RunOutcome::Aborted);
+    // Recovery may settle before this client connects; a client learns it by asking.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(Reply::Lookup(LookupResult::Known {
+            open: false,
+            outcome,
+            ..
+        })) = e.call(Call::Lookup {
+            session: s.clone(),
+            request: "r1".into(),
+        }) {
+            assert_eq!(outcome, Some(RunOutcome::Aborted));
+            break;
+        }
+        assert!(Instant::now() < deadline, "not settled");
+        std::thread::sleep(Duration::from_millis(20));
+    }
     assert!(never.requests().is_empty());
 }
 
@@ -624,4 +640,444 @@ fn inputs_are_bounded_before_anything_is_recorded() {
         ErrorCode::NotFound
     );
     let _ = json!({});
+}
+
+fn is_summary(req: &ProviderRequest) -> bool {
+    req.system == crate::context::compaction::SUMMARIZATION_SYSTEM_PROMPT
+}
+
+#[test]
+fn the_system_prompt_carries_project_instructions_and_stays_byte_stable() {
+    let fx = Fixture::new();
+    std::fs::write(fx.project.join("AGENTS.md"), "Always answer in haiku.\n").unwrap();
+    let provider = Scripted::echo("ok");
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    e.prompt(&s, "r1", "one").unwrap();
+    e.settled("r1");
+    e.prompt(&s, "r2", "two").unwrap();
+    e.settled("r2");
+    let reqs = provider.requests();
+    assert!(
+        reqs[0].system.contains("Always answer in haiku."),
+        "{}",
+        reqs[0].system
+    );
+    assert!(reqs[0].system.contains("<project_instructions path="));
+    assert!(reqs[0].system.contains("- read: Read file contents"));
+    assert_eq!(reqs[0].system, reqs[1].system, "byte-stable between turns");
+    let names: Vec<_> = reqs[0].tools.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, ["read", "write", "edit", "bash", "subagent"]);
+    assert_eq!(reqs[0].thinking, crate::provider::ThinkingLevel::Medium);
+}
+
+#[test]
+fn real_tools_run_their_effects_are_recorded_and_the_complete_output_is_retained() {
+    let fx = Fixture::new();
+    let provider = Scripted::new(|_, n| match n {
+        0 => R::Tools(
+            Some("Writing. ".into()),
+            vec![
+                (
+                    "write".into(),
+                    json!({"path": "notes.txt", "content": "one\ntwo\n"}),
+                ),
+                ("bash".into(), json!({"command": "seq 1 30000"})),
+            ],
+        ),
+        _ => R::Text("done".into()),
+    });
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    e.prompt(&s, "r1", "do it").unwrap();
+    assert_eq!(e.settled("r1"), RunOutcome::Completed);
+    assert_eq!(
+        std::fs::read_to_string(fx.project.join("notes.txt")).unwrap(),
+        "one\ntwo\n"
+    );
+    let snap = e.snapshot(&s);
+    let results: Vec<_> = snap
+        .entries
+        .iter()
+        .filter_map(|e| match &e.kind {
+            EntryKind::Message {
+                message:
+                    Message::ToolResult {
+                        tool_call_id,
+                        tool_name,
+                        is_error,
+                        ..
+                    },
+                ..
+            } => Some((tool_call_id.clone(), tool_name.clone(), *is_error)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(results.len(), 2);
+    assert!(results.iter().all(|r| !r.2), "{results:?}");
+    let bash_call = results.iter().find(|r| r.1 == "bash").unwrap().0.clone();
+    let Ok(Reply::ToolOutput(out)) = e.call(Call::ToolOutput {
+        session: s.clone(),
+        call_id: bash_call,
+    }) else {
+        panic!()
+    };
+    assert!(out.text.starts_with("1\n2\n"), "retained from the start");
+    assert!(out.text.trim_end().ends_with("30000"));
+    // The model saw a bounded tail with the truncation remark.
+    let next = &provider.requests()[1];
+    let tool_text: String = next
+        .messages
+        .iter()
+        .filter(|m| matches!(m, Message::ToolResult { tool_name, .. } if tool_name == "bash"))
+        .map(|m| m.text())
+        .collect();
+    assert!(tool_text.len() <= 52 * 1024, "{}", tool_text.len());
+    assert!(tool_text.contains("<harness>"));
+}
+
+#[test]
+fn stop_during_a_running_command_kills_it_and_settles_promptly() {
+    let fx = Fixture::new();
+    let marker = fx.dir.path().join("still-running");
+    let cmd = format!("sleep 30 && touch {}", marker.display());
+    let provider = Scripted::new(move |_, n| match n {
+        0 => R::Tools(
+            None,
+            vec![("bash".into(), json!({ "command": cmd.clone() }))],
+        ),
+        _ => R::Text("after".into()),
+    });
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    e.prompt(&s, "r1", "wait").unwrap();
+    e.until("the command started", |ev| {
+        ev.iter().any(|e| {
+            matches!(
+                e,
+                Event::Session {
+                    change: SessionChange::RunChanged { run: Some(_) },
+                    ..
+                }
+            )
+        })
+    });
+    std::thread::sleep(Duration::from_millis(400));
+    let started = Instant::now();
+    e.call(Call::Stop { session: s.clone() }).unwrap();
+    assert_eq!(e.settled("r1"), RunOutcome::Aborted);
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+    let snap = e.snapshot(&s);
+    let aborted = snap.entries.iter().any(|e| matches!(&e.kind,
+        EntryKind::Message { message: m @ Message::ToolResult { is_error: true, .. }, .. } if m.text().contains("was aborted")));
+    assert!(aborted, "{:#?}", texts(&snap));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!marker.exists());
+}
+
+#[test]
+fn subagents_run_once_per_call_deliver_their_answer_and_are_listed() {
+    let fx = Fixture::new();
+    let provider = Scripted::new(|req, _| {
+        let last_user = req
+            .messages
+            .iter()
+            .rev()
+            .find(|m| matches!(m, Message::User { .. }))
+            .map(|m| m.text())
+            .unwrap_or_default();
+        let tools: Vec<_> = req.tools.iter().map(|t| t.name.clone()).collect();
+        if !tools.contains(&"subagent".to_owned()) {
+            // The child: answers its task.
+            return R::Text(format!("child says: {last_user}"));
+        }
+        let answered = req
+            .messages
+            .iter()
+            .any(|m| matches!(m, Message::ToolResult { .. }));
+        if answered {
+            let result: String = req
+                .messages
+                .iter()
+                .filter(|m| matches!(m, Message::ToolResult { .. }))
+                .map(|m| m.text())
+                .collect();
+            R::Text(format!("parent got: {result}"))
+        } else {
+            R::Tools(
+                None,
+                vec![("subagent".into(), json!({"task": "count the files"}))],
+            )
+        }
+    });
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    e.prompt(&s, "r1", "delegate").unwrap();
+    assert_eq!(e.settled("r1"), RunOutcome::Completed);
+    let snap = e.snapshot(&s);
+    let last = texts(&snap).last().unwrap().1.clone();
+    assert_eq!(last, "parent got: child says: count the files");
+    let Ok(Reply::Subagents(view)) = e.call(Call::Subagents { session: s.clone() }) else {
+        panic!()
+    };
+    assert!(view.enabled);
+    assert_eq!(view.children.len(), 1);
+    assert_eq!(view.children[0].status, "done");
+    assert_eq!(view.children[0].task, "count the files");
+    let Ok(Reply::Page { entries, .. }) = e.call(Call::SubagentHistory {
+        session: s.clone(),
+        child: 1,
+        before: None,
+        limit: 50,
+    }) else {
+        panic!()
+    };
+    assert_eq!(entries.len(), 2);
+    // Ownership guard: an unknown child is refused.
+    assert_eq!(
+        e.call(Call::SubagentHistory {
+            session: s.clone(),
+            child: 9,
+            before: None,
+            limit: 5
+        })
+        .unwrap_err()
+        .code,
+        ErrorCode::NotFound
+    );
+    // Children are not top-level conversations.
+    let Ok(Reply::Sessions { sessions }) = e.call(Call::ListSessions) else {
+        panic!()
+    };
+    assert_eq!(sessions.len(), 1);
+    // Disabling stops offering the tool to new requests.
+    e.call(Call::SetSubagentsEnabled {
+        session: s.clone(),
+        enabled: false,
+    })
+    .unwrap();
+    e.prompt(&s, "r2", "again").unwrap();
+    e.settled("r2");
+    let last_req = provider
+        .requests()
+        .into_iter()
+        .filter(|r| r.messages.iter().any(|m| m.text() == "again"))
+        .last()
+        .unwrap();
+    assert!(last_req.tools.iter().all(|t| t.name != "subagent"));
+}
+
+#[test]
+fn a_subagent_call_interrupted_by_a_restart_resumes_its_one_child() {
+    let fx = Fixture::new();
+    let gate = Gate::new();
+    let g = gate.clone();
+    let first = Scripted::new(move |req, _| {
+        if req.tools.iter().all(|t| t.name != "subagent") {
+            return R::Gated(g.clone(), Box::new(R::Text("never".into())));
+        }
+        R::Tools(None, vec![("subagent".into(), json!({"task": "slow job"}))])
+    });
+    let s;
+    {
+        let mut e = fx.start(&first);
+        s = e.create(&fx.project, "c");
+        e.prompt(&s, "r1", "delegate").unwrap();
+        e.until("the child asked its model", |_| {
+            first
+                .requests()
+                .iter()
+                .any(|r| r.tools.iter().all(|t| t.name != "subagent"))
+        });
+        e.handle.shutdown(Duration::from_millis(100));
+    }
+    let second = Scripted::new(|req, _| {
+        if req.tools.iter().all(|t| t.name != "subagent") {
+            return R::Text("child finished".into());
+        }
+        if req
+            .messages
+            .iter()
+            .any(|m| matches!(m, Message::ToolResult { .. }))
+        {
+            R::Text("parent finished".into())
+        } else {
+            R::Text("unexpected new call".into())
+        }
+    });
+    let mut e = fx.start(&second);
+    wait_settled_by_lookup(&mut e, &s, "r1", RunOutcome::Completed);
+    let Ok(Reply::Subagents(view)) = e.call(Call::Subagents { session: s.clone() }) else {
+        panic!()
+    };
+    assert_eq!(view.children.len(), 1, "one child, never a second");
+    let snap = e.snapshot(&s);
+    assert_eq!(texts(&snap).last().unwrap().1, "parent finished");
+    let tool_result = texts(&snap).into_iter().find(|t| t.0 == "tool").unwrap().1;
+    assert_eq!(tool_result, "child finished");
+}
+
+#[test]
+fn manual_and_overflow_compaction_summarize_older_context() {
+    let fx = Fixture::new();
+    std::fs::create_dir_all(fx.dir.path().join("config")).unwrap();
+    std::fs::write(
+        fx.dir.path().join("config/settings.json"),
+        r#"{"compaction": {"keepRecentTokens": 5}, "retry": {"baseDelayMs": 1}}"#,
+    )
+    .unwrap();
+    let overflowed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let o = overflowed.clone();
+    let provider = Scripted::new(move |req, _| {
+        if is_summary(req) {
+            return R::Text("## Goal\nsummary of earlier turns".into());
+        }
+        let last = req.messages.last().map(|m| m.text()).unwrap_or_default();
+        if last == "trigger overflow" && !o.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return R::Error("prompt is too long: 999999 tokens > 200000 maximum".into());
+        }
+        R::Text(format!("reply to {last}"))
+    });
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    for i in 0..4 {
+        e.prompt(
+            &s,
+            &format!("r{i}"),
+            &format!("turn number {i} with some words"),
+        )
+        .unwrap();
+        e.settled(&format!("r{i}"));
+    }
+    e.call(Call::Compact {
+        session: s.clone(),
+        instructions: Some("focus on files".into()),
+    })
+    .unwrap();
+    let summary_req = provider.requests().into_iter().find(is_summary).unwrap();
+    assert!(summary_req.tools.is_empty());
+    assert!(
+        summary_req.messages[0]
+            .text()
+            .contains("Additional focus: focus on files")
+    );
+    assert!(e.events.iter().any(|ev| matches!(
+        ev,
+        Event::Session {
+            change: SessionChange::BoundaryMoved { .. },
+            ..
+        }
+    )));
+    e.prompt(&s, "after", "next question").unwrap();
+    e.settled("after");
+    let next = provider
+        .requests()
+        .into_iter()
+        .rev()
+        .find(|r| !is_summary(r))
+        .unwrap();
+    assert!(
+        next.messages[0].text().contains("summary of earlier turns"),
+        "{}",
+        next.messages[0].text()
+    );
+    assert!(
+        next.messages.len() < 9,
+        "older turns left the context: {}",
+        next.messages.len()
+    );
+    let snap = e.snapshot(&s);
+    assert!(snap.has_older);
+    // An overflow error compacts once and retries the turn.
+    e.prompt(&s, "of", "trigger overflow").unwrap();
+    assert_eq!(e.settled("of"), RunOutcome::Completed);
+    assert_eq!(
+        provider.requests().iter().filter(|r| is_summary(r)).count(),
+        2
+    );
+    // Too little to compact is a clear refusal.
+    let fx2 = Fixture::new();
+    let mut e2 = fx2.start(&Scripted::echo("x"));
+    let s2 = e2.create(&fx2.project, "c");
+    let err = e2
+        .call(Call::Compact {
+            session: s2,
+            instructions: None,
+        })
+        .unwrap_err();
+    assert!(err.message.starts_with("Nothing to compact"));
+}
+
+#[test]
+fn extension_questions_are_published_answered_and_validated() {
+    let fx = Fixture::new();
+    let mut config = fx.config();
+    config.extensions = vec![crate::config::ExtensionSpec::Builtin("questions".into())];
+    let handle = EngineHandle::start_with(
+        config,
+        registry_with(Arc::new(Scripted::echo("x"))),
+        crate::tools::builtin_tools(),
+    )
+    .unwrap();
+    let conn = handle.connect("t");
+    let mut e = Engine {
+        handle,
+        conn,
+        next: 0,
+        events: vec![],
+    };
+    let s = e.create(&fx.project, "c");
+    e.snapshot(&s);
+    e.until("a question", |ev| {
+        ev.iter().any(|e| matches!(e, Event::Session { change: SessionChange::UiChanged { ui }, .. } if !ui.questions.is_empty()))
+    });
+    let ui = e.snapshot(&s).ui;
+    let q = ui.questions[0].clone();
+    assert_eq!(q.kind, QuestionKind::Select);
+    let bad = e
+        .call(Call::AnswerQuestion {
+            session: s.clone(),
+            question: q.id.clone(),
+            answer: Answer::Choice {
+                value: "nope".into(),
+            },
+        })
+        .unwrap_err();
+    assert_eq!(bad.message, "That is not one of the choices.");
+    let value = q.options[0].value.clone();
+    e.call(Call::AnswerQuestion {
+        session: s.clone(),
+        question: q.id.clone(),
+        answer: Answer::Choice { value },
+    })
+    .unwrap();
+    e.until("the next question", |ev| {
+        ev.iter().rev().any(|e| matches!(e, Event::Session { change: SessionChange::UiChanged { ui }, .. } if ui.questions.iter().any(|x| x.id != q.id)))
+    });
+    e.handle.shutdown(Duration::from_secs(1));
+}
+
+/// Wait for a request to settle by asking (events before this client connected are not
+/// replayed; the desktop resolves them with `Lookup` too).
+fn wait_settled_by_lookup(e: &mut Engine, s: &str, key: &str, want: RunOutcome) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Ok(Reply::Lookup(LookupResult::Known {
+            open: false,
+            outcome,
+            ..
+        })) = e.call(Call::Lookup {
+            session: s.into(),
+            request: key.into(),
+        }) {
+            assert_eq!(outcome, Some(want));
+            return;
+        }
+        assert!(Instant::now() < deadline, "{key} did not settle");
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

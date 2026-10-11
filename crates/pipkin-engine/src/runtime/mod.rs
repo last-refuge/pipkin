@@ -1,6 +1,7 @@
 //! The engine runtime: one tokio runtime, the store, the catalog/auth layer, per-session
 //! execution, and client connections.
 
+mod compaction;
 mod glue;
 mod import;
 pub mod models;
@@ -45,6 +46,7 @@ pub struct Shared {
     clients: Mutex<HashMap<u64, std::sync::mpsc::Sender<ServerFrame>>>,
     sessions: Mutex<HashMap<String, Arc<SessionRt>>>,
     handle: tokio::runtime::Handle,
+    me: std::sync::Weak<Shared>,
 }
 
 impl Shared {
@@ -101,12 +103,27 @@ impl Shared {
                 format!("Session {id} does not exist"),
             ));
         }
+        let weak = self.me.clone();
+        let session = id.to_owned();
         Ok(self
             .sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .entry(id.to_owned())
-            .or_insert_with(|| Arc::new(SessionRt::new(id)))
+            .or_insert_with(|| {
+                let questions = crate::extensions::questions::QuestionHost::new(Some(Arc::new(
+                    move |ui: UiView| {
+                        if let Some(shared) = weak.upgrade() {
+                            shared.publish(Event::Session {
+                                session: session.clone(),
+                                revision: 0,
+                                change: SessionChange::UiChanged { ui },
+                            });
+                        }
+                    },
+                )));
+                Arc::new(SessionRt::new(id, questions))
+            })
             .clone())
     }
 
@@ -126,17 +143,26 @@ impl Shared {
         sess: &SessionRt,
         row: &SessionRow,
         tools: &[ToolSpec],
-        _settings: &Settings,
+        settings: &Settings,
     ) -> String {
         let names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
-        let key = format!("{}\u{0}{}", row.cwd, names.join(","));
+        let key = format!(
+            "{}\u{0}{}\u{0}{}",
+            row.cwd,
+            names.join(","),
+            settings.skills.join(",")
+        );
         let mut cache = sess.prompt.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((k, p)) = cache.as_ref()
             && *k == key
         {
             return p.clone();
         }
-        let prompt = glue::system_prompt(&row.cwd, &names);
+        let (prompt, warnings) =
+            glue::system_prompt(&row.cwd, &self.config.config_dir, &names, &settings.skills);
+        for warning in warnings {
+            log::warn!("session {}: {warning}", row.id);
+        }
         *cache = Some((key, prompt.clone()));
         prompt
     }
@@ -190,7 +216,8 @@ impl EngineHandle {
             .build()
             .map_err(|e| format!("cannot start the engine runtime: {e}"))?;
         let auth = Arc::new(Auth::new(&config));
-        let shared = Arc::new(Shared {
+        let shared = Arc::new_cyclic(|me| Shared {
+            me: me.clone(),
             generations: Arc::new(Semaphore::new(config.max_active_generations.max(1))),
             processes: Arc::new(Semaphore::new(config.max_tool_processes.max(1))),
             config,
@@ -294,8 +321,37 @@ impl EngineHandle {
         }
     }
 
-    /// Orderly stop. Runs in flight stay unsettled in the store and resume on the next start.
+    /// Orderly stop: extensions are deactivated (their processes ended) and questions
+    /// cancelled; runs in flight stay unsettled in the store and resume on the next start.
     pub fn shutdown(&self, timeout: Duration) {
+        let sessions: Vec<Arc<SessionRt>> = self
+            .shared
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .cloned()
+            .collect();
+        if let Some(rt) = self
+            .runtime
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            let grace = timeout.min(Duration::from_secs(2));
+            let done = rt.spawn(async move {
+                for sess in sessions {
+                    sess.questions.dispose();
+                    if let Some(runner) = sess.extensions.lock().await.take() {
+                        runner.shutdown(grace).await;
+                    }
+                }
+            });
+            let deadline = std::time::Instant::now() + grace + Duration::from_millis(500);
+            while !done.is_finished() && std::time::Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
         if let Some(rt) = self
             .runtime
             .lock()
@@ -311,6 +367,16 @@ impl Drop for EngineHandle {
     fn drop(&mut self) {
         self.shutdown(Duration::from_secs(5));
     }
+}
+
+/// `dispatch` behind a concrete boxed type, so in-engine callers (extensions) can call back
+/// into it without a recursive future type.
+fn dispatch_boxed(
+    shared: Arc<Shared>,
+    client: u64,
+    call: Call,
+) -> crate::provider::BoxFuture<'static, Result<Reply, ProtoError>> {
+    Box::pin(async move { dispatch(&shared, client, call).await })
 }
 
 fn not_found(what: &str) -> ProtoError {
@@ -356,6 +422,7 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
         }
         Call::OpenSession { session, window } => {
             shared.recover_session(&session)?;
+            shared.ensure_extensions(&session).await;
             Ok(Reply::Snapshot(Box::new(shared.snapshot(
                 &session,
                 window.unwrap_or(limits::DEFAULT_WINDOW_ENTRIES),
@@ -426,12 +493,22 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
             .map_err(|e| ProtoError::new(ErrorCode::Internal, e.to_string()))?;
             Ok(Reply::Ok)
         }
-        Call::Compact { session, .. } => {
-            shared.session(&session)?;
-            Err(ProtoError::new(
-                ErrorCode::Unsupported,
-                "Manual compaction is not available in this build yet.",
-            ))
+        Call::Compact {
+            session,
+            instructions,
+        } => {
+            let sess = shared.session(&session)?;
+            let cancel = tokio_util::sync::CancellationToken::new();
+            match shared
+                .compact(&sess, None, instructions.as_deref(), &cancel)
+                .await
+            {
+                Ok(compaction::Compacted::Done(_)) => Ok(Reply::Ok),
+                Ok(compaction::Compacted::Nothing(why)) => {
+                    Err(ProtoError::new(ErrorCode::Invalid, why))
+                }
+                Err(e) => Err(ProtoError::new(ErrorCode::Internal, e)),
+            }
         }
         Call::ToolOutput { session, call_id } => {
             shared.session(&session)?;
@@ -440,15 +517,30 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
                 None => Err(not_found("That tool output")),
             }
         }
-        Call::AnswerQuestion { session, .. } | Call::CancelQuestion { session, .. } => {
-            shared.session(&session)?;
-            Err(ProtoError::new(
-                ErrorCode::NotFound,
-                "That question is no longer open.",
-            ))
+        Call::AnswerQuestion {
+            session,
+            question,
+            answer,
+        } => {
+            let sess = shared.session(&session)?;
+            sess.questions
+                .respond(&question, answer)
+                .map_err(|reason| ProtoError::new(ErrorCode::Invalid, reason))?;
+            Ok(Reply::Ok)
+        }
+        Call::CancelQuestion { session, question } => {
+            let sess = shared.session(&session)?;
+            if sess.questions.cancel(&question) {
+                Ok(Reply::Ok)
+            } else {
+                Err(ProtoError::new(
+                    ErrorCode::NotFound,
+                    "That question is no longer open.",
+                ))
+            }
         }
         Call::DismissNotices { session } => {
-            shared.session(&session)?;
+            shared.session(&session)?.questions.dismiss_notices();
             Ok(Reply::Ok)
         }
         Call::Subagents { session } => Ok(Reply::Subagents(shared.subagents_view(&session)?)),
@@ -649,6 +741,64 @@ impl Shared {
             model,
             Some(parsed.as_str()),
         )))
+    }
+}
+
+impl Shared {
+    /// Start the configured extensions for a root session, once per engine process.
+    async fn ensure_extensions(self: &Arc<Self>, session: &str) {
+        if self.config.extensions.is_empty() {
+            return;
+        }
+        let Ok(sess) = self.session(session) else {
+            return;
+        };
+        if !matches!(self.store.session(session), Ok(Some(row)) if row.parent.is_none()) {
+            return;
+        }
+        let mut slot = sess.extensions.lock().await;
+        if slot.is_some() {
+            return;
+        }
+        let weak = self.me.clone();
+        let dispatch: crate::extensions::Dispatch = Arc::new(move |call: Call| {
+            let weak = weak.clone();
+            match weak.upgrade() {
+                // Client 0: extensions act inside the engine, not as a connection.
+                Some(shared) => dispatch_boxed(shared, 0, call),
+                None => Box::pin(async {
+                    Err(ProtoError::new(
+                        ErrorCode::ShuttingDown,
+                        "the engine is stopping",
+                    ))
+                }),
+            }
+        });
+        let host = Arc::new(crate::extensions::CallHost::new(
+            session.to_owned(),
+            sess.questions.clone(),
+            dispatch,
+        ));
+        let mut runner = crate::extensions::ExtensionRunner::new(host);
+        for spec in &self.config.extensions {
+            let extension: Arc<dyn crate::extensions::Extension> = match spec {
+                crate::config::ExtensionSpec::Builtin(name) if name == "questions" => {
+                    Arc::new(crate::extensions::examples::QuestionsExample)
+                }
+                crate::config::ExtensionSpec::Builtin(_) => {
+                    Arc::new(crate::extensions::examples::GreetingExample::new())
+                }
+                crate::config::ExtensionSpec::Process { id, argv } => {
+                    Arc::new(crate::extensions::process::ProcessExtension::new(
+                        crate::extensions::process::ProcessConfig::new(id.clone(), argv.clone()),
+                    ))
+                }
+            };
+            if let Err(e) = runner.start(extension) {
+                log::warn!("session {session}: {e}");
+            }
+        }
+        *slot = Some(runner);
     }
 }
 

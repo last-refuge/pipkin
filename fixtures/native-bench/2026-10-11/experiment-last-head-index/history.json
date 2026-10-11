@@ -1,0 +1,190 @@
+{
+  "test": "history",
+  "engine": "/home/jason/coding/pipkin/.claude/worktrees/agent-a9e58b76fa110eb89/target/release/pipkin-engine",
+  "profile": "release",
+  "scratch": "/home/jason/coding/pipkin/.claude/worktrees/agent-a9e58b76fa110eb89/target/tmp",
+  "loadavgStart": "2.69 8.06 10.89 2/2891 591463",
+  "unixTime": 1791753908,
+  "method": "entries inserted with pipkin_engine::store::Store (append_entry in one transaction), store closed, then the worker binary opened over that data dir; window = DEFAULT_WINDOW_ENTRIES (200)",
+  "rows": [
+    {
+      "entries": 1000,
+      "buildSecs": 0.027,
+      "dbBytes": 782336,
+      "walBytes": 0,
+      "openSessionFirstMs": 1.118,
+      "openSessionFirstReplyBytes": 89801,
+      "openSessionWarmMs": {
+        "n": 20,
+        "p50": 0.712,
+        "p95": 0.797,
+        "min": 0.645,
+        "max": 0.836,
+        "mean": 0.715
+      },
+      "openSessionReplyBytes": 89802,
+      "historyPage50Ms": {
+        "n": 20,
+        "p50": 0.199,
+        "p95": 0.253,
+        "min": 0.163,
+        "max": 0.264,
+        "mean": 0.203
+      },
+      "historyPage50MaxReplyBytes": 22391,
+      "historyPage200Ms": {
+        "n": 20,
+        "p50": 0.646,
+        "p95": 0.714,
+        "min": 0.156,
+        "max": 0.777,
+        "mean": 0.614
+      },
+      "historyPage200MaxReplyBytes": 89291,
+      "fullWalk500": {
+        "pages": 2,
+        "totalMs": 4.985,
+        "perPageMs": {
+          "n": 2,
+          "p50": 1.649,
+          "p95": 3.281,
+          "min": 1.649,
+          "max": 3.281,
+          "mean": 2.465
+        }
+      },
+      "engineAfter": {
+        "rssKiB": 25996,
+        "hwmKiB": 25996,
+        "rssAnonKiB": 14084,
+        "rssFileKiB": 11912,
+        "pssKiB": 23378,
+        "pssAnonKiB": 14084,
+        "threads": 6,
+        "fds": 13,
+        "children": 0,
+        "cpuSecs": 0.04
+      }
+    },
+    {
+      "entries": 10000,
+      "buildSecs": 0.128,
+      "dbBytes": 6410240,
+      "walBytes": 0,
+      "openSessionFirstMs": 1.245,
+      "openSessionFirstReplyBytes": 90502,
+      "openSessionWarmMs": {
+        "n": 20,
+        "p50": 0.825,
+        "p95": 2.252,
+        "min": 0.701,
+        "max": 2.401,
+        "mean": 1.057
+      },
+      "openSessionReplyBytes": 90503,
+      "historyPage50Ms": {
+        "n": 20,
+        "p50": 0.346,
+        "p95": 0.585,
+        "min": 0.253,
+        "max": 0.672,
+        "mean": 0.403
+      },
+      "historyPage50MaxReplyBytes": 22566,
+      "historyPage200Ms": {
+        "n": 20,
+        "p50": 1.0,
+        "p95": 1.071,
+        "min": 0.935,
+        "max": 1.089,
+        "mean": 1.012
+      },
+      "historyPage200MaxReplyBytes": 89991,
+      "fullWalk500": {
+        "pages": 20,
+        "totalMs": 78.219,
+        "perPageMs": {
+          "n": 20,
+          "p50": 3.542,
+          "p95": 5.52,
+          "min": 2.396,
+          "max": 5.646,
+          "mean": 3.872
+        }
+      },
+      "engineAfter": {
+        "rssKiB": 27020,
+        "hwmKiB": 27020,
+        "rssAnonKiB": 15564,
+        "rssFileKiB": 11456,
+        "pssKiB": 24409,
+        "pssAnonKiB": 15564,
+        "threads": 6,
+        "fds": 13,
+        "children": 0,
+        "cpuSecs": 0.1
+      }
+    },
+    {
+      "entries": 100000,
+      "buildSecs": 1.02,
+      "dbBytes": 63557632,
+      "walBytes": 0,
+      "openSessionFirstMs": 1.195,
+      "openSessionFirstReplyBytes": 91203,
+      "openSessionWarmMs": {
+        "n": 20,
+        "p50": 0.661,
+        "p95": 0.822,
+        "min": 0.633,
+        "max": 0.845,
+        "mean": 0.712
+      },
+      "openSessionReplyBytes": 91204,
+      "historyPage50Ms": {
+        "n": 20,
+        "p50": 0.274,
+        "p95": 0.316,
+        "min": 0.215,
+        "max": 0.317,
+        "mean": 0.274
+      },
+      "historyPage50MaxReplyBytes": 22741,
+      "historyPage200Ms": {
+        "n": 20,
+        "p50": 0.884,
+        "p95": 1.025,
+        "min": 0.76,
+        "max": 1.053,
+        "mean": 0.889
+      },
+      "historyPage200MaxReplyBytes": 90691,
+      "fullWalk500": {
+        "pages": 200,
+        "totalMs": 636.992,
+        "perPageMs": {
+          "n": 200,
+          "p50": 3.201,
+          "p95": 3.427,
+          "min": 1.881,
+          "max": 3.646,
+          "mean": 3.138
+        }
+      },
+      "engineAfter": {
+        "rssKiB": 26912,
+        "hwmKiB": 26912,
+        "rssAnonKiB": 15592,
+        "rssFileKiB": 11320,
+        "pssKiB": 24309,
+        "pssAnonKiB": 15592,
+        "threads": 6,
+        "fds": 13,
+        "children": 0,
+        "cpuSecs": 0.38
+      }
+    }
+  ],
+  "loadavgEnd": "2.69 8.06 10.89 2/2891 591463",
+  "experiment": "NOT the committed engine: measured with a local, uncommitted one-character change to store/mod.rs Store::last_head (ORDER BY id DESC -> ORDER BY +id DESC) so SQLite uses entries_by_kind instead of scanning the session primary key; reverted after the run"
+}

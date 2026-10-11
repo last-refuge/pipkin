@@ -42,11 +42,20 @@ pub struct SessionRt {
     pub settled: broadcast::Sender<Settled>,
     /// The system prompt last sent, so it stays byte-stable between turns (prompt caching).
     pub prompt: Mutex<Option<(String, String)>>,
+    /// Questions, status lines and notices from this session's extensions (volatile).
+    pub questions: crate::extensions::questions::QuestionHost,
+    /// A background compaction is running.
+    pub compacting: std::sync::atomic::AtomicBool,
+    /// Session extensions, started when the session is first opened.
+    pub extensions: tokio::sync::Mutex<Option<crate::extensions::ExtensionRunner>>,
 }
 
 impl SessionRt {
-    pub fn new(id: &str) -> SessionRt {
+    pub fn new(id: &str, questions: crate::extensions::questions::QuestionHost) -> SessionRt {
         SessionRt {
+            questions,
+            extensions: tokio::sync::Mutex::new(None),
+            compacting: std::sync::atomic::AtomicBool::new(false),
             id: id.to_owned(),
             lock: tokio::sync::Mutex::new(()),
             active: Mutex::new(None),

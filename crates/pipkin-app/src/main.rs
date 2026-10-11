@@ -20,9 +20,7 @@ fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     if let Some(worker) = adapters::native::supervisor::worker_args(&raw) {
         match worker {
-            Ok((data_dir, config_dir)) => std::process::exit(
-                adapters::native::supervisor::run_worker(data_dir, config_dir),
-            ),
+            Ok(args) => std::process::exit(adapters::native::supervisor::run_worker(args)),
             Err(message) => {
                 eprintln!("pipkin: {message}");
                 std::process::exit(2);

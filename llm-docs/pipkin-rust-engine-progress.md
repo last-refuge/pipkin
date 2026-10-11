@@ -183,3 +183,29 @@ redacted summaries). Keep private account/session material out of committed evid
 At the end of the main implementation, create
 `llm-docs/pipkin-rust-engine-claude-subscription-handoff.md` (plan §13 "Opus to Codex handoff
 package") and link it here. TODO: not created yet.
+
+## Interim status — session cut off by usage limit (2026-10-11)
+
+Branch `native-engine` (not pushed). Integrated and committed: protocol, store, runtime
+(admission, run loop, Stop retirement, queue, crash recovery, fail-closed storage, subagents,
+compaction manual/threshold/overflow, questions + native/process extensions, real system
+prompt), all 10 wire adapters incl. ChatGPT subscription (`openai-codex-responses`),
+credentials/OAuth (non-reserved flows), tools, context, importer (all 8 reference fixtures
+import with equivalent context), desktop NativeBackend (`--engine native`,
+`--engine-host`, `--engine-extension`), reference fixtures + baseline, parity ledger, ADRs.
+Last full workspace run before the final runtime wiring: all green except 3 test-expectation
+issues, since fixed; engine runtime tests 19/19 (x3); desktop native e2e 17/17 (x5);
+restart e2e flake diagnosed (harness race) and fixed (10/10). A final full
+`cargo test --workspace && cargo clippy --workspace --all-targets && cargo fmt --all --check`
+after the last commit has NOT been run — run it first.
+
+Wave-2 workers still running/unmerged in their worktrees (`.claude/worktrees/agent-*`,
+branches `worktree-agent-*`): performance measurement (RE-22), no-Node packaging (RE-23),
+import end-to-end wiring (protocol v2 Import* calls + desktop commands), paged subagent
+inspection, provider-helper consolidation. Merge each, resolve conflicts, rerun the checks.
+
+Not done: section 13 handoff file `llm-docs/pipkin-rust-engine-claude-subscription-handoff.md`;
+parity-ledger status refresh; Codex websocket session cleanup wiring; guarded native GUI
+walkthrough; diagnostics-correlation advantage. Claude subscription: reserved for Codex — not
+implemented or qualified (adapter refuses OAuth credentials for `anthropic`; auth reports it
+unavailable; onboarding shows it disabled).
