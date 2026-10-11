@@ -74,7 +74,7 @@ platform gate has closed it.
 | RE-16 | Native extension compatibility implementation | Opus | implemented-but-unverified (native) / blocked (TS facets) | `01e0511`, `e4fe919`; `--engine-extension`; TypeScript facet packages stay `BL / LB` (ADR 0006) |
 | RE-17 | Multi-session engine, history and child presentation | Opus | implemented-but-unverified | `7ba1340` paged subagent inspection (`core-sub::`, `ui-sub::`, `nt::child_history_pages_by_cursor_and_the_selected_child_refreshes_live`); history paging flat after fixes (perf-ev) |
 | RE-18 | Compaction, questions and remaining audited services | Opus | implemented-but-unverified | `rt::manual_and_overflow_compaction_summarize_older_context`, `rt::extension_questions_are_published_answered_and_validated`; background/threshold runtime paths untested; `waitForPrompt`, `RemoveSession` absent (PA) |
-| RE-19 | Production importer and atomic backend ownership | Opus | implemented-but-unverified | `8290556`, `21ff99a` (protocol v2 `Import*`, desktop palette flow); ownership is copy-per-engine-namespace, not the plan's atomic transfer (D-11) |
+| RE-19 | Production importer and atomic backend ownership | Opus | implemented-but-unverified | `8290556`, `21ff99a` (protocol v2 `Import*`, desktop palette flow); desktop ownership record written in the import's copy transaction; Pi mode read-only for owned conversations (core + Pi adapter boundary), explicit release from the palette (D-11, IMP-OWNERSHIP) |
 | RE-20 | Desktop integration including goals, offline state and Changes | Opus | implemented-but-unverified | `6b7980f`; `ne2e::`, `nmap::`; walkthrough observed onboarding, first conversation, Changes, SIGKILL recovery |
 | RE-21 | Full parity and fault qualification | Opus (+ Codex for reserved rows) | planned | Ledger refreshed; no backend-parameterized differential harness; fault matrix incomplete (disk full, tool-intent crash) |
 | RE-22 | Integration advantages and performance | Opus | in progress | `c539808`, `ae95240`; `performance.md`: most §7 targets met; missed: 1500-prompt RSS stability; diagnostics-correlation advantage not done |
@@ -179,13 +179,12 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
    workflow harness compares native runs with reference traces (RE-21).
 5. **Owner decisions** D-01..D-11 (ledger §21). Several are implemented one way and need
    sign-off: D-01 docs section omitted, D-04 global default model written, D-07 all OAuth logins
-   offered, D-10 spill file kept, D-11 copy-not-move import ownership.
+   offered, D-10 spill file kept, D-11 copy plus desktop ownership record (Pi read-only until released).
 
 ## 8. Safe next batch
 
 1. Record the final `4fc4060` workspace check in "Handoff verification" (lead).
-2. Close the highest-severity non-reserved gaps from the ledger: per-conversation backend
-   ownership after import (IMP-OWNERSHIP, D-11); durable outbox with acknowledged cursors
+2. Close the highest-severity non-reserved gaps from the ledger: durable outbox with acknowledged cursors
    (XPORT-OUTBOX); single-session RSS growth over long sessions (E2E-37); disk-full and
    tool-intent crash injection (DUR-DISKFULL, TOOL-INTERRUPT); proxy handling that honours the
    engine environment and `httpProxy` (ADP-PROXY, SET-HTTPPROXY); Codex WebSocket close at

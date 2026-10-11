@@ -15,7 +15,7 @@ use pipkin_ui::{DemoControls, Model};
 use crate::adapters::native::supervisor::{HostKind, HostSpec, WorkerSpec};
 use crate::adapters::native::{ImportResult, NativeBackend, NativeConfig};
 use crate::adapters::pi::engine::EngineConfig;
-use crate::adapters::pi::{PiBackend, PiConfig};
+use crate::adapters::pi::{OwnershipCheck, PiBackend, PiConfig};
 use crate::adapters::script;
 use crate::adapters::{DemoBackend, DemoOptions};
 use crate::launch::{self, LaunchConfig};
@@ -325,36 +325,85 @@ fn pi_namespace(options: &Options) -> String {
 }
 
 /// After an import into the built-in engine: copy (never move) the desktop data of the imported
-/// conversations from the Pi namespace, then read the stored state back so the newly imported
-/// ones can be restored ([`Restore::add_imported`]) as their conversations appear.
-/// Conversations imported earlier are copied too (nothing the target already has is replaced),
-/// but are not restored over what is shown. Blocking: run it off the foreground.
+/// conversations from the Pi namespace and, in the same transaction, record that the built-in
+/// engine now owns the ones the engine reported imported now (`imported`; never blocked or
+/// locked sessions, which are in neither list). Then read the stored state back so the newly
+/// imported ones can be restored ([`Restore::add_imported`]) as their conversations appear.
+/// Conversations imported earlier (`existing`) are copied too (nothing the target already has
+/// is replaced) but are not restored over what is shown, and their ownership is not recorded
+/// again: one released back to Pi stays released. Blocking: run it off the foreground.
 pub(crate) fn copy_imported(
     storage: &Storage,
     pi_namespace: &str,
     imported: &[ConversationId],
     existing: &[ConversationId],
+    imported_at: i64,
 ) -> Result<(CopyReport, Loaded), String> {
-    let all: Vec<ConversationId> = imported.iter().chain(existing).copied().collect();
-    let report = if all.is_empty() {
+    let report = if imported.is_empty() && existing.is_empty() {
         CopyReport::default()
     } else {
-        storage.copy_conversations_from(pi_namespace, &all)?
+        storage.import_conversations_from(pi_namespace, imported, existing, imported_at)?
     };
     Ok((report, storage.load_all()?))
 }
 
-/// The notice after an import: the engine's account plus what came along from the desktop.
-fn import_notice(message: String, copied: Result<CopyReport, String>) -> String {
+/// The notice after an import: the engine's account plus what came along from the desktop and
+/// what that means for Pi.
+fn import_notice(message: String, imported: usize, copied: Result<CopyReport, String>) -> String {
     match copied {
-        Ok(r) if r.drafts + r.journal + r.caches + r.goals > 0 => {
-            format!("{message}\nDrafts, prompt history and saved copies came along from Pi.")
+        Ok(r) => {
+            let mut notice = message;
+            if r.drafts + r.journal + r.caches + r.goals > 0 {
+                notice.push_str("\nDrafts, prompt history and saved copies came along from Pi.");
+            }
+            if imported > 0 {
+                notice.push_str(
+                    "\nThe imported conversations now continue in the built-in engine; with \
+                     --engine pi they are read-only (the history as of the import).",
+                );
+            }
+            notice
         }
-        Ok(_) => message,
+        Err(e) => format!(
+            "{message}\nTheir drafts and saved copies could not be brought over, and they were \
+             not marked as owned by the built-in engine: {e}"
+        ),
+    }
+}
+
+/// Pi mode: the conversations the built-in engine owns, for the core's guard. A record that
+/// cannot be read is said, not ignored.
+pub(crate) fn restore_ownership(storage: &Storage, state: &mut AppState) {
+    match storage.native_owned() {
+        Ok(rows) => {
+            for row in rows {
+                state.restore_owner(
+                    row.conversation,
+                    ConversationOwner::NativeEngine {
+                        imported_at: row.imported_at,
+                    },
+                );
+            }
+        }
         Err(e) => {
-            format!("{message}\nTheir drafts and saved copies could not be brought over: {e}")
+            log::error!("cannot read which conversations the built-in engine owns: {e}");
+            state.set_storage_issue(format!(
+                "Pipkin could not read which conversations now continue in the built-in engine \
+                 ({e}). Sending is checked again before anything goes to Pi."
+            ));
         }
     }
+}
+
+/// The Pi adapter's boundary check: the desktop's ownership record, read at the moment a change
+/// would be sent (fail closed).
+pub(crate) fn ownership_check(storage: &Arc<Storage>) -> OwnershipCheck {
+    let storage = storage.clone();
+    OwnershipCheck(Arc::new(move |conversation| {
+        storage
+            .native_owner(conversation)
+            .map(|owner| owner.is_some())
+    }))
 }
 
 /// The engine directory to launch and own: `--pi-repo`, else, when no running server was named
@@ -784,6 +833,8 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                     config
                 }
             };
+            let mut config = config;
+            config.owned_elsewhere = Some(ownership_check(&storage));
             Arc::new(PiBackend::new(event_tx, config))
         }
     };
@@ -801,6 +852,11 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
     state.mode = options.mode;
     if let Some(issue) = storage_issue {
         state.set_storage_issue(issue);
+    }
+    // With Pi as the engine, conversations imported into the built-in engine are read-only.
+    // The built-in engine writes them, so it ignores the record.
+    if options.mode == Mode::Real && options.engine == EngineKind::Pi {
+        restore_ownership(&storage, &mut state);
     }
     state.set_now(now);
     state.set_request_prefix(request_prefix(now));
@@ -944,6 +1000,21 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                     storage.journal_state(request, state)
                 }
                 Effect::SaveCache { conversation } => cache_saver.request(conversation, cx),
+                Effect::ReleaseOwnership { conversation } => {
+                    let storage = storage.clone();
+                    cx.spawn(async move |this, cx| {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async move { storage.release_ownership(conversation) })
+                            .await
+                            .map(|_| ());
+                        this.update(cx, |m, cx| {
+                            m.mutate(|s| s.ownership_released(conversation, result), cx)
+                        })
+                        .ok();
+                    })
+                    .detach();
+                }
                 Effect::LoadCache { conversation } => {
                     let storage = storage.clone();
                     cx.spawn(async move |this, cx| {
@@ -1232,7 +1303,13 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                             let imported = imported.clone();
                             cx.background_executor()
                                 .spawn(async move {
-                                    copy_imported(&storage, &pi_namespace, &imported, &existing)
+                                    copy_imported(
+                                        &storage,
+                                        &pi_namespace,
+                                        &imported,
+                                        &existing,
+                                        unix_secs(),
+                                    )
                                 })
                                 .await
                         };
@@ -1241,7 +1318,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                                 restore.borrow_mut().add_imported(loaded, &imported);
                                 report
                             });
-                            let notice = import_notice(message, copied);
+                            let notice = import_notice(message, imported.len(), copied);
                             m.mutate(
                                 |state| {
                                     let mut out = restore.borrow_mut().apply(state);

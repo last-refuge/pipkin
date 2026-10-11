@@ -77,7 +77,8 @@ impl Harness {
                 | Effect::CopyText(_)
                 | Effect::SaveText { .. }
                 | Effect::Launch(_)
-                | Effect::Import(_) => {}
+                | Effect::Import(_)
+                | Effect::ReleaseOwnership { .. } => {}
             }
         }
     }

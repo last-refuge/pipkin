@@ -113,6 +113,14 @@ pub enum Command {
     ConfirmImport,
     /// Drop the current offer without importing anything.
     CancelImport,
+
+    /// Offer to hand the open conversation, which the built-in engine owns, back to Pi (asks
+    /// for confirmation first).
+    ReleaseToPi,
+    /// Release the conversation the offer named. Explicit user action only.
+    ConfirmRelease,
+    /// Keep the conversation with the built-in engine.
+    CancelRelease,
 }
 
 /// What the application can do right now. UI controls and the command palette share this.
@@ -511,6 +519,11 @@ pub enum Effect {
     /// One step of an explicit Pi import. The controller answers with
     /// `AppState::import_discovered` or `AppState::import_finished`.
     Import(crate::import::ImportStep),
+    /// Remove the desktop's record that the built-in engine owns `conversation`. Neither
+    /// engine's data is touched. Answered with `AppState::ownership_released`.
+    ReleaseOwnership {
+        conversation: ConversationId,
+    },
 }
 
 /// Lifecycle of a journaled request after its intent is recorded.

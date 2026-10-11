@@ -48,11 +48,34 @@ Importing from Pi is explicit, from the command palette, and only in native mode
   credential store without overwriting anything already set up there. Anthropic subscription (OAuth) sign-ins stay
   in the Pi profile, unimported, for a later integration.
 
-Rollback and ownership: an import never changes the Pi source. The Pi sessions, settings and credentials keep
-working with `--engine pi` (the default) exactly as before. History written in an imported conversation after the
-import exists only in the native engine; it is not written back to Pi. To roll back, run with `--engine pi`; to
-discard the native copies, remove `<data dir>/engine/` (and `~/.config/pipkin/engine/` for its settings and
-credentials) after making sure nothing there is needed.
+Ownership: a conversation is written by exactly one engine. When an import finishes, Pipkin records in its own
+database (`pipkin.sqlite3`, table `conversation_owners`; never in the Pi profile or the engine's data) that the
+built-in engine now owns each conversation it imported, in the same transaction as the desktop-data copy. Sessions
+that were reported but not imported (in use by a running Pi, or not representable) are not recorded and stay Pi's.
+Conversations imported in an earlier run are not recorded again.
+
+- With `--engine native`, imported conversations are written normally.
+- With `--engine pi`, a conversation the built-in engine owns stays readable (its history, search, the saved
+  copy), but it is read-only: the composer is locked and shows "This conversation now continues in the built-in
+  engine (Pipkin --engine native). It is read-only here; the copy shown is the history as of the import." Sending,
+  steering, queueing a follow-up, retrying, goal turns, changing the model, thinking level or subagent setting,
+  answering an extension's question and withdrawing queued input are all refused before anything is sent. The Pi
+  adapter checks the same record again before it sends anything (an import made by another window is seen too); a
+  refused prompt is a definite rejection, never an unknown outcome. Stopping a run already in flight stays possible.
+
+Release: in Pi mode, the palette offers **Release this conversation back to Pi…** for an owned conversation. It
+asks first, saying that anything written in the built-in engine after the import is not in the Pi copy. Only
+**Confirm: release this conversation back to Pi** releases it, and releasing deletes only Pipkin's ownership record:
+neither engine's data is changed, and nothing moves back automatically. The built-in engine keeps its copy, so
+continuing in both afterwards makes the two differ.
+
+Rollback: an import never changes the Pi source. The Pi sessions, settings and credentials keep working with
+`--engine pi` (the default) as before, except that the imported conversations are read-only there until released.
+History written in an imported conversation after the import exists only in the native engine; it is not written
+back to Pi. To roll back, run with `--engine pi` (and release any conversation you want Pi to continue); to discard
+the native copies, remove `<data dir>/engine/` (and `~/.config/pipkin/engine/` for its settings and credentials)
+after making sure nothing there is needed. Removing the engine directory does not remove the ownership records:
+release those conversations from the palette as well.
 
 ## Quitting and interrupted work
 

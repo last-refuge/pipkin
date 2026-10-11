@@ -402,10 +402,16 @@ impl Workspace {
             e.set_prompt_history_enabled(history_enabled);
             e.set_prompt_history_browsing(history_browsing);
         });
-        let locked = matches!(
-            run,
-            Some(RunState::Submitting { .. } | RunState::OutcomeUnknown { .. }) | None
-        );
+        // A conversation another engine owns is read here, not written: no draft to type.
+        let owned = self
+            .state(cx)
+            .current()
+            .is_some_and(|c| self.state(cx).owned_elsewhere(c.id));
+        let locked = owned
+            || matches!(
+                run,
+                Some(RunState::Submitting { .. } | RunState::OutcomeUnknown { .. }) | None
+            );
         self.composer.update(cx, |e, cx| e.set_disabled(locked, cx));
         window.set_window_title(&match title {
             Some(t) => format!("{t} — Pipkin"),
