@@ -382,9 +382,11 @@ impl Emitter {
         if let Some(id) = self.response_id {
             self.extra.insert("responseId".into(), Value::String(id));
         }
-        // Drop empty text blocks a stream opened but never filled.
-        self.content
-            .retain(|b| !matches!(b, Block::Text { text, .. } if text.is_empty()));
+        // Drop empty text blocks a stream opened but never filled (an empty block that carries
+        // provider metadata, such as a Gemini thought signature, is kept for replay).
+        self.content.retain(
+            |b| !matches!(b, Block::Text { text, extra } if text.is_empty() && extra.is_empty()),
+        );
         Message::Assistant {
             content: self.content,
             api: req.model.api.clone(),
