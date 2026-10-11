@@ -97,7 +97,10 @@ mod tests {
         let mut r = &buf[..];
         assert_eq!(read::<ClientFrame>(&mut r).unwrap(), frame);
         assert_eq!(read::<ClientFrame>(&mut r).unwrap(), frame);
-        assert!(matches!(read::<ClientFrame>(&mut r), Err(FrameError::Closed)));
+        assert!(matches!(
+            read::<ClientFrame>(&mut r),
+            Err(FrameError::Closed)
+        ));
     }
 
     #[test]

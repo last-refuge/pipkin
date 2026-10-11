@@ -157,7 +157,11 @@ pub trait Tool: Send + Sync {
     fn prepare_arguments(&self, args: Value) -> Value {
         args
     }
-    fn execute<'a>(&'a self, args: Value, ctx: &'a ToolCtx) -> BoxFuture<'a, Result<ToolOutput, ToolError>>;
+    fn execute<'a>(
+        &'a self,
+        args: Value,
+        ctx: &'a ToolCtx,
+    ) -> BoxFuture<'a, Result<ToolOutput, ToolError>>;
 }
 
 /// The built-in coding tools in reference order (`read`, `write`, `edit`, `bash`).

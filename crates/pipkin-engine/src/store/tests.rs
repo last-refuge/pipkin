@@ -73,15 +73,36 @@ fn queue_entries_are_ordered_withdrawable_and_bounded() {
     session(&s, "s");
     for i in 0..3 {
         s.tx(|tx| {
-            Store::admit(tx, "s", &format!("q{i}"), InputMode::FollowUp, "t", &[], None, i)
+            Store::admit(
+                tx,
+                "s",
+                &format!("q{i}"),
+                InputMode::FollowUp,
+                "t",
+                &[],
+                None,
+                i,
+            )
         })
         .unwrap();
     }
     let q = s.queue("s").unwrap();
-    assert_eq!(q.iter().map(|r| r.queue_entry.unwrap()).collect::<Vec<_>>(), [1, 2, 3]);
-    assert_eq!(s.cancel_queued("s", 2).unwrap().0, CancelQueuedOutcome::Cancelled);
-    assert_eq!(s.cancel_queued("s", 2).unwrap().0, CancelQueuedOutcome::NotFound);
-    assert_eq!(s.cancel_queued("s", 9).unwrap().0, CancelQueuedOutcome::NotFound);
+    assert_eq!(
+        q.iter().map(|r| r.queue_entry.unwrap()).collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    assert_eq!(
+        s.cancel_queued("s", 2).unwrap().0,
+        CancelQueuedOutcome::Cancelled
+    );
+    assert_eq!(
+        s.cancel_queued("s", 2).unwrap().0,
+        CancelQueuedOutcome::NotFound
+    );
+    assert_eq!(
+        s.cancel_queued("s", 9).unwrap().0,
+        CancelQueuedOutcome::NotFound
+    );
     s.tx(|tx| {
         let run = Store::start_run(tx, "s", None, 1)?;
         Store::consume_queued(tx, "s", &["q0".into()], run)
@@ -93,7 +114,18 @@ fn queue_entries_are_ordered_withdrawable_and_bounded() {
     );
     for i in 0..MAX_QUEUE {
         let r = s
-            .tx(|tx| Store::admit(tx, "s", &format!("f{i}"), InputMode::Steer, "t", &[], None, 1))
+            .tx(|tx| {
+                Store::admit(
+                    tx,
+                    "s",
+                    &format!("f{i}"),
+                    InputMode::Steer,
+                    "t",
+                    &[],
+                    None,
+                    1,
+                )
+            })
             .unwrap();
         if i + 1 >= MAX_QUEUE {
             assert_eq!(r, Admission::Full, "at {i}");
@@ -130,17 +162,31 @@ fn streaming_chunks_are_appended_and_materialized_then_dropped_on_finalize() {
             "s",
             entry.id,
             &[
-                Delta::Thinking { block: 0, text: "hm".into() },
-                Delta::Text { block: 1, text: "hel".into() },
-                Delta::Text { block: 1, text: "lo".into() },
+                Delta::Thinking {
+                    block: 0,
+                    text: "hm".into(),
+                },
+                Delta::Text {
+                    block: 1,
+                    text: "hel".into(),
+                },
+                Delta::Text {
+                    block: 1,
+                    text: "lo".into(),
+                },
             ],
         )
     })
     .unwrap();
     let got = s.entry("s", entry.id).unwrap().unwrap();
-    let EntryKind::Message { message, .. } = &got.kind else { panic!() };
+    let EntryKind::Message { message, .. } = &got.kind else {
+        panic!()
+    };
     assert_eq!(message.text(), "hello");
-    assert!(s.context_entries("s").unwrap().is_empty(), "partial is not context");
+    assert!(
+        s.context_entries("s").unwrap().is_empty(),
+        "partial is not context"
+    );
     let mut done = got.clone();
     if let EntryKind::Message { partial, .. } = &mut done.kind {
         *partial = false;
@@ -158,7 +204,11 @@ fn context_starts_at_the_newest_head_marker_and_pages_reach_everything() {
     let s = store();
     session(&s, "s");
     let ids: Vec<u64> = (0..5)
-        .map(|i| s.tx(|tx| Store::append_entry(tx, "s", i, None, &user(&format!("u{i}")))).unwrap().id)
+        .map(|i| {
+            s.tx(|tx| Store::append_entry(tx, "s", i, None, &user(&format!("u{i}"))))
+                .unwrap()
+                .id
+        })
         .collect();
     s.tx(|tx| {
         Store::append_entry(
@@ -166,7 +216,11 @@ fn context_starts_at_the_newest_head_marker_and_pages_reach_everything() {
             "s",
             9,
             None,
-            &EntryKind::Compaction { summary: "sum".into(), first_kept: ids[3], tokens_before: 10 },
+            &EntryKind::Compaction {
+                summary: "sum".into(),
+                first_kept: ids[3],
+                tokens_before: 10,
+            },
         )
     })
     .unwrap();
@@ -179,8 +233,11 @@ fn context_starts_at_the_newest_head_marker_and_pages_reach_everything() {
     let (page, more) = s.page("s", Some(window[0].id), 2).unwrap();
     assert_eq!(page.iter().map(|e| e.id).collect::<Vec<_>>(), &ids[3..5]);
     assert!(more);
-    s.tx(|tx| Store::append_entry(tx, "s", 10, None, &EntryKind::Reset { handoff: None })).unwrap();
-    let after = s.tx(|tx| Store::append_entry(tx, "s", 11, None, &user("new"))).unwrap();
+    s.tx(|tx| Store::append_entry(tx, "s", 10, None, &EntryKind::Reset { handoff: None }))
+        .unwrap();
+    let after = s
+        .tx(|tx| Store::append_entry(tx, "s", 11, None, &user("new")))
+        .unwrap();
     let ctx = s.context_entries("s").unwrap();
     assert!(matches!(ctx[0].kind, EntryKind::Reset { .. }));
     assert_eq!(ctx[1].id, after.id);
@@ -225,21 +282,45 @@ fn tool_output_is_retained_with_honest_drop_counts() {
     let s = store();
     session(&s, "s");
     s.tx(|tx| {
-        Store::tool_intent(tx, "s", "c1", None, "bash", &json!({"command": "x"}), false, 1)?;
+        Store::tool_intent(
+            tx,
+            "s",
+            "c1",
+            None,
+            "bash",
+            &json!({"command": "x"}),
+            false,
+            1,
+        )?;
         Store::tool_result(tx, "s", "c1", ToolState::Done, 5, "out", 7, 2)
     })
     .unwrap();
     let out = s.tool_output("s", "c1").unwrap().unwrap();
-    assert_eq!((out.text.as_str(), out.retained_bytes, out.dropped_bytes), ("out", 3, 7));
-    assert_eq!(s.tool_call("s", "c1").unwrap().unwrap().state, ToolState::Done);
+    assert_eq!(
+        (out.text.as_str(), out.retained_bytes, out.dropped_bytes),
+        ("out", 3, 7)
+    );
+    assert_eq!(
+        s.tool_call("s", "c1").unwrap().unwrap().state,
+        ToolState::Done
+    );
 }
 
 #[test]
 fn a_child_task_is_created_once_per_parent_call_and_delivered_once() {
     let s = store();
     session(&s, "root");
-    s.create_session("child", "/tmp", None, &Origin::Native, None, None, Some(("root", "root")), 1)
-        .unwrap();
+    s.create_session(
+        "child",
+        "/tmp",
+        None,
+        &Origin::Native,
+        None,
+        None,
+        Some(("root", "root")),
+        1,
+    )
+    .unwrap();
     let (t, created) = s
         .tx(|tx| Store::create_task(tx, "root", "root", "call", "child", "do it", 1))
         .unwrap();
@@ -258,7 +339,12 @@ fn a_child_task_is_created_once_per_parent_call_and_delivered_once() {
 fn usage_accumulates_per_bucket() {
     let s = store();
     session(&s, "s");
-    let u = Usage { input: 1, output: 2, total_tokens: 3, ..Usage::default() };
+    let u = Usage {
+        input: 1,
+        output: 2,
+        total_tokens: 3,
+        ..Usage::default()
+    };
     s.tx(|tx| {
         Store::add_usage(tx, "s", "model", "p/m", &u)?;
         Store::add_usage(tx, "s", "model", "p/m", &u)?;
@@ -275,7 +361,10 @@ fn a_newer_schema_is_refused_untouched_and_the_lock_is_exclusive() {
     let dir = tempfile::tempdir().unwrap();
     {
         let s = Store::open(dir.path()).unwrap();
-        assert!(matches!(Store::open(dir.path()), Err(StoreError::Locked(_))));
+        assert!(matches!(
+            Store::open(dir.path()),
+            Err(StoreError::Locked(_))
+        ));
         s.integrity_check().unwrap();
     }
     let path = dir.path().join("engine.sqlite");
@@ -284,7 +373,10 @@ fn a_newer_schema_is_refused_untouched_and_the_lock_is_exclusive() {
         c.execute_batch("PRAGMA user_version = 99").unwrap();
     }
     let before = std::fs::read(&path).unwrap();
-    assert!(matches!(Store::open(dir.path()), Err(StoreError::NewerSchema(99))));
+    assert!(matches!(
+        Store::open(dir.path()),
+        Err(StoreError::NewerSchema(99))
+    ));
     assert_eq!(std::fs::read(&path).unwrap(), before);
 }
 
@@ -294,13 +386,16 @@ fn acknowledged_writes_survive_reopen() {
     {
         let s = Store::open(dir.path()).unwrap();
         session(&s, "s");
-        s.tx(|tx| Store::admit(tx, "s", "k", InputMode::Prompt, "x", &[], None, 1)).unwrap();
+        s.tx(|tx| Store::admit(tx, "s", "k", InputMode::Prompt, "x", &[], None, 1))
+            .unwrap();
     }
     let s = Store::open(dir.path()).unwrap();
     assert!(s.request("s", "k").unwrap().is_some());
     let backup = dir.path().join("copy.sqlite");
     s.backup_to(&backup).unwrap();
     let c = Connection::open(&backup).unwrap();
-    let n: i64 = c.query_row("SELECT COUNT(*) FROM requests", [], |r| r.get(0)).unwrap();
+    let n: i64 = c
+        .query_row("SELECT COUNT(*) FROM requests", [], |r| r.get(0))
+        .unwrap();
     assert_eq!(n, 1);
 }

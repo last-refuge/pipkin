@@ -34,10 +34,7 @@ impl SseDecoder {
     pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<SseEvent>, String> {
         self.buf.extend_from_slice(bytes);
         let mut out = Vec::new();
-        loop {
-            let Some(pos) = self.buf.iter().position(|b| *b == b'\n' || *b == b'\r') else {
-                break;
-            };
+        while let Some(pos) = self.buf.iter().position(|b| *b == b'\n' || *b == b'\r') {
             // A lone '\r' at the end may be followed by '\n' in the next read.
             if self.buf[pos] == b'\r' && pos + 1 == self.buf.len() {
                 break;
@@ -142,6 +139,9 @@ mod tests {
             out.extend(d.push(&[*b]).unwrap());
         }
         out.extend(d.finish());
-        assert_eq!(out.iter().map(|e| e.data.as_str()).collect::<Vec<_>>(), ["1", "2"]);
+        assert_eq!(
+            out.iter().map(|e| e.data.as_str()).collect::<Vec<_>>(),
+            ["1", "2"]
+        );
     }
 }

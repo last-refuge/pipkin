@@ -126,10 +126,19 @@ fn overflow() -> &'static [Regex] {
 fn non_overflow() -> &'static [Regex] {
     static R: OnceLock<Vec<Regex>> = OnceLock::new();
     R.get_or_init(|| {
-        [r"^(Throttling error|Service unavailable):", r"rate limit", r"too many requests"]
-            .iter()
-            .map(|p| RegexBuilder::new(p).case_insensitive(true).build().expect("static"))
-            .collect()
+        [
+            r"^(Throttling error|Service unavailable):",
+            r"rate limit",
+            r"too many requests",
+        ]
+        .iter()
+        .map(|p| {
+            RegexBuilder::new(p)
+                .case_insensitive(true)
+                .build()
+                .expect("static")
+        })
+        .collect()
     })
 }
 
@@ -188,7 +197,9 @@ pub fn is_context_overflow(message: &Message, context_window: u64) -> bool {
 
 /// Delay before whole-turn retry `attempt` (1-based): `base * 2^(attempt-1)`, capped.
 pub fn retry_delay_ms(attempt: u32, base_ms: u64, cap_ms: u64) -> u64 {
-    let factor = 1u64.checked_shl(attempt.saturating_sub(1)).unwrap_or(u64::MAX);
+    let factor = 1u64
+        .checked_shl(attempt.saturating_sub(1))
+        .unwrap_or(u64::MAX);
     base_ms.saturating_mul(factor).min(cap_ms)
 }
 
@@ -214,11 +225,19 @@ mod tests {
     #[test]
     fn classification_matches_the_reference_patterns() {
         assert!(is_retryable(&err("529 overloaded_error")));
-        assert!(is_retryable(&err("Anthropic stream ended before message_stop")));
+        assert!(is_retryable(&err(
+            "Anthropic stream ended before message_stop"
+        )));
         assert!(!is_retryable(&err("429: insufficient_quota")));
         assert!(!is_retryable(&err("401: invalid api key")));
-        assert!(is_context_overflow(&err("prompt is too long: 1 tokens > 0 maximum"), 0));
-        assert!(!is_context_overflow(&err("ThrottlingException: Too many tokens, rate limit"), 0));
+        assert!(is_context_overflow(
+            &err("prompt is too long: 1 tokens > 0 maximum"),
+            0
+        ));
+        assert!(!is_context_overflow(
+            &err("ThrottlingException: Too many tokens, rate limit"),
+            0
+        ));
         assert_eq!(retry_delay_ms(1, 2000, 60000), 2000);
         assert_eq!(retry_delay_ms(3, 2000, 60000), 8000);
         assert_eq!(retry_delay_ms(40, 2000, 60000), 60000);

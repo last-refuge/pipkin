@@ -3,6 +3,8 @@
 //! GPUI-free and transport-free: hosts (the in-process harness, the private worker process)
 //! drive it through [`pipkin_engine_protocol`] calls and receive committed events.
 
+#![allow(clippy::too_many_arguments)]
+
 pub mod auth;
 pub mod config;
 pub mod context;

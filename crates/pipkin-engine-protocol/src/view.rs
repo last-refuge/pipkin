@@ -125,9 +125,19 @@ pub struct Entry {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum Delta {
-    Text { block: u32, text: String },
-    Thinking { block: u32, text: String },
-    ToolCall { block: u32, id: String, name: String },
+    Text {
+        block: u32,
+        text: String,
+    },
+    Thinking {
+        block: u32,
+        text: String,
+    },
+    ToolCall {
+        block: u32,
+        id: String,
+        name: String,
+    },
 }
 
 /// Why a run ended.
@@ -137,12 +147,20 @@ pub enum RunOutcome {
     Completed,
     /// Settled after a Stop.
     Aborted,
-    ModelError { detail: String },
-    NoModel { detail: String },
+    ModelError {
+        detail: String,
+    },
+    NoModel {
+        detail: String,
+    },
     /// The engine stopped while the run was in flight; effects after the last committed
     /// entry are unconfirmed.
-    Interrupted { detail: String },
-    Failed { detail: String },
+    Interrupted {
+        detail: String,
+    },
+    Failed {
+        detail: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

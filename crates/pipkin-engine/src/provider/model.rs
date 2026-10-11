@@ -272,7 +272,14 @@ mod tests {
         assert!(models.len() > 1500, "{}", models.len());
         let providers: std::collections::BTreeSet<_> =
             models.iter().map(|m| m.provider.as_str()).collect();
-        for p in ["anthropic", "openai", "openai-codex", "google", "amazon-bedrock", "mistral"] {
+        for p in [
+            "anthropic",
+            "openai",
+            "openai-codex",
+            "google",
+            "amazon-bedrock",
+            "mistral",
+        ] {
             assert!(providers.contains(p), "{p}");
         }
     }

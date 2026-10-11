@@ -438,10 +438,10 @@ impl Store {
 
     pub fn meta(&self, key: &str) -> Result<Option<String>> {
         self.read(|c| {
-            Ok(c.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| {
-                r.get(0)
-            })
-            .optional()?)
+            Ok(
+                c.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0))
+                    .optional()?,
+            )
         })
     }
 
@@ -584,12 +584,14 @@ impl Store {
     pub fn set_session_field(&self, session: &str, field: SessionField) -> Result<u64> {
         self.tx(|tx| {
             match &field {
-                SessionField::Title(t) => {
-                    tx.execute("UPDATE sessions SET title = ?2 WHERE id = ?1", params![session, t])?
-                }
-                SessionField::Model(m) => {
-                    tx.execute("UPDATE sessions SET model = ?2 WHERE id = ?1", params![session, m])?
-                }
+                SessionField::Title(t) => tx.execute(
+                    "UPDATE sessions SET title = ?2 WHERE id = ?1",
+                    params![session, t],
+                )?,
+                SessionField::Model(m) => tx.execute(
+                    "UPDATE sessions SET model = ?2 WHERE id = ?1",
+                    params![session, m],
+                )?,
                 SessionField::Thinking(t) => tx.execute(
                     "UPDATE sessions SET thinking = ?2 WHERE id = ?1",
                     params![session, t],
@@ -721,7 +723,12 @@ impl Store {
     }
 
     /// Append a committed streaming delta (linear: no rewrite of the growing message).
-    pub fn append_chunks(tx: &Connection, session: &str, entry: u64, deltas: &[Delta]) -> Result<()> {
+    pub fn append_chunks(
+        tx: &Connection,
+        session: &str,
+        entry: u64,
+        deltas: &[Delta],
+    ) -> Result<()> {
         let mut seq: i64 = tx.query_row(
             "SELECT COALESCE(MAX(seq), 0) FROM entry_chunks WHERE session = ?1 AND entry = ?2",
             params![session, entry as i64],
@@ -775,14 +782,22 @@ impl Store {
     }
 
     /// Entries strictly before `before` (newest first internally), returned oldest first.
-    pub fn page(&self, session: &str, before: Option<u64>, limit: u32) -> Result<(Vec<Entry>, bool)> {
+    pub fn page(
+        &self,
+        session: &str,
+        before: Option<u64>,
+        limit: u32,
+    ) -> Result<(Vec<Entry>, bool)> {
         self.read(|c| {
             let before = before.map_or(i64::MAX, |b| b as i64);
             let mut stmt = c.prepare_cached(
                 "SELECT * FROM entries WHERE session = ?1 AND id < ?2 ORDER BY id DESC LIMIT ?3",
             )?;
             let rows = stmt
-                .query_map(params![session, before, limit as i64 + 1], Self::entry_from_row)?
+                .query_map(
+                    params![session, before, limit as i64 + 1],
+                    Self::entry_from_row,
+                )?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             let has_older = rows.len() > limit as usize;
             let mut out = Vec::with_capacity(rows.len().min(limit as usize));
@@ -862,9 +877,8 @@ impl Store {
     /// Partial (streaming) entries, materialized; used by recovery.
     pub fn partial_entries(&self, session: &str) -> Result<Vec<Entry>> {
         self.read(|c| {
-            let mut stmt = c.prepare(
-                "SELECT * FROM entries WHERE session = ?1 AND partial = 1 ORDER BY id",
-            )?;
+            let mut stmt =
+                c.prepare("SELECT * FROM entries WHERE session = ?1 AND partial = 1 ORDER BY id")?;
             let rows = stmt
                 .query_map([session], Self::entry_from_row)?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -886,9 +900,8 @@ impl Store {
     }
 
     pub fn entries_of_run(c: &Connection, session: &str, run: u64) -> Result<Vec<Entry>> {
-        let mut stmt = c.prepare_cached(
-            "SELECT * FROM entries WHERE session = ?1 AND run = ?2 ORDER BY id",
-        )?;
+        let mut stmt =
+            c.prepare_cached("SELECT * FROM entries WHERE session = ?1 AND run = ?2 ORDER BY id")?;
         let rows = stmt
             .query_map(params![session, run as i64], Self::entry_from_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1113,7 +1126,12 @@ impl Store {
         })
     }
 
-    pub fn start_run(tx: &Connection, session: &str, request: Option<&str>, now: i64) -> Result<u64> {
+    pub fn start_run(
+        tx: &Connection,
+        session: &str,
+        request: Option<&str>,
+        now: i64,
+    ) -> Result<u64> {
         tx.execute(
             "INSERT INTO runs(session, request, state, started_at) VALUES (?1, ?2, 'running', ?3)",
             params![session, request, now],
@@ -1130,8 +1148,12 @@ impl Store {
     }
 
     pub fn run_in(c: &Connection, id: u64) -> Result<Option<RunRow>> {
-        Ok(c.query_row("SELECT * FROM runs WHERE id = ?1", [id as i64], Self::run_from_row)
-            .optional()?)
+        Ok(c.query_row(
+            "SELECT * FROM runs WHERE id = ?1",
+            [id as i64],
+            Self::run_from_row,
+        )
+        .optional()?)
     }
 
     pub fn open_run(&self, session: &str) -> Result<Option<RunRow>> {
@@ -1184,7 +1206,8 @@ impl Store {
 
     /// Requests a run took (its prompt and any steers/follow-ups it consumed).
     pub fn requests_of_run(c: &Connection, run: u64) -> Result<Vec<RequestRow>> {
-        let mut stmt = c.prepare_cached("SELECT * FROM requests WHERE run = ?1 ORDER BY created_at")?;
+        let mut stmt =
+            c.prepare_cached("SELECT * FROM requests WHERE run = ?1 ORDER BY created_at")?;
         let rows = stmt
             .query_map([run as i64], Self::request_from_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1245,7 +1268,11 @@ impl Store {
         self.read(|c| Self::tool_call_in(c, session, call_id))
     }
 
-    pub fn tool_call_in(c: &Connection, session: &str, call_id: &str) -> Result<Option<ToolCallRow>> {
+    pub fn tool_call_in(
+        c: &Connection,
+        session: &str,
+        call_id: &str,
+    ) -> Result<Option<ToolCallRow>> {
         Ok(c.query_row(
             "SELECT * FROM tool_calls WHERE session = ?1 AND call_id = ?2",
             params![session, call_id],
@@ -1286,7 +1313,12 @@ impl Store {
             params![session, call_id, state, result_entry as i64, now],
         )?;
         let (kept, clipped) = clip(retained, MAX_RETAINED_OUTPUT_BYTES);
-        let dropped = dropped + if clipped { (retained.len() - kept.len()) as u64 } else { 0 };
+        let dropped = dropped
+            + if clipped {
+                (retained.len() - kept.len()) as u64
+            } else {
+                0
+            };
         tx.execute(
             "INSERT INTO tool_outputs(session, call_id, text, retained, dropped)
              VALUES (?1, ?2, ?3, ?4, ?5)
@@ -1316,7 +1348,13 @@ impl Store {
 
     // ------------------------------------------------------------------ usage
 
-    pub fn add_usage(tx: &Connection, session: &str, bucket: &str, key: &str, usage: &Usage) -> Result<()> {
+    pub fn add_usage(
+        tx: &Connection,
+        session: &str,
+        bucket: &str,
+        key: &str,
+        usage: &Usage,
+    ) -> Result<()> {
         let existing: Option<String> = tx
             .query_row(
                 "SELECT value FROM usage WHERE session = ?1 AND bucket = ?2 AND key = ?3",
@@ -1344,7 +1382,11 @@ impl Store {
             )?;
             let rows = stmt
                 .query_map([session], |r| {
-                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             let mut view = UsageView::default();
@@ -1400,7 +1442,11 @@ impl Store {
     }
 
     /// The child task for a parent call, if it was created.
-    pub fn task_for_call(c: &Connection, parent_session: &str, call: &str) -> Result<Option<TaskRow>> {
+    pub fn task_for_call(
+        c: &Connection,
+        parent_session: &str,
+        call: &str,
+    ) -> Result<Option<TaskRow>> {
         Ok(c.query_row(
             "SELECT * FROM subagent_tasks WHERE parent_session = ?1 AND parent_call = ?2",
             params![parent_session, call],
@@ -1450,7 +1496,15 @@ impl Store {
             "INSERT INTO subagent_tasks(root, child, parent_session, parent_call, child_session,
                 task, status, result, result_delivered, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', NULL, 0, ?7, ?7)",
-            params![root, next, parent_session, parent_call, child_session, task, now],
+            params![
+                root,
+                next,
+                parent_session,
+                parent_call,
+                child_session,
+                task,
+                now
+            ],
         )?;
         Ok((
             Self::task_by_child(tx, root, next as u64)?.expect("just inserted"),
@@ -1574,9 +1628,9 @@ pub fn apply_deltas(mut entry: Entry, deltas: &[Delta]) -> Entry {
 pub fn apply_delta(content: &mut Vec<pipkin_engine_protocol::Block>, delta: &Delta) {
     use pipkin_engine_protocol::Block;
     let index = match delta {
-        Delta::Text { block, .. } | Delta::Thinking { block, .. } | Delta::ToolCall { block, .. } => {
-            *block as usize
-        }
+        Delta::Text { block, .. }
+        | Delta::Thinking { block, .. }
+        | Delta::ToolCall { block, .. } => *block as usize,
     };
     while content.len() <= index {
         content.push(match delta {
@@ -1586,7 +1640,9 @@ pub fn apply_delta(content: &mut Vec<pipkin_engine_protocol::Block>, delta: &Del
                 redacted: false,
                 extra: Default::default(),
             },
-            Delta::ToolCall { id, name, .. } => Block::tool_call(id.clone(), name.clone(), Value::Null),
+            Delta::ToolCall { id, name, .. } => {
+                Block::tool_call(id.clone(), name.clone(), Value::Null)
+            }
             Delta::Text { .. } => Block::text(""),
         });
     }

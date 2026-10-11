@@ -238,7 +238,11 @@ impl Settings {
     }
 
     /// Persist a new global default model (the reference engine does this on selection).
-    pub fn save_default_model(config_dir: &Path, provider: &str, model: &str) -> std::io::Result<()> {
+    pub fn save_default_model(
+        config_dir: &Path,
+        provider: &str,
+        model: &str,
+    ) -> std::io::Result<()> {
         let path = config_dir.join("settings.json");
         let mut warnings = vec![];
         let mut value = read_json(&path, &mut warnings);

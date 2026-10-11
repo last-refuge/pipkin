@@ -14,6 +14,8 @@ pub mod api;
 pub mod data;
 pub mod errors;
 pub mod http;
+#[cfg(any(test, feature = "test-support"))]
+pub mod mock;
 pub mod model;
 pub mod scripted;
 pub mod sse;

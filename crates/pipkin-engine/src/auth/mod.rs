@@ -138,7 +138,11 @@ impl Auth {
         AuthSnapshot::default()
     }
 
-    pub fn start<'a>(&'a self, _client: u64, provider: &'a str) -> BoxFuture<'a, Result<String, ProtoError>> {
+    pub fn start<'a>(
+        &'a self,
+        _client: u64,
+        provider: &'a str,
+    ) -> BoxFuture<'a, Result<String, ProtoError>> {
         Box::pin(async move {
             Err(ProtoError::new(
                 ErrorCode::Unsupported,
@@ -147,12 +151,25 @@ impl Auth {
         })
     }
 
-    pub fn reuse<'a>(&'a self, client: u64, provider: &'a str) -> BoxFuture<'a, Result<String, ProtoError>> {
+    pub fn reuse<'a>(
+        &'a self,
+        client: u64,
+        provider: &'a str,
+    ) -> BoxFuture<'a, Result<String, ProtoError>> {
         self.start(client, provider)
     }
 
-    pub fn answer(&self, _client: u64, _attempt: &str, _challenge: &str, _response: String) -> Result<(), ProtoError> {
-        Err(ProtoError::new(ErrorCode::NotFound, "The sign-in question has expired"))
+    pub fn answer(
+        &self,
+        _client: u64,
+        _attempt: &str,
+        _challenge: &str,
+        _response: String,
+    ) -> Result<(), ProtoError> {
+        Err(ProtoError::new(
+            ErrorCode::NotFound,
+            "The sign-in question has expired",
+        ))
     }
 
     pub fn cancel(&self, _client: u64, _attempt: &str) {}
