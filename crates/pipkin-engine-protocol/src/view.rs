@@ -532,13 +532,20 @@ pub struct ImportedView {
 #[serde(tag = "outcome", rename_all = "camelCase")]
 pub enum ConfigItemOutcome {
     /// Copied `files` files into the native configuration.
-    Copied { files: u32 },
+    Copied {
+        files: u32,
+    },
     /// Some files were copied; `kept` existing native files were left as they were.
-    Partial { files: u32, kept: u32 },
+    Partial {
+        files: u32,
+        kept: u32,
+    },
     /// Every native file already existed and was kept.
     KeptExisting,
     NotFound,
-    Failed { detail: String },
+    Failed {
+        detail: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -561,7 +568,9 @@ pub enum CredentialImportOutcome {
     /// The native store already has an entry for this provider; it was not overwritten.
     KeptExisting,
     /// Preserved where it is (the legacy profile) but not imported as usable.
-    Reserved { reason: String },
+    Reserved {
+        reason: String,
+    },
     NotFound,
 }
 
@@ -576,4 +585,135 @@ pub struct CredentialImportResult {
 #[serde(rename_all = "camelCase")]
 pub struct CredentialsImportView {
     pub providers: Vec<CredentialImportResult>,
+}
+
+#[cfg(test)]
+mod import_tests {
+    use super::*;
+    use crate::api::{Call, Reply};
+
+    fn round_trip<T: Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug>(
+        value: &T,
+    ) -> Value {
+        let json = serde_json::to_value(value).unwrap();
+        let back: T = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(&back, value);
+        json
+    }
+
+    #[test]
+    fn import_calls_round_trip_with_their_wire_names() {
+        let json = round_trip(&Call::ImportDiscover { agent_dir: None });
+        assert_eq!(
+            json,
+            serde_json::json!({"call": "importDiscover", "agentDir": null})
+        );
+        let parsed: Call = serde_json::from_str(r#"{"call": "importDiscover"}"#).unwrap();
+        assert_eq!(parsed, Call::ImportDiscover { agent_dir: None });
+        let json = round_trip(&Call::ImportSessions {
+            agent_dir: Some("/a".into()),
+            sessions: vec!["s1".into()],
+        });
+        assert_eq!(json["agentDir"], "/a");
+        assert_eq!(json["sessions"][0], "s1");
+        round_trip(&Call::ImportConfig {
+            agent_dir: None,
+            items: vec!["models.json".into()],
+        });
+        let json = round_trip(&Call::ImportCredentials {
+            agent_dir: None,
+            providers: vec!["openrouter".into()],
+        });
+        assert_eq!(json["call"], "importCredentials");
+        assert_eq!(crate::PROTOCOL_VERSION, 2);
+    }
+
+    fn view(id: &str, status: ImportSessionStatus) -> ImportSessionView {
+        ImportSessionView {
+            id: id.into(),
+            cwd: None,
+            created_at_ms: None,
+            status,
+        }
+    }
+
+    #[test]
+    fn import_replies_round_trip() {
+        let json = round_trip(&Reply::ImportReport(ImportReport {
+            agent_dir: "/a".into(),
+            sessions: vec![
+                view("s1", ImportSessionStatus::Importable),
+                view("s2", ImportSessionStatus::Locked { detail: None }),
+                view(
+                    "s3",
+                    ImportSessionStatus::Blocked {
+                        reasons: vec!["a fork".into()],
+                    },
+                ),
+                view(
+                    "s4",
+                    ImportSessionStatus::AlreadyImported {
+                        native: "s4".into(),
+                    },
+                ),
+            ],
+            config: vec!["models.json".into()],
+            credentials: vec![ImportCredentialView {
+                provider: "anthropic".into(),
+                kind: "oauth".into(),
+                reserved: Some("later".into()),
+                native_exists: false,
+            }],
+            credentials_error: None,
+        }));
+        assert_eq!(json["reply"], "importReport");
+        assert_eq!(json["sessions"][2]["status"]["status"], "blocked");
+        assert_eq!(json["credentials"][0]["nativeExists"], false);
+        round_trip(&Reply::Imported(ImportedView {
+            sessions: vec![
+                ImportSessionResult {
+                    source: "s1".into(),
+                    outcome: ImportSessionOutcome::Imported {
+                        native: "s1".into(),
+                        children: 1,
+                        entries: 5,
+                        requests: 2,
+                    },
+                },
+                ImportSessionResult {
+                    source: "s2".into(),
+                    outcome: ImportSessionOutcome::Failed {
+                        detail: "io".into(),
+                    },
+                },
+            ],
+            backup_dir: Some("/d/imports/x".into()),
+        }));
+        round_trip(&Reply::ConfigImported(ConfigImportView {
+            items: vec![
+                ConfigItemResult {
+                    name: "skills".into(),
+                    outcome: ConfigItemOutcome::Partial { files: 1, kept: 2 },
+                },
+                ConfigItemResult {
+                    name: "AGENTS.md".into(),
+                    outcome: ConfigItemOutcome::KeptExisting,
+                },
+            ],
+        }));
+        round_trip(&Reply::CredentialsImported(CredentialsImportView {
+            providers: vec![
+                CredentialImportResult {
+                    provider: "openrouter".into(),
+                    outcome: CredentialImportOutcome::Imported,
+                },
+                CredentialImportResult {
+                    provider: "anthropic".into(),
+                    outcome: CredentialImportOutcome::Reserved {
+                        reason: "later".into(),
+                    },
+                },
+            ],
+        }));
+    }
 }

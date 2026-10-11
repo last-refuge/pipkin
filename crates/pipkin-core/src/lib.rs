@@ -5,6 +5,7 @@
 pub mod attach;
 pub mod backend;
 pub mod ids;
+pub mod import;
 pub mod model;
 pub mod onboarding;
 pub mod prompt_history;
@@ -14,6 +15,7 @@ pub mod state;
 pub use attach::*;
 pub use backend::*;
 pub use ids::*;
+pub use import::*;
 pub use model::*;
 pub use protocol::*;
 pub use state::*;

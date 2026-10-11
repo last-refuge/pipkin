@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 
 use pipkin_core::{
     AppState, Backend, BackendEvent, Bootstrap, Command, Connection, ConversationId, Delivery,
-    Effect, ItemKind, LifecycleEvent, Mode, Outcome, QueueMode, RequestId, RunState,
-    describe_attachment,
+    Effect, ImportFlow, ImportKind, ItemKind, LifecycleEvent, Mode, Outcome, QueueMode, RequestId,
+    RunState, describe_attachment,
 };
 use pipkin_engine::config::{EngineConfig, Env};
 use pipkin_engine::provider::ProviderRequest;
@@ -27,11 +27,13 @@ use pipkin_engine_protocol::{Block, Call, ClientFrame, Message, ServerFrame};
 
 use super::client::{FrameReceiver, FrameSender, Link};
 use super::supervisor::HostSpec;
-use super::{NativeBackend, NativeConfig};
-use crate::controller::Restore;
+use super::{ImportResult, NativeBackend, NativeConfig};
+use crate::controller::{Restore, copy_imported};
 use crate::storage::Storage;
 
 const NAMESPACE: &str = "native:e2e";
+/// The desktop namespace Pi conversations had before they were imported.
+const PI_NAMESPACE: &str = "pi:e2e";
 const WAIT: Duration = Duration::from_secs(30);
 
 // ------------------------------------------------------------------------------- the engine
@@ -118,7 +120,14 @@ impl Fixture {
 
     fn config(&self) -> EngineConfig {
         let mut c = EngineConfig::new(self.root.join("engine"), self.root.join("engine-config"));
-        c.env = Env::isolated(Default::default());
+        // The Pi profile an import reads (the engine's default agent directory).
+        c.env = Env::isolated(
+            [(
+                "PI_CODING_AGENT_DIR".to_owned(),
+                self.pi_agent().display().to_string(),
+            )]
+            .into(),
+        );
         c.extra_models = vec![scripted::model()];
         c.default_model = Some("scripted/scripted".into());
         c
@@ -176,6 +185,10 @@ impl Fixture {
     fn requests(&self) -> Vec<ProviderRequest> {
         self.provider.requests()
     }
+
+    fn pi_agent(&self) -> PathBuf {
+        self.root.join("pi-agent")
+    }
 }
 
 impl Drop for Fixture {
@@ -200,6 +213,7 @@ struct Harness {
     ack_tx: mpsc::Sender<(ConversationId, RequestId, Result<(), String>)>,
     notices: Vec<String>,
     copied: Vec<String>,
+    imports: Arc<Mutex<VecDeque<ImportResult>>>,
 }
 
 fn unique(prefix: &str) -> String {
@@ -264,6 +278,7 @@ impl Harness {
             ack_tx,
             notices: vec![],
             copied: vec![],
+            imports: Arc::default(),
         };
         let mut out = h.restore.apply(&mut h.state);
         out.merge(h.state.select_initial());
@@ -361,6 +376,14 @@ impl Harness {
                 Effect::JournalState { request, state, .. } => {
                     self.storage.journal_state(request, state)
                 }
+                // As the controller does: the backend answers on its own thread.
+                Effect::Import(step) => {
+                    let imports = self.imports.clone();
+                    self.backend.import(
+                        step,
+                        Box::new(move |r| imports.lock().unwrap().push_back(r)),
+                    );
+                }
             }
         }
     }
@@ -397,6 +420,29 @@ impl Harness {
         }
         while let Ok((conversation, request, result)) = self.acks.try_recv() {
             let outcome = self.state.intent_persisted(conversation, &request, result);
+            self.exec(outcome);
+        }
+        let imports: Vec<ImportResult> = self.imports.lock().unwrap().drain(..).collect();
+        for result in imports {
+            let outcome = match result {
+                ImportResult::Offer(offer) => self.state.import_discovered(offer),
+                ImportResult::Finished {
+                    message,
+                    imported,
+                    existing,
+                } => {
+                    let (report, loaded) =
+                        copy_imported(&self.storage, PI_NAMESPACE, &imported, &existing)
+                            .expect("the desktop data is copied");
+                    self.restore.add_imported(loaded, &imported);
+                    let mut out = self.restore.apply(&mut self.state);
+                    out.merge(
+                        self.state
+                            .import_finished(format!("{message}\ncopied: {report:?}")),
+                    );
+                    out
+                }
+            };
             self.exec(outcome);
         }
     }
@@ -1247,4 +1293,226 @@ fn git(dir: &Path, args: &[&str]) {
         .expect("git runs")
         .success();
     assert!(ok, "git {args:?}");
+}
+
+// ----------------------------------------------------------------------------- Pi import
+
+fn pi_fixture(id: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/pi-sessions")
+        .join(id)
+}
+
+/// Copy a reference session into the fixture's Pi agent directory.
+fn add_pi_session(fx: &Fixture, id: &str) -> bool {
+    let source = pi_fixture(id);
+    if !source.join("session.sqlite").is_file() {
+        return false;
+    }
+    let dest = fx.pi_agent().join("experimental/sessions").join(id);
+    std::fs::create_dir_all(&dest).unwrap();
+    for file in ["meta.json", "session.sqlite"] {
+        std::fs::copy(source.join(file), dest.join(file)).unwrap();
+    }
+    true
+}
+
+fn offer(s: &AppState) -> Option<&pipkin_core::ImportOffer> {
+    match &s.import {
+        ImportFlow::Offered(offer) => Some(offer),
+        _ => None,
+    }
+}
+
+#[test]
+fn pi_conversations_are_imported_on_confirmation_with_their_desktop_data() {
+    let fx = Fixture::start(|_, _| Reply::Text("Continued natively.".into()));
+    if !add_pi_session(&fx, "a-text-multiturn") || !add_pi_session(&fx, "b-tools-diff") {
+        eprintln!("no reference fixtures; skipping");
+        return;
+    }
+    // One in use by a running Pi, one never opened.
+    assert!(add_pi_session(&fx, "c-stop-then-prompt"));
+    let sessions = fx.pi_agent().join("experimental/sessions");
+    std::fs::create_dir(sessions.join("c-stop-then-prompt.lock")).unwrap();
+    std::fs::create_dir_all(sessions.join("never-opened")).unwrap();
+    std::fs::write(
+        sessions.join("never-opened/meta.json"),
+        r#"{"createdAt": 1, "cwd": "/x"}"#,
+    )
+    .unwrap();
+
+    // What the Pi desktop kept for the first conversation: a draft and two sent prompts.
+    let db = fx.root.join("app.sqlite3");
+    let a = ConversationId(pipkin_core::stable_id("a-text-multiturn"));
+    {
+        let pi = Storage::open(&db, PI_NAMESPACE).unwrap();
+        let (tx, rx) = mpsc::channel();
+        pi.save_draft(a, "an unsent pi draft".into(), vec![], 4, move |r| {
+            tx.send(r).unwrap();
+        });
+        rx.recv_timeout(WAIT).unwrap().unwrap();
+        for (key, text) in [
+            ("p1", "Hello, who are you?"),
+            ("p2", "And a third, please."),
+        ] {
+            let (tx, rx) = mpsc::channel();
+            pi.journal_intent(a, RequestId(key.into()), text, &[], None, move |r| {
+                tx.send(r).unwrap();
+            });
+            rx.recv_timeout(WAIT).unwrap().unwrap();
+            pi.journal_state(RequestId(key.into()), pipkin_core::JournalState::Completed);
+        }
+        pi.shutdown();
+    }
+
+    let mut h = Harness::start(&fx, &db);
+    h.until("connected", |s| s.connection.is_ready());
+    h.state.import_available = true;
+    assert!(
+        h.state.conversations.is_empty(),
+        "nothing is imported at startup"
+    );
+
+    h.dispatch(Command::ImportFromPi(ImportKind::Conversations));
+    h.until("the offer", |s| offer(s).is_some());
+    let o = offer(&h.state).unwrap().clone();
+    assert_eq!(o.sessions, vec!["a-text-multiturn", "b-tools-diff"]);
+    let notice = h.state.notice.clone().unwrap();
+    for part in [
+        "2 Pi conversations from",
+        "In use by a running Pi",
+        "c-stop-then-p",
+        "Cannot be imported: never-opened",
+        "keep working with --engine pi",
+        "Confirm: import",
+    ] {
+        assert!(notice.contains(part), "{part}: {notice}");
+    }
+    assert!(h.state.conversations.is_empty(), "an offer imports nothing");
+
+    h.dispatch(Command::ConfirmImport);
+    h.until("the import finished", |s| s.import == ImportFlow::Idle);
+    let notice = h.state.notice.clone().unwrap();
+    assert!(
+        notice.contains("Imported 2 conversations from Pi."),
+        "{notice}"
+    );
+    assert!(notice.contains("not imported: c-stop-then-p"), "{notice}");
+    assert!(notice.contains("drafts: 1"), "{notice}");
+    h.until("both conversations are listed", |s| {
+        s.conversations.len() == 2 && s.conversation(a).is_some()
+    });
+    assert_eq!(
+        h.state.conversation(a).unwrap().draft.text,
+        "an unsent pi draft"
+    );
+    let stored = Storage::open(&db, NAMESPACE).unwrap().load_all().unwrap();
+    assert!(stored.drafts.iter().any(|d| d.conversation == a));
+    assert_eq!(
+        stored.prompt_histories,
+        vec![(
+            a,
+            vec!["Hello, who are you?".into(), "And a third, please.".into()]
+        )]
+    );
+    // The Pi namespace keeps its own copy.
+    let pi = Storage::open(&db, PI_NAMESPACE)
+        .unwrap()
+        .load_all()
+        .unwrap();
+    assert_eq!(pi.drafts.len(), 1);
+
+    // The imported conversation opens with its whole history and continues natively.
+    h.dispatch(Command::SelectConversation(a));
+    h.until("the imported conversation is open", |s| {
+        s.current().is_some_and(|c| c.opened)
+    });
+    assert_eq!(
+        h.user_messages(),
+        [
+            "Hello, who are you?",
+            "Tell me a second thing.",
+            "And a third, please."
+        ]
+    );
+    h.dispatch(Command::SetModel("scripted/scripted".into()));
+    h.send("Please continue.");
+    h.until("answered natively", |s| {
+        is_idle(s) && assistant_texts(s).last().map(String::as_str) == Some("Continued natively.")
+    });
+    let request = fx.requests().last().cloned().unwrap();
+    assert_eq!(
+        user_texts(&request),
+        [
+            "Hello, who are you?",
+            "Tell me a second thing.",
+            "And a third, please.",
+            "Please continue."
+        ]
+    );
+
+    // Again: nothing left to import.
+    h.dispatch(Command::ImportFromPi(ImportKind::Conversations));
+    h.until("the answer", |s| s.import == ImportFlow::Idle);
+    let notice = h.state.notice.clone().unwrap();
+    assert!(
+        notice.contains("2 conversations were imported earlier"),
+        "{notice}"
+    );
+    assert!(offer(&h.state).is_none());
+    h.stop();
+}
+
+#[test]
+fn pi_credentials_are_imported_only_after_their_own_confirmation() {
+    let fx = Fixture::start(|_, _| Reply::Text("x".into()));
+    std::fs::create_dir_all(fx.pi_agent()).unwrap();
+    std::fs::write(
+        fx.pi_agent().join("auth.json"),
+        r#"{"openrouter": {"type": "api_key", "key": "sk-or-SECRET"},
+            "anthropic": {"type": "oauth", "access": "sub-SECRET", "refresh": "r", "expires": 1}}"#,
+    )
+    .unwrap();
+    std::fs::write(fx.pi_agent().join("models.json"), r#"{"providers": {}}"#).unwrap();
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.until("connected", |s| s.connection.is_ready());
+    h.state.import_available = true;
+
+    h.dispatch(Command::ImportFromPi(ImportKind::Credentials));
+    h.until("the offer", |s| offer(s).is_some());
+    let o = offer(&h.state).unwrap().clone();
+    assert_eq!(o.providers, vec!["openrouter"]);
+    assert_eq!(o.config, vec!["models.json"]);
+    let notice = h.state.notice.clone().unwrap();
+    assert!(!notice.contains("SECRET"));
+    assert!(
+        notice.contains("later integration, not imported: anthropic"),
+        "{notice}"
+    );
+    let native_auth = fx.root.join("engine-config/auth.json");
+    assert!(!native_auth.exists(), "an offer writes nothing");
+
+    h.dispatch(Command::CancelImport);
+    assert_eq!(h.state.import, ImportFlow::Idle);
+    assert!(!native_auth.exists());
+
+    h.dispatch(Command::ImportFromPi(ImportKind::Credentials));
+    h.until("the offer", |s| offer(s).is_some());
+    h.dispatch(Command::ConfirmImport);
+    h.until("the import finished", |s| s.import == ImportFlow::Idle);
+    let notice = h.state.notice.clone().unwrap();
+    assert!(
+        notice.contains("Imported saved credentials for openrouter."),
+        "{notice}"
+    );
+    assert!(notice.contains("Copied models.json."), "{notice}");
+    assert!(!notice.contains("SECRET"));
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&native_auth).unwrap()).unwrap();
+    assert_eq!(saved["openrouter"]["key"], "sk-or-SECRET");
+    assert!(saved.get("anthropic").is_none());
+    assert!(fx.root.join("engine-config/models.json").is_file());
+    h.stop();
 }

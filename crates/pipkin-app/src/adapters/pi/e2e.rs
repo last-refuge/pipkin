@@ -253,6 +253,7 @@ impl Harness {
                     text,
                 } => self.saved.push((suggested_name, text)),
                 Effect::Launch(what) => self.launches.push(what),
+                Effect::Import(_) => {}
                 Effect::JournalIntent {
                     conversation,
                     request,

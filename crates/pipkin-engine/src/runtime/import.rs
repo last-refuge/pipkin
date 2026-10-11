@@ -28,7 +28,8 @@ use crate::auth::store::{CredentialStore, FileStore, StoredCredential};
 use crate::import as legacy;
 
 /// What a reserved credential's import reports.
-pub const RESERVED_KEPT: &str = "kept in the Pi profile for a later integration; not imported as usable here";
+pub const RESERVED_KEPT: &str =
+    "kept in the Pi profile for a later integration; not imported as usable here";
 
 /// One import (of any kind) at a time, so two clients cannot race on the same source.
 static IMPORTS: Mutex<()> = Mutex::new(());
@@ -127,7 +128,10 @@ fn native_providers(shared: &Shared) -> BTreeSet<String> {
 
 pub async fn discover(shared: &Arc<Shared>, agent: Option<String>) -> Result<Reply, ProtoError> {
     let dir = agent_dir(&shared.config.env, agent)?;
-    blocking(shared, move |shared| Ok(Reply::ImportReport(report(shared, &dir)))).await
+    blocking(shared, move |shared| {
+        Ok(Reply::ImportReport(report(shared, &dir)))
+    })
+    .await
 }
 
 fn report(shared: &Shared, dir: &Path) -> ImportReport {
@@ -144,7 +148,9 @@ fn report(shared: &Shared, dir: &Path) -> ImportReport {
                     legacy::SessionStatus::AlreadyImported { native } => {
                         ImportSessionStatus::AlreadyImported { native }
                     }
-                    legacy::SessionStatus::Locked => ImportSessionStatus::Locked { detail: s.detail },
+                    legacy::SessionStatus::Locked => {
+                        ImportSessionStatus::Locked { detail: s.detail }
+                    }
                     legacy::SessionStatus::Blocked { reasons } => {
                         ImportSessionStatus::Blocked { reasons }
                     }
@@ -184,7 +190,10 @@ pub async fn sessions(
             "Import at most 10000 sessions at a time",
         ));
     }
-    let view = blocking(shared, move |shared| Ok(import_sessions(shared, &dir, &ids))).await?;
+    let view = blocking(shared, move |shared| {
+        Ok(import_sessions(shared, &dir, &ids))
+    })
+    .await?;
     if view
         .sessions
         .iter()
@@ -200,11 +209,11 @@ fn count(manifest: &Value, key: &str) -> u64 {
 }
 
 fn import_sessions(shared: &Shared, dir: &Path, ids: &[String]) -> ImportedView {
-    let backup = shared
-        .config
-        .data_dir
-        .join("imports")
-        .join(format!("{}-{}", utc_stamp(crate::util::now_ms()), crate::util::random_hex(2)));
+    let backup = shared.config.data_dir.join("imports").join(format!(
+        "{}-{}",
+        utc_stamp(crate::util::now_ms()),
+        crate::util::random_hex(2)
+    ));
     let sessions = ids
         .iter()
         .map(|id| {
@@ -244,9 +253,7 @@ fn import_sessions(shared: &Shared, dir: &Path, ids: &[String]) -> ImportedView 
         .collect();
     ImportedView {
         sessions,
-        backup_dir: backup
-            .is_dir()
-            .then(|| backup.display().to_string()),
+        backup_dir: backup.is_dir().then(|| backup.display().to_string()),
     }
 }
 
@@ -259,7 +266,10 @@ pub async fn config(
 ) -> Result<Reply, ProtoError> {
     let dir = agent_dir(&shared.config.env, agent)?;
     let items = dedupe(items);
-    let view = blocking(shared, move |shared| Ok(import_config(shared, &dir, &items))).await?;
+    let view = blocking(shared, move |shared| {
+        Ok(import_config(shared, &dir, &items))
+    })
+    .await?;
     if view.items.iter().any(|i| {
         matches!(
             i.outcome,
@@ -360,8 +370,10 @@ pub async fn credentials(
 ) -> Result<Reply, ProtoError> {
     let dir = agent_dir(&shared.config.env, agent)?;
     let providers = dedupe(providers);
-    let view =
-        blocking(shared, move |shared| import_credentials(shared, &dir, &providers)).await?;
+    let view = blocking(shared, move |shared| {
+        import_credentials(shared, &dir, &providers)
+    })
+    .await?;
     if view
         .providers
         .iter()
@@ -385,7 +397,9 @@ fn import_credentials(
 ) -> Result<CredentialsImportView, ProtoError> {
     let found = legacy::discover(dir, &shared.store);
     if let Some(why) = found.credentials_error {
-        return Err(invalid(format!("The Pi credentials could not be read: {why}")));
+        return Err(invalid(format!(
+            "The Pi credentials could not be read: {why}"
+        )));
     }
     let reserved: BTreeSet<String> = found
         .credentials

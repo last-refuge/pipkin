@@ -13,7 +13,7 @@ use pipkin_core::*;
 use pipkin_ui::{DemoControls, Model};
 
 use crate::adapters::native::supervisor::{HostKind, HostSpec, WorkerSpec};
-use crate::adapters::native::{NativeBackend, NativeConfig};
+use crate::adapters::native::{ImportResult, NativeBackend, NativeConfig};
 use crate::adapters::pi::engine::EngineConfig;
 use crate::adapters::pi::{PiBackend, PiConfig};
 use crate::adapters::script;
@@ -21,7 +21,8 @@ use crate::adapters::{DemoBackend, DemoOptions};
 use crate::launch::{self, LaunchConfig};
 use crate::platform;
 use crate::storage::{
-    CacheMeta, DEMO_NAMESPACE, DemoConversation, Loaded, OpenRequest, Startup, Storage, StoredDraft,
+    CacheMeta, CopyReport, DEMO_NAMESPACE, DemoConversation, Loaded, OpenRequest, Startup, Storage,
+    StoredDraft,
 };
 
 const CLOCK_REFRESH: Duration = Duration::from_secs(15);
@@ -310,10 +311,49 @@ fn namespace(options: &Options) -> String {
                     .to_string()
             )
         ),
-        Mode::Real => format!(
-            "pi:{:x}",
-            stable_id(&profile_dir(options).display().to_string())
-        ),
+        Mode::Real => pi_namespace(options),
+    }
+}
+
+/// The desktop namespace of the Pi engine for this profile: where conversations imported into
+/// the built-in engine had their drafts, journal and saved copies.
+fn pi_namespace(options: &Options) -> String {
+    format!(
+        "pi:{:x}",
+        stable_id(&profile_dir(options).display().to_string())
+    )
+}
+
+/// After an import into the built-in engine: copy (never move) the desktop data of the imported
+/// conversations from the Pi namespace, then read the stored state back so the newly imported
+/// ones can be restored ([`Restore::add_imported`]) as their conversations appear.
+/// Conversations imported earlier are copied too (nothing the target already has is replaced),
+/// but are not restored over what is shown. Blocking: run it off the foreground.
+pub(crate) fn copy_imported(
+    storage: &Storage,
+    pi_namespace: &str,
+    imported: &[ConversationId],
+    existing: &[ConversationId],
+) -> Result<(CopyReport, Loaded), String> {
+    let all: Vec<ConversationId> = imported.iter().chain(existing).copied().collect();
+    let report = if all.is_empty() {
+        CopyReport::default()
+    } else {
+        storage.copy_conversations_from(pi_namespace, &all)?
+    };
+    Ok((report, storage.load_all()?))
+}
+
+/// The notice after an import: the engine's account plus what came along from the desktop.
+fn import_notice(message: String, copied: Result<CopyReport, String>) -> String {
+    match copied {
+        Ok(r) if r.drafts + r.journal + r.caches + r.goals > 0 => {
+            format!("{message}\nDrafts, prompt history and saved copies came along from Pi.")
+        }
+        Ok(_) => message,
+        Err(e) => {
+            format!("{message}\nTheir drafts and saved copies could not be brought over: {e}")
+        }
     }
 }
 
@@ -463,6 +503,32 @@ impl Restore {
             state.restore_prompt_history(*id, prompts.clone());
             false
         });
+    }
+
+    /// Add the stored state of conversations that just came from an import (only theirs, so
+    /// nothing shown elsewhere is replaced).
+    pub(crate) fn add_imported(&mut self, loaded: Loaded, ids: &[ConversationId]) {
+        let wanted = |id: &ConversationId| ids.contains(id);
+        self.drafts.extend(
+            loaded
+                .drafts
+                .into_iter()
+                .filter(|d| wanted(&d.conversation)),
+        );
+        self.requests.extend(
+            loaded
+                .open_requests
+                .into_iter()
+                .filter(|r| wanted(&r.conversation)),
+        );
+        self.prompt_histories.extend(
+            loaded
+                .prompt_histories
+                .into_iter()
+                .filter(|(id, _)| wanted(id)),
+        );
+        self.goals
+            .extend(loaded.goals.into_iter().filter(|(id, _, _)| wanted(id)));
     }
 
     pub(crate) fn apply(&mut self, state: &mut AppState) -> Outcome {
@@ -663,6 +729,8 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
         .then(|| engine_to_launch(&options))
         .flatten();
     let support_report = crate::diagnostics::prepare(options.mode, launch_source.as_deref());
+    // The built-in engine also imports Pi profiles (explicitly, never at startup).
+    let mut native_backend: Option<Arc<NativeBackend>> = None;
     let backend: Arc<dyn Backend> = match &demo {
         Some(demo) => demo.clone(),
         None if options.engine == EngineKind::Native => {
@@ -689,10 +757,12 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                     extensions: options.engine_extensions.clone(),
                 },
             };
-            Arc::new(NativeBackend::new(
+            let native = Arc::new(NativeBackend::new(
                 event_tx,
                 NativeConfig::new(host, dirs.data.display().to_string()),
-            ))
+            ));
+            native_backend = Some(native.clone());
+            native
         }
         None => {
             let config = match launch_source {
@@ -733,6 +803,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
     state.set_connection(Connection::Connecting);
     if options.mode == Mode::Real {
         state.can_create = true;
+        state.import_available = native_backend.is_some();
         // Folders the user opened are known before the engine answers, so the project list
         // is usable while connecting.
         for path in &loaded.projects {
@@ -787,8 +858,11 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
             || options.pi_repo.is_some(),
     }
     .surface();
-    let mut restore = Restore::new(loaded, options.mode == Mode::Demo);
-    restore.restore_conversations(&mut state);
+    let restore = Rc::new(std::cell::RefCell::new(Restore::new(
+        loaded,
+        options.mode == Mode::Demo,
+    )));
+    restore.borrow_mut().restore_conversations(&mut state);
 
     let model = cx.new(|_| {
         let mut model = Model::new(state);
@@ -799,6 +873,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
     let (ack_tx, ack_rx) = async_channel::unbounded::<(ConversationId, u64, Result<(), String>)>();
     let (intent_tx, intent_rx) =
         async_channel::unbounded::<(ConversationId, RequestId, Result<(), String>)>();
+    let (import_tx, import_rx) = async_channel::unbounded::<ImportResult>();
 
     let cache_saver = Rc::new(CacheSaver::new(storage.clone()));
     let search_runner = Rc::new(SearchRunner::new(storage.clone()));
@@ -810,8 +885,22 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
         let setup_tx = life_tx.clone();
         model.update(cx, |m, _| {
             m.set_support_report(support_report);
+            let native_backend = native_backend.clone();
             m.set_effect_handler(Box::new(move |effect, cx| match effect {
                 Effect::Backend(request) => backend.request(request),
+                Effect::Import(step) => {
+                    let tx = import_tx.clone();
+                    let done: crate::adapters::native::ImportDone = Box::new(move |result| {
+                        let _ = tx.send_blocking(result);
+                    });
+                    match &native_backend {
+                        Some(native) => native.import(step, done),
+                        None => done(crate::adapters::native::import_unavailable(
+                            &step,
+                            "this engine cannot import a Pi profile",
+                        )),
+                    }
+                }
                 Effect::SaveDraft {
                     conversation,
                     text,
@@ -972,11 +1061,11 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
     // and open the remembered one, which shows its saved copy while the engine connects (or
     // when it never does).
     if options.mode == Mode::Real {
-        let restore = &mut restore;
+        let restore = restore.clone();
         model.update(cx, |m, cx| {
             m.mutate(
                 |state| {
-                    let mut out = restore.apply(state);
+                    let mut out = restore.borrow_mut().apply(state);
                     out.merge(state.select_initial());
                     out
                 },
@@ -1076,9 +1165,9 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
     }
     {
         let weak = model.downgrade();
+        let restore = restore.clone();
         cx.spawn(async move |cx| {
             while let Ok(event) = life_rx.recv().await {
-                let restore = &mut restore;
                 let alive = weak.update(cx, |m, cx| match event {
                     LifecycleEvent::Connection(c) => m.set_connection(c, cx),
                     LifecycleEvent::Catalog(boot) => {
@@ -1091,7 +1180,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                         m.mutate(
                             |state| {
                                 let mut out = state.apply_catalog(boot);
-                                out.merge(restore.apply(state));
+                                out.merge(restore.borrow_mut().apply(state));
                                 out.merge(state.select_initial());
                                 out
                             },
@@ -1108,6 +1197,58 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                         m.mutate(|state| state.set_storage_issue(message), cx)
                     }
                 });
+                if alive.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+    // Pi import answers: an offer to confirm, or the end of an import, after which the imported
+    // conversations' desktop data is copied over from the Pi namespace.
+    {
+        let weak = model.downgrade();
+        let storage = storage.clone();
+        let restore = restore.clone();
+        let pi_namespace = pi_namespace(&options);
+        cx.spawn(async move |cx| {
+            while let Ok(result) = import_rx.recv().await {
+                let alive = match result {
+                    ImportResult::Offer(offer) => weak.update(cx, |m, cx| {
+                        m.mutate(|state| state.import_discovered(offer), cx)
+                    }),
+                    ImportResult::Finished {
+                        message,
+                        imported,
+                        existing,
+                    } => {
+                        let copy = {
+                            let storage = storage.clone();
+                            let pi_namespace = pi_namespace.clone();
+                            let imported = imported.clone();
+                            cx.background_executor()
+                                .spawn(async move {
+                                    copy_imported(&storage, &pi_namespace, &imported, &existing)
+                                })
+                                .await
+                        };
+                        weak.update(cx, |m, cx| {
+                            let copied = copy.map(|(report, loaded)| {
+                                restore.borrow_mut().add_imported(loaded, &imported);
+                                report
+                            });
+                            let notice = import_notice(message, copied);
+                            m.mutate(
+                                |state| {
+                                    let mut out = restore.borrow_mut().apply(state);
+                                    out.merge(state.import_finished(notice));
+                                    out
+                                },
+                                cx,
+                            )
+                        })
+                    }
+                };
                 if alive.is_err() {
                     break;
                 }
@@ -1352,6 +1493,14 @@ mod tests {
             namespace(&pi),
             "the engines never share desktop data"
         );
+    }
+
+    #[test]
+    fn a_native_import_copies_from_the_namespace_the_pi_engine_uses() {
+        let native = parse(&["--engine", "native", "--data-dir", "/tmp/a"]).unwrap();
+        let pi = parse(&["--data-dir", "/tmp/a"]).unwrap();
+        assert_eq!(pi_namespace(&native), namespace(&pi));
+        assert_ne!(pi_namespace(&native), namespace(&native));
     }
 
     #[test]

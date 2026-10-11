@@ -211,7 +211,15 @@ fn reference_fixtures_import_open_and_continue_equivalently() {
 
     let sources: Vec<Vec<u8>> = ids
         .iter()
-        .map(|id| std::fs::read(agent.join("experimental/sessions").join(id).join("session.sqlite")).unwrap())
+        .map(|id| {
+            std::fs::read(
+                agent
+                    .join("experimental/sessions")
+                    .join(id)
+                    .join("session.sqlite"),
+            )
+            .unwrap()
+        })
         .collect();
     e.events.clear();
     let view = import(&mut e, &agent, &ids);
@@ -236,9 +244,13 @@ fn reference_fixtures_import_open_and_continue_equivalently() {
     });
     // The legacy sources are untouched.
     for (id, before) in ids.iter().zip(&sources) {
-        let after =
-            std::fs::read(agent.join("experimental/sessions").join(id).join("session.sqlite"))
-                .unwrap();
+        let after = std::fs::read(
+            agent
+                .join("experimental/sessions")
+                .join(id)
+                .join("session.sqlite"),
+        )
+        .unwrap();
         assert!(after == *before, "{id}: the source changed");
     }
     let Ok(Reply::Sessions { sessions }) = e.call(Call::ListSessions) else {
@@ -325,7 +337,13 @@ fn reference_fixtures_import_open_and_continue_equivalently() {
         let snapshot = e.snapshot(id);
         let last = snapshot.entries.last().unwrap();
         assert!(
-            matches!(&last.kind, EntryKind::Message { message: Message::Assistant { .. }, .. }),
+            matches!(
+                &last.kind,
+                EntryKind::Message {
+                    message: Message::Assistant { .. },
+                    ..
+                }
+            ),
             "{id}"
         );
     }
@@ -397,11 +415,18 @@ fn locked_blocked_and_unknown_sessions_are_reported_and_nothing_is_written() {
             .status
             .clone()
     };
-    assert!(matches!(status(&id), ImportSessionStatus::Locked { detail: Some(_) }));
+    assert!(matches!(
+        status(&id),
+        ImportSessionStatus::Locked { detail: Some(_) }
+    ));
     assert!(
         matches!(status("never-opened"), ImportSessionStatus::Blocked { reasons } if reasons[0].contains("never opened"))
     );
-    assert_eq!(found.sessions.len(), 2, "the lock directory is not a session");
+    assert_eq!(
+        found.sessions.len(),
+        2,
+        "the lock directory is not a session"
+    );
 
     e.events.clear();
     let view = import(
@@ -414,7 +439,10 @@ fn locked_blocked_and_unknown_sessions_are_reported_and_nothing_is_written() {
             "../etc".into(),
         ],
     );
-    assert!(matches!(outcome(&view, &id), ImportSessionOutcome::Locked { .. }));
+    assert!(matches!(
+        outcome(&view, &id),
+        ImportSessionOutcome::Locked { .. }
+    ));
     assert!(matches!(
         outcome(&view, "never-opened"),
         ImportSessionOutcome::Blocked { .. }
@@ -530,8 +558,14 @@ fn credentials_merge_without_overwriting_and_keep_reserved_ones_where_they_are()
 
     let saved = std::fs::read_to_string(config.join("auth.json")).unwrap();
     // Existing native entries keep their bytes, including the one this engine does not know.
-    assert!(saved.contains(r#""groq": {"type":"api_key",   "key": "gsk-NATIVE"}"#), "{saved}");
-    assert!(saved.contains(r#""custom": {"type": "bespoke", "x": [1,2,3]}"#), "{saved}");
+    assert!(
+        saved.contains(r#""groq": {"type":"api_key",   "key": "gsk-NATIVE"}"#),
+        "{saved}"
+    );
+    assert!(
+        saved.contains(r#""custom": {"type": "bespoke", "x": [1,2,3]}"#),
+        "{saved}"
+    );
     let saved: Value = serde_json::from_str(&saved).unwrap();
     let source: Value = serde_json::from_str(pi_auth).unwrap();
     assert_eq!(saved["openrouter"], source["openrouter"]);
@@ -541,10 +575,16 @@ fn credentials_merge_without_overwriting_and_keep_reserved_ones_where_they_are()
         serde_json::to_string_pretty(&source["openai-codex"]).unwrap(),
         "the imported entry keeps its field order"
     );
-    assert!(saved.get("anthropic").is_none(), "the reserved credential is not imported");
+    assert!(
+        saved.get("anthropic").is_none(),
+        "the reserved credential is not imported"
+    );
     assert_eq!(saved["groq"]["key"], "gsk-NATIVE");
     // The Pi profile is untouched.
-    assert_eq!(std::fs::read_to_string(agent.join("auth.json")).unwrap(), pi_auth);
+    assert_eq!(
+        std::fs::read_to_string(agent.join("auth.json")).unwrap(),
+        pi_auth
+    );
     // The imported credential is usable: its provider now reports saved credentials.
     let Ok(Reply::Auth(auth)) = e.call(Call::AuthState) else {
         panic!()
@@ -584,7 +624,11 @@ fn configuration_is_copied_without_overwriting_native_files() {
     let agent = agent_with(fx.dir.path(), &[]);
     std::fs::write(agent.join("models.json"), r#"{"providers": {}}"#).unwrap();
     std::fs::write(agent.join("AGENTS.md"), "# pi rules").unwrap();
-    std::fs::write(agent.join("auth.json"), r#"{"x": {"type": "api_key", "key": "k"}}"#).unwrap();
+    std::fs::write(
+        agent.join("auth.json"),
+        r#"{"x": {"type": "api_key", "key": "k"}}"#,
+    )
+    .unwrap();
     std::fs::create_dir_all(agent.join("skills/review")).unwrap();
     std::fs::write(agent.join("skills/review/SKILL.md"), "review").unwrap();
     std::fs::write(agent.join("skills/notes.md"), "notes").unwrap();
@@ -608,15 +652,22 @@ fn configuration_is_copied_without_overwriting_native_files() {
     }) else {
         panic!()
     };
-    let got: HashMap<&str, &ConfigItemOutcome> =
-        view.items.iter().map(|i| (i.name.as_str(), &i.outcome)).collect();
+    let got: HashMap<&str, &ConfigItemOutcome> = view
+        .items
+        .iter()
+        .map(|i| (i.name.as_str(), &i.outcome))
+        .collect();
     assert_eq!(got["models.json"], &ConfigItemOutcome::Copied { files: 1 });
     assert_eq!(got["AGENTS.md"], &ConfigItemOutcome::KeptExisting);
     assert_eq!(
         got["skills"],
         &ConfigItemOutcome::Partial { files: 1, kept: 1 }
     );
-    assert_eq!(got["auth.json"], &ConfigItemOutcome::NotFound, "never through config");
+    assert_eq!(
+        got["auth.json"],
+        &ConfigItemOutcome::NotFound,
+        "never through config"
+    );
     assert_eq!(got["../etc"], &ConfigItemOutcome::NotFound);
     assert_eq!(
         std::fs::read_to_string(config.join("models.json")).unwrap(),
@@ -647,7 +698,10 @@ fn the_agent_directory_defaults_like_the_reference() {
         )
     };
     let home = env(&[("HOME", "/home/u")]);
-    assert_eq!(agent_dir(&home, None).unwrap(), PathBuf::from("/home/u/.pi/agent"));
+    assert_eq!(
+        agent_dir(&home, None).unwrap(),
+        PathBuf::from("/home/u/.pi/agent")
+    );
     assert_eq!(
         agent_dir(&home, Some("/given".into())).unwrap(),
         PathBuf::from("/given")
@@ -657,10 +711,16 @@ fn the_agent_directory_defaults_like_the_reference() {
         PathBuf::from("/home/u/.pi/agent")
     );
     let set = env(&[("HOME", "/home/u"), ("PI_CODING_AGENT_DIR", "~/custom")]);
-    assert_eq!(agent_dir(&set, None).unwrap(), PathBuf::from("/home/u/custom"));
+    assert_eq!(
+        agent_dir(&set, None).unwrap(),
+        PathBuf::from("/home/u/custom")
+    );
     let abs = env(&[("PI_CODING_AGENT_DIR", "/srv/agent")]);
     assert_eq!(agent_dir(&abs, None).unwrap(), PathBuf::from("/srv/agent"));
-    assert_eq!(agent_dir(&env(&[]), None).unwrap_err().code, ErrorCode::Invalid);
+    assert_eq!(
+        agent_dir(&env(&[]), None).unwrap_err().code,
+        ErrorCode::Invalid
+    );
     assert_eq!(
         agent_dir(&home, Some("relative".into())).unwrap_err().code,
         ErrorCode::Invalid
