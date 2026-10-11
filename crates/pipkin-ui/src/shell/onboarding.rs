@@ -297,7 +297,7 @@ impl Workspace {
                         }
                     }
                     body = body.child(div().text_size(theme.small_size()).text_color(c.text_muted)
-                        .child("ChatGPT sign-in uses Pi's openai-codex connection, not an OpenAI API key."));
+                        .child("ChatGPT sign-in uses your ChatGPT subscription (the openai-codex connection), not an OpenAI API key."));
                     for (provider, label, id) in [
                         (
                             SignInProvider::Claude,
