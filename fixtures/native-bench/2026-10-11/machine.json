@@ -1,0 +1,14 @@
+{
+  "cpu": "Intel(R) Core(TM) Ultra X7 358H",
+  "logicalCpus": 16,
+  "memTotalKiB": 65326544,
+  "kernel": "7.2.5-3-omarchy",
+  "governor": "powersave",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "gitRevision": "9b64a996b6f21d3727145a73cc48ed490196db57",
+  "gitDirty": true,
+  "loadavg": "3.20 15.25 13.47 1/2995 577162",
+  "scratch": "/home/jason/coding/pipkin/.claude/worktrees/agent-a9e58b76fa110eb89/target/tmp",
+  "scratchFilesystem": "btrfs",
+  "releaseProfile": "workspace [profile.release]: opt-level 3, debug = line-tables-only"
+}
