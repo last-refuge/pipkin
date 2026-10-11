@@ -1883,9 +1883,7 @@ impl AppState {
             return out;
         }
         match ev.kind {
-            EventKind::SubagentsSynced { .. } | EventKind::SubagentDirectory { .. }
-                if c.opened =>
-            {
+            EventKind::SubagentsSynced { .. } | EventKind::SubagentDirectory { .. } if c.opened => {
                 let (enabled, children, paged, truncated) = match ev.kind {
                     EventKind::SubagentDirectory {
                         enabled,

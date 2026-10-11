@@ -24,6 +24,7 @@ use pipkin_engine::provider::ProviderRequest;
 use pipkin_engine::provider::scripted::{self, Gate, Reply, Scripted};
 use pipkin_engine::runtime::{EngineHandle, registry_with};
 use pipkin_engine_protocol::{Block, Call, ClientFrame, Message, ServerFrame};
+use serde_json::json;
 
 use super::client::{FrameReceiver, FrameSender, Link};
 use super::supervisor::HostSpec;
@@ -1247,4 +1248,156 @@ fn git(dir: &Path, args: &[&str]) {
         .expect("git runs")
         .success();
     assert!(ok, "git {args:?}");
+}
+
+/// Tool results in a model request (how far a scripted child has got).
+fn tool_results(request: &ProviderRequest) -> usize {
+    request
+        .messages
+        .iter()
+        .filter(|m| matches!(m, Message::ToolResult { .. }))
+        .count()
+}
+
+const LONG_ROUNDS: usize = 25;
+const CALLS_PER_ROUND: usize = 10;
+
+#[test]
+fn a_parent_delegates_and_the_inspector_pages_through_its_subagents() {
+    let gate = Gate::new();
+    let held = gate.clone();
+    let fx = Fixture::start(move |request, _| {
+        let parent = request.tools.iter().any(|t| t.name == "subagent");
+        let task = user_texts(request).first().cloned().unwrap_or_default();
+        if parent {
+            return if tool_results(request) == 0 {
+                Reply::Tools(
+                    Some("Delegating.".into()),
+                    vec![
+                        (
+                            "subagent".into(),
+                            json!({"task": "Short survey A. Report one line."}),
+                        ),
+                        (
+                            "subagent".into(),
+                            json!({"task": "Short survey B. Report one line."}),
+                        ),
+                        (
+                            "subagent".into(),
+                            json!({"task": "LONG probe. Call probe many times."}),
+                        ),
+                    ],
+                )
+            } else {
+                Reply::Text("All subagents reported.".into())
+            };
+        }
+        if !task.starts_with("LONG") {
+            return Reply::Text(format!("short child done: {task}"));
+        }
+        let done = tool_results(request);
+        if done < LONG_ROUNDS * CALLS_PER_ROUND {
+            Reply::Tools(
+                None,
+                (0..CALLS_PER_ROUND)
+                    .map(|i| ("probe".to_owned(), json!({"n": done + i})))
+                    .collect(),
+            )
+        } else {
+            Reply::Gated(
+                held.clone(),
+                Box::new(Reply::Text("long child done".into())),
+            )
+        }
+    });
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("Split this work across subagents.");
+    // The long child is held at its final answer: still running, history already long.
+    h.until("the long child reached its last turn", |_| {
+        fx.requests().iter().any(|r| {
+            user_texts(r).first().is_some_and(|t| t.starts_with("LONG"))
+                && tool_results(r) == LONG_ROUNDS * CALLS_PER_ROUND
+        })
+    });
+    h.until("three children, two finished", |s| {
+        let sub = &s.current().unwrap().subagents;
+        sub.paged
+            && sub.children.len() == 3
+            && sub.finished_count() == 2
+            && sub.children.iter().any(|c| c.status == "running")
+    });
+    // History is a projection; the finished pair is revealed by its toggle (one page).
+    h.dispatch(Command::ToggleSubagentHistory);
+    let sub = &h.state.current().unwrap().subagents;
+    assert_eq!(
+        (sub.history_shown(), sub.can_show_more_history()),
+        (2, false)
+    );
+    let long = sub
+        .children
+        .iter()
+        .find(|c| c.task.starts_with("LONG"))
+        .unwrap()
+        .id;
+    h.dispatch(Command::SelectSubagent(Some(long)));
+    h.until("the newest page of the long child", |s| {
+        let sub = &s.current().unwrap().subagents;
+        sub.viewed == Some(long) && sub.has_older
+    });
+    let newest = h.state.current().unwrap().subagents.items.len();
+    // Page back to the start, one bounded request at a time.
+    let mut pages = 0;
+    while h.state.current().unwrap().subagents.can_load_older() {
+        let shown = h.state.current().unwrap().subagents.items.len();
+        h.dispatch(Command::LoadOlderSubagent);
+        h.until("an older child page", |s| {
+            let sub = &s.current().unwrap().subagents;
+            sub.loading_older.is_none() && (sub.items.len() > shown || !sub.has_older)
+        });
+        pages += 1;
+        assert!(pages < 10, "paging did not converge");
+    }
+    let sub = &h.state.current().unwrap().subagents;
+    assert!(pages >= 1 && sub.items.len() > newest);
+    assert!(sub.older_error.is_none());
+    let ids: Vec<u64> = sub.items.iter().map(|i| i.id.0).collect();
+    let mut sorted = ids.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted, ids, "ordered, without duplicates");
+    assert_eq!(sub.previews.iter().map(|p| p.id.0).collect::<Vec<_>>(), ids);
+    // The child's task prompt is the first entry, and every probe call is reachable once.
+    assert!(matches!(&sub.items[0].kind, ItemKind::User { text, .. } if text.starts_with("LONG")));
+    let probes = sub
+        .items
+        .iter()
+        .filter(|i| matches!(&i.kind, ItemKind::Tool(t) if t.name == "probe"))
+        .count();
+    assert_eq!(probes, LONG_ROUNDS * CALLS_PER_ROUND);
+    let first = ids[0];
+    // Live: the child answers; only its newest page is re-read, the paged-in start stays.
+    gate.open();
+    h.until("the long child's answer arrives live", |s| {
+        s.current()
+            .unwrap()
+            .subagents
+            .previews
+            .iter()
+            .any(|p| &*p.text == "long child done")
+    });
+    let sub = &h.state.current().unwrap().subagents;
+    assert_eq!(sub.items[0].id.0, first);
+    assert_eq!(sub.selected, Some(long));
+    h.until("the parent settles", |s| {
+        is_idle(s)
+            && assistant_texts(s)
+                .last()
+                .is_some_and(|t| t == "All subagents reported.")
+    });
+    h.until("every child finished", |s| {
+        s.current().unwrap().subagents.finished_count() == 3
+    });
+    h.stop();
 }

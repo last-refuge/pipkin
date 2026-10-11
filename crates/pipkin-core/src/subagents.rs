@@ -3,7 +3,6 @@
 //! cursor that asked for it (conversation and generation are checked by `AppState`).
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use crate::ids::ItemId;
 use crate::model::*;
@@ -109,7 +108,10 @@ impl SubagentState {
                     "{}: {}\n{}",
                     tool.name,
                     tool.input.chars().take(TOOL_PART_CHARS).collect::<String>(),
-                    tool.output.chars().take(TOOL_PART_CHARS).collect::<String>()
+                    tool.output
+                        .chars()
+                        .take(TOOL_PART_CHARS)
+                        .collect::<String>()
                 )
                 .into(),
             ),
@@ -301,7 +303,11 @@ mod tests {
                 call_ref: None,
                 call_id: Some(call.into()),
                 name: "read".into(),
-                input: if output.is_empty() { "{}".into() } else { String::new() },
+                input: if output.is_empty() {
+                    "{}".into()
+                } else {
+                    String::new()
+                },
                 output: output.into(),
                 truncated: false,
                 full_len: output.len(),
@@ -336,7 +342,10 @@ mod tests {
             s.previews.iter().map(|p| p.id.0).collect::<Vec<_>>(),
             ids(&s)
         );
-        assert_eq!(s.previews[..5].iter().map(|p| p.rev).collect::<Vec<_>>(), revs[..5]);
+        assert_eq!(
+            s.previews[..5].iter().map(|p| p.rev).collect::<Vec<_>>(),
+            revs[..5]
+        );
         assert!(s.previews[5..].iter().all(|p| p.rev > revs[9]));
     }
 
