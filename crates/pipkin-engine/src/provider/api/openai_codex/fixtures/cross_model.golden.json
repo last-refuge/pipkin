@@ -1,0 +1,205 @@
+{
+ "requests": [
+  {
+   "url": "http://127.0.0.1:1/codex/responses",
+   "headers": {
+    "accept": "text/event-stream",
+    "authorization": "Bearer eyJhbGciOiJub25lIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF8xMjMifX0.sig",
+    "chatgpt-account-id": "acct_123",
+    "content-encoding": "zstd",
+    "content-type": "application/json",
+    "openai-beta": "responses=experimental",
+    "originator": "pi",
+    "session-id": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+    "user-agent": "pi (linux 7.2.5-3-omarchy; x64)",
+    "x-client-request-id": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+    "x-model-header": "m"
+   },
+   "body": {
+    "model": "gpt-5.5",
+    "store": false,
+    "stream": true,
+    "instructions": "sys",
+    "input": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "input_text",
+        "text": "look"
+       },
+       {
+        "type": "input_text",
+        "text": "(image omitted: model does not support images)"
+       }
+      ]
+     },
+     {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+       {
+        "type": "output_text",
+        "text": "foreign thought",
+        "annotations": []
+       }
+      ],
+      "status": "completed",
+      "id": "msg_pi_1"
+     },
+     {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+       {
+        "type": "output_text",
+        "text": "foreign text",
+        "annotations": []
+       }
+      ],
+      "status": "completed",
+      "id": "msg_pi_1_1"
+     },
+     {
+      "type": "function_call",
+      "id": "fc_10elxzq1n5uf6t",
+      "call_id": "call_x",
+      "name": "read",
+      "arguments": "{\"path\":\"x\"}"
+     },
+     {
+      "type": "function_call_output",
+      "call_id": "call_x",
+      "output": "out\n(tool image omitted: model does not support images)"
+     },
+     {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+       {
+        "type": "output_text",
+        "text": "older model text",
+        "annotations": []
+       }
+      ],
+      "status": "completed",
+      "id": "msg_pi_3"
+     },
+     {
+      "type": "function_call",
+      "call_id": "call_o",
+      "name": "read",
+      "arguments": "{\"path\":\"o\"}"
+     },
+     {
+      "type": "function_call_output",
+      "call_id": "call_o",
+      "output": "No result provided"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "input_text",
+        "text": "next"
+       }
+      ]
+     },
+     {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+       {
+        "type": "output_text",
+        "text": "a",
+        "annotations": []
+       }
+      ],
+      "status": "completed",
+      "id": "msg_pi_6"
+     },
+     {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+       {
+        "type": "output_text",
+        "text": "b",
+        "annotations": []
+       }
+      ],
+      "status": "completed",
+      "id": "msg_pi_6_1"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "input_text",
+        "text": "last"
+       }
+      ]
+     }
+    ],
+    "text": {
+     "verbosity": "low"
+    },
+    "include": [
+     "reasoning.encrypted_content"
+    ],
+    "prompt_cache_key": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+    "tool_choice": "auto",
+    "parallel_tool_calls": true,
+    "tools": [
+     {
+      "type": "function",
+      "name": "read",
+      "description": "Read a file",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "path": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "path"
+       ]
+      },
+      "strict": null
+     }
+    ]
+   }
+  }
+ ],
+ "message": {
+  "role": "assistant",
+  "content": [
+   {
+    "type": "text",
+    "text": "partial"
+   }
+  ],
+  "api": "openai-codex-responses",
+  "provider": "openai-codex",
+  "model": "gpt-5.5",
+  "usage": {
+   "input": 35,
+   "output": 7,
+   "cacheRead": 10,
+   "cacheWrite": 5,
+   "reasoning": 0,
+   "totalTokens": 57,
+   "cost": {
+    "input": 0.00017500000000000003,
+    "output": 0.00021,
+    "cacheRead": 0.0000049999999999999996,
+    "cacheWrite": 0,
+    "total": 0.00039000000000000005
+   }
+  },
+  "stopReason": "length",
+  "responseId": "resp_3",
+  "rawStopReason": "incomplete.max_output_tokens"
+ }
+}

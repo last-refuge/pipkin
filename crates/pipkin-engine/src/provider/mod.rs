@@ -236,6 +236,16 @@ impl Emitter {
         index
     }
 
+    /// Replace a text or thinking block's text without emitting a delta (APIs that send an
+    /// authoritative final copy of a block after streaming it).
+    pub fn set_block_text(&mut self, index: usize, value: &str) {
+        match self.content.get_mut(index) {
+            Some(Block::Text { text, .. }) => *text = value.to_owned(),
+            Some(Block::Thinking { thinking, .. }) => *thinking = value.to_owned(),
+            _ => {}
+        }
+    }
+
     /// Set or extend a thinking block's opaque signature.
     pub fn thinking_signature(&mut self, index: usize, signature: &str, append: bool) {
         if let Some(Block::Thinking { signature: s, .. }) = self.content.get_mut(index) {

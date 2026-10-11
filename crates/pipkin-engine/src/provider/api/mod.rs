@@ -5,7 +5,12 @@ use std::sync::Arc;
 
 use super::ApiAdapter;
 
+pub mod openai_codex_responses;
+
 /// Every built-in adapter.
 pub fn all() -> Vec<Arc<dyn ApiAdapter>> {
-    vec![]
+    vec![
+        // One adapter per line, so parallel additions merge cleanly.
+        openai_codex_responses::adapter(),
+    ]
 }

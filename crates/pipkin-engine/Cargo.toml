@@ -14,7 +14,7 @@ rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 log = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "process", "io-util", "macros", "fs", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }
-futures-util = { version = "0.3", default-features = false, features = ["std"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json", "http2"] }
 bytes = "1"
 getrandom = "0.2"
@@ -26,6 +26,8 @@ regex = "1"
 globset = "0.4"
 ignore = "0.4"
 url = "2"
+zstd = { version = "0.13", default-features = false }
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
 
 [dev-dependencies]
 tempfile = "3"

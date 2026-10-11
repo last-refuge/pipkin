@@ -1,0 +1,58 @@
+{
+ "model": {
+  "id": "gpt-5.5",
+  "name": "GPT-5.5",
+  "api": "openai-codex-responses",
+  "provider": "openai-codex",
+  "baseUrl": "http://127.0.0.1:1",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 5,
+   "output": 30,
+   "cacheRead": 0.5,
+   "cacheWrite": 0
+  },
+  "contextWindow": 272000,
+  "maxTokens": 128000,
+  "thinkingLevelMap": {
+   "off": "minimal",
+   "xhigh": "xhigh"
+  },
+  "headers": {
+   "x-model-header": "m"
+  },
+  "compat": {}
+ },
+ "systemPrompt": "",
+ "messages": [
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "hi"
+    }
+   ],
+   "timestamp": 1
+  }
+ ],
+ "tools": [],
+ "options": {
+  "apiKey": "eyJhbGciOiJub25lIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF8xMjMifX0.sig",
+  "transport": "sse",
+  "maxRetries": 1
+ },
+ "replies": [
+  {
+   "status": 429,
+   "headers": {
+    "retry-after-ms": "5"
+   },
+   "body": "{\"error\": {\"code\": \"usage_limit_reached\", \"plan_type\": \"PRO\"}}"
+  }
+ ]
+}
