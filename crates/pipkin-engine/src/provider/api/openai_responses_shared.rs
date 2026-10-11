@@ -1,42 +1,59 @@
-//! Shared pieces of the OpenAI Responses adapters (reference `api/openai-responses-shared.ts`):
-//! context -> `input` items, tool definitions, and the typed event stream -> content blocks.
+//! Shared pieces of the OpenAI Responses adapters (`openai-responses`, `azure-openai-responses`,
+//! `openai-codex-responses`; reference `api/openai-responses-shared.ts`): context -> `input`
+//! items, tool definitions, the typed event stream -> content blocks, and service-tier pricing.
 //!
 //! Replay contract: a reasoning item is stored whole (JSON) as the thinking block's signature and
 //! sent back verbatim; an assistant text block carries `textSignature` = `{"v":1,"id","phase"}`
 //! so the message item keeps its id and phase; tool call ids are `"<call_id>|<item_id>"`.
+//!
+//! Engine differences from the reference context model, all by construction:
+//! - The system prompt is a flat string on the request, so there are no mid-conversation system
+//!   messages and no `toolsAdded` anchors (`additional_tools` / client `tool_search_*` items are
+//!   never produced).
+//! - `ToolSpec` has no `constrainedSampling`, so grammar (`custom`) tools and strict JSON-schema
+//!   sampling never apply; every tool is a `function` tool.
+//! - Rust strings are always valid UTF-8, so `sanitizeSurrogates` is a no-op.
 
 use std::collections::HashMap;
 use std::ops::ControlFlow;
 
-use pipkin_engine_protocol::{Block, Message, StopReason};
+use pipkin_engine_protocol::{Block, Message, StopReason, Usage};
 use reqwest::header::HeaderMap;
 use serde_json::{Map, Value, json};
 
-use super::openai_completions::{ToolArgs, data_url, finalize_tool_args};
-use super::transform::{
-    Mapped, idle_timeout, mapped_level, post_json, sanitize_id_chars, short_hash, take_chars,
+use super::common::{
+    Mapped, NO_TIMEOUT, ToolArgs, data_url, finalize_tool_args, idle_timeout, js_truthy,
+    mapped_level, post_json, resolve_sampling_params, sanitize_id_chars, short_hash, take_chars,
     transform_messages,
 };
-use crate::provider::model::ThinkingLevel;
+use crate::provider::model::{Model, ThinkingLevel};
 use crate::provider::{Emitter, ProviderRequest, StreamCtx, ToolSpec, http};
 
 // ---------------------------------------------------------------------------------------------
 // Text signatures
 // ---------------------------------------------------------------------------------------------
 
-/// `{"v":1,"id":...,"phase":...}` in the reference's key order.
+/// Reference `encodeTextSignatureV1`: `{"v":1,"id":...,"phase":...}` in the reference's key
+/// order; an empty phase is omitted.
 pub fn encode_text_signature(id: &str, phase: Option<&str>) -> String {
-    let id = Value::String(id.to_owned()).to_string();
-    match phase {
-        Some(p) => format!(
-            "{{\"v\":1,\"id\":{id},\"phase\":{}}}",
-            Value::String(p.to_owned())
-        ),
-        None => format!("{{\"v\":1,\"id\":{id}}}"),
-    }
+    text_signature(Some(&Value::String(id.to_owned())), phase)
 }
 
-/// A V1 signature, or a legacy plain item id.
+/// `JSON.stringify({v: 1, id, phase})` for a message item: an absent id is omitted (as
+/// `JSON.stringify` drops `undefined`), any other id value is kept as is.
+fn text_signature(id: Option<&Value>, phase: Option<&str>) -> String {
+    let mut out = Map::new();
+    out.insert("v".into(), json!(1));
+    if let Some(id) = id {
+        out.insert("id".into(), id.clone());
+    }
+    if let Some(phase) = phase.filter(|p| !p.is_empty()) {
+        out.insert("phase".into(), json!(phase));
+    }
+    Value::Object(out).to_string()
+}
+
+/// Reference `parseTextSignature`: a V1 signature, or a legacy plain item id.
 pub fn parse_text_signature(signature: Option<&str>) -> Option<(String, Option<String>)> {
     let signature = signature.filter(|s| !s.is_empty())?;
     if signature.starts_with('{')
@@ -58,6 +75,7 @@ pub fn parse_text_signature(signature: Option<&str>) -> Option<(String, Option<S
 // Input conversion
 // ---------------------------------------------------------------------------------------------
 
+/// `part.replace(/[^a-zA-Z0-9_-]/g, "_")`, cut to 64 UTF-16 units, trailing `_` removed.
 fn normalize_id_part(part: &str) -> String {
     let sanitized = take_chars(&sanitize_id_chars(part), 64);
     sanitized.trim_end_matches('_').to_owned()
@@ -67,15 +85,13 @@ fn foreign_item_id(item_id: &str) -> String {
     take_chars(&format!("fc_{}", short_hash(item_id)), 64)
 }
 
-fn tool_result_output(req: &ProviderRequest, content: &[Block]) -> Value {
-    let text: Vec<&str> = content
+/// Reference `convertToolResultOutput`.
+fn tool_result_output(model: &Model, content: &[Block]) -> Value {
+    let text = content
         .iter()
-        .filter_map(|b| match b {
-            Block::Text { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect();
-    let text = text.join("\n");
+        .filter_map(Block::as_text)
+        .collect::<Vec<_>>()
+        .join("\n");
     let images: Vec<(&str, &str)> = content
         .iter()
         .filter_map(|b| match b {
@@ -85,7 +101,7 @@ fn tool_result_output(req: &ProviderRequest, content: &[Block]) -> Value {
             _ => None,
         })
         .collect();
-    if images.is_empty() || !req.model.supports_images() {
+    if images.is_empty() || !model.supports_images() {
         let body = if !text.is_empty() {
             text
         } else if !images.is_empty() {
@@ -93,7 +109,7 @@ fn tool_result_output(req: &ProviderRequest, content: &[Block]) -> Value {
         } else {
             "(no tool output)".into()
         };
-        return json!(body);
+        return Value::String(body);
     }
     let mut out = Vec::new();
     if !text.is_empty() {
@@ -107,13 +123,21 @@ fn tool_result_output(req: &ProviderRequest, content: &[Block]) -> Value {
     Value::Array(out)
 }
 
-/// Context -> Responses `input` (reference `convertResponsesMessages`). Tool call ids are kept
-/// as `call|item` only for providers in `allowed_tool_call_providers`.
-pub fn convert_messages(req: &ProviderRequest, allowed_tool_call_providers: &[&str]) -> Vec<Value> {
-    let model = &req.model;
-    let mut out: Vec<Value> = Vec::new();
+/// Context -> Responses `input` (reference `convertResponsesMessages`,
+/// `openai-responses-shared.ts:145-354`). `system` is the leading instruction message
+/// (`includeSystemPrompt`; Codex sends it as `instructions` instead and passes `None`). Tool
+/// call ids are kept as `call|item` only for providers in `allowed_tool_call_providers`.
+///
+/// Fails when a same-model reasoning signature is not valid JSON (the reference `JSON.parse`
+/// throws there).
+pub fn convert_messages(
+    model: &Model,
+    system: Option<&str>,
+    messages: &[Message],
+    allowed_tool_call_providers: &[&str],
+) -> Result<Vec<Value>, String> {
     let allowed = allowed_tool_call_providers.contains(&model.provider.as_str());
-    let normalize = |id: &str, source: &Message| -> String {
+    let mut normalize = |id: &str, source: &Message| -> String {
         if !allowed || !id.contains('|') {
             return normalize_id_part(id);
         }
@@ -136,14 +160,18 @@ pub fn convert_messages(req: &ProviderRequest, allowed_tool_call_providers: &[&s
         }
         format!("{call_id}|{item}")
     };
-    let messages = transform_messages(&req.messages, model, Some(&normalize));
-    let developer = model.reasoning && model.compat_bool("supportsDeveloperRole") != Some(false);
-    if !req.system.is_empty() {
+    let messages = transform_messages(messages, model, Some(&mut normalize));
+    let mut out: Vec<Value> = Vec::new();
+    if let Some(system) = system.filter(|s| !s.is_empty()) {
+        let developer =
+            model.reasoning && model.compat_bool("supportsDeveloperRole") != Some(false);
         out.push(
-            json!({"role": if developer { "developer" } else { "system" }, "content": req.system}),
+            json!({"role": if developer { "developer" } else { "system" }, "content": system}),
         );
     }
 
+    // `msgIndex` only advances for messages that produced output (the reference `continue`s
+    // past the increment for empty user/assistant messages).
     let mut msg_index = 0usize;
     for msg in &messages {
         match msg {
@@ -185,13 +213,10 @@ pub fn convert_messages(req: &ProviderRequest, allowed_tool_call_providers: &[&s
                     match block {
                         Block::Thinking { signature, .. } => {
                             if let Some(sig) = signature.as_deref().filter(|s| !s.is_empty()) {
-                                // An unparseable signature is not a Responses reasoning item;
-                                // it cannot be replayed here and is skipped.
-                                if let Ok(item) = serde_json::from_str::<Value>(sig)
-                                    && item.is_object()
-                                {
-                                    items.push(item);
-                                }
+                                let item: Value = serde_json::from_str(sig).map_err(|e| {
+                                    format!("Invalid reasoning signature JSON: {e}")
+                                })?;
+                                items.push(item);
                             }
                         }
                         Block::Text { text, extra } => {
@@ -235,19 +260,18 @@ pub fn convert_messages(req: &ProviderRequest, allowed_tool_call_providers: &[&s
                             let item_id = parts
                                 .next()
                                 .filter(|i| !different_model && i.starts_with("fc_"));
-                            let mut item = json!({
-                                "type": "function_call",
-                                "call_id": call_id,
-                                "name": name,
-                                "arguments": arguments.to_string(),
-                            });
+                            let mut item = Map::new();
+                            item.insert("type".into(), "function_call".into());
                             if let Some(i) = item_id {
-                                item["id"] = json!(i);
+                                item.insert("id".into(), json!(i));
                             }
+                            item.insert("call_id".into(), json!(call_id));
+                            item.insert("name".into(), json!(name));
+                            item.insert("arguments".into(), json!(arguments.to_string()));
                             if same_model && let Some(ns) = extra.get("namespace") {
-                                item["namespace"] = ns.clone();
+                                item.insert("namespace".into(), ns.clone());
                             }
-                            items.push(item);
+                            items.push(Value::Object(item));
                         }
                         Block::Image { .. } => {}
                     }
@@ -266,31 +290,35 @@ pub fn convert_messages(req: &ProviderRequest, allowed_tool_call_providers: &[&s
                 out.push(json!({
                     "type": "function_call_output",
                     "call_id": call_id,
-                    "output": tool_result_output(req, content),
+                    "output": tool_result_output(model, content),
                 }));
             }
         }
         msg_index += 1;
     }
-    out
+    Ok(out)
 }
 
-/// Tool definitions (reference `convertResponsesTools`). `strict` is only sent when the
-/// endpoint supports it; tools never request strict JSON-schema sampling here.
-pub fn convert_tools(tools: &[ToolSpec], supports_strict_mode: bool) -> Vec<Value> {
+/// Tool definitions (reference `convertResponsesTools`, `openai-responses-shared.ts:360-397`).
+/// `strict` is the `strict` option (`None` = JSON `null`, as Codex sends it; the reference
+/// default is `false`) and is only sent when the endpoint supports strict mode.
+pub fn convert_tools(
+    tools: &[ToolSpec],
+    supports_strict_mode: bool,
+    strict: Option<bool>,
+) -> Vec<Value> {
     tools
         .iter()
         .map(|t| {
-            let mut tool = json!({
-                "type": "function",
-                "name": t.name,
-                "description": t.description,
-                "parameters": t.parameters,
-            });
+            let mut tool = Map::new();
+            tool.insert("type".into(), json!("function"));
+            tool.insert("name".into(), json!(t.name));
+            tool.insert("description".into(), json!(t.description));
+            tool.insert("parameters".into(), t.parameters.clone());
             if supports_strict_mode {
-                tool["strict"] = json!(false);
+                tool.insert("strict".into(), strict.map_or(Value::Null, Value::Bool));
             }
-            tool
+            Value::Object(tool)
         })
         .collect()
 }
@@ -332,11 +360,48 @@ pub fn apply_reasoning(
             p.insert("include".into(), json!(["reasoning.encrypted_content"]));
         }
     }
-    if let Some(sampling) = super::transform::resolve_sampling_params(req, requested) {
+    if let Some(sampling) = resolve_sampling_params(req, requested) {
         for (k, v) in sampling {
             p.insert(k, v);
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Service tiers
+// ---------------------------------------------------------------------------------------------
+
+/// Reference `getServiceTierCostMultiplier`. `fast_is_priority`: `openai-responses` prices the
+/// `fast` tier like `priority` (`openai-responses.ts:399`); Codex does not
+/// (`openai-codex-responses.ts:606-613`).
+pub fn service_tier_multiplier(model_id: &str, tier: Option<&str>, fast_is_priority: bool) -> f64 {
+    match tier {
+        Some("flex") => 0.5,
+        Some("priority") => {
+            if model_id == "gpt-5.5" {
+                2.5
+            } else {
+                2.0
+            }
+        }
+        Some("fast") if fast_is_priority => {
+            service_tier_multiplier(model_id, Some("priority"), true)
+        }
+        _ => 1.0,
+    }
+}
+
+/// Reference `applyServiceTierPricing`.
+pub fn apply_service_tier_pricing(usage: &mut Usage, multiplier: f64) {
+    if multiplier == 1.0 {
+        return;
+    }
+    usage.cost.input *= multiplier;
+    usage.cost.output *= multiplier;
+    usage.cost.cache_read *= multiplier;
+    usage.cost.cache_write *= multiplier;
+    usage.cost.total =
+        usage.cost.input + usage.cost.output + usage.cost.cache_read + usage.cost.cache_write;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -350,24 +415,30 @@ enum Slot {
     Tool(usize),
 }
 
+#[derive(Debug)]
 enum PendingArgs {
     Json(String),
     Custom(String),
 }
 
-/// Event-by-event state for one Responses stream (reference `processResponsesStream`).
-#[derive(Default)]
+/// Event-by-event state for one Responses stream (reference `processResponsesStream`,
+/// `openai-responses-shared.ts:433-777`).
+#[derive(Debug, Default)]
 pub struct ResponsesStream {
     slots: HashMap<i64, Slot>,
-    /// Tool calls whose `output_item.done` has not arrived, with their streamed arguments.
+    /// Tool calls whose `output_item.done` has not arrived, with their streamed arguments
+    /// (reference `partialJson` / `customInput` still on the block).
     pending: HashMap<usize, PendingArgs>,
     reasoning_by_id: HashMap<String, usize>,
-    saw_terminal: bool,
+    /// A terminal response event (`response.completed`/`incomplete`/`failed`) arrived.
+    pub saw_terminal: bool,
     /// `None` until something sets it (reference "pending").
     pub stop: Option<StopReason>,
     pub error_message: Option<String>,
     /// The service tier the response reports.
     pub service_tier: Option<String>,
+    /// The response id (`response.created`, then the terminal response).
+    pub response_id: Option<String>,
 }
 
 fn block_text(e: &Emitter, index: usize) -> String {
@@ -383,6 +454,9 @@ fn block_text(e: &Emitter, index: usize) -> String {
 fn settle_text(e: &mut Emitter, index: usize, thinking: bool, text: &str) {
     let current = block_text(e, index);
     if let Some(suffix) = text.strip_prefix(current.as_str()) {
+        if suffix.is_empty() {
+            return;
+        }
         if thinking {
             e.thinking(index, suffix);
         } else {
@@ -393,12 +467,27 @@ fn settle_text(e: &mut Emitter, index: usize, thinking: bool, text: &str) {
     }
 }
 
+/// JS template-literal rendering of a field (`undefined` / `null` spelled out).
 fn js_string(v: Option<&Value>) -> String {
     match v {
         None => "undefined".into(),
         Some(Value::String(s)) => s.clone(),
         Some(other) => other.to_string(),
     }
+}
+
+/// A token count (`x || 0`; fractional counts are floored).
+fn count(v: &Value, pointer: &str) -> u64 {
+    v.pointer(pointer)
+        .and_then(|n| n.as_u64().or_else(|| n.as_f64().map(|f| f.max(0.0) as u64)))
+        .unwrap_or(0)
+}
+
+fn output_index(event: &Value) -> i64 {
+    event
+        .get("output_index")
+        .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+        .unwrap_or(-1)
 }
 
 impl ResponsesStream {
@@ -419,23 +508,23 @@ impl ResponsesStream {
                 );
                 let name = item.get("name").and_then(Value::as_str).unwrap_or_default();
                 let index = e.start_tool_call(&id, name);
-                if let Some(ns) = item.get("namespace").filter(|v| !v.is_null()) {
+                if let Some(ns) = item.get("namespace") {
                     e.block_extra(index, "namespace", ns.clone());
                 }
-                let pending = if kind == "function_call" {
-                    PendingArgs::Json(
-                        item.get("arguments")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                    )
+                let field = if kind == "function_call" {
+                    "arguments"
                 } else {
-                    PendingArgs::Custom(
-                        item.get("input")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                    )
+                    "input"
+                };
+                let initial = item
+                    .get(field)
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                let pending = if kind == "function_call" {
+                    PendingArgs::Json(initial)
+                } else {
+                    PendingArgs::Custom(initial)
                 };
                 self.pending.insert(index, pending);
                 Slot::Tool(index)
@@ -446,15 +535,14 @@ impl ResponsesStream {
         Some(slot)
     }
 
+    /// Azure can omit `encrypted_content` from `output_item.done` and send it only in the
+    /// terminal response; backfill the stored reasoning item from there.
     fn backfill_reasoning(&self, e: &mut Emitter, output: &[Value]) {
         for item in output {
             if item.get("type").and_then(Value::as_str) != Some("reasoning") {
                 continue;
             }
-            let Some(encrypted) = item
-                .get("encrypted_content")
-                .filter(|v| v.as_str().is_some_and(|s| !s.is_empty()))
-            else {
+            let Some(encrypted) = item.get("encrypted_content").filter(|v| js_truthy(v)) else {
                 continue;
             };
             let Some(index) = item
@@ -475,10 +563,7 @@ impl ResponsesStream {
             let Ok(Value::Object(mut stored)) = serde_json::from_str::<Value>(sig) else {
                 continue;
             };
-            if stored
-                .get("encrypted_content")
-                .is_some_and(|v| v.as_str().is_some_and(|s| !s.is_empty()))
-            {
+            if stored.get("encrypted_content").is_some_and(js_truthy) {
                 continue;
             }
             stored.insert("encrypted_content".into(), encrypted.clone());
@@ -496,20 +581,20 @@ impl ResponsesStream {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
         {
+            self.response_id = Some(id.to_owned());
             e.set_response_id(id);
         }
-        if let Some(usage) = response.get("usage").filter(|u| u.is_object()) {
-            let n = |p: &str| usage.pointer(p).and_then(Value::as_u64).unwrap_or(0);
-            let cached = n("/input_tokens_details/cached_tokens");
-            let cache_write = n("/input_tokens_details/cache_write_tokens");
+        if let Some(usage) = response.get("usage").filter(|u| js_truthy(u)) {
+            let cached = count(usage, "/input_tokens_details/cached_tokens");
+            let cache_write = count(usage, "/input_tokens_details/cache_write_tokens");
             let u = e.usage_mut();
-            u.input = n("/input_tokens")
+            u.input = count(usage, "/input_tokens")
                 .saturating_sub(cached)
                 .saturating_sub(cache_write);
-            u.output = n("/output_tokens");
+            u.output = count(usage, "/output_tokens");
             u.cache_read = cached;
             u.cache_write = cache_write;
-            u.total_tokens = n("/total_tokens");
+            u.total_tokens = count(usage, "/total_tokens");
         }
         self.service_tier = response
             .get("service_tier")
@@ -518,11 +603,12 @@ impl ResponsesStream {
         let status = response.get("status").and_then(Value::as_str);
         let reason = response
             .pointer("/incomplete_details/reason")
-            .and_then(Value::as_str);
+            .and_then(Value::as_str)
+            .filter(|r| !r.is_empty());
+        // `incompleteReason ? `${status}.${incompleteReason}` : status`
         let raw = match (status, reason) {
-            (Some(s), Some(r)) => Some(format!("{s}.{r}")),
+            (s, Some(r)) => Some(format!("{}.{r}", s.unwrap_or("undefined"))),
             (Some(s), None) => Some(s.to_owned()),
-            (None, Some(r)) => Some(format!("undefined.{r}")),
             (None, None) => None,
         };
         if let Some(raw) = raw {
@@ -543,10 +629,7 @@ impl ResponsesStream {
             .get("type")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        let output_index = event
-            .get("output_index")
-            .and_then(Value::as_i64)
-            .unwrap_or(-1);
+        let output_index = output_index(event);
         let delta = event
             .get("delta")
             .and_then(Value::as_str)
@@ -555,6 +638,7 @@ impl ResponsesStream {
         match ty {
             "response.created" => {
                 if let Some(id) = event.pointer("/response/id").and_then(Value::as_str) {
+                    self.response_id = Some(id.to_owned());
                     e.set_response_id(id);
                 }
             }
@@ -618,105 +702,7 @@ impl ResponsesStream {
                 let Some(item) = event.get("item") else {
                     return Ok(());
                 };
-                let kind = item.get("type").and_then(Value::as_str).unwrap_or_default();
-                if kind == "message"
-                    && item.get("phase").and_then(Value::as_str) == Some("final_answer")
-                {
-                    self.stop = Some(StopReason::Stop);
-                }
-                let slot = match slot {
-                    Some(s) => Some(s),
-                    None => self.create_slot(e, output_index, item),
-                };
-                match (kind, slot) {
-                    ("reasoning", Some(Slot::Thinking(i))) => {
-                        let join = |key: &str, field: &str| -> String {
-                            item.get(key)
-                                .and_then(Value::as_array)
-                                .map(|parts| {
-                                    parts
-                                        .iter()
-                                        .map(|p| {
-                                            p.get(field).and_then(Value::as_str).unwrap_or_default()
-                                        })
-                                        .collect::<Vec<_>>()
-                                        .join("\n\n")
-                                })
-                                .unwrap_or_default()
-                        };
-                        let summary = join("summary", "text");
-                        let content = join("content", "text");
-                        let text = if !summary.is_empty() {
-                            summary
-                        } else if !content.is_empty() {
-                            content
-                        } else {
-                            block_text(e, i)
-                        };
-                        settle_text(e, i, true, &text);
-                        e.thinking_signature(i, &item.to_string(), false);
-                        if let Some(id) = item.get("id").and_then(Value::as_str) {
-                            self.reasoning_by_id.insert(id.to_owned(), i);
-                        }
-                        self.slots.remove(&output_index);
-                    }
-                    ("message", Some(Slot::Text(i))) => {
-                        let text: String = item
-                            .get("content")
-                            .and_then(Value::as_array)
-                            .map(|parts| {
-                                parts
-                                    .iter()
-                                    .map(|c| {
-                                        let field = if c.get("type").and_then(Value::as_str)
-                                            == Some("output_text")
-                                        {
-                                            "text"
-                                        } else {
-                                            "refusal"
-                                        };
-                                        c.get(field).and_then(Value::as_str).unwrap_or_default()
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        settle_text(e, i, false, &text);
-                        let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
-                        let phase = item.get("phase").and_then(Value::as_str);
-                        e.block_extra(i, "textSignature", json!(encode_text_signature(id, phase)));
-                        self.slots.remove(&output_index);
-                    }
-                    ("function_call", Some(Slot::Tool(i))) => {
-                        if let Some(PendingArgs::Json(buf)) = self.pending.remove(&i) {
-                            let raw = item
-                                .get("arguments")
-                                .and_then(Value::as_str)
-                                .filter(|s| !s.is_empty())
-                                .map(str::to_owned)
-                                .unwrap_or(if buf.is_empty() { "{}".into() } else { buf });
-                            finalize_tool_args(e, [(i, ToolArgs::Json(raw))]);
-                            if let Some(ns) = item.get("namespace").filter(|v| !v.is_null()) {
-                                e.block_extra(i, "namespace", ns.clone());
-                            }
-                            self.slots.remove(&output_index);
-                        }
-                    }
-                    ("custom_tool_call", Some(Slot::Tool(i))) => {
-                        if let Some(PendingArgs::Custom(buf)) = self.pending.remove(&i) {
-                            let input = item
-                                .get("input")
-                                .and_then(Value::as_str)
-                                .map(str::to_owned)
-                                .unwrap_or(buf);
-                            finalize_tool_args(e, [(i, ToolArgs::Custom(input))]);
-                            if let Some(ns) = item.get("namespace").filter(|v| !v.is_null()) {
-                                e.block_extra(i, "namespace", ns.clone());
-                            }
-                            self.slots.remove(&output_index);
-                        }
-                    }
-                    _ => {}
-                }
+                self.item_done(e, output_index, slot, item);
             }
             "response.completed" | "response.incomplete" => {
                 let response = event.get("response").cloned().unwrap_or(Value::Null);
@@ -734,16 +720,14 @@ impl ResponsesStream {
                 if let Some(status) = event.pointer("/response/status").and_then(Value::as_str) {
                     e.message_extra("rawStopReason", json!(status));
                 }
-                let error = event.pointer("/response/error").filter(|v| truthy_obj(v));
+                let error = event.pointer("/response/error").filter(|v| js_truthy(v));
                 let reason = event
                     .pointer("/response/incomplete_details/reason")
-                    .and_then(Value::as_str)
-                    .filter(|s| !s.is_empty());
+                    .filter(|v| js_truthy(v));
                 let message = if let Some(error) = error {
                     let pick = |k: &str, d: &str| -> String {
                         match error.get(k) {
-                            Some(Value::String(s)) if !s.is_empty() => s.clone(),
-                            Some(v) if !v.is_null() && !v.is_string() => v.to_string(),
+                            Some(v) if js_truthy(v) => js_string(Some(v)),
                             _ => d.to_owned(),
                         }
                     };
@@ -753,7 +737,7 @@ impl ResponsesStream {
                         pick("message", "no message")
                     )
                 } else if let Some(reason) = reason {
-                    format!("incomplete: {reason}")
+                    format!("incomplete: {}", js_string(Some(reason)))
                 } else {
                     "Unknown error (no error details in response)".into()
                 };
@@ -764,9 +748,109 @@ impl ResponsesStream {
         Ok(())
     }
 
+    fn item_done(&mut self, e: &mut Emitter, output_index: i64, slot: Option<Slot>, item: &Value) {
+        let kind = item.get("type").and_then(Value::as_str).unwrap_or_default();
+        if kind == "message" && item.get("phase").and_then(Value::as_str) == Some("final_answer") {
+            self.stop = Some(StopReason::Stop);
+        }
+        let slot = match slot {
+            Some(s) => Some(s),
+            None => self.create_slot(e, output_index, item),
+        };
+        match (kind, slot) {
+            ("reasoning", Some(Slot::Thinking(i))) => {
+                let join = |key: &str| -> String {
+                    item.get(key)
+                        .and_then(Value::as_array)
+                        .map(|parts| {
+                            parts
+                                .iter()
+                                .map(|p| p.get("text").and_then(Value::as_str).unwrap_or_default())
+                                .collect::<Vec<_>>()
+                                .join("\n\n")
+                        })
+                        .unwrap_or_default()
+                };
+                let summary = join("summary");
+                let content = join("content");
+                let text = if !summary.is_empty() {
+                    summary
+                } else if !content.is_empty() {
+                    content
+                } else {
+                    block_text(e, i)
+                };
+                settle_text(e, i, true, &text);
+                e.thinking_signature(i, &item.to_string(), false);
+                if let Some(id) = item.get("id").and_then(Value::as_str) {
+                    self.reasoning_by_id.insert(id.to_owned(), i);
+                }
+                self.slots.remove(&output_index);
+            }
+            ("message", Some(Slot::Text(i))) => {
+                let text: String = item
+                    .get("content")
+                    .and_then(Value::as_array)
+                    .map(|parts| {
+                        parts
+                            .iter()
+                            .map(|c| {
+                                let field = if c.get("type").and_then(Value::as_str)
+                                    == Some("output_text")
+                                {
+                                    "text"
+                                } else {
+                                    "refusal"
+                                };
+                                c.get(field).and_then(Value::as_str).unwrap_or_default()
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                settle_text(e, i, false, &text);
+                let signature =
+                    text_signature(item.get("id"), item.get("phase").and_then(Value::as_str));
+                e.block_extra(i, "textSignature", json!(signature));
+                self.slots.remove(&output_index);
+            }
+            ("function_call", Some(Slot::Tool(i))) => {
+                if let Some(PendingArgs::Json(buf)) = self.pending.remove(&i) {
+                    let raw = item
+                        .get("arguments")
+                        .and_then(Value::as_str)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned)
+                        .unwrap_or(if buf.is_empty() { "{}".into() } else { buf });
+                    finalize_tool_args(e, [(i, ToolArgs::Json(raw))]);
+                    if let Some(ns) = item.get("namespace") {
+                        e.block_extra(i, "namespace", ns.clone());
+                    }
+                    self.slots.remove(&output_index);
+                }
+            }
+            ("custom_tool_call", Some(Slot::Tool(i))) => {
+                if let Some(PendingArgs::Custom(buf)) = self.pending.remove(&i) {
+                    let input = item
+                        .get("input")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                        .unwrap_or(buf);
+                    finalize_tool_args(e, [(i, ToolArgs::Custom(input))]);
+                    if let Some(ns) = item.get("namespace") {
+                        e.block_extra(i, "namespace", ns.clone());
+                    }
+                    self.slots.remove(&output_index);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Settle every unfinished tool call's arguments (failure and success paths alike).
+    /// Returns the unfinished block indexes.
     pub fn settle(&mut self, e: &mut Emitter) -> Vec<usize> {
-        let unfinished: Vec<usize> = self.pending.keys().copied().collect();
+        let mut unfinished: Vec<usize> = self.pending.keys().copied().collect();
+        unfinished.sort_unstable();
         finalize_tool_args(
             e,
             self.pending.drain().map(|(i, p)| {
@@ -782,15 +866,15 @@ impl ResponsesStream {
         unfinished
     }
 
-    /// End-of-stream checks: a terminal event must have arrived, and a tool-use stop may not
-    /// hand over calls whose item never finished.
+    /// End-of-stream checks (reference `processResponsesStream` tail): a terminal event must
+    /// have arrived, and a tool-use stop may not hand over calls whose item never finished.
     pub fn end(&mut self, e: &mut Emitter) -> Result<(), String> {
         let unfinished = self.settle(e);
         if !self.saw_terminal {
             return Err("OpenAI Responses stream ended before a terminal response event".into());
         }
         if self.stop == Some(StopReason::ToolUse)
-            && let Some(&index) = unfinished.iter().min()
+            && let Some(&index) = unfinished.first()
             && let Some(Block::ToolCall { id, name, .. }) = e.content().get(index)
         {
             return Err(format!(
@@ -799,12 +883,23 @@ impl ResponsesStream {
         }
         Ok(())
     }
+
+    /// The successful stop reason after [`Self::end`], or the error text. `label` names the API
+    /// in the "no stop reason" error.
+    pub fn outcome(&mut self, label: &str) -> Result<StopReason, String> {
+        match self.stop {
+            None => Err(format!("{label} stream ended without a stop reason")),
+            Some(StopReason::Error | StopReason::Aborted) => Err(self
+                .error_message
+                .take()
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| "An unknown error occurred".into())),
+            Some(stop) => Ok(stop),
+        }
+    }
 }
 
-fn truthy_obj(v: &Value) -> bool {
-    !v.is_null() && v.as_bool() != Some(false)
-}
-
+/// Reference `mapStopReason` (`openai-responses-shared.ts:779-809`).
 fn map_status(
     status: Option<&str>,
     reason: Option<&str>,
@@ -827,9 +922,10 @@ fn map_status(
     })
 }
 
-/// One Responses exchange: send, stream, and settle the message. `http_error` formats an HTTP
-/// failure; `label` names the API in the "no stop reason" error. Returns the message and the
-/// service tier the response reported.
+/// One SDK-style Responses exchange (`openai-responses`, `azure-openai-responses`): send,
+/// stream, and settle the message. `http_error` formats an HTTP failure; `label` names the API
+/// in the "no stop reason" error. Returns the message and the service tier the response
+/// reported.
 pub async fn exchange(
     ctx: &StreamCtx<'_>,
     url: &str,
@@ -846,7 +942,7 @@ pub async fn exchange(
     };
     let mut state = ResponsesStream::default();
     let mut failure: Option<String> = None;
-    let read = http::read_sse(resp, idle_timeout(req), &ctx.cancel, |ev| {
+    let read = http::read_sse(resp, idle_timeout(req, NO_TIMEOUT), &ctx.cancel, |ev| {
         let data = ev.data.trim();
         if data.is_empty() || data.starts_with("[DONE]") {
             return ControlFlow::Continue(());
@@ -896,19 +992,9 @@ pub async fn exchange(
     if ctx.cancel.is_cancelled() {
         return (ctx.failed(e, "Request was aborted"), tier);
     }
-    match state.stop {
-        None => (
-            ctx.failed(e, format!("{label} stream ended without a stop reason")),
-            tier,
-        ),
-        Some(StopReason::Error | StopReason::Aborted) => {
-            let m = state
-                .error_message
-                .take()
-                .unwrap_or_else(|| "An unknown error occurred".into());
-            (ctx.failed(e, m), tier)
-        }
-        Some(stop) => (e.finish(req, stop, None), tier),
+    match state.outcome(label) {
+        Ok(stop) => (e.finish(req, stop, None), tier),
+        Err(m) => (ctx.failed(e, m), tier),
     }
 }
 
@@ -933,6 +1019,9 @@ mod tests {
             Some(("msg_legacy".into(), None))
         );
         assert_eq!(parse_text_signature(Some("")), None);
+        // `JSON.stringify` drops an undefined id and an empty phase.
+        assert_eq!(text_signature(None, Some("")), r#"{"v":1}"#);
+        assert_eq!(encode_text_signature("m", Some("")), r#"{"v":1,"id":"m"}"#);
     }
 
     #[test]
@@ -940,6 +1029,9 @@ mod tests {
         assert_eq!(normalize_id_part("call+a/b=="), "call_a_b");
         assert_eq!(normalize_id_part(&"x".repeat(80)).len(), 64);
         assert_eq!(foreign_item_id("abc"), "fc_y0biex7f9bbh");
+        assert_eq!(normalize_id_part("call_1.2"), "call_1_2");
+        assert_eq!(normalize_id_part("a\u{1f600}"), "a");
+        assert_eq!(normalize_id_part("ab__"), "ab");
     }
 
     #[test]
@@ -966,5 +1058,39 @@ mod tests {
             (StopReason::Error, None)
         );
         assert!(map_status(Some("bogus"), None).is_err());
+    }
+
+    #[test]
+    fn service_tier_pricing_follows_each_reference_table() {
+        assert_eq!(service_tier_multiplier("gpt-5.5", Some("fast"), true), 2.5);
+        assert_eq!(service_tier_multiplier("gpt-5.5", Some("fast"), false), 1.0);
+        assert_eq!(service_tier_multiplier("m", Some("priority"), false), 2.0);
+        assert_eq!(service_tier_multiplier("m", Some("flex"), false), 0.5);
+    }
+
+    #[test]
+    fn invalid_same_model_reasoning_signatures_fail_like_the_reference() {
+        let model: Model = serde_json::from_value(json!({
+            "id": "gpt", "provider": "openai", "api": "openai-responses"
+        }))
+        .unwrap();
+        let msg = Message::Assistant {
+            content: vec![Block::Thinking {
+                thinking: "t".into(),
+                signature: Some("not json".into()),
+                redacted: false,
+                extra: Map::new(),
+            }],
+            api: "openai-responses".into(),
+            provider: "openai".into(),
+            model: "gpt".into(),
+            usage: Default::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: 1,
+            extra: Map::new(),
+        };
+        let err = convert_messages(&model, None, &[msg], &["openai"]).unwrap_err();
+        assert!(err.starts_with("Invalid reasoning signature JSON"), "{err}");
     }
 }

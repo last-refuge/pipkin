@@ -736,7 +736,7 @@ async fn assume_role(
     let builder = input
         .http
         .post(url)
-        .headers(super::mistral_conversations::header_map(&headers))
+        .headers(super::common::header_map(&headers)?)
         .timeout(Duration::from_secs(30))
         .body(body);
     let (status, text) = send_with_cancel(builder, input.cancel).await?;

@@ -36,7 +36,11 @@ use url::Url;
 
 use super::aws_auth::{self, AwsCredentials, ChainInput, SigningParams};
 use super::bedrock_eventstream::{EventMessage, EventStreamDecoder};
-use super::mistral_conversations::{header_map, transform_messages};
+use super::common::{
+    adjust_max_tokens_for_thinking, base_max_tokens, clamp_max_tokens_to_context,
+    clamp_thinking_budget_to_answer_room, header_map, sanitize_tool_call_id,
+    thinking_budget_for_level, transform_messages,
+};
 use crate::provider::http;
 use crate::provider::{
     ApiAdapter, BoxFuture, CacheRetention, Credential, Emitter, Model, ProviderRequest, StreamCtx,
@@ -50,7 +54,6 @@ const INTERLEAVED_THINKING_BETA: &str = "interleaved-thinking-2025-05-14";
 const DATA_RETENTION_DOCS_URL: &str =
     "https://docs.aws.amazon.com/bedrock/latest/userguide/data-retention.html";
 const MAX_ATTEMPTS: u32 = 3;
-const MIN_ANSWER_TOKENS: u64 = 1024;
 
 /// Reads the process environment (the "ambient" layer below request env overrides).
 pub type AmbientEnv = fn(&str) -> Option<String>;
@@ -181,23 +184,6 @@ fn effort(model: &Model, level: ThinkingLevel) -> String {
         _ => "high",
     }
     .into()
-}
-
-fn default_budget(level: ThinkingLevel) -> u64 {
-    match level {
-        ThinkingLevel::Minimal => 1024,
-        ThinkingLevel::Low => 2048,
-        ThinkingLevel::Medium => 8192,
-        _ => 16384,
-    }
-}
-
-/// `xhigh`/`max` use the `high` budget (reference `clampReasoning`).
-fn budget_level(level: ThinkingLevel) -> ThinkingLevel {
-    match level {
-        ThinkingLevel::Xhigh | ThinkingLevel::Max => ThinkingLevel::High,
-        l => l,
-    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -377,19 +363,6 @@ fn sanitize_document(v: &Value) -> Value {
     }
 }
 
-fn normalize_tool_call_id(id: &str) -> String {
-    id.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .take(64)
-        .collect()
-}
-
 fn tool_result_content(content: &[Block]) -> Result<Vec<Value>, String> {
     let mut out = Vec::new();
     for b in content {
@@ -418,7 +391,7 @@ fn cache_point(retention: CacheRetention) -> Value {
 fn convert_messages(req: &ProviderRequest, caching: bool) -> Result<Vec<Value>, String> {
     let model = &req.model;
     let claude = is_claude(model);
-    let mut normalize = normalize_tool_call_id;
+    let mut normalize = |id: &str, _: &Message| sanitize_tool_call_id(id);
     let messages = transform_messages(&req.messages, model, Some(&mut normalize));
     let mut out: Vec<Value> = Vec::new();
     let mut i = 0;
@@ -564,26 +537,15 @@ fn tool_config(req: &ProviderRequest) -> Option<Value> {
     Some(config)
 }
 
-fn custom_budget(req: &ProviderRequest, level: ThinkingLevel) -> Option<u64> {
-    req.options
-        .get("thinkingBudgets")
-        .and_then(|b| b.get(level.as_str()))
-        .and_then(Value::as_u64)
-}
-
-/// `(maxTokens, thinking budget)` for budget-based Claude thinking (reference `streamSimple` +
-/// `adjustMaxTokensForThinking`).
+/// `(maxTokens, thinking budget)` for budget-based Claude thinking (reference `streamSimple`,
+/// `bedrock-converse-stream.ts:555-571`: `adjustMaxTokensForThinking` on the context-clamped
+/// base, then `clampMaxTokensToContext` again).
 fn budget_and_max_tokens(req: &ProviderRequest, level: ThinkingLevel) -> (u64, u64) {
-    let base = req.max_tokens.unwrap_or(req.model.max_tokens);
-    let clamped = budget_level(level);
-    let mut budget = custom_budget(req, clamped).unwrap_or_else(|| default_budget(clamped));
-    let max_tokens = (base + budget).min(req.model.max_tokens);
-    if max_tokens <= budget {
-        budget = budget.min(max_tokens.saturating_sub(MIN_ANSWER_TOKENS));
-    }
+    let (adjusted, budget) = adjust_max_tokens_for_thinking(req, Some(base_max_tokens(req)), level);
+    let max_tokens = clamp_max_tokens_to_context(req, adjusted);
     (
         max_tokens,
-        budget.min(max_tokens.saturating_sub(MIN_ANSWER_TOKENS)),
+        clamp_thinking_budget_to_answer_room(budget, max_tokens),
     )
 }
 
@@ -628,7 +590,7 @@ fn additional_fields(env: &Env<'_>, budget: Option<u64>) -> Option<Value> {
             );
         }
     } else {
-        let budget = budget.unwrap_or_else(|| default_budget(req.thinking));
+        let budget = budget.unwrap_or_else(|| thinking_budget_for_level(req, req.thinking));
         let mut thinking = json!({"type": "enabled", "budget_tokens": budget});
         if let Some(d) = &display {
             thinking["display"] = json!(d);
@@ -662,7 +624,8 @@ fn build_body(env: &Env<'_>) -> Result<Value, String> {
             let (m, b) = budget_and_max_tokens(req, req.thinking);
             (m, Some(b))
         } else {
-            (req.max_tokens.unwrap_or(model.max_tokens), None)
+            // Reference `buildBaseOptions`: the cap is clamped to the context window.
+            (base_max_tokens(req), None)
         };
     let mut body = Map::new();
     body.insert(
@@ -1143,10 +1106,14 @@ impl BedrockConverseStream {
                     );
                 }
             }
+            let headers = match header_map(&headers) {
+                Ok(h) => h,
+                Err(err) => return ctx.failed(e, err),
+            };
             let send = ctx
                 .http
                 .post(url.clone())
-                .headers(header_map(&headers))
+                .headers(headers)
                 .body(body.clone())
                 .send();
             let result = tokio::select! {
@@ -2073,6 +2040,42 @@ mod tests {
         assert!(
             matches!(&msg, Message::Assistant { error_message: Some(e), .. } if e == "Could not load credentials from any providers"),
             "{msg:?}"
+        );
+    }
+
+    /// Reference `clampMaxTokensToContext` (`simple-options.ts:18-22`) through
+    /// `buildBaseOptions`: 10000 window - 1100 estimated - 4096 safety = 4804.
+    fn crowd_context(req: &mut ProviderRequest) {
+        req.system = "x".repeat(4000);
+        req.messages = vec![Message::user_text("y".repeat(400), 1)];
+    }
+
+    #[test]
+    fn max_tokens_and_budgets_are_clamped_to_the_context_window() {
+        // Plain models: the base cap (`buildBaseOptions`).
+        let mut req = request(model(
+            "openai.gpt-oss-120b-1:0",
+            json!({"contextWindow": 10000, "maxTokens": 32000}),
+        ));
+        req.max_tokens = Some(32000);
+        crowd_context(&mut req);
+        let body = build_body(&env(&req)).unwrap();
+        assert_eq!(body["inferenceConfig"]["maxTokens"], json!(4804));
+
+        // Budget-based Claude: adjust the clamped base (4804 + 8192), clamp again, and leave
+        // the answer 1024 tokens (`bedrock-converse-stream.ts:555-571`).
+        let mut req = request(model(
+            "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            json!({"contextWindow": 10000}),
+        ));
+        req.max_tokens = None;
+        req.thinking = ThinkingLevel::Medium;
+        crowd_context(&mut req);
+        let body = build_body(&env(&req)).unwrap();
+        assert_eq!(body["inferenceConfig"]["maxTokens"], json!(4804));
+        assert_eq!(
+            body["additionalModelRequestFields"]["thinking"]["budget_tokens"],
+            json!(3780)
         );
     }
 }

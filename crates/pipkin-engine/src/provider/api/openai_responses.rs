@@ -9,11 +9,14 @@ use std::sync::Arc;
 use pipkin_engine_protocol::Message;
 use serde_json::{Map, Value, json};
 
+use super::common::{base_max_tokens, build_headers, opt_str, reasoning_effort};
 use super::openai_completions::{
     clamp_prompt_cache_key, client_api_key, copilot_headers, sdk_error,
 };
-use super::openai_responses_shared::{apply_reasoning, convert_messages, convert_tools, exchange};
-use super::transform::{build_headers, option_str, reasoning_effort};
+use super::openai_responses_shared::{
+    apply_reasoning, apply_service_tier_pricing, convert_messages, convert_tools, exchange,
+    service_tier_multiplier,
+};
 use crate::provider::{ApiAdapter, BoxFuture, CacheRetention, ProviderRequest, StreamCtx};
 
 pub const API: &str = "openai-responses";
@@ -86,7 +89,7 @@ fn is_chatgpt_sign_in(req: &ProviderRequest) -> bool {
 }
 
 /// The request body (reference `buildParams`).
-pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
+pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Result<Value, String> {
     let model = &req.model;
     let retention = req.cache_retention;
     let omit = is_chatgpt_sign_in(req);
@@ -94,7 +97,12 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
     p.insert("model".into(), json!(model.id));
     p.insert(
         "input".into(),
-        Value::Array(convert_messages(req, TOOL_CALL_PROVIDERS)),
+        Value::Array(convert_messages(
+            model,
+            Some(&req.system),
+            &req.messages,
+            TOOL_CALL_PROVIDERS,
+        )?),
     );
     p.insert("stream".into(), json!(true));
     p.insert("store".into(), json!(false));
@@ -118,7 +126,8 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
             }
         }
     }
-    let max_tokens = req.max_tokens.unwrap_or(model.max_tokens);
+    // Reference `buildBaseOptions`: the cap is clamped to what fits in the context window.
+    let max_tokens = base_max_tokens(req);
     if max_tokens > 0 && compat.supports_max_output_tokens && !omit {
         p.insert(
             "max_output_tokens".into(),
@@ -134,7 +143,11 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
     if !req.tools.is_empty() {
         p.insert(
             "tools".into(),
-            Value::Array(convert_tools(&req.tools, compat.supports_strict_mode)),
+            Value::Array(convert_tools(
+                &req.tools,
+                compat.supports_strict_mode,
+                Some(false),
+            )),
         );
     }
     if let Some(choice) = req.options.get("toolChoice").filter(|v| !v.is_null()) {
@@ -147,21 +160,7 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
         model.provider == "github-copilot",
         model.provider == "xai",
     );
-    Value::Object(p)
-}
-
-fn service_tier_multiplier(model_id: &str, tier: Option<&str>) -> f64 {
-    match tier {
-        Some("flex") => 0.5,
-        Some("priority" | "fast") => {
-            if model_id == "gpt-5.5" {
-                2.5
-            } else {
-                2.0
-            }
-        }
-        _ => 1.0,
-    }
+    Ok(Value::Object(p))
 }
 
 async fn run(ctx: StreamCtx<'_>) -> Message {
@@ -201,7 +200,10 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
         Ok(h) => h,
         Err(m) => return ctx.failed(ctx.emitter(), m),
     };
-    let body = build_params(req, &compat);
+    let body = match build_params(req, &compat) {
+        Ok(b) => b,
+        Err(m) => return ctx.failed(ctx.emitter(), m),
+    };
     let url = format!("{}/responses", req.base_url().trim_end_matches('/'));
     let format_http = |text: &str| sdk_error(text, Some(&prefix));
     let (mut message, response_tier) =
@@ -212,18 +214,11 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
         ..
     } = &mut message
     {
-        let tier = response_tier.or_else(|| option_str(req, "serviceTier").map(str::to_owned));
-        let multiplier = service_tier_multiplier(&req.model.id, tier.as_deref());
-        if multiplier != 1.0 {
-            usage.cost.input *= multiplier;
-            usage.cost.output *= multiplier;
-            usage.cost.cache_read *= multiplier;
-            usage.cost.cache_write *= multiplier;
-            usage.cost.total = usage.cost.input
-                + usage.cost.output
-                + usage.cost.cache_read
-                + usage.cost.cache_write;
-        }
+        let tier = response_tier.or_else(|| opt_str(req, "serviceTier").map(str::to_owned));
+        apply_service_tier_pricing(
+            usage,
+            service_tier_multiplier(&req.model.id, tier.as_deref(), true),
+        );
         if let Some(text) = error_message
             && text.contains("subscription_sharing_usage_limit_exceeded")
         {
@@ -254,7 +249,7 @@ mod tests {
     }
 
     fn body(req: &ProviderRequest) -> Value {
-        build_params(req, &Compat::resolve(req))
+        build_params(req, &Compat::resolve(req)).unwrap()
     }
 
     fn reasoning_item() -> Value {
@@ -453,10 +448,7 @@ mod tests {
         ];
         let b = body(&req);
         let input = b["input"].as_array().unwrap();
-        let expected_item = format!(
-            "fc_{}",
-            crate::provider::api::transform::short_hash("item/zz")
-        );
+        let expected_item = format!("fc_{}", crate::provider::api::common::short_hash("item/zz"));
         assert_eq!(
             input[1],
             json!({"type": "function_call", "id": expected_item, "call_id": "call_1", "name": "read", "arguments": "{}"})
@@ -785,5 +777,20 @@ mod tests {
         assert_eq!(stop, StopReason::Aborted);
         assert_eq!(error, None);
         assert!(matches!(content[0], Block::Thinking { .. }));
+    }
+
+    /// Reference `clampMaxTokensToContext` (`simple-options.ts:18-22`) through
+    /// `buildBaseOptions`: 10000 window - 1100 estimated - 4096 safety = 4804.
+    fn crowd_context(req: &mut ProviderRequest) {
+        req.system = "x".repeat(4000);
+        req.messages = vec![Message::user_text("y".repeat(400), 1)];
+    }
+
+    #[test]
+    fn max_output_tokens_are_clamped_to_the_context_window() {
+        let mut req = request(json!({"id": "m", "provider": "acme", "api": API,
+            "baseUrl": "https://acme.test/v1", "contextWindow": 10000, "maxTokens": 32000}));
+        crowd_context(&mut req);
+        assert_eq!(body(&req)["max_output_tokens"], json!(4804));
     }
 }

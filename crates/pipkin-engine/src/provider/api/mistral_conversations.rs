@@ -11,9 +11,6 @@
 //! - Tool-call ids replayed across models become 9-character alphanumeric ids (deterministic
 //!   hash with collision handling); thinking replays as a `thinking` content chunk.
 //! - Errors keep the reference text: `Mistral API error (<status>): <body>`.
-//!
-//! This module also holds small replay helpers ([`transform_messages`], [`merge_headers`])
-//! that the Bedrock adapter reuses.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,6 +20,10 @@ use futures_util::StreamExt;
 use pipkin_engine_protocol::{Block, Message, StopReason};
 use serde_json::{Map, Value, json};
 
+use super::common::transform::NON_VISION_USER_IMAGE_PLACEHOLDER;
+use super::common::{
+    Headers, base_max_tokens, data_url, short_hash, transform_messages, truncate_error_text,
+};
 use crate::provider::http;
 use crate::provider::sse::{SseDecoder, SseEvent};
 use crate::provider::{
@@ -51,311 +52,14 @@ impl ApiAdapter for MistralConversations {
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Shared replay helpers
-// ---------------------------------------------------------------------------------------------
-
-const NON_VISION_USER_IMAGE_PLACEHOLDER: &str = "(image omitted: model does not support images)";
-const NON_VISION_TOOL_IMAGE_PLACEHOLDER: &str =
-    "(tool image omitted: model does not support images)";
-
-fn replace_images(content: &[Block], placeholder: &str) -> Vec<Block> {
-    let mut out = Vec::new();
-    let mut previous_was_placeholder = false;
-    for block in content {
-        if matches!(block, Block::Image { .. }) {
-            if !previous_was_placeholder {
-                out.push(Block::text(placeholder));
-            }
-            previous_was_placeholder = true;
-            continue;
-        }
-        previous_was_placeholder = matches!(block, Block::Text { text, .. } if text == placeholder);
-        out.push(block.clone());
-    }
-    out
-}
-
-/// Cross-provider replay normalization (reference `api/transform-messages.ts`):
-/// images become placeholders for text-only models; thinking from another model becomes text
-/// (redacted thinking is dropped); tool-call ids from another model go through `normalize_id`
-/// (results follow the mapping); errored/aborted assistant turns are skipped; tool calls
-/// without a result get a synthetic error result.
-pub(crate) fn transform_messages(
-    messages: &[Message],
-    model: &Model,
-    mut normalize_id: Option<&mut dyn FnMut(&str) -> String>,
-) -> Vec<Message> {
-    let vision = model.supports_images();
-    let mut id_map: HashMap<String, String> = HashMap::new();
-    let mut transformed = Vec::with_capacity(messages.len());
-    for msg in messages {
-        match msg {
-            Message::User {
-                content,
-                timestamp,
-                extra,
-            } => transformed.push(Message::User {
-                content: if vision {
-                    content.clone()
-                } else {
-                    replace_images(content, NON_VISION_USER_IMAGE_PLACEHOLDER)
-                },
-                timestamp: *timestamp,
-                extra: extra.clone(),
-            }),
-            Message::ToolResult {
-                tool_call_id,
-                tool_name,
-                content,
-                is_error,
-                timestamp,
-                extra,
-            } => transformed.push(Message::ToolResult {
-                tool_call_id: id_map
-                    .get(tool_call_id)
-                    .cloned()
-                    .unwrap_or_else(|| tool_call_id.clone()),
-                tool_name: tool_name.clone(),
-                content: if vision {
-                    content.clone()
-                } else {
-                    replace_images(content, NON_VISION_TOOL_IMAGE_PLACEHOLDER)
-                },
-                is_error: *is_error,
-                timestamp: *timestamp,
-                extra: extra.clone(),
-            }),
-            Message::Assistant {
-                content,
-                api,
-                provider,
-                model: model_id,
-                usage,
-                stop_reason,
-                error_message,
-                timestamp,
-                extra,
-            } => {
-                let same =
-                    provider == &model.provider && api == &model.api && model_id == &model.id;
-                let mut blocks = Vec::new();
-                for block in content {
-                    match block {
-                        Block::Thinking {
-                            thinking,
-                            signature,
-                            redacted,
-                            ..
-                        } => {
-                            if *redacted {
-                                if same {
-                                    blocks.push(block.clone());
-                                }
-                                continue;
-                            }
-                            if same && signature.as_deref().is_some_and(|s| !s.is_empty()) {
-                                blocks.push(block.clone());
-                                continue;
-                            }
-                            if thinking.trim().is_empty() {
-                                continue;
-                            }
-                            if same {
-                                blocks.push(block.clone());
-                            } else {
-                                blocks.push(Block::text(thinking.clone()));
-                            }
-                        }
-                        Block::Text { text, .. } => {
-                            if same {
-                                blocks.push(block.clone());
-                            } else {
-                                blocks.push(Block::text(text.clone()));
-                            }
-                        }
-                        Block::ToolCall {
-                            id,
-                            name,
-                            arguments,
-                            extra,
-                        } => {
-                            let mut extra = extra.clone();
-                            let mut id = id.clone();
-                            if !same {
-                                extra.remove("thoughtSignature");
-                                if let Some(normalize) = normalize_id.as_mut() {
-                                    let normalized = normalize(&id);
-                                    if normalized != id {
-                                        id_map.insert(id.clone(), normalized.clone());
-                                        id = normalized;
-                                    }
-                                }
-                            }
-                            blocks.push(Block::ToolCall {
-                                id,
-                                name: name.clone(),
-                                arguments: arguments.clone(),
-                                extra,
-                            });
-                        }
-                        Block::Image { .. } => blocks.push(block.clone()),
-                    }
-                }
-                transformed.push(Message::Assistant {
-                    content: blocks,
-                    api: api.clone(),
-                    provider: provider.clone(),
-                    model: model_id.clone(),
-                    usage: usage.clone(),
-                    stop_reason: *stop_reason,
-                    error_message: error_message.clone(),
-                    timestamp: *timestamp,
-                    extra: extra.clone(),
-                });
-            }
-        }
-    }
-
-    // Second pass: skip failed turns, close orphaned tool calls with synthetic results.
-    let mut result = Vec::with_capacity(transformed.len());
-    let mut pending: Vec<(String, String)> = Vec::new();
-    let mut answered: std::collections::HashSet<String> = Default::default();
-    let close = |result: &mut Vec<Message>,
-                 pending: &mut Vec<(String, String)>,
-                 answered: &mut std::collections::HashSet<String>| {
-        for (id, name) in pending.drain(..) {
-            if !answered.contains(&id) {
-                result.push(Message::ToolResult {
-                    tool_call_id: id,
-                    tool_name: name,
-                    content: vec![Block::text("No result provided")],
-                    is_error: true,
-                    timestamp: crate::util::now_ms(),
-                    extra: Map::new(),
-                });
-            }
-        }
-        answered.clear();
-    };
-    for msg in transformed {
-        match &msg {
-            Message::Assistant {
-                stop_reason,
-                content,
-                ..
-            } => {
-                close(&mut result, &mut pending, &mut answered);
-                if matches!(stop_reason, StopReason::Error | StopReason::Aborted) {
-                    continue;
-                }
-                let calls: Vec<(String, String)> = content
-                    .iter()
-                    .filter_map(|b| match b {
-                        Block::ToolCall { id, name, .. } => Some((id.clone(), name.clone())),
-                        _ => None,
-                    })
-                    .collect();
-                if !calls.is_empty() {
-                    pending = calls;
-                    answered.clear();
-                }
-                result.push(msg);
-            }
-            Message::ToolResult { tool_call_id, .. } => {
-                answered.insert(tool_call_id.clone());
-                result.push(msg);
-            }
-            Message::User { .. } => {
-                close(&mut result, &mut pending, &mut answered);
-                result.push(msg);
-            }
-        }
-    }
-    close(&mut result, &mut pending, &mut answered);
-    result
-}
-
-/// Apply header overrides in order (later wins; `None` deletes). Names compare
-/// case-insensitively and are stored lowercased.
-pub(crate) fn merge_headers<'a>(
-    base: &mut Vec<(String, String)>,
-    overrides: impl IntoIterator<Item = (&'a String, Option<&'a String>)>,
-) {
-    for (name, value) in overrides {
-        let lower = name.to_ascii_lowercase();
-        base.retain(|(k, _)| *k != lower);
-        if let Some(v) = value {
-            base.push((lower, v.clone()));
-        }
-    }
-}
-
-pub(crate) fn has_header_override(req: &ProviderRequest, name: &str) -> bool {
+/// Reference `hasMistralHeaderOverride`: the model or request headers name `name` (any value,
+/// even a deleting `null`).
+fn has_header_override(req: &ProviderRequest, name: &str) -> bool {
     req.model
         .headers
         .keys()
         .chain(req.headers.keys())
         .any(|k| k.eq_ignore_ascii_case(name))
-}
-
-/// The model's headers then the request's.
-pub(crate) fn configured_headers(req: &ProviderRequest, base: &mut Vec<(String, String)>) {
-    merge_headers(base, req.model.headers.iter().map(|(k, v)| (k, Some(v))));
-    merge_headers(base, req.headers.iter().map(|(k, v)| (k, v.as_ref())));
-}
-
-pub(crate) fn header_map(headers: &[(String, String)]) -> reqwest::header::HeaderMap {
-    let mut map = reqwest::header::HeaderMap::new();
-    for (k, v) in headers {
-        if let (Ok(name), Ok(value)) = (
-            reqwest::header::HeaderName::from_bytes(k.as_bytes()),
-            reqwest::header::HeaderValue::from_str(v),
-        ) {
-            map.append(name, value);
-        }
-    }
-    map
-}
-
-/// `text` cut to `max` characters with the reference's truncation suffix.
-pub(crate) fn truncate_error_text(text: &str, max: usize) -> String {
-    let count = text.chars().count();
-    if count <= max {
-        return text.to_owned();
-    }
-    let head: String = text.chars().take(max).collect();
-    format!("{head}... [truncated {} chars]", count - max)
-}
-
-/// The reference `shortHash` (cyrb53-style over UTF-16 code units, base-36 output).
-pub(crate) fn short_hash(s: &str) -> String {
-    let mut h1: u32 = 0xdead_beef;
-    let mut h2: u32 = 0x41c6_ce57;
-    for ch in s.encode_utf16() {
-        let ch = ch as u32;
-        h1 = (h1 ^ ch).wrapping_mul(2_654_435_761);
-        h2 = (h2 ^ ch).wrapping_mul(1_597_334_677);
-    }
-    h1 = (h1 ^ (h1 >> 16)).wrapping_mul(2_246_822_507)
-        ^ (h2 ^ (h2 >> 13)).wrapping_mul(3_266_489_909);
-    h2 = (h2 ^ (h2 >> 16)).wrapping_mul(2_246_822_507)
-        ^ (h1 ^ (h1 >> 13)).wrapping_mul(3_266_489_909);
-    format!("{}{}", base36(h2), base36(h1))
-}
-
-fn base36(mut n: u32) -> String {
-    const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
-    if n == 0 {
-        return "0".into();
-    }
-    let mut out = Vec::new();
-    while n > 0 {
-        out.push(DIGITS[(n % 36) as usize]);
-        n /= 36;
-    }
-    out.reverse();
-    String::from_utf8(out).unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -409,10 +113,6 @@ fn tool_call_id_normalizer() -> impl FnMut(&str) -> String {
 
 fn caching(req: &ProviderRequest) -> bool {
     req.cache_retention != CacheRetention::None && !req.session_id.is_empty()
-}
-
-fn data_url(mime: &str, data: &str) -> String {
-    format!("data:{mime};base64,{data}")
 }
 
 fn tool_result_text(text: &str, has_images: bool, vision: bool, is_error: bool) -> String {
@@ -596,7 +296,8 @@ fn reasoning_controls(model: &Model, level: ThinkingLevel) -> (Option<String>, O
 
 /// The wire body (snake_case), as sent.
 pub(crate) fn build_payload(req: &ProviderRequest) -> Value {
-    let mut normalize = tool_call_id_normalizer();
+    let mut ids = tool_call_id_normalizer();
+    let mut normalize = |id: &str, _: &Message| ids(id);
     let messages = transform_messages(&req.messages, &req.model, Some(&mut normalize));
     let mut body = Map::new();
     body.insert("model".into(), json!(req.model.id));
@@ -625,7 +326,8 @@ pub(crate) fn build_payload(req: &ProviderRequest) -> Value {
     }
     body.insert(
         "max_tokens".into(),
-        json!(req.max_tokens.unwrap_or(req.model.max_tokens)),
+        // Reference `buildBaseOptions`: the cap is clamped to what fits in the context window.
+        json!(base_max_tokens(req)),
     );
     if let Some(choice) = req.options.get("toolChoice").and_then(tool_choice) {
         body.insert("tool_choice".into(), choice);
@@ -643,15 +345,15 @@ pub(crate) fn build_payload(req: &ProviderRequest) -> Value {
     Value::Object(body)
 }
 
-pub(crate) fn build_headers(req: &ProviderRequest, key: &str) -> Vec<(String, String)> {
-    let mut headers = vec![
-        ("accept".to_owned(), "text/event-stream".to_owned()),
-        ("authorization".to_owned(), format!("Bearer {key}")),
-        ("content-type".to_owned(), "application/json".to_owned()),
-    ];
-    configured_headers(req, &mut headers);
+pub(crate) fn build_headers(req: &ProviderRequest, key: &str) -> Headers {
+    let mut headers = Headers::default();
+    headers.set("accept", "text/event-stream");
+    headers.set("authorization", format!("Bearer {key}"));
+    headers.set("content-type", "application/json");
+    headers.merge(&req.model.headers);
+    headers.merge_optional(&req.headers);
     if caching(req) && !has_header_override(req, "x-affinity") {
-        headers.push(("x-affinity".into(), req.session_id.clone()));
+        headers.set("x-affinity", req.session_id.clone());
     }
     headers
 }
@@ -865,7 +567,10 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
         );
     };
     let body = build_payload(req);
-    let headers = header_map(&build_headers(req, &key));
+    let headers = match build_headers(req, &key).to_header_map() {
+        Ok(h) => h,
+        Err(m) => return ctx.failed(e, m),
+    };
     let deadline = tokio::time::Instant::now() + whole_request_timeout(req);
 
     let send = ctx
@@ -1386,5 +1091,20 @@ mod tests {
             matches!(&msg, Message::Assistant { stop_reason: StopReason::Error, error_message: Some(e), .. } if e == TIMEOUT_MESSAGE)
         );
         assert!(crate::provider::errors::is_retryable(&msg));
+    }
+
+    /// Reference `clampMaxTokensToContext` (`simple-options.ts:18-22`) through
+    /// `buildBaseOptions`: 10000 window - 1100 estimated - 4096 safety = 4804.
+    fn crowd_context(req: &mut ProviderRequest) {
+        req.system = "x".repeat(4000);
+        req.messages = vec![Message::user_text("y".repeat(400), 1)];
+    }
+
+    #[test]
+    fn max_tokens_are_clamped_to_the_context_window() {
+        let mut req = request(model(json!({"contextWindow": 10000, "maxTokens": 32000})));
+        req.max_tokens = None;
+        crowd_context(&mut req);
+        assert_eq!(build_payload(&req)["max_tokens"], json!(4804));
     }
 }

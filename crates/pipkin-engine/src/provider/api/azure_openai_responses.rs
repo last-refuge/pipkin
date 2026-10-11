@@ -13,10 +13,10 @@ use std::sync::Arc;
 use pipkin_engine_protocol::Message;
 use serde_json::{Map, Value, json};
 
+use super::common::{base_max_tokens, build_headers, opt_str, reasoning_effort};
 use super::openai_completions::{clamp_prompt_cache_key, sdk_error};
 use super::openai_responses::MIN_OUTPUT_TOKENS;
 use super::openai_responses_shared::{apply_reasoning, convert_messages, convert_tools, exchange};
-use super::transform::{build_headers, option_str, reasoning_effort};
 use crate::provider::{ApiAdapter, BoxFuture, ProviderRequest, StreamCtx};
 
 pub const API: &str = "azure-openai-responses";
@@ -63,7 +63,7 @@ fn parse_deployment_map(value: &str) -> Vec<(String, String)> {
 }
 
 pub fn deployment_name(req: &ProviderRequest) -> String {
-    if let Some(name) = option_str(req, "azureDeploymentName").filter(|s| !s.is_empty()) {
+    if let Some(name) = opt_str(req, "azureDeploymentName").filter(|s| !s.is_empty()) {
         return name.to_owned();
     }
     req.env_var("AZURE_OPENAI_DEPLOYMENT_NAME_MAP")
@@ -95,12 +95,12 @@ pub fn normalize_base_url(base: &str) -> Result<String, String> {
 
 /// `(base URL, api version)` (reference `resolveAzureConfig`).
 pub fn resolve_config(req: &ProviderRequest) -> Result<(String, String), String> {
-    let version = option_str(req, "azureApiVersion")
+    let version = opt_str(req, "azureApiVersion")
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
         .or_else(|| req.env_var("AZURE_OPENAI_API_VERSION"))
         .unwrap_or_else(|| DEFAULT_API_VERSION.to_owned());
-    let explicit = option_str(req, "azureBaseUrl")
+    let explicit = opt_str(req, "azureBaseUrl")
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
@@ -109,7 +109,7 @@ pub fn resolve_config(req: &ProviderRequest) -> Result<(String, String), String>
                 .map(|s| s.trim().to_owned())
                 .filter(|s| !s.is_empty())
         });
-    let resource = option_str(req, "azureResourceName")
+    let resource = opt_str(req, "azureResourceName")
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
         .or_else(|| req.env_var("AZURE_OPENAI_RESOURCE_NAME"));
@@ -123,21 +123,27 @@ pub fn resolve_config(req: &ProviderRequest) -> Result<(String, String), String>
 }
 
 /// The request body (reference `buildParams`).
-pub fn build_params(req: &ProviderRequest) -> Value {
+pub fn build_params(req: &ProviderRequest) -> Result<Value, String> {
     let model = &req.model;
     let strict = model.compat_bool("supportsStrictMode").unwrap_or(true);
     let mut p = Map::new();
     p.insert("model".into(), json!(deployment_name(req)));
     p.insert(
         "input".into(),
-        Value::Array(convert_messages(req, TOOL_CALL_PROVIDERS)),
+        Value::Array(convert_messages(
+            model,
+            Some(&req.system),
+            &req.messages,
+            TOOL_CALL_PROVIDERS,
+        )?),
     );
     p.insert("stream".into(), json!(true));
     p.insert("store".into(), json!(false));
     if let Some(key) = clamp_prompt_cache_key(&req.session_id) {
         p.insert("prompt_cache_key".into(), json!(key));
     }
-    let max_tokens = req.max_tokens.unwrap_or(model.max_tokens);
+    // Reference `buildBaseOptions`: the cap is clamped to what fits in the context window.
+    let max_tokens = base_max_tokens(req);
     if max_tokens > 0 {
         p.insert(
             "max_output_tokens".into(),
@@ -150,14 +156,14 @@ pub fn build_params(req: &ProviderRequest) -> Value {
     if !req.tools.is_empty() {
         p.insert(
             "tools".into(),
-            Value::Array(convert_tools(&req.tools, strict)),
+            Value::Array(convert_tools(&req.tools, strict, Some(false))),
         );
     }
     if let Some(choice) = req.options.get("toolChoice").filter(|v| !v.is_null()) {
         p.insert("tool_choice".into(), choice.clone());
     }
     apply_reasoning(&mut p, req, reasoning_effort(req), false, false);
-    Value::Object(p)
+    Ok(Value::Object(p))
 }
 
 async fn run(ctx: StreamCtx<'_>) -> Message {
@@ -191,7 +197,10 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
         Ok(h) => h,
         Err(m) => return ctx.failed(ctx.emitter(), m),
     };
-    let body = build_params(req);
+    let body = match build_params(req) {
+        Ok(b) => b,
+        Err(m) => return ctx.failed(ctx.emitter(), m),
+    };
     let format_http = |text: &str| sdk_error(text, Some("Azure OpenAI API error"));
     let (message, _) = exchange(
         &ctx,
@@ -298,7 +307,7 @@ mod tests {
         req.cache_retention = CacheRetention::None;
         req.tools = vec![read_tool()];
         req.thinking = ThinkingLevel::Medium;
-        let b = build_params(&req);
+        let b = build_params(&req).unwrap();
         assert_eq!(b["model"], "gpt-5");
         assert_eq!(
             b["prompt_cache_key"], "sess",
@@ -316,7 +325,10 @@ mod tests {
         );
         assert_eq!(b["include"], json!(["reasoning.encrypted_content"]));
         req.thinking = ThinkingLevel::Off;
-        assert_eq!(build_params(&req)["reasoning"], json!({"effort": "none"}));
+        assert_eq!(
+            build_params(&req).unwrap()["reasoning"],
+            json!({"effort": "none"})
+        );
     }
 
     #[tokio::test]
@@ -382,5 +394,24 @@ mod tests {
             Some("No API key for provider: azure-openai-responses")
         );
         assert!(run.requests.is_empty());
+    }
+
+    /// Reference `clampMaxTokensToContext` (`simple-options.ts:18-22`) through
+    /// `buildBaseOptions`: 10000 window - 1100 estimated - 4096 safety = 4804.
+    fn crowd_context(req: &mut ProviderRequest) {
+        req.system = "x".repeat(4000);
+        req.messages = vec![Message::user_text("y".repeat(400), 1)];
+    }
+
+    #[test]
+    fn max_output_tokens_are_clamped_to_the_context_window() {
+        let mut req = request(json!({"id": "gpt", "provider": "azure-openai-responses",
+            "api": "azure-openai-responses", "baseUrl": "https://r.openai.azure.com/openai/v1",
+            "contextWindow": 10000, "maxTokens": 32000}));
+        crowd_context(&mut req);
+        assert_eq!(
+            build_params(&req).unwrap()["max_output_tokens"],
+            json!(4804)
+        );
     }
 }

@@ -15,10 +15,11 @@ use std::sync::Arc;
 use pipkin_engine_protocol::{Block, Message, StopReason};
 use serde_json::{Map, Value, json};
 
-use super::transform::{
-    self, Mapped, build_headers, clamp_thinking_budget_to_answer_room, has_header, idle_timeout,
-    mapped_level, parse_json_with_repair, post_json, reasoning_effort, resolve_sampling_params,
-    short_hash, thinking_budget_for_level, transform_messages,
+use super::common::{
+    Mapped, NO_TIMEOUT, ToolArgs, base_max_tokens, build_headers,
+    clamp_thinking_budget_to_answer_room, data_url, finalize_tool_args, has_header, idle_timeout,
+    js_truthy, mapped_level, post_json, reasoning_effort, resolve_sampling_params,
+    sanitize_id_chars, short_hash, take_chars, thinking_budget_for_level, transform_messages,
 };
 use crate::provider::model::ThinkingLevel;
 use crate::provider::sse::SseEvent;
@@ -54,7 +55,7 @@ pub(crate) fn clamp_prompt_cache_key(key: &str) -> Option<String> {
     if key.is_empty() {
         return None;
     }
-    Some(transform::take_chars(key, 64))
+    Some(take_chars(key, 64))
 }
 
 /// The key the OpenAI SDK sends: the credential's secret, else `"unused"` when the configured
@@ -168,11 +169,6 @@ fn split_status(text: &str) -> Option<(u16, Option<&str>)> {
         return Some((status, None));
     }
     None
-}
-
-/// A base64 data URL for an image block.
-pub(crate) fn data_url(mime: &str, data: &str) -> String {
-    format!("data:{mime};base64,{data}")
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -385,16 +381,6 @@ impl Compat {
     }
 }
 
-fn truthy(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
-        Value::String(s) => !s.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
-    }
-}
-
 // ---------------------------------------------------------------------------------------------
 // Request
 // ---------------------------------------------------------------------------------------------
@@ -452,8 +438,8 @@ fn has_tool_history(messages: &[Message]) -> bool {
 /// `<call>_<item>` (40 chars max, hashed when longer); OpenAI truncates to 40.
 fn normalize_tool_call_id(provider: &str, id: &str) -> String {
     if let Some((call, item)) = id.split_once('|') {
-        let call_id = transform::sanitize_id_chars(call);
-        let item_id = transform::sanitize_id_chars(item);
+        let call_id = sanitize_id_chars(call);
+        let item_id = sanitize_id_chars(item);
         let combined = if item_id.is_empty() {
             call_id.clone()
         } else {
@@ -515,8 +501,8 @@ pub fn convert_messages(req: &ProviderRequest, compat: &Compat) -> Vec<Value> {
         params.push(json!({"role": instruction_role, "content": req.system}));
     }
     let provider = model.provider.clone();
-    let normalize = move |id: &str, _: &Message| normalize_tool_call_id(&provider, id);
-    let messages = transform_messages(&req.messages, model, Some(&normalize));
+    let mut normalize = move |id: &str, _: &Message| normalize_tool_call_id(&provider, id);
+    let messages = transform_messages(&req.messages, model, Some(&mut normalize));
 
     let mut last_role: Option<&'static str> = None;
     let mut i = 0;
@@ -808,7 +794,7 @@ fn resolve_template_value(
     let Value::Object(o) = value else {
         return Some(value.clone());
     };
-    if effort.is_none() && o.get("omitWhenOff").is_some_and(truthy) {
+    if effort.is_none() && o.get("omitWhenOff").is_some_and(js_truthy) {
         return None;
     }
     match o.get("$var").and_then(Value::as_str) {
@@ -864,7 +850,8 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
     if compat.supports_store {
         p.insert("store".into(), json!(false));
     }
-    let max_tokens = req.max_tokens.unwrap_or(model.max_tokens);
+    // Reference `buildBaseOptions`: the cap is clamped to what fits in the context window.
+    let max_tokens = base_max_tokens(req);
     if max_tokens > 0 {
         let field = if compat.max_tokens_field == "max_tokens" {
             "max_tokens"
@@ -892,7 +879,7 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
     if let Some(tools) = tools {
         p.insert("tools".into(), Value::Array(tools));
     }
-    if let Some(choice) = req.options.get("toolChoice").filter(|v| truthy(v)) {
+    if let Some(choice) = req.options.get("toolChoice").filter(|v| js_truthy(v)) {
         p.insert("tool_choice".into(), choice.clone());
     }
     if let Some(priority) = &compat.vllm_priority {
@@ -912,7 +899,7 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
                 .and_then(Value::as_u64)
                 .unwrap_or(model.max_tokens);
             let b = clamp_thinking_budget_to_answer_room(
-                thinking_budget_for_level(level, req.options.get("thinkingBudgets")),
+                thinking_budget_for_level(req, level),
                 ceiling,
             );
             (b > 0).then_some(b)
@@ -924,16 +911,20 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
         p.insert(field, json!(budget));
     }
 
-    if let Some(routing) = model.compat.get("openRouterRouting").filter(|v| truthy(v)) {
+    if let Some(routing) = model
+        .compat
+        .get("openRouterRouting")
+        .filter(|v| js_truthy(v))
+    {
         p.insert("provider".into(), routing.clone());
     }
     if let Some(routing) = model
         .compat
         .get("vercelGatewayRouting")
-        .filter(|v| truthy(v))
+        .filter(|v| js_truthy(v))
     {
-        let only = routing.get("only").filter(|v| truthy(v));
-        let order = routing.get("order").filter(|v| truthy(v));
+        let only = routing.get("only").filter(|v| js_truthy(v));
+        let order = routing.get("order").filter(|v| js_truthy(v));
         if only.is_some() || order.is_some() {
             let mut gateway = Map::new();
             if let Some(o) = only {
@@ -1191,7 +1182,7 @@ fn append_reasoning_detail(details: &mut Vec<Value>, detail: &Value) {
         let merged = format!("{}{}", last[field].as_str().unwrap_or_default(), add);
         last[field] = json!(merged);
         if ty == "reasoning.text"
-            && !last.get("signature").is_some_and(truthy)
+            && !last.get("signature").is_some_and(js_truthy)
             && let Some(sig) = detail.get("signature")
         {
             last["signature"] = sig.clone();
@@ -1201,7 +1192,7 @@ fn append_reasoning_detail(details: &mut Vec<Value>, detail: &Value) {
         {
             last["id"] = id.clone();
         }
-        if !last.get("format").is_some_and(truthy)
+        if !last.get("format").is_some_and(js_truthy)
             && let Some(f) = detail.get("format")
         {
             last["format"] = f.clone();
@@ -1298,7 +1289,7 @@ impl State {
                 return ControlFlow::Break(());
             }
         };
-        if let Some(err) = chunk.get("error").filter(|v| truthy(v)) {
+        if let Some(err) = chunk.get("error").filter(|v| js_truthy(v)) {
             let mut message = match err.get("message") {
                 Some(Value::String(m)) => m.clone(),
                 Some(m) if !m.is_null() => m.to_string(),
@@ -1339,7 +1330,7 @@ impl State {
             e.message_extra("responseModel", json!(m));
             self.response_model = true;
         }
-        let usage = chunk.get("usage").filter(|u| truthy(u));
+        let usage = chunk.get("usage").filter(|u| js_truthy(u));
         if let Some(u) = usage {
             parse_usage(e, u);
         }
@@ -1351,7 +1342,7 @@ impl State {
             return;
         };
         if usage.is_none()
-            && let Some(u) = choice.get("usage").filter(|u| truthy(u))
+            && let Some(u) = choice.get("usage").filter(|u| js_truthy(u))
         {
             parse_usage(e, u);
         }
@@ -1461,34 +1452,6 @@ impl State {
     }
 }
 
-pub(crate) enum ToolArgs {
-    Json(String),
-    Custom(String),
-}
-
-/// Parse streamed arguments (repairing control characters and bad escapes). Unparseable
-/// arguments are handed to the emitter raw so the message never carries an executable call
-/// with guessed arguments.
-pub(crate) fn finalize_tool_args(
-    e: &mut Emitter,
-    args: impl IntoIterator<Item = (usize, ToolArgs)>,
-) {
-    for (index, args) in args {
-        match args {
-            ToolArgs::Custom(input) => e.tool_args_value(index, json!({"input": input})),
-            ToolArgs::Json(raw) => {
-                if raw.trim().is_empty() {
-                    e.tool_args_value(index, json!({}));
-                } else if let Some(v) = parse_json_with_repair(&raw).filter(Value::is_object) {
-                    e.tool_args_value(index, v);
-                } else {
-                    e.tool_args(index, &raw);
-                }
-            }
-        }
-    }
-}
-
 async fn run(ctx: StreamCtx<'_>) -> Message {
     let req = ctx.req;
     let mut e = ctx.emitter();
@@ -1508,7 +1471,7 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
         Err(m) => return ctx.failed(e, sdk_error(&m, None)),
     };
     let mut state = State::default();
-    let read = http::read_sse(resp, idle_timeout(req), &ctx.cancel, |ev| {
+    let read = http::read_sse(resp, idle_timeout(req, NO_TIMEOUT), &ctx.cancel, |ev| {
         state.on_event(&mut e, &req.model, ev)
     })
     .await;
@@ -2660,5 +2623,24 @@ pub(crate) mod tests {
         let run = run_mock(adapter(), req, "", vec![fragmented(&sse, 50)]).await;
         assert_eq!(run.requests[0].header("authorization"), Some("Token abc"));
         assert_eq!(parts(&run.message).1, StopReason::Stop);
+    }
+
+    /// Reference `clampMaxTokensToContext` (`simple-options.ts:18-22`) through
+    /// `buildBaseOptions`: 10000 window - 1100 estimated - 4096 safety = 4804.
+    fn crowd_context(req: &mut ProviderRequest) {
+        req.system = "x".repeat(4000);
+        req.messages = vec![Message::user_text("y".repeat(400), 1)];
+    }
+
+    #[test]
+    fn max_tokens_are_clamped_to_the_context_window() {
+        let mut req = request(json!({"id": "gpt", "provider": "openai",
+            "api": "openai-completions", "baseUrl": "https://api.openai.com/v1",
+            "contextWindow": 10000, "maxTokens": 32000}));
+        crowd_context(&mut req);
+        assert_eq!(body(&req)["max_completion_tokens"], json!(4804));
+        // A cap that already fits is kept.
+        req.max_tokens = Some(1000);
+        assert_eq!(body(&req)["max_completion_tokens"], json!(1000));
     }
 }

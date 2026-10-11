@@ -20,7 +20,7 @@ use std::sync::Arc;
 use pipkin_engine_protocol::{Block, Message, StopReason, Usage};
 use serde_json::{Map, Value, json};
 
-use super::mistral_conversations::{header_map, merge_headers};
+use super::common::{Headers, idle_timeout};
 use crate::provider::http::{self, ReadError};
 use crate::provider::sse::SseEvent;
 use crate::provider::{
@@ -350,16 +350,15 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
             ),
         );
     };
-    let mut headers = vec![
-        ("authorization".to_owned(), format!("Bearer {key}")),
-        ("accept".to_owned(), "text/event-stream".to_owned()),
-        ("content-type".to_owned(), "application/json".to_owned()),
-    ];
-    merge_headers(
-        &mut headers,
-        req.headers.iter().map(|(k, v)| (k, v.as_ref())),
-    );
-    let headers = header_map(&headers);
+    let mut headers = Headers::default();
+    headers.set("authorization", format!("Bearer {key}"));
+    headers.set("accept", "text/event-stream");
+    headers.set("content-type", "application/json");
+    headers.merge_optional(&req.headers);
+    let headers = match headers.to_header_map() {
+        Ok(h) => h,
+        Err(m) => return ctx.failed(e, m),
+    };
     let body = build_payload(req);
     let url = endpoint(req);
     let send = ctx.http.post(&url).headers(headers).json(&body).send();
@@ -380,17 +379,22 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
     }
     let mut st = State::default();
     let mut failure = None;
-    let read = http::read_sse(resp, idle(req), &ctx.cancel, |event| {
-        if let Err(err) = on_event(&mut e, &mut st, &event) {
-            failure = Some(err);
-            return std::ops::ControlFlow::Break(());
-        }
-        if st.terminal.is_some() {
-            std::ops::ControlFlow::Break(())
-        } else {
-            std::ops::ControlFlow::Continue(())
-        }
-    })
+    let read = http::read_sse(
+        resp,
+        idle_timeout(req, http::DEFAULT_IDLE_TIMEOUT),
+        &ctx.cancel,
+        |event| {
+            if let Err(err) = on_event(&mut e, &mut st, &event) {
+                failure = Some(err);
+                return std::ops::ControlFlow::Break(());
+            }
+            if st.terminal.is_some() {
+                std::ops::ControlFlow::Break(())
+            } else {
+                std::ops::ControlFlow::Continue(())
+            }
+        },
+    )
     .await;
     match read {
         Err(ReadError::Aborted) => return ctx.failed(e, "Request was aborted"),
@@ -413,14 +417,6 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
     let msg = e.finish(req, terminal.stop, terminal.error.clone());
     st.terminal = Some(terminal);
     apply_fixups(msg, &st, &pre_finish)
-}
-
-fn idle(req: &ProviderRequest) -> std::time::Duration {
-    if req.timeout.is_zero() {
-        http::DEFAULT_IDLE_TIMEOUT
-    } else {
-        req.timeout
-    }
 }
 
 #[cfg(test)]

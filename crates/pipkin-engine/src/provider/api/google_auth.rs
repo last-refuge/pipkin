@@ -27,7 +27,7 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
-use super::google_shared::opt_str;
+use super::common::opt_str;
 use crate::provider::{ProviderRequest, StreamCtx, http};
 
 pub(crate) const CLOUD_PLATFORM_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";

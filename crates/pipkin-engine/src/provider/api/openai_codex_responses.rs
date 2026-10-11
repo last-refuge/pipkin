@@ -34,11 +34,9 @@
 //! idle timeout (reference `timeoutMs`); it also bounds SSE body idle gaps here (the reference
 //! relies on the global undici `bodyTimeout` for that). A zero timeout disables it.
 //!
-//! The responses-input conversion and the Responses stream processor are private copies in
-//! `openai_codex/` (see `convert.rs`); they duplicate the shared Responses module.
+//! The responses-input conversion and the Responses stream processor are the shared ones in
+//! [`super::openai_responses_shared`]; `openai_codex/events.rs` adds the Codex event mapping.
 
-#[path = "openai_codex/convert.rs"]
-mod convert;
 #[path = "openai_codex/events.rs"]
 mod events;
 #[path = "openai_codex/ws.rs"]
@@ -56,20 +54,26 @@ use base64::Engine as _;
 use pipkin_engine_protocol::Message;
 use regex::RegexBuilder;
 use reqwest::StatusCode;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest::header::HeaderMap;
 use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 
 use self::events::{ResponsesState, Step};
 pub use self::ws::WebSocketDebugStats;
+use super::common::{self, Headers, js_truthy, pi_user_agent};
+use super::openai_completions::clamp_prompt_cache_key;
+use super::openai_responses_shared::{
+    apply_service_tier_pricing, convert_messages, convert_tools, service_tier_multiplier,
+};
 use crate::provider::http::{self, ReadError};
 use crate::provider::{
     ApiAdapter, BoxFuture, CacheRetention, Credential, Emitter, ProviderRequest, StreamCtx,
-    ThinkingLevel,
 };
 
 /// The API kind this adapter serves.
 pub const API: &str = "openai-codex-responses";
+/// Providers whose `call_id|item_id` tool-call ids are kept (reference `CODEX_TOOL_CALL_PROVIDERS`).
+const CODEX_TOOL_CALL_PROVIDERS: [&str; 3] = ["openai", "openai-codex", "opencode"];
 /// Reference `DEFAULT_CODEX_BASE_URL`.
 const DEFAULT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api";
 /// Reference `JWT_CLAIM_PATH`.
@@ -82,8 +86,6 @@ const DEFAULT_MAX_RETRY_DELAY_MS: u64 = 60_000;
 const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS: u64 = 15_000;
 /// Reference `REQUEST_COMPRESSION_ZSTD_LEVEL`.
 const REQUEST_COMPRESSION_ZSTD_LEVEL: i32 = 3;
-/// Reference `OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH`.
-const PROMPT_CACHE_KEY_MAX_CHARS: usize = 64;
 const WEBSOCKET_CONNECTION_LIMIT_REACHED_CODE: &str = "websocket_connection_limit_reached";
 const PREVIOUS_RESPONSE_NOT_FOUND_CODE: &str = "previous_response_not_found";
 const ABORTED: &str = "Request was aborted";
@@ -182,7 +184,7 @@ struct CodexOptions {
     temperature: Option<Value>,
 }
 
-fn opt_str(options: &Map<String, Value>, key: &str) -> Option<String> {
+fn nonempty_option(options: &Map<String, Value>, key: &str) -> Option<String> {
     options
         .get(key)
         .and_then(Value::as_str)
@@ -212,16 +214,16 @@ impl CodexOptions {
         let connect_ms = opt_ms(options, "websocketConnectTimeoutMs")?
             .unwrap_or(DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS);
         Ok(CodexOptions {
-            transport: opt_str(options, "transport").unwrap_or_else(|| "auto".into()),
+            transport: nonempty_option(options, "transport").unwrap_or_else(|| "auto".into()),
             max_retries: count("maxRetries")
                 .map(|n| n.min(u64::from(u32::MAX)) as u32)
                 .unwrap_or(DEFAULT_MAX_RETRIES),
             max_retry_delay_ms: count("maxRetryDelayMs").unwrap_or(DEFAULT_MAX_RETRY_DELAY_MS),
             websocket_connect_timeout: (connect_ms > 0).then(|| Duration::from_millis(connect_ms)),
-            reasoning_effort: opt_str(options, "reasoningEffort"),
-            reasoning_summary: opt_str(options, "reasoningSummary"),
-            text_verbosity: opt_str(options, "textVerbosity"),
-            service_tier: opt_str(options, "serviceTier"),
+            reasoning_effort: nonempty_option(options, "reasoningEffort"),
+            reasoning_summary: nonempty_option(options, "reasoningSummary"),
+            text_verbosity: nonempty_option(options, "textVerbosity"),
+            service_tier: nonempty_option(options, "serviceTier"),
             tool_choice: options.get("toolChoice").filter(|v| !v.is_null()).cloned(),
             temperature: options
                 .get("temperature")
@@ -231,86 +233,15 @@ impl CodexOptions {
     }
 }
 
-/// Header list with case-insensitive set/delete (reference `Headers`).
-#[derive(Clone, Debug, Default)]
-struct HeaderList(Vec<(String, String)>);
-
-impl HeaderList {
-    fn set(&mut self, name: &str, value: &str) {
-        self.delete(name);
-        self.0.push((name.to_ascii_lowercase(), value.to_owned()));
-    }
-
-    fn delete(&mut self, name: &str) {
-        self.0.retain(|(k, _)| !k.eq_ignore_ascii_case(name));
-    }
-
-    fn to_header_map(&self) -> HeaderMap {
-        let mut map = HeaderMap::new();
-        for (k, v) in &self.0 {
-            if let (Ok(name), Ok(value)) = (
-                HeaderName::from_bytes(k.as_bytes()),
-                HeaderValue::from_str(v),
-            ) {
-                map.insert(name, value);
-            }
-        }
-        map
-    }
-}
-
-/// Reference `getPiUserAgent`: `pi (<platform> <release>; <arch>)` with Node's names.
-fn pi_user_agent() -> String {
-    let platform = match std::env::consts::OS {
-        "macos" => "darwin",
-        "windows" => "win32",
-        other => other,
-    };
-    let arch = match std::env::consts::ARCH {
-        "x86_64" => "x64",
-        "aarch64" => "arm64",
-        "x86" => "ia32",
-        "powerpc64" => "ppc64",
-        other => other,
-    };
-    format!("pi ({platform} {}; {arch})", os_release())
-}
-
-#[cfg(unix)]
-fn os_release() -> String {
-    // SAFETY: `uname` fills a caller-owned, zeroed struct; the release field is NUL-terminated.
-    unsafe {
-        let mut name: libc::utsname = std::mem::zeroed();
-        if libc::uname(&mut name) != 0 {
-            return String::new();
-        }
-        std::ffi::CStr::from_ptr(name.release.as_ptr())
-            .to_string_lossy()
-            .into_owned()
-    }
-}
-
-#[cfg(not(unix))]
-fn os_release() -> String {
-    String::new()
-}
-
 /// Reference `buildBaseCodexHeaders`.
-fn base_headers(req: &ProviderRequest, account_id: &str, token: &str) -> HeaderList {
-    let mut headers = HeaderList::default();
-    for (k, v) in &req.model.headers {
-        headers.set(k, v);
-    }
-    for (k, v) in &req.headers {
-        match v {
-            Some(v) => headers.set(k, v),
-            None => headers.delete(k),
-        }
-    }
-    headers.set("Authorization", &format!("Bearer {token}"));
+fn base_headers(req: &ProviderRequest, account_id: &str, token: &str) -> Headers {
+    let mut headers = Headers::default();
+    headers.merge(&req.model.headers);
+    headers.merge_optional(&req.headers);
+    headers.set("Authorization", format!("Bearer {token}"));
     headers.set("chatgpt-account-id", account_id);
     headers.set("originator", "pi");
-    headers.set("User-Agent", &pi_user_agent());
+    headers.set("User-Agent", pi_user_agent());
     headers
 }
 
@@ -320,7 +251,7 @@ fn sse_headers(
     account_id: &str,
     token: &str,
     session: Option<&str>,
-) -> HeaderList {
+) -> Headers {
     let mut headers = base_headers(req, account_id, token);
     headers.set("OpenAI-Beta", "responses=experimental");
     headers.set("accept", "text/event-stream");
@@ -339,11 +270,11 @@ fn websocket_headers(
     account_id: &str,
     token: &str,
     request_id: &str,
-) -> HeaderList {
+) -> Headers {
     let mut headers = base_headers(req, account_id, token);
-    headers.delete("accept");
-    headers.delete("content-type");
-    headers.delete("OpenAI-Beta");
+    headers.remove("accept");
+    headers.remove("content-type");
+    headers.remove("OpenAI-Beta");
     headers.set("OpenAI-Beta", ws::OPENAI_BETA_RESPONSES_WEBSOCKETS);
     headers.set("x-client-request-id", request_id);
     headers.set("session-id", request_id);
@@ -420,10 +351,6 @@ fn resolve_auth(req: &ProviderRequest) -> Result<(String, String), String> {
 }
 
 /// Reference `clampOpenAIPromptCacheKey` (64 code points).
-fn clamp_prompt_cache_key(key: &str) -> String {
-    key.chars().take(PROMPT_CACHE_KEY_MAX_CHARS).collect()
-}
-
 /// A UUIDv7 (reference `uuidv7`, used as the WebSocket request id without a session).
 fn uuid_v7() -> String {
     let mut b = [0u8; 16];
@@ -445,16 +372,9 @@ fn uuid_v7() -> String {
 
 /// The effort requested for this turn (reference `streamSimple`: `off` means no effort).
 fn reasoning_effort(req: &ProviderRequest, opts: &CodexOptions) -> Option<String> {
-    if let Some(explicit) = &opts.reasoning_effort {
-        return Some(explicit.clone());
-    }
-    if req.thinking == ThinkingLevel::Off {
-        return None;
-    }
-    match req.model.clamp_thinking(req.thinking) {
-        ThinkingLevel::Off => None,
-        level => Some(level.as_str().to_owned()),
-    }
+    opts.reasoning_effort
+        .clone()
+        .or_else(|| common::reasoning_effort(req).map(|l| l.as_str().to_owned()))
 }
 
 /// Reference `buildRequestBody` (key order kept).
@@ -464,7 +384,7 @@ fn build_request_body(
     prompt_cache_key: Option<&str>,
 ) -> Result<Value, String> {
     let model = &req.model;
-    let input = convert::convert_messages(model, &req.messages)?;
+    let input = convert_messages(model, None, &req.messages, &CODEX_TOOL_CALL_PROVIDERS)?;
     let mut body = Map::new();
     body.insert("model".into(), Value::String(model.id.clone()));
     body.insert("store".into(), Value::Bool(false));
@@ -503,7 +423,7 @@ fn build_request_body(
         let strict = model.compat_bool("supportsStrictMode").unwrap_or(true);
         body.insert(
             "tools".into(),
-            Value::Array(convert::convert_tools(&req.tools, strict)),
+            Value::Array(convert_tools(&req.tools, strict, None)),
         );
     }
     let map = &model.thinking_level_map;
@@ -686,16 +606,6 @@ fn parse_error_response(status: u16, raw: &str, status_text: &str) -> (String, O
     (message, friendly)
 }
 
-fn js_truthy(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
-        Value::String(s) => !s.is_empty(),
-        _ => true,
-    }
-}
-
 /// Abortable sleep (reference `sleep`).
 async fn sleep(ms: u64, cancel: &CancellationToken) -> Result<(), Failure> {
     tokio::select! {
@@ -738,40 +648,33 @@ impl OpenAICodexResponses {
     async fn run(&self, ctx: StreamCtx<'_>) -> Message {
         let mut diagnostics = Vec::new();
         let Exchange {
-            emitter,
-            state,
+            mut emitter,
+            mut state,
             result,
         } = self.exchange(&ctx, &mut diagnostics).await;
         let outcome = result.and_then(|()| {
             if ctx.cancel.is_cancelled() {
                 Err(Failure::aborted())
             } else {
-                state.outcome().map_err(Failure::error)
+                state.outcome(&mut emitter).map_err(Failure::error)
             }
         });
+        if outcome.is_err() {
+            state.settle(&mut emitter);
+        }
         let mut message = match outcome {
             Ok(stop) => emitter.finish(ctx.req, stop, None),
             Err(failure) => ctx.failed(emitter, failure.message),
         };
         if let Message::Assistant { usage, extra, .. } = &mut message {
             if let Some(tier) = &state.priced_tier {
-                let m = events::service_tier_multiplier(&ctx.req.model.id, tier.as_deref());
-                if m != 1.0 {
-                    usage.cost.input *= m;
-                    usage.cost.output *= m;
-                    usage.cost.cache_read *= m;
-                    usage.cost.cache_write *= m;
-                    usage.cost.total = usage.cost.input
-                        + usage.cost.output
-                        + usage.cost.cache_read
-                        + usage.cost.cache_write;
-                }
+                apply_service_tier_pricing(
+                    usage,
+                    service_tier_multiplier(&ctx.req.model.id, tier.as_deref(), false),
+                );
             }
             if let Some(end_turn) = state.end_turn {
                 extra.insert("endTurn".into(), Value::Bool(end_turn));
-            }
-            if let Some(raw) = &state.raw_stop_reason {
-                extra.insert("rawStopReason".into(), Value::String(raw.clone()));
             }
             if !diagnostics.is_empty() {
                 extra.insert("diagnostics".into(), Value::Array(diagnostics));
@@ -800,7 +703,7 @@ impl OpenAICodexResponses {
         let cache_session = (req.cache_retention != CacheRetention::None
             && !req.session_id.is_empty())
         .then_some(req.session_id.as_str());
-        let codex_session = cache_session.map(clamp_prompt_cache_key);
+        let codex_session = cache_session.and_then(clamp_prompt_cache_key);
         let body = match build_request_body(req, &opts, codex_session.as_deref()) {
             Ok(b) => b,
             Err(e) => return setup_failure(e),
@@ -829,7 +732,7 @@ impl OpenAICodexResponses {
                     ws::WsRequest {
                         url: &url,
                         body: &body,
-                        headers: &websocket.0,
+                        headers: websocket.pairs(),
                         model: &req.model,
                         idle_timeout: timeout,
                         connect_timeout: opts.websocket_connect_timeout,
@@ -912,7 +815,7 @@ impl OpenAICodexResponses {
         &self,
         ctx: &StreamCtx<'_>,
         opts: &CodexOptions,
-        headers: &HeaderList,
+        headers: &Headers,
         body_json: &str,
         timeout: Option<Duration>,
     ) -> Result<reqwest::Response, Failure> {
@@ -925,7 +828,7 @@ impl OpenAICodexResponses {
                 }
                 Err(_) => body_json.as_bytes().to_vec(),
             };
-        let headers = headers.to_header_map();
+        let headers = headers.to_header_map().map_err(Failure::error)?;
         let url = resolve_codex_url(ctx.req.base_url());
         let max_retries = opts.max_retries;
         let cancel = &ctx.cancel;

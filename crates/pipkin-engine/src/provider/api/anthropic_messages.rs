@@ -23,7 +23,12 @@ use std::sync::Arc;
 use pipkin_engine_protocol::{Block, Message, StopReason};
 use serde_json::{Map, Value, json};
 
-use super::google_shared::{self as shared, Headers, opt, opt_str};
+use super::common::schema::{resolve_strict, tool_parameters};
+use super::common::{
+    Headers, adjust_max_tokens_for_thinking, base_max_tokens, clamp_max_tokens_to_context,
+    clamp_thinking_budget_to_answer_room, has_configured_header, idle_timeout, opt, opt_str,
+    parse_json_with_repair, post_json, reasoning_effort, sanitize_tool_call_id, transform_messages,
+};
 use crate::provider::http::{self, ReadError};
 use crate::provider::model::ModelCost;
 use crate::provider::sse::SseEvent;
@@ -126,7 +131,7 @@ enum Auth {
 fn has_request_auth_header(req: &ProviderRequest) -> bool {
     ["authorization", "x-api-key", "cf-aig-authorization"]
         .iter()
-        .any(|h| shared::has_configured_header(req, h))
+        .any(|h| has_configured_header(req, h))
 }
 
 fn resolve_auth(req: &ProviderRequest) -> Result<Auth, String> {
@@ -186,16 +191,17 @@ fn effort_for(model: &Model, level: ThinkingLevel) -> String {
 
 /// Reference `streamSimple`: map the level onto adaptive effort or a token budget.
 fn plan_thinking(req: &ProviderRequest, c: &Compat) -> Thinking {
-    let base = shared::base_max_tokens(req);
-    let level = shared::effective_thinking(req);
-    if level == ThinkingLevel::Off {
+    let base = base_max_tokens(req);
+    // The agent sends no reasoning option for `off` (reference `streamSimple`: thinking
+    // disabled), so a requested `off` is never clamped up to a minimum level.
+    let Some(level) = reasoning_effort(req) else {
         return Thinking {
             enabled: false,
             effort: None,
             budget: None,
             max_tokens: base,
         };
-    }
+    };
     if c.force_adaptive_thinking {
         return Thinking {
             enabled: true,
@@ -204,12 +210,12 @@ fn plan_thinking(req: &ProviderRequest, c: &Compat) -> Thinking {
             max_tokens: base,
         };
     }
-    let (adjusted, budget) = shared::adjust_max_tokens_for_thinking(req, Some(base), level);
-    let max_tokens = shared::clamp_max_tokens_to_context(req, adjusted);
+    let (adjusted, budget) = adjust_max_tokens_for_thinking(req, Some(base), level);
+    let max_tokens = clamp_max_tokens_to_context(req, adjusted);
     Thinking {
         enabled: true,
         effort: None,
-        budget: Some(budget.min(max_tokens.saturating_sub(shared::MIN_ANSWER_TOKENS))),
+        budget: Some(clamp_thinking_budget_to_answer_room(budget, max_tokens)),
         max_tokens,
     }
 }
@@ -262,8 +268,8 @@ fn convert_messages(
     allow_empty_signature: bool,
     managed_provider: Option<&str>,
 ) -> (Vec<Value>, HashMap<usize, String>) {
-    let normalize = |id: &str| shared::normalize_tool_call_id(id);
-    let transformed = shared::transform_messages(&req.messages, &req.model, Some(&normalize));
+    let mut normalize = |id: &str, _: &Message| sanitize_tool_call_id(id);
+    let transformed = transform_messages(&req.messages, &req.model, Some(&mut normalize));
     let mut params: Vec<Value> = Vec::new();
     let mut levels = HashMap::new();
     let mut i = 0;
@@ -457,13 +463,13 @@ fn convert_tools(
     let mut out = Vec::with_capacity(req.tools.len());
     let last = req.tools.len().saturating_sub(1);
     for (index, tool) in req.tools.iter().enumerate() {
-        let strict = shared::resolve_strict(
+        let strict = resolve_strict(
             req,
             tool,
             c.supports_strict_tools,
             Some(&anthropic_strict_unsupported),
         )?;
-        let parameters = shared::tool_parameters(tool, strict)?;
+        let parameters = tool_parameters(tool, strict)?;
         let legacy = json!({
             "type": "object",
             "properties": parameters.get("properties").cloned().unwrap_or_else(|| json!({})),
@@ -790,66 +796,6 @@ fn map_stop_reason(
     })
 }
 
-/// Escape raw control characters inside strings and double stray backslashes
-/// (reference `repairJson`).
-fn repair_json(json: &str) -> String {
-    let chars: Vec<char> = json.chars().collect();
-    let mut out = String::with_capacity(json.len());
-    let mut in_string = false;
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if !in_string {
-            out.push(c);
-            in_string = c == '"';
-            i += 1;
-            continue;
-        }
-        match c {
-            '"' => {
-                out.push(c);
-                in_string = false;
-            }
-            '\\' => match chars.get(i + 1) {
-                None => out.push_str("\\\\"),
-                Some('u')
-                    if chars.len() >= i + 6
-                        && chars[i + 2..i + 6].iter().all(char::is_ascii_hexdigit) =>
-                {
-                    out.extend(&chars[i..i + 6]);
-                    i += 5;
-                }
-                Some(n @ ('"' | '\\' | '/' | 'b' | 'f' | 'n' | 'r' | 't' | 'u')) => {
-                    out.push('\\');
-                    out.push(*n);
-                    i += 1;
-                }
-                Some(_) => out.push_str("\\\\"),
-            },
-            '\u{8}' => out.push_str("\\b"),
-            '\u{c}' => out.push_str("\\f"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-        i += 1;
-    }
-    out
-}
-
-fn parse_with_repair(json: &str) -> Result<Value, serde_json::Error> {
-    serde_json::from_str(json).or_else(|e| {
-        let repaired = repair_json(json);
-        if repaired != json {
-            serde_json::from_str(&repaired)
-        } else {
-            Err(e)
-        }
-    })
-}
-
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     Text,
@@ -891,7 +837,7 @@ impl AnthropicStream {
         if !MESSAGE_EVENTS.contains(&name) {
             return ControlFlow::Continue(());
         }
-        let event = match parse_with_repair(&ev.data) {
+        let event = match parse_json_with_repair(&ev.data) {
             Ok(v) => v,
             Err(err) => {
                 self.fatal = Some(format!(
@@ -1042,7 +988,7 @@ impl AnthropicStream {
             && let Some(raw) = self.tool_json.remove(&i)
             && !raw.trim().is_empty()
             && serde_json::from_str::<Value>(&raw).is_err()
-            && let Ok(v @ Value::Object(_)) = parse_with_repair(&raw)
+            && let Ok(v @ Value::Object(_)) = parse_json_with_repair(&raw)
         {
             e.tool_args_value(i, v);
         }
@@ -1109,15 +1055,21 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
         Ok(p) => p,
         Err(err) => return ctx.failed(e, err),
     };
-    let headers = build_headers(req, &c, &auth, &betas);
-    let resp = match shared::post_json(&ctx, &request_url(req), &headers, &body).await {
+    let headers = match build_headers(req, &c, &auth, &betas).to_header_map() {
+        Ok(h) => h,
+        Err(err) => return ctx.failed(e, err),
+    };
+    let resp = match post_json(&ctx, &request_url(req), headers, &body).await {
         Ok(r) => r,
         Err(err) => return ctx.failed(e, err),
     };
     let mut state = AnthropicStream::default();
-    let read = http::read_sse(resp, shared::idle_timeout(req), &ctx.cancel, |ev| {
-        state.on_event(&mut e, req, ev)
-    })
+    let read = http::read_sse(
+        resp,
+        idle_timeout(req, http::DEFAULT_IDLE_TIMEOUT),
+        &ctx.cancel,
+        |ev| state.on_event(&mut e, req, ev),
+    )
     .await;
     if let Some(m) = &state.response_model {
         e.message_extra("responseModel", Value::String(m.clone()));
@@ -1909,9 +1861,18 @@ mod tests {
 
     #[test]
     fn json_repair_matches_the_reference() {
-        assert_eq!(repair_json("{\"a\":\"x\ty\"}"), "{\"a\":\"x\\ty\"}");
-        assert_eq!(repair_json("{\"a\":\"c:\\d\"}"), "{\"a\":\"c:\\\\d\"}");
-        assert_eq!(repair_json("{\"a\":\"\\u00e9\"}"), "{\"a\":\"\\u00e9\"}");
-        assert!(parse_with_repair("{\"a\":\"x\u{1}\"}").is_ok());
+        assert_eq!(
+            crate::provider::api::common::repair_json("{\"a\":\"x\ty\"}"),
+            "{\"a\":\"x\\ty\"}"
+        );
+        assert_eq!(
+            crate::provider::api::common::repair_json("{\"a\":\"c:\\d\"}"),
+            "{\"a\":\"c:\\\\d\"}"
+        );
+        assert_eq!(
+            crate::provider::api::common::repair_json("{\"a\":\"\\u00e9\"}"),
+            "{\"a\":\"\\u00e9\"}"
+        );
+        assert!(parse_json_with_repair("{\"a\":\"x\u{1}\"}").is_ok());
     }
 }

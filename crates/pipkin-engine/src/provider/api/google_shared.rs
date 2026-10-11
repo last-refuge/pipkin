@@ -1,772 +1,26 @@
-//! Shared pieces for the Google adapters (`google-generative-ai`, `google-vertex`), plus the
-//! cross-adapter request helpers they and `anthropic-messages` both need.
+//! Shared pieces for the Google adapters (`google-generative-ai`, `google-vertex`).
 //!
-//! Reference: `packages/ai/src/api/google-shared.ts`, `api/google-generative-ai.ts` (stream loop),
-//! `api/transform-messages.ts`, `api/simple-options.ts`, `api/constrained-sampling.ts`,
-//! `utils/estimate.ts`, `utils/provider-retry.ts`.
-//!
-//! Cross-adapter helpers (`transform_messages`, context estimation, thinking budgets, strict
-//! JSON-schema conversion, header merging, request sending) live here because this module is
-//! the shared one these adapters own; they have no Google-specific behaviour.
+//! Reference: `packages/ai/src/api/google-shared.ts`, `api/google-generative-ai.ts` (stream loop).
+//! Cross-adapter helpers (replay normalization, thinking budgets, strict JSON schemas, headers,
+//! request sending) are in [`super::common`].
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 
 use pipkin_engine_protocol::{Block, Message, StopReason};
 use regex::Regex;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Map, Value, json};
 
+use super::common::schema::{resolve_strict, tool_parameters};
+use super::common::{
+    Headers, base_max_tokens, custom_budget, idle_timeout, opt, opt_str, post_json,
+    reasoning_effort, sanitize_tool_call_id, transform_messages,
+};
 use crate::provider::http::{self, ReadError};
 use crate::provider::sse::SseEvent;
-use crate::provider::{Emitter, Model, ProviderRequest, StreamCtx, ThinkingLevel, ToolSpec};
-
-// ---------------------------------------------------------------------------------------------
-// Request options
-// ---------------------------------------------------------------------------------------------
-
-/// A provider option from `ProviderRequest::options`.
-pub(crate) fn opt<'a>(req: &'a ProviderRequest, key: &str) -> Option<&'a Value> {
-    req.options.get(key).filter(|v| !v.is_null())
-}
-
-pub(crate) fn opt_str<'a>(req: &'a ProviderRequest, key: &str) -> Option<&'a str> {
-    opt(req, key).and_then(Value::as_str)
-}
-
-/// SDK-style request retry policy: `maxRetries` (default 0) and `maxRetryDelayMs` (default
-/// 60000; 0 disables the cap), as the reference `retryProviderRequest` reads them.
-pub(crate) fn retry_policy(req: &ProviderRequest) -> (u32, Duration) {
-    let retries = opt(req, "maxRetries")
-        .and_then(Value::as_u64)
-        .unwrap_or(0)
-        .min(u32::MAX as u64) as u32;
-    let delay = opt(req, "maxRetryDelayMs")
-        .and_then(Value::as_u64)
-        .map(Duration::from_millis)
-        .unwrap_or(http::MAX_RETRY_DELAY);
-    (retries, delay)
-}
-
-/// The idle timeout for reading a stream.
-pub(crate) fn idle_timeout(req: &ProviderRequest) -> Duration {
-    if req.timeout.is_zero() {
-        http::DEFAULT_IDLE_TIMEOUT
-    } else {
-        req.timeout
-    }
-}
-
-// ---------------------------------------------------------------------------------------------
-// Headers
-// ---------------------------------------------------------------------------------------------
-
-/// An ordered, case-insensitive header set. Later writes replace earlier ones; a configured
-/// `None` deletes (reference `ProviderHeaders` semantics).
-#[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct Headers(Vec<(String, String)>);
-
-impl Headers {
-    pub(crate) fn set(&mut self, name: &str, value: impl Into<String>) {
-        self.remove(name);
-        self.0.push((name.to_owned(), value.into()));
-    }
-
-    /// Set only when no header of that name exists.
-    pub(crate) fn set_default(&mut self, name: &str, value: impl Into<String>) {
-        if !self.has(name) {
-            self.0.push((name.to_owned(), value.into()));
-        }
-    }
-
-    pub(crate) fn remove(&mut self, name: &str) {
-        self.0.retain(|(k, _)| !k.eq_ignore_ascii_case(name));
-    }
-
-    pub(crate) fn get(&self, name: &str) -> Option<&str> {
-        self.0
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.as_str())
-    }
-
-    pub(crate) fn has(&self, name: &str) -> bool {
-        self.get(name).is_some()
-    }
-
-    pub(crate) fn merge(&mut self, headers: &BTreeMap<String, String>) {
-        for (k, v) in headers {
-            self.set(k, v.clone());
-        }
-    }
-
-    pub(crate) fn merge_optional(&mut self, headers: &BTreeMap<String, Option<String>>) {
-        for (k, v) in headers {
-            match v {
-                Some(v) => self.set(k, v.clone()),
-                None => self.remove(k),
-            }
-        }
-    }
-
-    pub(crate) fn to_header_map(&self) -> Result<HeaderMap, String> {
-        let mut map = HeaderMap::new();
-        for (k, v) in &self.0 {
-            let name = HeaderName::from_bytes(k.as_bytes())
-                .map_err(|_| format!("Invalid header name: {k}"))?;
-            let value =
-                HeaderValue::from_str(v).map_err(|_| format!("Invalid value for header {k}"))?;
-            map.insert(name, value);
-        }
-        Ok(map)
-    }
-}
-
-/// True when a configured header (request or model) already carries this credential.
-pub(crate) fn has_configured_header(req: &ProviderRequest, name: &str) -> bool {
-    let request = req.headers.iter().any(|(k, v)| {
-        k.eq_ignore_ascii_case(name) && v.as_deref().is_some_and(|v| !v.trim().is_empty())
-    });
-    let model = req
-        .model
-        .headers
-        .iter()
-        .any(|(k, v)| k.eq_ignore_ascii_case(name) && !v.trim().is_empty());
-    request || model
-}
-
-/// POST a JSON body with the shared request-level retry policy. A gap of `req.timeout` per
-/// attempt before response headers is a timeout.
-pub(crate) async fn post_json(
-    ctx: &StreamCtx<'_>,
-    url: &str,
-    headers: &Headers,
-    body: &Value,
-) -> Result<reqwest::Response, String> {
-    let mut headers = headers.clone();
-    headers.set_default("content-type", "application/json");
-    let map = headers.to_header_map()?;
-    let bytes = serde_json::to_vec(body).map_err(|e| e.to_string())?;
-    let (retries, max_delay) = retry_policy(ctx.req);
-    let send = http::send(
-        || ctx.http.post(url).headers(map.clone()).body(bytes.clone()),
-        retries,
-        max_delay,
-        &ctx.cancel,
-    );
-    if ctx.req.timeout.is_zero() {
-        return send.await;
-    }
-    let budget = ctx.req.timeout.saturating_mul(retries.saturating_add(1))
-        + max_delay.saturating_mul(retries);
-    match tokio::time::timeout(budget, send).await {
-        Ok(r) => r,
-        Err(_) => Err(format!(
-            "Request timed out: no response headers within {} seconds",
-            budget.as_secs()
-        )),
-    }
-}
-
-// ---------------------------------------------------------------------------------------------
-// Cross-provider replay normalization (reference `transform-messages.ts`)
-// ---------------------------------------------------------------------------------------------
-
-const NON_VISION_USER_IMAGE_PLACEHOLDER: &str = "(image omitted: model does not support images)";
-const NON_VISION_TOOL_IMAGE_PLACEHOLDER: &str =
-    "(tool image omitted: model does not support images)";
-
-fn replace_images(content: &[Block], placeholder: &str) -> Vec<Block> {
-    let mut out = Vec::new();
-    let mut previous_was_placeholder = false;
-    for block in content {
-        if let Block::Image { .. } = block {
-            if !previous_was_placeholder {
-                out.push(Block::text(placeholder));
-            }
-            previous_was_placeholder = true;
-            continue;
-        }
-        previous_was_placeholder = matches!(block, Block::Text { text, .. } if text == placeholder);
-        out.push(block.clone());
-    }
-    out
-}
-
-/// Is this assistant message from exactly the target provider, API and model?
-pub(crate) fn is_same_model(message: &Message, model: &Model) -> bool {
-    matches!(message, Message::Assistant { provider, api, model: id, .. }
-        if *provider == model.provider && *api == model.api && *id == model.id)
-}
-
-/// Normalize history for replay to `model`: downgrade images the model cannot read, turn
-/// foreign reasoning into text (or drop it), strip foreign signatures, normalize foreign tool
-/// call ids (and their results), skip errored/aborted turns and close orphan tool calls with a
-/// synthetic error result.
-pub(crate) fn transform_messages(
-    messages: &[Message],
-    model: &Model,
-    normalize_tool_call_id: Option<&dyn Fn(&str) -> String>,
-) -> Vec<Message> {
-    let mut id_map: HashMap<String, String> = HashMap::new();
-    let images = model.supports_images();
-    let mut transformed = Vec::with_capacity(messages.len());
-    for msg in messages {
-        let msg = match msg {
-            Message::User {
-                content,
-                timestamp,
-                extra,
-            } if !images => Message::User {
-                content: replace_images(content, NON_VISION_USER_IMAGE_PLACEHOLDER),
-                timestamp: *timestamp,
-                extra: extra.clone(),
-            },
-            Message::ToolResult {
-                tool_call_id,
-                tool_name,
-                content,
-                is_error,
-                timestamp,
-                extra,
-            } => Message::ToolResult {
-                tool_call_id: id_map
-                    .get(tool_call_id)
-                    .cloned()
-                    .unwrap_or_else(|| tool_call_id.clone()),
-                tool_name: tool_name.clone(),
-                content: if images {
-                    content.clone()
-                } else {
-                    replace_images(content, NON_VISION_TOOL_IMAGE_PLACEHOLDER)
-                },
-                is_error: *is_error,
-                timestamp: *timestamp,
-                extra: extra.clone(),
-            },
-            Message::Assistant {
-                content,
-                api,
-                provider,
-                model: id,
-                usage,
-                stop_reason,
-                error_message,
-                timestamp,
-                extra,
-            } => {
-                let same = is_same_model(msg, model);
-                let mut blocks = Vec::with_capacity(content.len());
-                for block in content {
-                    match block {
-                        Block::Thinking {
-                            thinking,
-                            signature,
-                            redacted,
-                            ..
-                        } => {
-                            if *redacted {
-                                if same {
-                                    blocks.push(block.clone());
-                                }
-                                continue;
-                            }
-                            if same && signature.as_deref().is_some_and(|s| !s.is_empty()) {
-                                blocks.push(block.clone());
-                                continue;
-                            }
-                            if thinking.trim().is_empty() {
-                                continue;
-                            }
-                            if same {
-                                blocks.push(block.clone());
-                            } else {
-                                blocks.push(Block::text(thinking.clone()));
-                            }
-                        }
-                        Block::Text { text, .. } => {
-                            if same {
-                                blocks.push(block.clone());
-                            } else {
-                                blocks.push(Block::text(text.clone()));
-                            }
-                        }
-                        Block::ToolCall {
-                            id: call_id,
-                            name,
-                            arguments,
-                            extra,
-                        } => {
-                            let mut extra = extra.clone();
-                            let mut call_id = call_id.clone();
-                            if !same {
-                                extra.remove("thoughtSignature");
-                                if let Some(normalize) = normalize_tool_call_id {
-                                    let normalized = normalize(&call_id);
-                                    if normalized != call_id {
-                                        id_map.insert(call_id.clone(), normalized.clone());
-                                        call_id = normalized;
-                                    }
-                                }
-                            }
-                            blocks.push(Block::ToolCall {
-                                id: call_id,
-                                name: name.clone(),
-                                arguments: arguments.clone(),
-                                extra,
-                            });
-                        }
-                        Block::Image { .. } => blocks.push(block.clone()),
-                    }
-                }
-                Message::Assistant {
-                    content: blocks,
-                    api: api.clone(),
-                    provider: provider.clone(),
-                    model: id.clone(),
-                    usage: usage.clone(),
-                    stop_reason: *stop_reason,
-                    error_message: error_message.clone(),
-                    timestamp: *timestamp,
-                    extra: extra.clone(),
-                }
-            }
-            other => other.clone(),
-        };
-        transformed.push(msg);
-    }
-
-    // Second pass: skip incomplete turns, synthesize results for orphan tool calls.
-    let mut result = Vec::with_capacity(transformed.len());
-    let mut pending: Vec<(String, String)> = Vec::new();
-    let mut answered: HashSet<String> = HashSet::new();
-    let close = |result: &mut Vec<Message>,
-                 pending: &mut Vec<(String, String)>,
-                 answered: &mut HashSet<String>| {
-        for (id, name) in pending.drain(..) {
-            if !answered.contains(&id) {
-                result.push(Message::ToolResult {
-                    tool_call_id: id,
-                    tool_name: name,
-                    content: vec![Block::text("No result provided")],
-                    is_error: true,
-                    timestamp: crate::util::now_ms(),
-                    extra: Map::new(),
-                });
-            }
-        }
-        answered.clear();
-    };
-    for msg in transformed {
-        match &msg {
-            Message::Assistant { stop_reason, .. } => {
-                close(&mut result, &mut pending, &mut answered);
-                if matches!(stop_reason, StopReason::Error | StopReason::Aborted) {
-                    continue;
-                }
-                let calls: Vec<(String, String)> = msg
-                    .tool_calls()
-                    .into_iter()
-                    .map(|(id, name, _)| (id.to_owned(), name.to_owned()))
-                    .collect();
-                if !calls.is_empty() {
-                    pending = calls;
-                    answered.clear();
-                }
-                result.push(msg);
-            }
-            Message::ToolResult { tool_call_id, .. } => {
-                answered.insert(tool_call_id.clone());
-                result.push(msg);
-            }
-            Message::User { .. } => {
-                close(&mut result, &mut pending, &mut answered);
-                result.push(msg);
-            }
-        }
-    }
-    close(&mut result, &mut pending, &mut answered);
-    result
-}
-
-/// Replace characters outside `[a-zA-Z0-9_-]` with `_` and cut to 64 UTF-16 units (the
-/// reference regex works per UTF-16 unit, so a non-BMP character becomes two underscores).
-pub(crate) fn normalize_tool_call_id(id: &str) -> String {
-    let mut out = String::with_capacity(id.len());
-    for c in id.chars() {
-        if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-            out.push(c);
-        } else {
-            for _ in 0..c.len_utf16() {
-                out.push('_');
-            }
-        }
-    }
-    out.truncate(64);
-    out
-}
-
-// ---------------------------------------------------------------------------------------------
-// Context estimation and max-token clamping (reference `utils/estimate.ts`, `simple-options.ts`)
-// ---------------------------------------------------------------------------------------------
-
-const CHARS_PER_TOKEN: u64 = 4;
-const ESTIMATED_IMAGE_CHARS: u64 = 4800;
-const CONTEXT_SAFETY_TOKENS: i64 = 4096;
-/// Tokens always left for the answer when a thinking budget shares the response ceiling.
-pub(crate) const MIN_ANSWER_TOKENS: u64 = 1024;
-
-fn js_len(text: &str) -> u64 {
-    text.encode_utf16().count() as u64
-}
-
-fn ceil_tokens(chars: u64) -> u64 {
-    chars.div_ceil(CHARS_PER_TOKEN)
-}
-
-fn content_chars(content: &[Block]) -> u64 {
-    content
-        .iter()
-        .map(|b| match b {
-            Block::Text { text, .. } => js_len(text),
-            Block::Image { .. } => ESTIMATED_IMAGE_CHARS,
-            Block::Thinking { thinking, .. } => js_len(thinking),
-            Block::ToolCall {
-                name, arguments, ..
-            } => js_len(name) + js_len(&arguments.to_string()),
-        })
-        .sum()
-}
-
-fn message_tokens(message: &Message) -> u64 {
-    ceil_tokens(content_chars(message.content()))
-}
-
-fn usage_tokens(u: &pipkin_engine_protocol::Usage) -> u64 {
-    if u.total_tokens > 0 {
-        u.total_tokens
-    } else {
-        u.input + u.output + u.cache_read + u.cache_write
-    }
-}
-
-/// Estimated context tokens: the last applicable assistant usage plus estimates of what came
-/// after it, or a character estimate of everything (system prompt and tools included).
-pub(crate) fn estimate_context_tokens(req: &ProviderRequest) -> u64 {
-    let messages = &req.messages;
-    let mut latest_prefix = 0i64; // the leading system message has timestamp 0
-    let mut last: Option<(usize, u64)> = None;
-    for (i, m) in messages.iter().enumerate() {
-        if let Message::Assistant {
-            usage,
-            stop_reason,
-            timestamp,
-            ..
-        } = m
-        {
-            let tokens = usage_tokens(usage);
-            if *timestamp >= latest_prefix
-                && !matches!(stop_reason, StopReason::Aborted | StopReason::Error)
-                && tokens > 0
-            {
-                last = Some((i, tokens));
-            }
-        }
-        latest_prefix = latest_prefix.max(m.timestamp());
-    }
-    if let Some((index, tokens)) = last {
-        return tokens
-            + messages[index + 1..]
-                .iter()
-                .map(message_tokens)
-                .sum::<u64>();
-    }
-    let mut tokens = ceil_tokens(js_len(&req.system));
-    if !req.tools.is_empty() {
-        let tools: Vec<Value> = req
-            .tools
-            .iter()
-            .map(|t| json!({"name": t.name, "description": t.description, "parameters": t.parameters}))
-            .collect();
-        tokens += ceil_tokens(js_len(&Value::Array(tools).to_string()));
-    }
-    tokens + messages.iter().map(message_tokens).sum::<u64>()
-}
-
-/// Cap an output-token request to what fits in the context window (at least 1).
-pub(crate) fn clamp_max_tokens_to_context(req: &ProviderRequest, max_tokens: u64) -> u64 {
-    let window = req.model.context_window;
-    if window == 0 {
-        return max_tokens.max(1);
-    }
-    let available = window as i64 - estimate_context_tokens(req) as i64 - CONTEXT_SAFETY_TOKENS;
-    max_tokens.min(available.max(1) as u64)
-}
-
-/// The base output cap: the caller's `max_tokens` or the model's, clamped to the context.
-pub(crate) fn base_max_tokens(req: &ProviderRequest) -> u64 {
-    clamp_max_tokens_to_context(req, req.max_tokens.unwrap_or(req.model.max_tokens))
-}
-
-/// The supported level for this request (`Off` when reasoning is unavailable).
-pub(crate) fn effective_thinking(req: &ProviderRequest) -> ThinkingLevel {
-    req.model.clamp_thinking(req.thinking)
-}
-
-/// `xhigh`/`max` behave as `high` for token budgets.
-pub(crate) fn clamp_reasoning(level: ThinkingLevel) -> ThinkingLevel {
-    match level {
-        ThinkingLevel::Xhigh | ThinkingLevel::Max => ThinkingLevel::High,
-        other => other,
-    }
-}
-
-/// A custom budget from the `thinkingBudgets` option.
-pub(crate) fn custom_budget(req: &ProviderRequest, level: ThinkingLevel) -> Option<u64> {
-    opt(req, "thinkingBudgets")?.get(level.as_str())?.as_u64()
-}
-
-pub(crate) fn thinking_budget_for_level(req: &ProviderRequest, level: ThinkingLevel) -> u64 {
-    let level = clamp_reasoning(level);
-    custom_budget(req, level).unwrap_or(match level {
-        ThinkingLevel::Minimal => 1024,
-        ThinkingLevel::Low => 2048,
-        ThinkingLevel::Medium => 8192,
-        _ => 16384,
-    })
-}
-
-/// Reference `adjustMaxTokensForThinking`: `(maxTokens, thinkingBudget)`.
-pub(crate) fn adjust_max_tokens_for_thinking(
-    req: &ProviderRequest,
-    base_max_tokens: Option<u64>,
-    level: ThinkingLevel,
-) -> (u64, u64) {
-    let mut budget = thinking_budget_for_level(req, level);
-    let model_max = req.model.max_tokens;
-    let max_tokens = match base_max_tokens {
-        None => model_max,
-        Some(base) => base.saturating_add(budget).min(model_max),
-    };
-    if max_tokens <= budget {
-        budget = budget.min(max_tokens.saturating_sub(MIN_ANSWER_TOKENS));
-    }
-    (max_tokens, budget)
-}
-
-// ---------------------------------------------------------------------------------------------
-// Strict JSON-schema tools (reference `constrained-sampling.ts`)
-// ---------------------------------------------------------------------------------------------
-
-/// Returns true when a provider's strict mode rejects this keyword with this value.
-pub(crate) type UnsupportedKeyword = dyn Fn(&str, &Value) -> bool;
-
-const UNSUPPORTED_STRICT_SCHEMA_KEYS: &[&str] = &[
-    "$ref",
-    "$defs",
-    "definitions",
-    "allOf",
-    "oneOf",
-    "patternProperties",
-    "dependentSchemas",
-    "dependencies",
-    "unevaluatedProperties",
-    "propertyNames",
-    "contains",
-    "prefixItems",
-    "not",
-    "if",
-    "then",
-    "else",
-];
-
-fn is_structured_schema(schema: &Value) -> bool {
-    let Some(obj) = schema.as_object() else {
-        return false;
-    };
-    let types: Vec<&str> = match obj.get("type") {
-        Some(Value::String(s)) => vec![s.as_str()],
-        Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).collect(),
-        _ => vec![],
-    };
-    types.contains(&"object")
-        || types.contains(&"array")
-        || obj.contains_key("properties")
-        || obj.contains_key("items")
-}
-
-fn schema_allows_null(schema: &Value) -> bool {
-    let Some(obj) = schema.as_object() else {
-        return false;
-    };
-    match obj.get("type") {
-        Some(Value::String(s)) if s == "null" => return true,
-        Some(Value::Array(a)) if a.iter().any(|t| t == "null") => return true,
-        _ => {}
-    }
-    if obj.get("const") == Some(&Value::Null) {
-        return true;
-    }
-    if let Some(Value::Array(e)) = obj.get("enum")
-        && e.contains(&Value::Null)
-    {
-        return true;
-    }
-    matches!(obj.get("anyOf"), Some(Value::Array(v)) if v.iter().any(schema_allows_null))
-}
-
-fn make_node_strict(schema: &mut Value, check: Option<&UnsupportedKeyword>) -> Result<(), String> {
-    let Some(obj) = schema.as_object_mut() else {
-        return Err("boolean schemas are unsupported".into());
-    };
-    for key in UNSUPPORTED_STRICT_SCHEMA_KEYS {
-        if obj.contains_key(*key) {
-            return Err(format!("{key} schemas are unsupported"));
-        }
-    }
-    if let Some(check) = check {
-        for (k, v) in obj.iter() {
-            if check(k, v) {
-                return Err(format!("{k}: {v} is unsupported"));
-            }
-        }
-    }
-    if let Some(any_of) = obj.get_mut("anyOf") {
-        let Some(variants) = any_of.as_array_mut().filter(|a| !a.is_empty()) else {
-            return Err("anyOf must contain at least one schema".into());
-        };
-        for variant in variants {
-            if is_structured_schema(variant) {
-                return Err("object and array unions are unsupported".into());
-            }
-            make_node_strict(variant, check)?;
-        }
-    }
-    if let Some(items) = obj.get_mut("items") {
-        if items.is_array() {
-            return Err("tuple schemas are unsupported".into());
-        }
-        make_node_strict(items, check)?;
-    }
-    let is_object = obj.get("type").and_then(Value::as_str) == Some("object");
-    if obj.contains_key("properties") && !is_object {
-        return Err("properties require type object".into());
-    }
-    if !is_object {
-        return Ok(());
-    }
-    if let Some(ap) = obj.get("additionalProperties")
-        && *ap != Value::Bool(false)
-    {
-        return Err("schema-valued or true additionalProperties is unsupported".into());
-    }
-    if let Some(p) = obj.get("properties")
-        && !p.is_object()
-    {
-        return Err("object properties must be a schema map".into());
-    }
-    let required: Vec<String> = match obj.get("required") {
-        None => vec![],
-        Some(Value::Array(a)) if a.iter().all(Value::is_string) => a
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_owned))
-            .collect(),
-        Some(_) => return Err("object required must be a string array".into()),
-    };
-    let mut properties = obj
-        .remove("properties")
-        .and_then(|p| match p {
-            Value::Object(m) => Some(m),
-            _ => None,
-        })
-        .unwrap_or_default();
-    if required.iter().any(|k| !properties.contains_key(k)) {
-        return Err("required contains an unknown property".into());
-    }
-    let names: Vec<String> = properties.keys().cloned().collect();
-    for (key, property) in properties.iter_mut() {
-        make_node_strict(property, check)?;
-        if !required.contains(key) && !schema_allows_null(property) {
-            *property = json!({"anyOf": [property.take(), {"type": "null"}]});
-        }
-    }
-    obj.insert("properties".into(), Value::Object(properties));
-    obj.insert(
-        "required".into(),
-        Value::Array(names.into_iter().map(Value::String).collect()),
-    );
-    obj.insert("additionalProperties".into(), Value::Bool(false));
-    Ok(())
-}
-
-/// Convert a tool schema to the strict subset expected by provider constrained sampling.
-pub(crate) fn make_strict_json_schema(
-    schema: &Value,
-    check: Option<&UnsupportedKeyword>,
-) -> Result<Value, String> {
-    let mut cloned = schema.clone();
-    if !cloned.is_object() {
-        return Err("root schema must have type object".into());
-    }
-    make_node_strict(&mut cloned, check)?;
-    if cloned.get("type").and_then(Value::as_str) != Some("object") {
-        return Err("root schema must have type object".into());
-    }
-    Ok(cloned)
-}
-
-/// A tool's constrained-sampling configuration. `ToolSpec` has no field for it, so it comes
-/// from the `toolConstrainedSampling` option: `{ "<tool name>": {"type": "json_schema",
-/// "strict": "prefer" | "require"} }` (reference `Tool.constrainedSampling`).
-pub(crate) fn constrained_sampling<'a>(req: &'a ProviderRequest, tool: &str) -> Option<&'a Value> {
-    opt(req, "toolConstrainedSampling")?.get(tool)
-}
-
-/// Reference `resolveJsonSchemaStrictSampling`: `Ok(Some(true))` to send the tool strict,
-/// `Ok(None)` for non-strict, `Err` when a tool requires strict mode that cannot be used.
-pub(crate) fn resolve_strict(
-    req: &ProviderRequest,
-    tool: &ToolSpec,
-    supports_strict: bool,
-    check: Option<&UnsupportedKeyword>,
-) -> Result<Option<bool>, String> {
-    let Some(config) = constrained_sampling(req, &tool.name) else {
-        return Ok(None);
-    };
-    if config.get("type").and_then(Value::as_str) != Some("json_schema") {
-        return Ok(None);
-    }
-    let require = config.get("strict").and_then(Value::as_str) == Some("require");
-    if supports_strict {
-        return match make_strict_json_schema(&tool.parameters, check) {
-            Ok(_) => Ok(Some(true)),
-            Err(_) if !require => Ok(None),
-            Err(e) => Err(format!(
-                "Tool \"{}\" requires JSON-schema constrained sampling, but {e}.",
-                tool.name
-            )),
-        };
-    }
-    if require {
-        return Err(format!(
-            "Tool \"{}\" requires JSON-schema constrained sampling, but strict tools are unsupported.",
-            tool.name
-        ));
-    }
-    Ok(None)
-}
-
-/// The parameters to send: the strict form when `strict`, else the schema as given.
-pub(crate) fn tool_parameters(tool: &ToolSpec, strict: Option<bool>) -> Result<Value, String> {
-    if strict == Some(true) {
-        make_strict_json_schema(&tool.parameters, None)
-    } else {
-        Ok(tool.parameters.clone())
-    }
-}
+use crate::provider::{Emitter, Model, ProviderRequest, StreamCtx, ThinkingLevel};
 
 // ---------------------------------------------------------------------------------------------
 // Google: thinking
@@ -875,10 +129,11 @@ pub(crate) fn thinking_config(
     if !model.reasoning {
         return Ok(None);
     }
-    let level = effective_thinking(req);
-    if level == ThinkingLevel::Off {
+    // The agent sends no reasoning option for `off` (reference `streamSimple`: thinking
+    // disabled), so a requested `off` is never clamped up to a minimum level.
+    let Some(level) = reasoning_effort(req) else {
         return disabled_thinking_config(model).map(Some);
-    }
+    };
     let resolved = resolve_google_thinking_level(model, level)?;
     if uses_google_thinking_level(model) {
         return Ok(Some(json!({
@@ -949,11 +204,11 @@ fn with_signature(mut part: Value, signature: Option<String>) -> Value {
 /// Messages as Gemini `contents`.
 pub(crate) fn convert_messages(model: &Model, messages: &[Message]) -> Vec<Value> {
     let needs_id = requires_tool_call_id(&model.id);
-    let normalize = |id: &str| normalize_tool_call_id(id);
+    let mut normalize = |id: &str, _: &Message| sanitize_tool_call_id(id);
     let transformed = transform_messages(
         messages,
         model,
-        if needs_id { Some(&normalize) } else { None },
+        if needs_id { Some(&mut normalize) } else { None },
     );
     let mut contents: Vec<Value> = Vec::new();
     for msg in &transformed {
@@ -1367,12 +622,17 @@ pub(crate) async fn stream(
     body: &Value,
 ) -> Message {
     let mut e = ctx.emitter();
+    let headers = match headers.to_header_map() {
+        Ok(h) => h,
+        Err(err) => return ctx.failed(e, err),
+    };
     let resp = match post_json(ctx, url, headers, body).await {
         Ok(r) => r,
         Err(err) => return ctx.failed(e, err),
     };
     let mut state = GoogleStream::default();
-    let read = http::read_sse(resp, idle_timeout(ctx.req), &ctx.cancel, |event| {
+    let idle = idle_timeout(ctx.req, http::DEFAULT_IDLE_TIMEOUT);
+    let read = http::read_sse(resp, idle, &ctx.cancel, |event| {
         state.on_event(&mut e, event)
     })
     .await;
@@ -1405,7 +665,13 @@ pub(crate) async fn stream(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::collections::{BTreeMap, HashMap};
+    use std::time::Duration;
+
     use super::*;
+    use crate::provider::api::common::schema::make_strict_json_schema;
+    use crate::provider::api::common::transform::NON_VISION_USER_IMAGE_PLACEHOLDER;
+    use crate::provider::api::common::{adjust_max_tokens_for_thinking, estimate_context_tokens};
     use crate::provider::{CacheRetention, Credential};
     use pipkin_engine_protocol::Usage;
 
@@ -1491,7 +757,8 @@ pub(crate) mod tests {
             ),
             Message::user_text("next", 4),
         ];
-        let out = transform_messages(&messages, &m, Some(&normalize_tool_call_id));
+        let mut normalize = |id: &str, _: &Message| sanitize_tool_call_id(id);
+        let out = transform_messages(&messages, &m, Some(&mut normalize));
         assert_eq!(
             out[0].content(),
             &[Block::text(NON_VISION_USER_IMAGE_PLACEHOLDER)]
@@ -1581,9 +848,9 @@ pub(crate) mod tests {
 
     #[test]
     fn tool_ids_normalize_like_the_reference() {
-        assert_eq!(normalize_tool_call_id("a|b.c"), "a_b_c");
-        assert_eq!(normalize_tool_call_id("\u{1f600}"), "__");
-        assert_eq!(normalize_tool_call_id(&"x".repeat(100)).len(), 64);
+        assert_eq!(sanitize_tool_call_id("a|b.c"), "a_b_c");
+        assert_eq!(sanitize_tool_call_id("\u{1f600}"), "__");
+        assert_eq!(sanitize_tool_call_id(&"x".repeat(100)).len(), 64);
     }
 
     #[test]

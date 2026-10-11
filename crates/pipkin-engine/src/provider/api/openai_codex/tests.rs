@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use pipkin_engine_protocol::{Block, Delta, Message, StopReason};
+use reqwest::header::HeaderValue;
 use serde_json::{Map, Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;

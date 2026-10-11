@@ -11,6 +11,7 @@ pub mod azure_openai_responses;
 pub mod bedrock_converse_stream;
 pub mod bedrock_eventstream;
 pub mod cloudflare;
+pub mod common;
 pub mod google_auth;
 pub mod google_generative_ai;
 pub mod google_shared;
@@ -21,7 +22,6 @@ pub mod openai_completions;
 pub mod openai_responses;
 pub mod openai_responses_shared;
 pub mod pi_messages;
-pub mod transform;
 
 /// Every built-in adapter.
 pub fn all() -> Vec<Arc<dyn ApiAdapter>> {

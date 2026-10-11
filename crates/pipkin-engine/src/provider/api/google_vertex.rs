@@ -18,8 +18,9 @@ use std::sync::Arc;
 use pipkin_engine_protocol::Message;
 use serde_json::Value;
 
+use super::common::opt_str;
 use super::google_auth;
-use super::google_shared::{self as shared, opt_str};
+use super::google_shared as shared;
 use crate::provider::{ApiAdapter, BoxFuture, Credential, ProviderRequest, StreamCtx};
 
 const API_VERSION: &str = "v1";

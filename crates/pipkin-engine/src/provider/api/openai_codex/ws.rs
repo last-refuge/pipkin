@@ -20,9 +20,9 @@ use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_util::sync::CancellationToken;
 
-use super::convert::convert_messages;
+use super::super::openai_responses_shared::convert_messages;
 use super::events::{ResponsesState, Step};
-use super::{Failure, FailureKind};
+use super::{CODEX_TOOL_CALL_PROVIDERS, Failure, FailureKind};
 use crate::provider::{Emitter, Model};
 
 pub(crate) type WsStream =
@@ -606,22 +606,23 @@ pub(crate) async fn run(
         Ok(()) => {
             if use_cached
                 && let Some(key) = &lease.key
-                && let Some(response_id) = state.response_id.clone()
+                && let Some(response_id) = state.response_id().map(str::to_owned)
             {
                 let stop = state
-                    .stop
+                    .stop()
                     .unwrap_or(pipkin_engine_protocol::StopReason::Stop);
                 let snapshot = state.snapshot(emitter, req.model, stop);
-                let items: Vec<Value> = convert_messages(req.model, &[snapshot])
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|item| {
-                        !matches!(
-                            item.get("type").and_then(Value::as_str),
-                            Some("function_call_output" | "custom_tool_call_output")
-                        )
-                    })
-                    .collect();
+                let items: Vec<Value> =
+                    convert_messages(req.model, None, &[snapshot], &CODEX_TOOL_CALL_PROVIDERS)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|item| {
+                            !matches!(
+                                item.get("type").and_then(Value::as_str),
+                                Some("function_call_output" | "custom_tool_call_output")
+                            )
+                        })
+                        .collect();
                 if let Some(entry) = lock(shared).entry_mut(key) {
                     entry.continuation = Some(Continuation {
                         last_request_body: req.body.clone(),
