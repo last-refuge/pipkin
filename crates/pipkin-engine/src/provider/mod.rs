@@ -93,6 +93,10 @@ impl Credential {
     }
 }
 
+/// `ProviderRequest::options` key set by the engine when its environment is isolated: then
+/// [`ProviderRequest::env_var`] sees only `env`, never the process environment.
+pub const ISOLATED_ENV: &str = "pipkin.isolatedEnv";
+
 /// One model request, fully resolved.
 #[derive(Clone, Debug)]
 pub struct ProviderRequest {
@@ -127,10 +131,17 @@ impl ProviderRequest {
 
     /// An environment value: request overrides, then the process environment.
     pub fn env_var(&self, name: &str) -> Option<String> {
+        let ambient = !matches!(self.options.get(ISOLATED_ENV), Some(Value::Bool(true)));
         self.env
             .get(name)
             .cloned()
-            .or_else(|| std::env::var(name).ok())
+            .or_else(|| {
+                if ambient {
+                    std::env::var(name).ok()
+                } else {
+                    None
+                }
+            })
             .filter(|v| !v.is_empty())
     }
 }
@@ -494,4 +505,34 @@ impl Registry {
 /// Built-in wire adapters. Each API kind module registers here.
 pub fn builtin_adapters() -> Vec<Arc<dyn ApiAdapter>> {
     api::all()
+}
+
+#[cfg(test)]
+mod env_tests {
+    use super::*;
+
+    #[test]
+    fn an_isolated_request_never_reads_the_process_environment() {
+        let mut req = ProviderRequest {
+            model: scripted::model(),
+            system: String::new(),
+            messages: vec![],
+            tools: vec![],
+            thinking: ThinkingLevel::Off,
+            session_id: String::new(),
+            max_tokens: None,
+            cache_retention: CacheRetention::Short,
+            credential: Credential::None,
+            headers: BTreeMap::new(),
+            base_url: None,
+            timeout: Duration::from_secs(1),
+            env: HashMap::from([("ONLY_HERE".to_owned(), "1".to_owned())]),
+            options: Map::new(),
+        };
+        // PATH is always set in the process environment.
+        assert!(req.env_var("PATH").is_some());
+        req.options.insert(ISOLATED_ENV.into(), Value::Bool(true));
+        assert_eq!(req.env_var("PATH"), None);
+        assert_eq!(req.env_var("ONLY_HERE").as_deref(), Some("1"));
+    }
 }

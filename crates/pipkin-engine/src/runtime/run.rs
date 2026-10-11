@@ -465,6 +465,16 @@ impl Shared {
             env: auth.env,
             options,
         };
+        // An isolated engine shows adapters only its own variables, never the process's.
+        if !self.config.env.ambient {
+            for (k, v) in &self.config.env.vars {
+                req.env.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+            req.options.insert(
+                crate::provider::ISOLATED_ENV.into(),
+                serde_json::Value::Bool(true),
+            );
+        }
         if let Err(e) = crate::provider::api::cloudflare::prepare(&mut req) {
             return Err(Some(RunOutcome::ModelError { detail: e }));
         }
