@@ -222,6 +222,11 @@ pub trait Tool: Send + Sync {
     fn replay_safe(&self) -> bool {
         false
     }
+    /// One sequential tool makes its whole round sequential (reference `executionMode`). The
+    /// built-in tools run in parallel, as in the reference.
+    fn sequential(&self) -> bool {
+        false
+    }
     fn limits(&self) -> OutputLimits {
         OutputLimits::default()
     }

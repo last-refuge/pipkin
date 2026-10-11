@@ -531,37 +531,69 @@ impl Shared {
             .session(&sess.id)?
             .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "session vanished"))?;
         let offered = self.tools_for(&row);
+        let find = |name: &str| offered.iter().find(|t| t.spec().name == name).cloned();
+        // Reference `generation.ts:558-561`: parallel unless an offered tool in this round is
+        // sequential. Calls run in their committed order either way.
+        let sequential = calls
+            .iter()
+            .any(|(_, name, _)| find(name).is_some_and(|t| t.sequential()));
+        let mut result = Ok(());
         let mut handles = Vec::new();
         for (call_id, name, args) in calls {
+            if sequential && cancel.is_cancelled() {
+                // Unstarted calls of a stopped sequential round get an aborted result when
+                // the run settles.
+                break;
+            }
             let shared = self.clone();
             let sess = sess.clone();
-            let cancel = cancel.child_token();
-            let tool = offered.iter().find(|t| t.spec().name == name).cloned();
+            let call_cancel = cancel.child_token();
+            let tool = find(&name);
             let cwd = row.cwd.clone();
             let model = row.model.clone();
             let thinking = row.thinking.clone();
-            handles.push(tokio::spawn(async move {
+            let task = tokio::spawn(async move {
                 shared
                     .one_tool(
-                        &sess, run, &call_id, &name, args, tool, cwd, model, thinking, cancel,
+                        &sess,
+                        run,
+                        &call_id,
+                        &name,
+                        args,
+                        tool,
+                        cwd,
+                        model,
+                        thinking,
+                        call_cancel,
                     )
                     .await
-            }));
-        }
-        let mut result = Ok(());
-        for h in handles {
-            match h.await {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => result = Err(e),
-                Err(e) => {
-                    result = Err(ProtoError::new(
-                        ErrorCode::Internal,
-                        format!("tool task failed: {e}"),
-                    ))
-                }
+            });
+            if sequential {
+                Self::joined(task.await, &mut result);
+            } else {
+                handles.push(task);
             }
         }
+        for h in handles {
+            Self::joined(h.await, &mut result);
+        }
         result
+    }
+
+    fn joined(
+        outcome: Result<Result<(), ProtoError>, tokio::task::JoinError>,
+        result: &mut Result<(), ProtoError>,
+    ) {
+        match outcome {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => *result = Err(e),
+            Err(e) => {
+                *result = Err(ProtoError::new(
+                    ErrorCode::Internal,
+                    format!("tool task failed: {e}"),
+                ))
+            }
+        }
     }
 
     async fn one_tool(

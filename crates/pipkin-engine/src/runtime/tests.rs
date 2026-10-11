@@ -1081,3 +1081,86 @@ fn wait_settled_by_lookup(e: &mut Engine, s: &str, key: &str, want: RunOutcome) 
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
+/// A test tool that records when each call starts and ends.
+struct Probe {
+    name: &'static str,
+    sequential: bool,
+    log: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl crate::tools::Tool for Probe {
+    fn spec(&self) -> crate::provider::ToolSpec {
+        crate::provider::ToolSpec {
+            name: self.name.into(),
+            description: "probe".into(),
+            parameters: json!({"type": "object", "properties": {"tag": {"type": "string"}}, "required": ["tag"]}),
+        }
+    }
+
+    fn sequential(&self) -> bool {
+        self.sequential
+    }
+
+    fn execute<'a>(
+        &'a self,
+        args: serde_json::Value,
+        _ctx: &'a crate::tools::ToolCtx,
+    ) -> crate::provider::BoxFuture<'a, Result<crate::tools::ToolOutput, crate::tools::ToolError>>
+    {
+        Box::pin(async move {
+            let tag = args["tag"].as_str().unwrap_or("?").to_owned();
+            self.log.lock().unwrap().push(format!("start {tag}"));
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            self.log.lock().unwrap().push(format!("end {tag}"));
+            Ok(crate::tools::ToolOutput {
+                content: Some(vec![Block::text(tag)]),
+                ..Default::default()
+            })
+        })
+    }
+}
+
+fn probe_round(sequential: bool) -> Vec<String> {
+    let fx = Fixture::new();
+    let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let provider = Scripted::new(|_, n| match n {
+        0 => R::Tools(
+            None,
+            vec![
+                ("probe".into(), json!({"tag": "a"})),
+                ("probe".into(), json!({"tag": "b"})),
+            ],
+        ),
+        _ => R::Text("done".into()),
+    });
+    let tools: Vec<Arc<dyn crate::tools::Tool>> = vec![Arc::new(Probe {
+        name: "probe",
+        sequential,
+        log: log.clone(),
+    })];
+    let handle =
+        EngineHandle::start_with(fx.config(), registry_with(Arc::new(provider)), tools).unwrap();
+    let conn = handle.connect("t");
+    let mut e = Engine {
+        handle,
+        conn,
+        next: 0,
+        events: vec![],
+    };
+    let s = e.create(&fx.project, "c");
+    e.prompt(&s, "r1", "go").unwrap();
+    assert_eq!(e.settled("r1"), RunOutcome::Completed);
+    log.lock().unwrap().clone()
+}
+
+#[test]
+fn tool_rounds_run_in_parallel_unless_a_tool_is_sequential() {
+    let parallel = probe_round(false);
+    assert!(
+        parallel[..2].iter().all(|l| l.starts_with("start")),
+        "{parallel:?}"
+    );
+    let sequential = probe_round(true);
+    assert_eq!(sequential, ["start a", "end a", "start b", "end b"]);
+}
