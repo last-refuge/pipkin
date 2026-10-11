@@ -1,0 +1,902 @@
+{
+ "summary": {
+  "turns": 200,
+  "rssKiBAtStartIdle": 468104,
+  "rssKiBAfterTurn1": 469964,
+  "rssKiBAfterLastTurn": 565624,
+  "rssKiBIdleAfter": 565628,
+  "pssKiBAtStartIdle": 312700,
+  "pssKiBAfterLastTurn": 410039,
+  "rssKiBPeakSampled50ms": 565348,
+  "maxProcessesSeen": 3,
+  "turnLatencyMs": {
+   "p50": 5.5,
+   "p95": 25.4,
+   "max": 86
+  },
+  "perRole": {
+   "launcher/server": [
+    {
+     "turn": 0,
+     "rssKiB": 186104,
+     "pssKiB": 132630
+    },
+    {
+     "turn": 1,
+     "rssKiB": 186156,
+     "pssKiB": 132682
+    },
+    {
+     "turn": 10,
+     "rssKiB": 186220,
+     "pssKiB": 132741
+    },
+    {
+     "turn": 20,
+     "rssKiB": 190796,
+     "pssKiB": 137317
+    },
+    {
+     "turn": 30,
+     "rssKiB": 196192,
+     "pssKiB": 142713
+    },
+    {
+     "turn": 40,
+     "rssKiB": 196200,
+     "pssKiB": 142721
+    },
+    {
+     "turn": 50,
+     "rssKiB": 201628,
+     "pssKiB": 148149
+    },
+    {
+     "turn": 60,
+     "rssKiB": 207968,
+     "pssKiB": 154489
+    },
+    {
+     "turn": 70,
+     "rssKiB": 211436,
+     "pssKiB": 157956
+    },
+    {
+     "turn": 80,
+     "rssKiB": 211456,
+     "pssKiB": 157977
+    },
+    {
+     "turn": 90,
+     "rssKiB": 211472,
+     "pssKiB": 157993
+    },
+    {
+     "turn": 100,
+     "rssKiB": 211480,
+     "pssKiB": 158001
+    },
+    {
+     "turn": 110,
+     "rssKiB": 211620,
+     "pssKiB": 158141
+    },
+    {
+     "turn": 120,
+     "rssKiB": 211628,
+     "pssKiB": 158149
+    },
+    {
+     "turn": 130,
+     "rssKiB": 211656,
+     "pssKiB": 158177
+    },
+    {
+     "turn": 140,
+     "rssKiB": 211656,
+     "pssKiB": 158177
+    },
+    {
+     "turn": 150,
+     "rssKiB": 211856,
+     "pssKiB": 158377
+    },
+    {
+     "turn": 160,
+     "rssKiB": 211860,
+     "pssKiB": 158381
+    },
+    {
+     "turn": 170,
+     "rssKiB": 211868,
+     "pssKiB": 158389
+    },
+    {
+     "turn": 180,
+     "rssKiB": 211880,
+     "pssKiB": 158401
+    },
+    {
+     "turn": 190,
+     "rssKiB": 211920,
+     "pssKiB": 158441
+    },
+    {
+     "turn": 200,
+     "rssKiB": 211928,
+     "pssKiB": 158449
+    },
+    {
+     "turn": "idle-after",
+     "rssKiB": 211932,
+     "pssKiB": 158453
+    }
+   ],
+   "coordinator": [
+    {
+     "turn": 0,
+     "rssKiB": 106940,
+     "pssKiB": 58168
+    },
+    {
+     "turn": 1,
+     "rssKiB": 106948,
+     "pssKiB": 58176
+    },
+    {
+     "turn": 10,
+     "rssKiB": 106964,
+     "pssKiB": 58192
+    },
+    {
+     "turn": 20,
+     "rssKiB": 106968,
+     "pssKiB": 58195
+    },
+    {
+     "turn": 30,
+     "rssKiB": 107004,
+     "pssKiB": 58232
+    },
+    {
+     "turn": 40,
+     "rssKiB": 107596,
+     "pssKiB": 58824
+    },
+    {
+     "turn": 50,
+     "rssKiB": 107608,
+     "pssKiB": 58836
+    },
+    {
+     "turn": 60,
+     "rssKiB": 107608,
+     "pssKiB": 58836
+    },
+    {
+     "turn": 70,
+     "rssKiB": 107608,
+     "pssKiB": 58835
+    },
+    {
+     "turn": 80,
+     "rssKiB": 107608,
+     "pssKiB": 58836
+    },
+    {
+     "turn": 90,
+     "rssKiB": 107612,
+     "pssKiB": 58840
+    },
+    {
+     "turn": 100,
+     "rssKiB": 107612,
+     "pssKiB": 58840
+    },
+    {
+     "turn": 110,
+     "rssKiB": 107860,
+     "pssKiB": 59088
+    },
+    {
+     "turn": 120,
+     "rssKiB": 108412,
+     "pssKiB": 59639
+    },
+    {
+     "turn": 130,
+     "rssKiB": 108984,
+     "pssKiB": 60212
+    },
+    {
+     "turn": 140,
+     "rssKiB": 109548,
+     "pssKiB": 60776
+    },
+    {
+     "turn": 150,
+     "rssKiB": 110120,
+     "pssKiB": 61348
+    },
+    {
+     "turn": 160,
+     "rssKiB": 110120,
+     "pssKiB": 61348
+    },
+    {
+     "turn": 170,
+     "rssKiB": 110120,
+     "pssKiB": 61348
+    },
+    {
+     "turn": 180,
+     "rssKiB": 110120,
+     "pssKiB": 61348
+    },
+    {
+     "turn": 190,
+     "rssKiB": 110124,
+     "pssKiB": 61352
+    },
+    {
+     "turn": 200,
+     "rssKiB": 110124,
+     "pssKiB": 61352
+    },
+    {
+     "turn": "idle-after",
+     "rssKiB": 110124,
+     "pssKiB": 61352
+    }
+   ],
+   "session-worker": [
+    {
+     "turn": 0,
+     "rssKiB": 175060,
+     "pssKiB": 121902
+    },
+    {
+     "turn": 1,
+     "rssKiB": 176860,
+     "pssKiB": 123616
+    },
+    {
+     "turn": 10,
+     "rssKiB": 192316,
+     "pssKiB": 138982
+    },
+    {
+     "turn": 20,
+     "rssKiB": 195740,
+     "pssKiB": 142405
+    },
+    {
+     "turn": 30,
+     "rssKiB": 208420,
+     "pssKiB": 155086
+    },
+    {
+     "turn": 40,
+     "rssKiB": 212140,
+     "pssKiB": 158806
+    },
+    {
+     "turn": 50,
+     "rssKiB": 212204,
+     "pssKiB": 158870
+    },
+    {
+     "turn": 60,
+     "rssKiB": 212272,
+     "pssKiB": 158938
+    },
+    {
+     "turn": 70,
+     "rssKiB": 212352,
+     "pssKiB": 159017
+    },
+    {
+     "turn": 80,
+     "rssKiB": 214276,
+     "pssKiB": 160942
+    },
+    {
+     "turn": 90,
+     "rssKiB": 214896,
+     "pssKiB": 161562
+    },
+    {
+     "turn": 100,
+     "rssKiB": 216364,
+     "pssKiB": 163030
+    },
+    {
+     "turn": 110,
+     "rssKiB": 218300,
+     "pssKiB": 164966
+    },
+    {
+     "turn": 120,
+     "rssKiB": 220912,
+     "pssKiB": 167577
+    },
+    {
+     "turn": 130,
+     "rssKiB": 225084,
+     "pssKiB": 171750
+    },
+    {
+     "turn": 140,
+     "rssKiB": 227360,
+     "pssKiB": 174026
+    },
+    {
+     "turn": 150,
+     "rssKiB": 229520,
+     "pssKiB": 176186
+    },
+    {
+     "turn": 160,
+     "rssKiB": 234124,
+     "pssKiB": 180790
+    },
+    {
+     "turn": 170,
+     "rssKiB": 236492,
+     "pssKiB": 183158
+    },
+    {
+     "turn": 180,
+     "rssKiB": 238796,
+     "pssKiB": 185462
+    },
+    {
+     "turn": 190,
+     "rssKiB": 240916,
+     "pssKiB": 187582
+    },
+    {
+     "turn": 200,
+     "rssKiB": 243572,
+     "pssKiB": 190238
+    },
+    {
+     "turn": "idle-after",
+     "rssKiB": 243572,
+     "pssKiB": 190238
+    }
+   ]
+  }
+ },
+ "samples": [
+  {
+   "turn": 0,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 186104,
+     "pssKiB": 132630
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 106940,
+     "pssKiB": 58168
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 175060,
+     "pssKiB": 121902
+    }
+   ]
+  },
+  {
+   "turn": 1,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 186156,
+     "pssKiB": 132682
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 106948,
+     "pssKiB": 58176
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 176860,
+     "pssKiB": 123616
+    }
+   ]
+  },
+  {
+   "turn": 10,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 186220,
+     "pssKiB": 132741
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 106964,
+     "pssKiB": 58192
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 192316,
+     "pssKiB": 138982
+    }
+   ]
+  },
+  {
+   "turn": 20,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 190796,
+     "pssKiB": 137317
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 106968,
+     "pssKiB": 58195
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 195740,
+     "pssKiB": 142405
+    }
+   ]
+  },
+  {
+   "turn": 30,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 196192,
+     "pssKiB": 142713
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 107004,
+     "pssKiB": 58232
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 208420,
+     "pssKiB": 155086
+    }
+   ]
+  },
+  {
+   "turn": 40,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 196200,
+     "pssKiB": 142721
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 107596,
+     "pssKiB": 58824
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 212140,
+     "pssKiB": 158806
+    }
+   ]
+  },
+  {
+   "turn": 50,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 201628,
+     "pssKiB": 148149
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 107608,
+     "pssKiB": 58836
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 212204,
+     "pssKiB": 158870
+    }
+   ]
+  },
+  {
+   "turn": 60,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 207968,
+     "pssKiB": 154489
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 107608,
+     "pssKiB": 58836
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 212272,
+     "pssKiB": 158938
+    }
+   ]
+  },
+  {
+   "turn": 70,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211436,
+     "pssKiB": 157956
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 107608,
+     "pssKiB": 58835
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 212352,
+     "pssKiB": 159017
+    }
+   ]
+  },
+  {
+   "turn": 80,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211456,
+     "pssKiB": 157977
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 107608,
+     "pssKiB": 58836
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 214276,
+     "pssKiB": 160942
+    }
+   ]
+  },
+  {
+   "turn": 90,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211472,
+     "pssKiB": 157993
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 107612,
+     "pssKiB": 58840
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 214896,
+     "pssKiB": 161562
+    }
+   ]
+  },
+  {
+   "turn": 100,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211480,
+     "pssKiB": 158001
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 107612,
+     "pssKiB": 58840
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 216364,
+     "pssKiB": 163030
+    }
+   ]
+  },
+  {
+   "turn": 110,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211620,
+     "pssKiB": 158141
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 107860,
+     "pssKiB": 59088
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 218300,
+     "pssKiB": 164966
+    }
+   ]
+  },
+  {
+   "turn": 120,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211628,
+     "pssKiB": 158149
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 108412,
+     "pssKiB": 59639
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 220912,
+     "pssKiB": 167577
+    }
+   ]
+  },
+  {
+   "turn": 130,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211656,
+     "pssKiB": 158177
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 108984,
+     "pssKiB": 60212
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 225084,
+     "pssKiB": 171750
+    }
+   ]
+  },
+  {
+   "turn": 140,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211656,
+     "pssKiB": 158177
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 109548,
+     "pssKiB": 60776
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 227360,
+     "pssKiB": 174026
+    }
+   ]
+  },
+  {
+   "turn": 150,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211856,
+     "pssKiB": 158377
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 110120,
+     "pssKiB": 61348
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 229520,
+     "pssKiB": 176186
+    }
+   ]
+  },
+  {
+   "turn": 160,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211860,
+     "pssKiB": 158381
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 110120,
+     "pssKiB": 61348
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 234124,
+     "pssKiB": 180790
+    }
+   ]
+  },
+  {
+   "turn": 170,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211868,
+     "pssKiB": 158389
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 110120,
+     "pssKiB": 61348
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 236492,
+     "pssKiB": 183158
+    }
+   ]
+  },
+  {
+   "turn": 180,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211880,
+     "pssKiB": 158401
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 110120,
+     "pssKiB": 61348
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 238796,
+     "pssKiB": 185462
+    }
+   ]
+  },
+  {
+   "turn": 190,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211920,
+     "pssKiB": 158441
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 110124,
+     "pssKiB": 61352
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 240916,
+     "pssKiB": 187582
+    }
+   ]
+  },
+  {
+   "turn": 200,
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211928,
+     "pssKiB": 158449
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 110124,
+     "pssKiB": 61352
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 243572,
+     "pssKiB": 190238
+    }
+   ]
+  },
+  {
+   "turn": "idle-after",
+   "procs": [
+    {
+     "pid": 323010,
+     "role": "launcher/server",
+     "rssKiB": 211932,
+     "pssKiB": 158453
+    },
+    {
+     "pid": 323062,
+     "role": "coordinator",
+     "rssKiB": 110124,
+     "pssKiB": 61352
+    },
+    {
+     "pid": 323077,
+     "role": "session-worker",
+     "rssKiB": 243572,
+     "pssKiB": 190238
+    }
+   ]
+  }
+ ]
+}

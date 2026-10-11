@@ -1,0 +1,243 @@
+{
+ "summary": {
+  "runs": 5,
+  "serverReadyMs": {
+   "p50": 688.9,
+   "p95": 729.8,
+   "min": 668.7,
+   "max": 729.8
+  },
+  "promptReadyMs": {
+   "p50": 1159.5,
+   "p95": 1236.8,
+   "min": 1144.8,
+   "max": 1236.8
+  },
+  "firstPromptRoundTripMs": {
+   "p50": 55.6,
+   "p95": 56
+  },
+  "idleRssKiB": {
+   "p50": 471644,
+   "min": 469768,
+   "max": 473104
+  },
+  "idlePssKiB": {
+   "p50": 316096,
+   "min": 314369,
+   "max": 317517
+  }
+ },
+ "rows": [
+  {
+   "run": 0,
+   "warmup": true,
+   "serverReadyMs": 650,
+   "promptReadyMs": 1133.2,
+   "firstPromptRoundTripMs": 58.5,
+   "idleProcesses": 3,
+   "idleRssKiB": 472868,
+   "idlePssKiB": 317355,
+   "idle": [
+    {
+     "pid": 326407,
+     "role": "launcher/server",
+     "rssKiB": 188292,
+     "pssKiB": 134856
+    },
+    {
+     "pid": 326420,
+     "role": "coordinator",
+     "rssKiB": 108072,
+     "pssKiB": 59298
+    },
+    {
+     "pid": 326474,
+     "role": "session-worker",
+     "rssKiB": 176504,
+     "pssKiB": 123201
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "warmup": true,
+   "serverReadyMs": 731.5,
+   "promptReadyMs": 1239.5,
+   "firstPromptRoundTripMs": 59.2,
+   "idleProcesses": 3,
+   "idleRssKiB": 468776,
+   "idlePssKiB": 313237,
+   "idle": [
+    {
+     "pid": 326846,
+     "role": "launcher/server",
+     "rssKiB": 185404,
+     "pssKiB": 131962
+    },
+    {
+     "pid": 326899,
+     "role": "coordinator",
+     "rssKiB": 106784,
+     "pssKiB": 57969
+    },
+    {
+     "pid": 326925,
+     "role": "session-worker",
+     "rssKiB": 176588,
+     "pssKiB": 123306
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "warmup": false,
+   "serverReadyMs": 668.7,
+   "promptReadyMs": 1144.8,
+   "firstPromptRoundTripMs": 55.6,
+   "idleProcesses": 3,
+   "idleRssKiB": 470312,
+   "idlePssKiB": 314872,
+   "idle": [
+    {
+     "pid": 327432,
+     "role": "launcher/server",
+     "rssKiB": 186036,
+     "pssKiB": 132605
+    },
+    {
+     "pid": 327444,
+     "role": "coordinator",
+     "rssKiB": 106852,
+     "pssKiB": 58087
+    },
+    {
+     "pid": 327456,
+     "role": "session-worker",
+     "rssKiB": 177424,
+     "pssKiB": 124180
+    }
+   ]
+  },
+  {
+   "run": 3,
+   "warmup": false,
+   "serverReadyMs": 688.9,
+   "promptReadyMs": 1163.6,
+   "firstPromptRoundTripMs": 55.1,
+   "idleProcesses": 3,
+   "idleRssKiB": 471940,
+   "idlePssKiB": 316461,
+   "idle": [
+    {
+     "pid": 327517,
+     "role": "launcher/server",
+     "rssKiB": 187244,
+     "pssKiB": 133773
+    },
+    {
+     "pid": 327569,
+     "role": "coordinator",
+     "rssKiB": 106608,
+     "pssKiB": 57841
+    },
+    {
+     "pid": 327580,
+     "role": "session-worker",
+     "rssKiB": 178088,
+     "pssKiB": 124847
+    }
+   ]
+  },
+  {
+   "run": 4,
+   "warmup": false,
+   "serverReadyMs": 729.8,
+   "promptReadyMs": 1236.8,
+   "firstPromptRoundTripMs": 56,
+   "idleProcesses": 3,
+   "idleRssKiB": 469768,
+   "idlePssKiB": 314369,
+   "idle": [
+    {
+     "pid": 328212,
+     "role": "launcher/server",
+     "rssKiB": 185956,
+     "pssKiB": 132525
+    },
+    {
+     "pid": 328403,
+     "role": "coordinator",
+     "rssKiB": 106848,
+     "pssKiB": 58139
+    },
+    {
+     "pid": 328465,
+     "role": "session-worker",
+     "rssKiB": 176964,
+     "pssKiB": 123705
+    }
+   ]
+  },
+  {
+   "run": 5,
+   "warmup": false,
+   "serverReadyMs": 689.5,
+   "promptReadyMs": 1159.5,
+   "firstPromptRoundTripMs": 55.8,
+   "idleProcesses": 3,
+   "idleRssKiB": 473104,
+   "idlePssKiB": 317517,
+   "idle": [
+    {
+     "pid": 328573,
+     "role": "launcher/server",
+     "rssKiB": 186144,
+     "pssKiB": 132652
+    },
+    {
+     "pid": 328586,
+     "role": "coordinator",
+     "rssKiB": 108732,
+     "pssKiB": 59928
+    },
+    {
+     "pid": 328597,
+     "role": "session-worker",
+     "rssKiB": 178228,
+     "pssKiB": 124937
+    }
+   ]
+  },
+  {
+   "run": 6,
+   "warmup": false,
+   "serverReadyMs": 669.4,
+   "promptReadyMs": 1149.7,
+   "firstPromptRoundTripMs": 54.7,
+   "idleProcesses": 3,
+   "idleRssKiB": 471644,
+   "idlePssKiB": 316096,
+   "idle": [
+    {
+     "pid": 328704,
+     "role": "launcher/server",
+     "rssKiB": 187140,
+     "pssKiB": 133627
+    },
+    {
+     "pid": 328716,
+     "role": "coordinator",
+     "rssKiB": 106852,
+     "pssKiB": 58099
+    },
+    {
+     "pid": 328727,
+     "role": "session-worker",
+     "rssKiB": 177652,
+     "pssKiB": 124370
+    }
+   ]
+  }
+ ]
+}

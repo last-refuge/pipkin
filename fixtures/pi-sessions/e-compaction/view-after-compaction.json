@@ -1,0 +1,104 @@
+{
+  "conversation": {
+    "id": 1
+  },
+  "entries": [
+    {
+      "kind": "pi.compaction",
+      "model": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "The conversation history before this point was compacted into the following summary:\n\n<summary>\n## Goal\nScripted summary of the earlier turns.\n\n## Progress\n- Turns 1-3 discussed topics one to three.\n\n## Next Steps\n- Continue.\n</summary>"
+            }
+          ],
+          "timestamp": 1791750731577
+        }
+      ],
+      "data": {
+        "reason": "manual"
+      },
+      "id": 25,
+      "conversationId": 1,
+      "head": 23,
+      "byTaskId": 24
+    },
+    {
+      "model": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Answer 4 about Topic 4: some words about this topic some words about this topic some words about this topic some words about this topic some words about this topic some words about this topic some words about this topic some words about this topic ."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "stub",
+          "model": "scripted",
+          "usage": {
+            "input": 10,
+            "output": 5,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 15,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1791750731567,
+          "responseId": "stub-1",
+          "rawStopReason": "stop"
+        }
+      ],
+      "kind": "pi.assistant",
+      "id": 23,
+      "conversationId": 1,
+      "byTaskId": 22
+    }
+  ],
+  "docs": {
+    "pi.agent": {
+      "model": {
+        "provider": "stub",
+        "modelId": "scripted"
+      },
+      "cwd": "/tmp/claude-1000/-home-jason-coding-pipkin/a5fc1b2a-1fd2-4186-b7b8-f58155abe540/scratchpad/ref-run/runs/e-compaction/project"
+    },
+    "pi.live": {},
+    "pi.inbox": {
+      "items": []
+    },
+    "pi.provider": {
+      "sessionId": "01a12caa-76c0-771a-acba-c235e4370433"
+    },
+    "pi.usage": {
+      "models": {
+        "stub/scripted": {
+          "input": 50,
+          "output": 25,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 75,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        }
+      },
+      "tools": {}
+    }
+  }
+}

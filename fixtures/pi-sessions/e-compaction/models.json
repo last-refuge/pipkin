@@ -1,0 +1,29 @@
+{
+  "catalog": {
+    "revision": 1,
+    "availableModels": [
+      {
+        "provider": "stub",
+        "modelId": "scripted",
+        "name": "Scripted stub",
+        "reasoning": false
+      },
+      {
+        "provider": "stub",
+        "modelId": "scripted-think",
+        "name": "Scripted stub (reasoning)",
+        "reasoning": true
+      }
+    ]
+  },
+  "configuration": {
+    "model": {
+      "provider": "stub",
+      "modelId": "scripted"
+    },
+    "thinkingLevel": "off"
+  },
+  "refresh": {
+    "status": "idle"
+  }
+}

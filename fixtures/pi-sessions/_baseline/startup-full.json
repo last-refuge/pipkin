@@ -1,0 +1,393 @@
+{
+ "summary": {
+  "runs": 10,
+  "serverReadyMs": {
+   "p50": 687.4,
+   "p95": 1060.4,
+   "min": 666.5,
+   "max": 1060.4
+  },
+  "promptReadyMs": {
+   "p50": 1161.9,
+   "p95": 1917.2,
+   "min": 1145.1,
+   "max": 1917.2
+  },
+  "firstPromptRoundTripMs": {
+   "p50": 55.9,
+   "p95": 93.8
+  },
+  "idleRssKiB": {
+   "p50": 470256,
+   "min": 468256,
+   "max": 473724
+  },
+  "idlePssKiB": {
+   "p50": 314695,
+   "min": 312694,
+   "max": 318304
+  }
+ },
+ "rows": [
+  {
+   "run": 0,
+   "warmup": true,
+   "serverReadyMs": 687.7,
+   "promptReadyMs": 1178,
+   "firstPromptRoundTripMs": 57.9,
+   "idleProcesses": 3,
+   "idleRssKiB": 471748,
+   "idlePssKiB": 316333,
+   "idle": [
+    {
+     "pid": 318617,
+     "role": "launcher/server",
+     "rssKiB": 186952,
+     "pssKiB": 133509
+    },
+    {
+     "pid": 318687,
+     "role": "coordinator",
+     "rssKiB": 106788,
+     "pssKiB": 58099
+    },
+    {
+     "pid": 318712,
+     "role": "session-worker",
+     "rssKiB": 178008,
+     "pssKiB": 124725
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "warmup": true,
+   "serverReadyMs": 665.6,
+   "promptReadyMs": 1148.9,
+   "firstPromptRoundTripMs": 55.9,
+   "idleProcesses": 3,
+   "idleRssKiB": 468936,
+   "idlePssKiB": 313479,
+   "idle": [
+    {
+     "pid": 318810,
+     "role": "launcher/server",
+     "rssKiB": 185284,
+     "pssKiB": 131791
+    },
+    {
+     "pid": 318862,
+     "role": "coordinator",
+     "rssKiB": 106984,
+     "pssKiB": 58271
+    },
+    {
+     "pid": 318873,
+     "role": "session-worker",
+     "rssKiB": 176668,
+     "pssKiB": 123417
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "warmup": false,
+   "serverReadyMs": 689.2,
+   "promptReadyMs": 1160.6,
+   "firstPromptRoundTripMs": 55.1,
+   "idleProcesses": 3,
+   "idleRssKiB": 469056,
+   "idlePssKiB": 313592,
+   "idle": [
+    {
+     "pid": 318966,
+     "role": "launcher/server",
+     "rssKiB": 184916,
+     "pssKiB": 131451
+    },
+    {
+     "pid": 318986,
+     "role": "coordinator",
+     "rssKiB": 108292,
+     "pssKiB": 59571
+    },
+    {
+     "pid": 318997,
+     "role": "session-worker",
+     "rssKiB": 175848,
+     "pssKiB": 122570
+    }
+   ]
+  },
+  {
+   "run": 3,
+   "warmup": false,
+   "serverReadyMs": 686.8,
+   "promptReadyMs": 1161.9,
+   "firstPromptRoundTripMs": 55.9,
+   "idleProcesses": 3,
+   "idleRssKiB": 473724,
+   "idlePssKiB": 318304,
+   "idle": [
+    {
+     "pid": 319104,
+     "role": "launcher/server",
+     "rssKiB": 186360,
+     "pssKiB": 132913
+    },
+    {
+     "pid": 319123,
+     "role": "coordinator",
+     "rssKiB": 108308,
+     "pssKiB": 59555
+    },
+    {
+     "pid": 319134,
+     "role": "session-worker",
+     "rssKiB": 179056,
+     "pssKiB": 125836
+    }
+   ]
+  },
+  {
+   "run": 4,
+   "warmup": false,
+   "serverReadyMs": 689,
+   "promptReadyMs": 1157.4,
+   "firstPromptRoundTripMs": 55.4,
+   "idleProcesses": 3,
+   "idleRssKiB": 468980,
+   "idlePssKiB": 313442,
+   "idle": [
+    {
+     "pid": 319258,
+     "role": "launcher/server",
+     "rssKiB": 185140,
+     "pssKiB": 131693
+    },
+    {
+     "pid": 319271,
+     "role": "coordinator",
+     "rssKiB": 108564,
+     "pssKiB": 59795
+    },
+    {
+     "pid": 319282,
+     "role": "session-worker",
+     "rssKiB": 175276,
+     "pssKiB": 121954
+    }
+   ]
+  },
+  {
+   "run": 5,
+   "warmup": false,
+   "serverReadyMs": 670,
+   "promptReadyMs": 1145.1,
+   "firstPromptRoundTripMs": 56.5,
+   "idleProcesses": 3,
+   "idleRssKiB": 470256,
+   "idlePssKiB": 314695,
+   "idle": [
+    {
+     "pid": 319360,
+     "role": "launcher/server",
+     "rssKiB": 186496,
+     "pssKiB": 132979
+    },
+    {
+     "pid": 319411,
+     "role": "coordinator",
+     "rssKiB": 108496,
+     "pssKiB": 59739
+    },
+    {
+     "pid": 319422,
+     "role": "session-worker",
+     "rssKiB": 175264,
+     "pssKiB": 121977
+    }
+   ]
+  },
+  {
+   "run": 6,
+   "warmup": false,
+   "serverReadyMs": 1060.4,
+   "promptReadyMs": 1917.2,
+   "firstPromptRoundTripMs": 93.8,
+   "idleProcesses": 3,
+   "idleRssKiB": 471408,
+   "idlePssKiB": 315803,
+   "idle": [
+    {
+     "pid": 320891,
+     "role": "launcher/server",
+     "rssKiB": 186340,
+     "pssKiB": 132854
+    },
+    {
+     "pid": 321041,
+     "role": "coordinator",
+     "rssKiB": 107764,
+     "pssKiB": 58948
+    },
+    {
+     "pid": 321231,
+     "role": "session-worker",
+     "rssKiB": 177304,
+     "pssKiB": 124001
+    }
+   ]
+  },
+  {
+   "run": 7,
+   "warmup": false,
+   "serverReadyMs": 750.1,
+   "promptReadyMs": 1251.2,
+   "firstPromptRoundTripMs": 58.1,
+   "idleProcesses": 3,
+   "idleRssKiB": 470772,
+   "idlePssKiB": 315201,
+   "idle": [
+    {
+     "pid": 321835,
+     "role": "launcher/server",
+     "rssKiB": 185952,
+     "pssKiB": 132481
+    },
+    {
+     "pid": 321876,
+     "role": "coordinator",
+     "rssKiB": 108820,
+     "pssKiB": 60022
+    },
+    {
+     "pid": 321901,
+     "role": "session-worker",
+     "rssKiB": 176000,
+     "pssKiB": 122698
+    }
+   ]
+  },
+  {
+   "run": 8,
+   "warmup": false,
+   "serverReadyMs": 686.3,
+   "promptReadyMs": 1168.8,
+   "firstPromptRoundTripMs": 56.3,
+   "idleProcesses": 3,
+   "idleRssKiB": 468888,
+   "idlePssKiB": 313289,
+   "idle": [
+    {
+     "pid": 322332,
+     "role": "launcher/server",
+     "rssKiB": 184332,
+     "pssKiB": 130807
+    },
+    {
+     "pid": 322350,
+     "role": "coordinator",
+     "rssKiB": 108728,
+     "pssKiB": 59913
+    },
+    {
+     "pid": 322361,
+     "role": "session-worker",
+     "rssKiB": 175828,
+     "pssKiB": 122569
+    }
+   ]
+  },
+  {
+   "run": 9,
+   "warmup": false,
+   "serverReadyMs": 688.2,
+   "promptReadyMs": 1167,
+   "firstPromptRoundTripMs": 55.2,
+   "idleProcesses": 3,
+   "idleRssKiB": 470532,
+   "idlePssKiB": 315047,
+   "idle": [
+    {
+     "pid": 322480,
+     "role": "launcher/server",
+     "rssKiB": 185768,
+     "pssKiB": 132322
+    },
+    {
+     "pid": 322500,
+     "role": "coordinator",
+     "rssKiB": 106956,
+     "pssKiB": 58191
+    },
+    {
+     "pid": 322511,
+     "role": "session-worker",
+     "rssKiB": 177808,
+     "pssKiB": 124534
+    }
+   ]
+  },
+  {
+   "run": 10,
+   "warmup": false,
+   "serverReadyMs": 687.4,
+   "promptReadyMs": 1162.1,
+   "firstPromptRoundTripMs": 56.7,
+   "idleProcesses": 3,
+   "idleRssKiB": 471976,
+   "idlePssKiB": 316434,
+   "idle": [
+    {
+     "pid": 322592,
+     "role": "launcher/server",
+     "rssKiB": 187044,
+     "pssKiB": 133553
+    },
+    {
+     "pid": 322656,
+     "role": "coordinator",
+     "rssKiB": 106852,
+     "pssKiB": 58048
+    },
+    {
+     "pid": 322667,
+     "role": "session-worker",
+     "rssKiB": 178080,
+     "pssKiB": 124833
+    }
+   ]
+  },
+  {
+   "run": 11,
+   "warmup": false,
+   "serverReadyMs": 666.5,
+   "promptReadyMs": 1145.4,
+   "firstPromptRoundTripMs": 54.8,
+   "idleProcesses": 3,
+   "idleRssKiB": 468256,
+   "idlePssKiB": 312694,
+   "idle": [
+    {
+     "pid": 322733,
+     "role": "launcher/server",
+     "rssKiB": 185360,
+     "pssKiB": 131895
+    },
+    {
+     "pid": 322746,
+     "role": "coordinator",
+     "rssKiB": 106884,
+     "pssKiB": 58077
+    },
+    {
+     "pid": 322757,
+     "role": "session-worker",
+     "rssKiB": 176012,
+     "pssKiB": 122722
+    }
+   ]
+  }
+ ]
+}

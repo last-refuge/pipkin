@@ -1,0 +1,9 @@
+diff --git a/README.md b/README.md
+index bf52ea1..d285ed9 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,3 @@
+-# Fixture project
++# Fixture project (edited)
+ 
+ A small project for reference fixtures.
