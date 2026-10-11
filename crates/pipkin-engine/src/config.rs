@@ -7,7 +7,7 @@
 //! until a qualified OS secret store replaces it). Nothing here reads the legacy engine's
 //! directories; importing them is an explicit, separate action.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -139,6 +139,17 @@ pub struct CompactionSettings {
     pub reserve_tokens: u64,
     pub keep_recent_tokens: u64,
     pub background_tokens: u64,
+    /// Per-model token settings keyed by exact `provider/modelId` (reference
+    /// `CompactionModelOverride`, `settings-manager.ts:23-33`).
+    pub model_overrides: BTreeMap<String, CompactionOverride>,
+}
+
+/// `compaction.modelOverrides["provider/id"]`.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CompactionOverride {
+    pub reserve_tokens: Option<u64>,
+    pub keep_recent_tokens: Option<u64>,
 }
 
 impl Default for CompactionSettings {
@@ -148,7 +159,26 @@ impl Default for CompactionSettings {
             reserve_tokens: 16_384,
             keep_recent_tokens: 20_000,
             background_tokens: 32_768,
+            model_overrides: BTreeMap::new(),
         }
+    }
+}
+
+impl CompactionSettings {
+    /// The effective settings for one model: its override, then the ordinary setting, then the
+    /// default, per token field (reference `getCompactionTokenSetting`,
+    /// `settings-manager.ts:928-960`). Keys match exactly (`provider/modelId`).
+    pub fn for_model(&self, key: &str) -> CompactionSettings {
+        let mut out = self.clone();
+        if let Some(o) = self.model_overrides.get(key) {
+            if let Some(v) = o.reserve_tokens {
+                out.reserve_tokens = v;
+            }
+            if let Some(v) = o.keep_recent_tokens {
+                out.keep_recent_tokens = v;
+            }
+        }
+        out
     }
 }
 
@@ -250,12 +280,14 @@ impl Settings {
     /// ignored with a warning; settings never block a session.
     pub fn load(config_dir: &Path, cwd: Option<&Path>) -> (Settings, Vec<String>) {
         let mut warnings = Vec::new();
+        // Each file is migrated on its own before the merge, as the reference loads them.
         let mut merged = read_json(&config_dir.join("settings.json"), &mut warnings);
+        migrate(&mut merged);
         if let Some(cwd) = cwd {
-            let project = read_json(&cwd.join(".pi").join("settings.json"), &mut warnings);
+            let mut project = read_json(&cwd.join(".pi").join("settings.json"), &mut warnings);
+            migrate(&mut project);
             deep_merge(&mut merged, project);
         }
-        migrate(&mut merged);
         match serde_json::from_value::<Settings>(merged) {
             Ok(s) => (s, warnings),
             Err(e) => {
@@ -265,14 +297,41 @@ impl Settings {
         }
     }
 
-    /// The HTTP idle timeout; `None` means disabled.
-    pub fn idle_timeout(&self) -> Option<std::time::Duration> {
-        let ms = match &self.http_idle_timeout_ms {
-            None => self.retry.provider.timeout_ms.unwrap_or(300_000),
-            Some(Value::String(s)) if s == "disabled" => 0,
-            Some(v) => v.as_u64().unwrap_or(300_000),
-        };
+    /// Reference `getHttpIdleTimeoutMs`: `httpIdleTimeoutMs` (default 300 s; `0` or
+    /// `"disabled"` disables it, `None`). A value the reference would reject keeps the default.
+    pub fn http_idle_timeout(&self) -> Option<std::time::Duration> {
+        let ms = self
+            .http_idle_timeout_ms
+            .as_ref()
+            .and_then(parse_timeout_ms)
+            .unwrap_or(DEFAULT_HTTP_IDLE_TIMEOUT_MS);
         (ms > 0).then(|| std::time::Duration::from_millis(ms))
+    }
+
+    /// The provider request timeout (reference durable `stream.timeoutMs`,
+    /// `harness-setup.ts:28-31`): `retry.provider.timeoutMs`, else the HTTP idle timeout. `None`
+    /// means disabled.
+    pub fn idle_timeout(&self) -> Option<std::time::Duration> {
+        match self.retry.provider.timeout_ms {
+            Some(ms) => (ms > 0).then(|| std::time::Duration::from_millis(ms)),
+            None => self.http_idle_timeout(),
+        }
+    }
+
+    /// The per-model default thinking level (`modelThinkingLevels["provider/id"]`).
+    pub fn model_thinking_level(&self, key: &str) -> Option<crate::provider::ThinkingLevel> {
+        self.other
+            .get("modelThinkingLevels")
+            .and_then(|v| v.get(key))
+            .and_then(Value::as_str)
+            .and_then(crate::provider::ThinkingLevel::parse)
+    }
+
+    /// `defaultThinkingLevel`, when valid.
+    pub fn default_thinking(&self) -> Option<crate::provider::ThinkingLevel> {
+        self.default_thinking_level
+            .as_deref()
+            .and_then(crate::provider::ThinkingLevel::parse)
     }
 
     /// Persist a new global default model (the reference engine does this on selection).
@@ -281,14 +340,27 @@ impl Settings {
         provider: &str,
         model: &str,
     ) -> std::io::Result<()> {
+        Settings::save_global(config_dir, |value| {
+            value["defaultProvider"] = Value::String(provider.into());
+            value["defaultModel"] = Value::String(model.into());
+        })
+    }
+
+    /// Persist the global `enabledModels` patterns (reference `setEnabledModels`).
+    pub fn save_enabled_models(config_dir: &Path, patterns: &[String]) -> std::io::Result<()> {
+        Settings::save_global(config_dir, |value| {
+            value["enabledModels"] = Value::from(patterns.to_vec());
+        })
+    }
+
+    fn save_global(config_dir: &Path, edit: impl FnOnce(&mut Value)) -> std::io::Result<()> {
         let path = config_dir.join("settings.json");
         let mut warnings = vec![];
         let mut value = read_json(&path, &mut warnings);
         if !value.is_object() {
             value = Value::Object(Map::new());
         }
-        value["defaultProvider"] = Value::String(provider.into());
-        value["defaultModel"] = Value::String(model.into());
+        edit(&mut value);
         std::fs::create_dir_all(config_dir)?;
         let tmp = path.with_extension("json.tmp");
         std::fs::write(&tmp, serde_json::to_string_pretty(&value)? + "\n")?;
@@ -387,11 +459,61 @@ pub fn deep_merge(base: &mut Value, over: Value) {
     }
 }
 
-/// The reference engine's load-time settings migrations.
+/// Reference `DEFAULT_HTTP_IDLE_TIMEOUT_MS`.
+pub const DEFAULT_HTTP_IDLE_TIMEOUT_MS: u64 = 300_000;
+
+/// Reference `parseHttpIdleTimeoutMs`: a non-negative finite number (floored), a numeric
+/// string, or `"disabled"` (any case, trimmed) for `0`.
+pub fn parse_timeout_ms(value: &Value) -> Option<u64> {
+    let number = |f: f64| (f.is_finite() && f >= 0.0).then(|| f.floor() as u64);
+    match value {
+        Value::String(s) => {
+            let t = s.trim();
+            if t.eq_ignore_ascii_case("disabled") {
+                Some(0)
+            } else if t.is_empty() {
+                None
+            } else {
+                t.parse::<f64>().ok().and_then(number)
+            }
+        }
+        Value::Number(n) => n.as_f64().and_then(number),
+        _ => None,
+    }
+}
+
+/// The reference engine's load-time settings migrations (`settings-manager.ts:504-563`).
 fn migrate(v: &mut Value) {
     let Some(obj) = v.as_object_mut() else { return };
-    if let Some(q) = obj.remove("queueMode") {
-        obj.entry("steeringMode").or_insert(q);
+    if obj.contains_key("queueMode") && !obj.contains_key("steeringMode") {
+        let q = obj.remove("queueMode").expect("checked");
+        obj.insert("steeringMode".into(), q);
+    }
+    // Legacy `websockets` boolean -> `transport`.
+    if !obj.contains_key("transport")
+        && let Some(Value::Bool(ws)) = obj.get("websockets").cloned()
+    {
+        obj.insert(
+            "transport".into(),
+            Value::String(if ws { "websocket" } else { "sse" }.into()),
+        );
+        obj.remove("websockets");
+    }
+    // Old `skills: {enableSkillCommands, customDirectories}` object -> `skills` array.
+    if let Some(Value::Object(skills)) = obj.get("skills").cloned() {
+        if let Some(enable) = skills.get("enableSkillCommands")
+            && !obj.contains_key("enableSkillCommands")
+        {
+            obj.insert("enableSkillCommands".into(), enable.clone());
+        }
+        match skills.get("customDirectories") {
+            Some(Value::Array(dirs)) if !dirs.is_empty() => {
+                obj.insert("skills".into(), Value::Array(dirs.clone()));
+            }
+            _ => {
+                obj.remove("skills");
+            }
+        }
     }
     if let Some(delay) = obj
         .get_mut("retry")
@@ -414,6 +536,7 @@ fn migrate(v: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn project_settings_override_global_and_defaults_apply() {
@@ -452,6 +575,106 @@ mod tests {
         let (s, w) = Settings::load(dir.path(), None);
         assert_eq!(s, Settings::default());
         assert_eq!(w.len(), 1);
+    }
+
+    fn load_global(json: &str) -> Settings {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("settings.json"), json).unwrap();
+        let (s, w) = Settings::load(dir.path(), None);
+        assert!(w.is_empty(), "{w:?}");
+        s
+    }
+
+    #[test]
+    fn legacy_websockets_and_skills_object_are_migrated() {
+        let s = load_global(
+            r#"{"websockets": true, "skills": {"enableSkillCommands": false,
+                "customDirectories": ["/a", "b"]}}"#,
+        );
+        assert_eq!(s.other.get("transport"), Some(&json!("websocket")));
+        assert!(!s.other.contains_key("websockets"));
+        assert_eq!(s.skills, vec!["/a".to_owned(), "b".to_owned()]);
+        assert_eq!(s.other.get("enableSkillCommands"), Some(&json!(false)));
+
+        let s = load_global(r#"{"websockets": false, "skills": {"customDirectories": []}}"#);
+        assert_eq!(s.other.get("transport"), Some(&json!("sse")));
+        assert!(s.skills.is_empty());
+
+        // An explicit `transport` wins and the legacy key is left alone; same for queueMode.
+        let s = load_global(
+            r#"{"websockets": true, "transport": "sse", "queueMode": "all",
+                "steeringMode": "one-at-a-time"}"#,
+        );
+        assert_eq!(s.other.get("transport"), Some(&json!("sse")));
+        assert_eq!(s.other.get("websockets"), Some(&json!(true)));
+        assert_eq!(s.steering_mode, QueueDelivery::OneAtATime);
+    }
+
+    #[test]
+    fn project_files_are_migrated_before_the_merge() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().join("proj");
+        std::fs::create_dir_all(cwd.join(".pi")).unwrap();
+        std::fs::write(
+            dir.path().join("settings.json"),
+            r#"{"steeringMode": "one-at-a-time"}"#,
+        )
+        .unwrap();
+        std::fs::write(cwd.join(".pi/settings.json"), r#"{"queueMode": "all"}"#).unwrap();
+        let (s, _) = Settings::load(dir.path(), Some(&cwd));
+        assert_eq!(s.steering_mode, QueueDelivery::All);
+    }
+
+    #[test]
+    fn compaction_model_overrides_apply_per_field_by_exact_key() {
+        let s = load_global(
+            r#"{"compaction": {"reserveTokens": 1000, "modelOverrides": {
+                "p/big": {"reserveTokens": 50000, "keepRecentTokens": 70000},
+                "p/half": {"keepRecentTokens": 3}}}}"#,
+        );
+        let big = s.compaction.for_model("p/big");
+        assert_eq!(
+            (big.reserve_tokens, big.keep_recent_tokens),
+            (50_000, 70_000)
+        );
+        let half = s.compaction.for_model("p/half");
+        assert_eq!((half.reserve_tokens, half.keep_recent_tokens), (1000, 3));
+        let other = s.compaction.for_model("P/BIG");
+        assert_eq!(
+            (other.reserve_tokens, other.keep_recent_tokens),
+            (1000, 20_000)
+        );
+    }
+
+    #[test]
+    fn http_idle_timeout_parses_like_the_reference_and_the_provider_timeout_wins() {
+        let secs = |s: &Settings| s.http_idle_timeout().map(|d| d.as_millis());
+        assert_eq!(secs(&load_global("{}")), Some(300_000));
+        assert_eq!(secs(&load_global(r#"{"httpIdleTimeoutMs": 0}"#)), None);
+        assert_eq!(
+            secs(&load_global(r#"{"httpIdleTimeoutMs": " Disabled "}"#)),
+            None
+        );
+        assert_eq!(
+            secs(&load_global(r#"{"httpIdleTimeoutMs": "120000"}"#)),
+            Some(120_000)
+        );
+        assert_eq!(
+            secs(&load_global(r#"{"httpIdleTimeoutMs": 1500.9}"#)),
+            Some(1500)
+        );
+        assert_eq!(
+            secs(&load_global(r#"{"httpIdleTimeoutMs": -5}"#)),
+            Some(300_000)
+        );
+        let s =
+            load_global(r#"{"httpIdleTimeoutMs": 0, "retry": {"provider": {"timeoutMs": 7000}}}"#);
+        assert_eq!(s.idle_timeout(), Some(std::time::Duration::from_secs(7)));
+        assert_eq!(s.http_idle_timeout(), None);
+        let s = load_global(r#"{"httpIdleTimeoutMs": 60000}"#);
+        assert_eq!(s.idle_timeout(), Some(std::time::Duration::from_secs(60)));
+        let s = load_global(r#"{"httpIdleTimeoutMs": "disabled"}"#);
+        assert_eq!(s.idle_timeout(), None);
     }
 
     #[test]

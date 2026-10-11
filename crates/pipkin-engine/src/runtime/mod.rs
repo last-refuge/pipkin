@@ -21,6 +21,7 @@ use tokio::sync::{Semaphore, mpsc};
 use crate::auth::Auth;
 use crate::config::{EngineConfig, Settings};
 use crate::host::Connection;
+use crate::provider::http::NetSettings;
 use crate::provider::{ApiAdapter, Registry, ToolSpec};
 use crate::store::{SessionField, SessionRow, Store};
 use crate::tools::{MutationLocks, Tool};
@@ -35,7 +36,8 @@ pub struct Shared {
     pub config: EngineConfig,
     pub store: Arc<Store>,
     pub auth: Arc<Auth>,
-    pub http: reqwest::Client,
+    /// The engine-wide HTTP client and what it was built from (see [`Shared::refresh_net`]).
+    net: Mutex<(NetSettings, reqwest::Client)>,
     pub epoch: u64,
     pub adapters: Registry,
     pub tools: Vec<Arc<dyn Tool>>,
@@ -50,6 +52,36 @@ pub struct Shared {
 }
 
 impl Shared {
+    /// The engine-wide HTTP client (cheap to clone; shares the connection pool).
+    pub fn http(&self) -> reqwest::Client {
+        self.net.lock().unwrap_or_else(|e| e.into_inner()).1.clone()
+    }
+
+    /// Re-read the engine environment's proxy variables and the global network settings
+    /// (`httpProxy`, `httpIdleTimeoutMs`); rebuild the client (and the sign-in client) when
+    /// they changed. Called before each model request and on `RefreshModels`.
+    pub fn refresh_net(&self) -> reqwest::Client {
+        let global = Settings::load(&self.config.config_dir, None).0;
+        let wanted = NetSettings::new(&self.config.env, &global);
+        let mut net = self.net.lock().unwrap_or_else(|e| e.into_inner());
+        if net.0 != wanted {
+            let client = crate::provider::http::client_with(&wanted);
+            self.auth.set_http(client.clone());
+            *net = (wanted, client);
+        }
+        net.1.clone()
+    }
+
+    /// The proxy configuration currently in effect.
+    pub fn proxy_config(&self) -> crate::provider::proxy::ProxyConfig {
+        self.net
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .0
+            .proxy
+            .clone()
+    }
+
     /// Publish a committed event to every connected client.
     pub fn publish(&self, event: Event) {
         let seq = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
@@ -216,6 +248,9 @@ impl EngineHandle {
             .build()
             .map_err(|e| format!("cannot start the engine runtime: {e}"))?;
         let auth = Arc::new(Auth::new(&config));
+        let net = NetSettings::new(&config.env, &Settings::load(&config.config_dir, None).0);
+        let http = crate::provider::http::client_with(&net);
+        auth.set_http(http.clone());
         let shared = Arc::new_cyclic(|me| Shared {
             me: me.clone(),
             generations: Arc::new(Semaphore::new(config.max_active_generations.max(1))),
@@ -223,7 +258,7 @@ impl EngineHandle {
             config,
             store: Arc::new(store),
             auth,
-            http: crate::provider::http::client(),
+            net: Mutex::new((net, http)),
             epoch,
             adapters,
             tools,
@@ -477,19 +512,28 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
         Call::SetThinking { session, level } => shared.set_thinking(&session, &level),
         Call::Models { session } => {
             let catalog = shared.auth.catalog();
-            let selected = match &session {
-                Some(s) => shared.store.session(s)?.and_then(|r| r.model),
+            let row = match &session {
+                Some(s) => shared.store.session(s)?,
                 None => None,
             };
+            let settings = Settings::load(
+                &shared.config.config_dir,
+                row.as_ref().map(|r| std::path::Path::new(r.cwd.as_str())),
+            )
+            .0;
+            let selected = row.and_then(|r| r.model);
             Ok(Reply::Models(models::models_view(
                 &shared.auth,
                 &catalog,
+                &settings,
                 selected.as_deref(),
             )))
         }
         Call::RefreshModels => {
             let shared = shared.clone();
             tokio::task::spawn_blocking(move || {
+                // Network settings (proxy, idle timeout) are re-read too.
+                shared.refresh_net();
                 shared.auth.reload();
                 shared.publish(Event::ModelsChanged);
             })
@@ -693,18 +737,36 @@ impl Shared {
             .as_deref()
             .and_then(crate::provider::ThinkingLevel::parse)
             .unwrap_or(models::DEFAULT_THINKING);
-        let thinking = model.clamp_thinking(current);
+        // Reference `_getThinkingLevelForModelSwitch`: the model's own default, then the
+        // global default, then the session's current level.
+        let settings = self.settings_for(session);
+        let thinking = models::thinking_for(&settings, &model, None, current);
         self.store
             .set_session_field(session, SessionField::Model(Some(model.key())))?;
         self.store.set_session_field(
             session,
             SessionField::Thinking(Some(thinking.as_str().into())),
         )?;
-        // The reference also makes the selection the global default.
+        // The reference also makes the selection the global default, and adds it to a
+        // non-empty `enabledModels` scope it is not already in.
         if let Err(e) =
             Settings::save_default_model(&self.config.config_dir, &model.provider, &model.id)
         {
             log::warn!("could not save the default model: {e}");
+        }
+        if let Some(scope) = models::scope(&self.auth, &catalog, &settings)
+            && !scope.models.is_empty()
+            && !scope.models.iter().any(|(m, _)| m.key() == model.key())
+            && let Some(patterns) = &settings.enabled_models
+            && !patterns
+                .iter()
+                .any(|p| p.to_lowercase() == model.key().to_lowercase())
+        {
+            let mut patterns = patterns.clone();
+            patterns.push(model.key());
+            if let Err(e) = Settings::save_enabled_models(&self.config.config_dir, &patterns) {
+                log::warn!("could not save the enabled models: {e}");
+            }
         }
         self.model_and_thinking_changed(session);
         Ok(Reply::Ok)
@@ -813,5 +875,7 @@ pub fn registry_with(extra: Arc<dyn ApiAdapter>) -> Registry {
     r
 }
 
+#[cfg(test)]
+mod settings_tests;
 #[cfg(test)]
 mod tests;

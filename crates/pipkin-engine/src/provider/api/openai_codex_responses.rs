@@ -66,6 +66,7 @@ use super::openai_responses_shared::{
     apply_service_tier_pricing, convert_messages, convert_tools, service_tier_multiplier,
 };
 use crate::provider::http::{self, ReadError};
+use crate::provider::proxy::ProxyConfig;
 use crate::provider::{
     ApiAdapter, BoxFuture, CacheRetention, Credential, Emitter, ProviderRequest, StreamCtx,
 };
@@ -726,6 +727,15 @@ impl OpenAICodexResponses {
         }
         if transport != "sse" && !websocket_disabled {
             let url = resolve_codex_websocket_url(req.base_url());
+            // The proxy comes from the request env (the engine puts its proxy settings there;
+            // a credential's own variables win), never from the process environment.
+            let proxy = match url::Url::parse(&url) {
+                Ok(target) => match ProxyConfig::from_map(&req.env).proxy_for(&target) {
+                    Ok(p) => p,
+                    Err(e) => return setup_failure(e),
+                },
+                Err(_) => None,
+            };
             let mut retried_connection_limit = false;
             let mut retried_missing_continuation = false;
             loop {
@@ -740,6 +750,7 @@ impl OpenAICodexResponses {
                         model: &req.model,
                         idle_timeout: timeout,
                         connect_timeout: opts.websocket_connect_timeout,
+                        proxy: proxy.as_ref(),
                         session: cache_session,
                         account: &account_id,
                         transport,

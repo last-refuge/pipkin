@@ -1,9 +1,10 @@
 //! Shared HTTP plumbing for wire adapters: one client, request-level retry before headers,
 //! idle-timed SSE reading with cancellation, and reference-format error strings.
 //!
-//! The client honours `HTTP(S)_PROXY`/`ALL_PROXY`/`NO_PROXY` (reqwest's system proxy support)
-//! and the platform roots plus webpki roots for TLS. Request bodies and credentials never reach
-//! logs from here.
+//! The engine's client takes its proxy from an explicit [`ProxyConfig`] (the engine `Env` plus
+//! settings `httpProxy`; reqwest's ambient system-proxy lookup is never used) and its per-read
+//! idle timeout from settings `httpIdleTimeoutMs` ([`NetSettings`]). Request bodies and
+//! credentials never reach logs from here.
 
 use std::ops::ControlFlow;
 use std::time::Duration;
@@ -12,6 +13,7 @@ use futures_util::StreamExt;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use tokio_util::sync::CancellationToken;
 
+use super::proxy::ProxyConfig;
 use super::sse::{SseDecoder, SseEvent};
 
 /// Default header/idle timeout (reference `httpIdleTimeoutMs`).
@@ -21,11 +23,60 @@ pub const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
 /// Error bodies are cut to this many characters (reference `error-body.ts`).
 const MAX_ERROR_BODY_CHARS: usize = 4000;
 
+/// A client with no proxy and no idle timeout (adapter tests against local servers).
 pub fn client() -> reqwest::Client {
-    reqwest::Client::builder()
+    client_with(&NetSettings::default())
+}
+
+/// What the engine-wide HTTP client is built from; the engine rebuilds it when this changes.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NetSettings {
+    pub proxy: ProxyConfig,
+    /// Reference `httpIdleTimeoutMs` as the dispatcher's header/body idle timeout: no bytes
+    /// for this long on a connection fails the read. `None` disables it.
+    pub idle: Option<Duration>,
+}
+
+impl NetSettings {
+    /// From the engine environment and the global settings (`httpProxy` is global-only in the
+    /// reference, `main.ts:594,871`).
+    pub fn new(env: &crate::config::Env, global: &crate::config::Settings) -> NetSettings {
+        NetSettings {
+            proxy: ProxyConfig::from_env(env, global.http_proxy.as_deref()),
+            idle: global.http_idle_timeout(),
+        }
+    }
+}
+
+/// Where a request whose configured proxy is unusable (SOCKS, PAC, malformed) is sent: a
+/// reserved name that never resolves (RFC 6761), so the request fails instead of silently
+/// bypassing the proxy. Model requests are refused earlier with the reference message.
+const UNUSABLE_PROXY: &str = "http://unusable-proxy.invalid:9";
+
+/// The engine client: explicit proxy selection (reqwest's ambient lookup is off) and the idle
+/// timeout as a per-read timeout.
+pub fn client_with(net: &NetSettings) -> reqwest::Client {
+    let mut builder = reqwest::Client::builder()
         .user_agent(concat!("pipkin/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(30))
         .pool_idle_timeout(Duration::from_secs(90))
+        .no_proxy();
+    if !net.proxy.is_empty() {
+        for warning in net.proxy.warnings() {
+            log::warn!("proxy configuration: {warning}");
+        }
+        let proxy = net.proxy.clone();
+        builder = builder.proxy(reqwest::Proxy::custom(move |url| {
+            match proxy.proxy_for(url) {
+                Ok(p) => p,
+                Err(_) => Some(reqwest::Url::parse(UNUSABLE_PROXY).expect("valid URL")),
+            }
+        }));
+    }
+    if let Some(idle) = net.idle {
+        builder = builder.read_timeout(idle);
+    }
+    builder
         .build()
         .expect("the HTTP client configuration is valid")
 }
@@ -186,5 +237,120 @@ pub async fn read_sse(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::config::Env;
+    use crate::provider::mock::{MockResponse, MockServer};
+
+    fn net(vars: &[(&str, &str)], idle: Option<Duration>) -> NetSettings {
+        let env = Env::isolated(
+            vars.iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<HashMap<_, _>>(),
+        );
+        NetSettings {
+            proxy: ProxyConfig::from_env(&env, None),
+            idle,
+        }
+    }
+
+    fn ok() -> MockResponse {
+        MockResponse::json(200, &serde_json::json!({"ok": true}))
+    }
+
+    #[tokio::test]
+    async fn plain_http_requests_are_forwarded_through_the_configured_proxy() {
+        let proxy = MockServer::start(|_, _| ok()).await;
+        let client = client_with(&net(&[("HTTP_PROXY", &proxy.url)], None));
+        let resp = client
+            .post("http://provider.test:8080/v1/chat")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let seen = proxy.requests();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].method, "POST");
+        assert_eq!(seen[0].path, "http://provider.test:8080/v1/chat");
+    }
+
+    #[tokio::test]
+    async fn https_requests_open_a_connect_tunnel_through_the_proxy() {
+        // The mock is not a real proxy: it records the CONNECT and the TLS handshake fails.
+        let proxy = MockServer::start(|_, _| ok()).await;
+        let client = client_with(&net(&[("https_proxy", &proxy.url)], None));
+        let result = client.get("https://provider.test/v1/models").send().await;
+        assert!(result.is_err());
+        let seen = proxy.requests();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].method, "CONNECT");
+        assert_eq!(seen[0].path, "provider.test:443");
+    }
+
+    #[tokio::test]
+    async fn no_proxy_targets_and_unproxied_schemes_connect_directly() {
+        let proxy = MockServer::start(|_, _| ok()).await;
+        let target = MockServer::start(|_, _| ok()).await;
+        let client = client_with(&net(
+            &[("HTTP_PROXY", &proxy.url), ("NO_PROXY", "127.0.0.1")],
+            None,
+        ));
+        let resp = client
+            .get(format!("{}/x", target.url))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        // Only HTTPS is proxied here, so a plain HTTP request goes direct.
+        let https_only = client_with(&net(&[("HTTPS_PROXY", &proxy.url)], None));
+        https_only
+            .get(format!("{}/y", target.url))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(target.requests().len(), 2);
+        assert!(proxy.requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_unusable_proxy_fails_the_request_instead_of_bypassing_it() {
+        let target = MockServer::start(|_, _| ok()).await;
+        for proxy in ["socks5://127.0.0.1:1080", "http://[bad"] {
+            let client = client_with(&net(&[("HTTP_PROXY", proxy)], None));
+            let result = client.get(format!("{}/x", target.url)).send().await;
+            assert!(result.is_err(), "{proxy}");
+        }
+        assert!(target.requests().is_empty(), "never sent directly");
+    }
+
+    #[tokio::test]
+    async fn the_idle_timeout_fails_a_stalled_body_and_zero_disables_it() {
+        let stalled = || {
+            let mut r = MockResponse::sse(vec!["data: {}\n\n".into()]);
+            r.hang = true;
+            r
+        };
+        let server = MockServer::start(move |_, _| stalled()).await;
+        let client = client_with(&net(&[], Some(Duration::from_millis(200))));
+        let mut resp = client.get(&server.url).send().await.unwrap();
+        assert!(resp.chunk().await.unwrap().is_some());
+        let started = std::time::Instant::now();
+        let err = resp.chunk().await.unwrap_err();
+        assert!(transport_error(&err).contains("timed out"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(5));
+
+        // Disabled: the read is still pending after well over the old timeout.
+        let client = client_with(&net(&[], None));
+        let mut resp = client.get(&server.url).send().await.unwrap();
+        assert!(resp.chunk().await.unwrap().is_some());
+        let pending = tokio::time::timeout(Duration::from_millis(600), resp.chunk()).await;
+        assert!(pending.is_err(), "no idle timeout when disabled");
     }
 }

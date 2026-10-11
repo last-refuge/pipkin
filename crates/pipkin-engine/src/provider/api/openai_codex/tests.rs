@@ -1105,3 +1105,146 @@ async fn a_server_closed_idle_connection_is_replaced_not_failed() {
         0
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Proxies
+// ---------------------------------------------------------------------------------------------
+
+/// A local HTTP `CONNECT` proxy: records each request head, then (when `allow`) answers 200
+/// and relays bytes to the requested authority, else answers 403.
+struct ConnectProxy {
+    url: String,
+    heads: Arc<Mutex<Vec<String>>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for ConnectProxy {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+impl ConnectProxy {
+    async fn start(allow: bool) -> ConnectProxy {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let heads: Arc<Mutex<Vec<String>>> = Arc::default();
+        let recorded = heads.clone();
+        let task = tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let recorded = recorded.clone();
+                tokio::spawn(async move {
+                    let mut head = Vec::new();
+                    let mut byte = [0u8; 1];
+                    while !head.ends_with(b"\r\n\r\n") {
+                        if sock.read(&mut byte).await.unwrap_or(0) == 0 {
+                            return;
+                        }
+                        head.push(byte[0]);
+                    }
+                    let head = String::from_utf8_lossy(&head).into_owned();
+                    recorded.lock().unwrap().push(head.clone());
+                    if !allow {
+                        let _ = sock
+                            .write_all(b"HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\n\r\n")
+                            .await;
+                        return;
+                    }
+                    let authority = head.split_whitespace().nth(1).unwrap().to_owned();
+                    let Ok(mut upstream) = tokio::net::TcpStream::connect(authority).await else {
+                        return;
+                    };
+                    let _ = sock
+                        .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                        .await;
+                    let _ = tokio::io::copy_bidirectional(&mut sock, &mut upstream).await;
+                });
+            }
+        });
+        ConnectProxy { url, heads, task }
+    }
+
+    fn heads(&self) -> Vec<String> {
+        self.heads.lock().unwrap().clone()
+    }
+}
+
+#[tokio::test]
+async fn websocket_tunnels_through_the_request_env_http_proxy() {
+    let mock = WsMock::start(|_, index, _| answer(index)).await;
+    let proxy = ConnectProxy::start(true).await;
+    let mut req = ws_request(&mock.url, vec![user("hi")]);
+    let with_auth = proxy.url.replace("http://", "http://us%65r:p%40ss@");
+    req.env.insert("http_proxy".into(), with_auth);
+    let msg = run(&OpenAICodexResponses::new(), &req).await;
+    assert_eq!(stop_and_error(&msg), (StopReason::Stop, None));
+    assert_eq!(msg.text(), "answer 0");
+    let authority = mock.url.trim_start_matches("http://");
+    let heads = proxy.heads();
+    assert_eq!(heads.len(), 1, "{heads:?}");
+    assert!(
+        heads[0].starts_with(&format!(
+            "CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n"
+        )),
+        "{}",
+        heads[0]
+    );
+    // `user:p@ss`, percent-decoded from the proxy URL.
+    assert!(heads[0].contains("Proxy-Authorization: Basic dXNlcjpwQHNz\r\n"));
+    assert_eq!(mock.handshakes().len(), 1);
+    assert!(extra(&msg).get("diagnostics").is_none());
+}
+
+#[tokio::test]
+async fn websocket_no_proxy_connects_directly() {
+    let mock = WsMock::start(|_, index, _| answer(index)).await;
+    let proxy = ConnectProxy::start(true).await;
+    let mut req = ws_request(&mock.url, vec![user("hi")]);
+    req.env.insert("HTTP_PROXY".into(), proxy.url.clone());
+    req.env.insert("NO_PROXY".into(), "127.0.0.1".into());
+    let msg = run(&OpenAICodexResponses::new(), &req).await;
+    assert_eq!(msg.text(), "answer 0");
+    assert!(proxy.heads().is_empty());
+}
+
+#[tokio::test]
+async fn a_refused_websocket_tunnel_falls_back_to_sse() {
+    // The SSE fallback goes through the shared client (no proxy in this test) to the mock.
+    let server = MockServer::start(|_, _| {
+        MockResponse::sse(
+            message_events("resp_s", "msg_s", "over sse")
+                .iter()
+                .map(|e| format!("data: {e}\n\n"))
+                .collect(),
+        )
+    })
+    .await;
+    let proxy = ConnectProxy::start(false).await;
+    let mut req = ws_request(&server.url, vec![user("hi")]);
+    req.env.insert("http_proxy".into(), proxy.url.clone());
+    let msg = run(&OpenAICodexResponses::new(), &req).await;
+    assert_eq!(stop_and_error(&msg), (StopReason::Stop, None));
+    assert_eq!(msg.text(), "over sse");
+    assert_eq!(proxy.heads().len(), 1);
+    let diagnostics = extra(&msg)["diagnostics"].to_string();
+    assert!(diagnostics.contains("403 Forbidden"), "{diagnostics}");
+}
+
+#[tokio::test]
+async fn an_unsupported_proxy_fails_the_websocket_request_with_the_reference_message() {
+    let mut req = ws_request("http://127.0.0.1:9", vec![user("hi")]);
+    req.env
+        .insert("HTTP_PROXY".into(), "socks5://127.0.0.1:1080".into());
+    let msg = run(&OpenAICodexResponses::new(), &req).await;
+    assert_eq!(
+        stop_and_error(&msg),
+        (
+            StopReason::Error,
+            Some(format!(
+                "{} Got socks5:",
+                crate::provider::proxy::UNSUPPORTED_PROXY_PROTOCOL_MESSAGE
+            ))
+        )
+    );
+}

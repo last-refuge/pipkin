@@ -277,17 +277,36 @@ fn header_pairs(
 }
 
 /// Reference `connectWebSocket`.
+///
+/// With a proxy the TCP connection is an HTTP `CONNECT` tunnel through it (Node's WebSocket
+/// does the same over undici's `EnvHttpProxyAgent`), and TLS to the target runs inside the
+/// tunnel. Only `http://` proxies can carry the tunnel here: with an `https://` proxy the
+/// attempt fails as a transport error, so the adapter falls back to SSE, which the shared
+/// HTTP client sends through that proxy. The connect timeout covers the tunnel.
 async fn connect(
     url: &str,
     headers: &[(String, String)],
     cancel: &CancellationToken,
     connect_timeout: Option<Duration>,
+    proxy: Option<&url::Url>,
 ) -> Result<WsStream, Failure> {
     let request = url
         .into_client_request()
         .map_err(|e| Failure::error(e.to_string()))?;
     let request = header_pairs(request, headers);
-    let connect = tokio_tungstenite::connect_async(request);
+    let connect = async move {
+        match proxy {
+            None => tokio_tungstenite::connect_async(request)
+                .await
+                .map_err(|e| e.to_string()),
+            Some(proxy) => {
+                let stream = tunnel(proxy, request.uri()).await?;
+                tokio_tungstenite::client_async_tls(request, stream)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+        }
+    };
     let result = tokio::select! {
         _ = cancel.cancelled() => return Err(Failure::aborted()),
         r = async {
@@ -302,9 +321,115 @@ async fn connect(
             "WebSocket connect timeout after {}ms",
             t.as_millis()
         ))),
-        Ok(Err(e)) => Err(Failure::error(nonempty(e.to_string(), "WebSocket error"))),
+        Ok(Err(e)) => Err(Failure::error(nonempty(e, "WebSocket error"))),
         Ok(Ok((ws, _response))) => Ok(ws),
     }
+}
+
+/// Largest proxy `CONNECT` response head accepted.
+const MAX_PROXY_HEAD: usize = 16 * 1024;
+
+/// Open an HTTP `CONNECT` tunnel to the WebSocket target through an `http://` proxy (with
+/// `Proxy-Authorization: Basic` from the proxy URL's credentials).
+async fn tunnel(
+    proxy: &url::Url,
+    target: &tokio_tungstenite::tungstenite::http::Uri,
+) -> Result<tokio::net::TcpStream, String> {
+    use base64::Engine as _;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    if proxy.scheme() != "http" {
+        return Err(format!(
+            "WebSocket connections cannot be tunneled through a {}:// proxy; only http:// proxies are supported",
+            proxy.scheme()
+        ));
+    }
+    let host = target.host().ok_or("The WebSocket URL has no host")?;
+    let port = target
+        .port_u16()
+        .unwrap_or(if target.scheme_str() == Some("wss") {
+            443
+        } else {
+            80
+        });
+    let authority = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    };
+    let proxy_host = proxy.host_str().ok_or("The proxy URL has no host")?;
+    let proxy_port = proxy.port_or_known_default().unwrap_or(80);
+    let dial_host = proxy_host.trim_start_matches('[').trim_end_matches(']');
+    let mut tcp = tokio::net::TcpStream::connect((dial_host, proxy_port))
+        .await
+        .map_err(|e| format!("Proxy connection to {proxy_host}:{proxy_port} failed: {e}"))?;
+    let mut head = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n");
+    if !proxy.username().is_empty() {
+        let credentials = format!(
+            "{}:{}",
+            percent_decode(proxy.username()),
+            percent_decode(proxy.password().unwrap_or(""))
+        );
+        head.push_str(&format!(
+            "Proxy-Authorization: Basic {}\r\n",
+            base64::engine::general_purpose::STANDARD.encode(credentials)
+        ));
+    }
+    head.push_str("\r\n");
+    tcp.write_all(head.as_bytes())
+        .await
+        .map_err(|e| format!("Proxy CONNECT to {authority} failed: {e}"))?;
+    // Read the response head byte by byte: nothing after it may be consumed here.
+    let mut response = Vec::new();
+    while !response.ends_with(b"\r\n\r\n") {
+        if response.len() >= MAX_PROXY_HEAD {
+            return Err(format!(
+                "Proxy CONNECT to {authority} failed: response head too large"
+            ));
+        }
+        let mut byte = [0u8; 1];
+        match tcp.read(&mut byte).await {
+            Ok(0) => {
+                return Err(format!(
+                    "Proxy CONNECT to {authority} failed: the proxy closed the connection"
+                ));
+            }
+            Ok(_) => response.push(byte[0]),
+            Err(e) => return Err(format!("Proxy CONNECT to {authority} failed: {e}")),
+        }
+    }
+    let text = String::from_utf8_lossy(&response);
+    let status_line = text.lines().next().unwrap_or("").trim();
+    let ok = status_line
+        .split_whitespace()
+        .nth(1)
+        .is_some_and(|code| code.starts_with('2'));
+    if !ok {
+        return Err(format!(
+            "Proxy CONNECT to {authority} failed: {status_line}"
+        ));
+    }
+    Ok(tcp)
+}
+
+/// `%XX` decoding for proxy URL credentials.
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && let Some(hex) = text.get(i + 1..i + 3)
+            && let Ok(v) = u8::from_str_radix(hex, 16)
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn nonempty(text: String, fallback: &str) -> String {
@@ -337,9 +462,10 @@ async fn acquire(
     account: &str,
     cancel: &CancellationToken,
     connect_timeout: Option<Duration>,
+    proxy: Option<&url::Url>,
 ) -> Result<Lease, Failure> {
     let Some(session) = session else {
-        let socket = connect(url, headers, cancel, connect_timeout).await?;
+        let socket = connect(url, headers, cancel, connect_timeout, proxy).await?;
         return Ok(Lease {
             socket,
             key: None,
@@ -405,7 +531,7 @@ async fn acquire(
             lock(shared).remove_if(&key, |_| true);
         }
         Plan::Unregistered => {
-            let socket = connect(url, headers, cancel, connect_timeout).await?;
+            let socket = connect(url, headers, cancel, connect_timeout, proxy).await?;
             return Ok(Lease {
                 socket,
                 key: None,
@@ -414,7 +540,7 @@ async fn acquire(
         }
         Plan::Register => {}
     }
-    let socket = connect(url, headers, cancel, connect_timeout).await?;
+    let socket = connect(url, headers, cancel, connect_timeout, proxy).await?;
     let mut st = lock(shared);
     st.next_id += 1;
     let id = st.next_id;
@@ -533,6 +659,8 @@ pub(crate) struct WsRequest<'a> {
     pub(crate) model: &'a Model,
     pub(crate) idle_timeout: Option<Duration>,
     pub(crate) connect_timeout: Option<Duration>,
+    /// An `http://` proxy to tunnel through with `CONNECT` (see [`connect`]).
+    pub(crate) proxy: Option<&'a url::Url>,
     pub(crate) session: Option<&'a str>,
     pub(crate) account: &'a str,
     pub(crate) transport: &'a str,
@@ -554,6 +682,7 @@ pub(crate) async fn run(
         req.account,
         req.cancel,
         req.connect_timeout,
+        req.proxy,
     )
     .await?;
     let use_cached = matches!(req.transport, "websocket-cached" | "auto");
