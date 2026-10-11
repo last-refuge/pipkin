@@ -167,6 +167,10 @@ impl ApiAdapter for OpenAICodexResponses {
     fn stream<'a>(&'a self, ctx: StreamCtx<'a>) -> BoxFuture<'a, Message> {
         Box::pin(self.run(ctx))
     }
+
+    fn close_sessions(&self, session_id: Option<&str>) {
+        self.close_websocket_sessions(session_id);
+    }
 }
 
 /// Parsed `ProviderRequest::options`.

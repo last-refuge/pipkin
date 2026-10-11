@@ -324,6 +324,10 @@ impl EngineHandle {
     /// Orderly stop: extensions are deactivated (their processes ended) and questions
     /// cancelled; runs in flight stay unsettled in the store and resume on the next start.
     pub fn shutdown(&self, timeout: Duration) {
+        // Pooled provider connections (Codex WebSockets) belong to this engine's lifetime.
+        for adapter in self.shared.adapters.adapters() {
+            adapter.close_sessions(None);
+        }
         let sessions: Vec<Arc<SessionRt>> = self
             .shared
             .sessions

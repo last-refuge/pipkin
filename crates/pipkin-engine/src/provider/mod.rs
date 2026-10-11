@@ -445,6 +445,9 @@ pub trait ApiAdapter: Send + Sync {
     /// Run one exchange. Always returns a message: errors and cancellation are expressed in
     /// its `stop_reason`/`error_message`, never as a panic.
     fn stream<'a>(&'a self, ctx: StreamCtx<'a>) -> BoxFuture<'a, Message>;
+    /// Release per-session transport resources (e.g. pooled WebSockets) for one provider
+    /// session id, or all of them with `None`. Most adapters hold none.
+    fn close_sessions(&self, _session_id: Option<&str>) {}
 }
 
 /// The adapters this build provides, by API kind.
@@ -473,6 +476,11 @@ impl Registry {
 
     pub fn get(&self, api: &str) -> Option<Arc<dyn ApiAdapter>> {
         self.adapters.get(api).cloned()
+    }
+
+    /// Every installed adapter.
+    pub fn adapters(&self) -> Vec<Arc<dyn ApiAdapter>> {
+        self.adapters.values().cloned().collect()
     }
 
     pub fn apis(&self) -> Vec<&'static str> {
