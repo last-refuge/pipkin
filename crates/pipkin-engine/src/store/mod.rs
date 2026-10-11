@@ -390,6 +390,58 @@ impl Store {
         self.fail_next.store(true, Ordering::SeqCst);
     }
 
+    /// Make writes fail, from SQLite itself, until [`Store::clear_faults`]: at one durable
+    /// phase (a connection-local `TEMP` trigger raises inside that statement, so the whole
+    /// transaction rolls back), or for every growing write (`DiskFull`: `max_page_count` pinned
+    /// at the current size, a real `SQLITE_FULL`), or for every write (`ReadOnly`:
+    /// `query_only`). Nothing is persisted; reopening the store starts without faults.
+    pub fn inject(&self, fault: Fault) -> Result<()> {
+        let conn = self.conn();
+        let trigger = |name: &str, when: &str| {
+            format!(
+                "CREATE TEMP TRIGGER IF NOT EXISTS pipkin_fault_{name} {when} BEGIN
+                     SELECT RAISE(ABORT, 'database or disk is full (injected at {name})');
+                 END;"
+            )
+        };
+        let sql = match fault {
+            Fault::Admission => trigger("admission", "BEFORE INSERT ON main.requests"),
+            Fault::ChunkFlush => trigger("chunk_flush", "BEFORE INSERT ON main.entry_chunks"),
+            Fault::FinalCommit => trigger(
+                "final_commit",
+                "BEFORE UPDATE OF body ON main.entries WHEN OLD.partial = 1 AND NEW.partial = 0",
+            ),
+            Fault::ToolResult => trigger("tool_result", "BEFORE INSERT ON main.tool_outputs"),
+            Fault::Settlement => trigger(
+                "settlement",
+                "BEFORE UPDATE OF state ON main.runs WHEN NEW.state = 'settled'",
+            ),
+            Fault::DiskFull => {
+                let pages: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
+                format!("PRAGMA max_page_count = {pages};")
+            }
+            Fault::ReadOnly => "PRAGMA query_only = 1;".to_owned(),
+        };
+        conn.execute_batch(&sql)?;
+        Ok(())
+    }
+
+    /// Remove every injected fault.
+    pub fn clear_faults(&self) -> Result<()> {
+        self.fail_next.store(false, Ordering::SeqCst);
+        let conn = self.conn();
+        conn.execute_batch(
+            "PRAGMA query_only = 0;
+             PRAGMA max_page_count = 4294967294;
+             DROP TRIGGER IF EXISTS temp.pipkin_fault_admission;
+             DROP TRIGGER IF EXISTS temp.pipkin_fault_chunk_flush;
+             DROP TRIGGER IF EXISTS temp.pipkin_fault_final_commit;
+             DROP TRIGGER IF EXISTS temp.pipkin_fault_tool_result;
+             DROP TRIGGER IF EXISTS temp.pipkin_fault_settlement;",
+        )?;
+        Ok(())
+    }
+
     fn conn(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -1589,6 +1641,25 @@ impl Store {
         )?;
         Ok(())
     }
+}
+
+/// Where an injected storage fault strikes ([`Store::inject`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fault {
+    /// Admitting an input (a new row in the request ledger).
+    Admission,
+    /// Committing a batch of streamed deltas.
+    ChunkFlush,
+    /// Finalizing a streamed message (its partial entry replaced by the final one).
+    FinalCommit,
+    /// Recording a tool's result.
+    ToolResult,
+    /// Settling a run.
+    Settlement,
+    /// The database cannot grow (`SQLITE_FULL`).
+    DiskFull,
+    /// The database refuses every write.
+    ReadOnly,
 }
 
 #[derive(Clone, Debug, PartialEq)]

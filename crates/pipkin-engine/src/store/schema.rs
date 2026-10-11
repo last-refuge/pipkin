@@ -219,10 +219,51 @@ pub fn migrate(conn: &Connection, path: Option<&Path>) -> Result<()> {
     }
 }
 
+/// SQLite's own verdict that a file is not a (readable) database.
+fn is_damage(e: &rusqlite::Error) -> bool {
+    matches!(
+        e,
+        rusqlite::Error::SqliteFailure(f, _)
+            if matches!(f.code, rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase)
+    )
+}
+
+/// The damaged-database policy: refuse to start, name the file, change nothing. The engine
+/// data is the only copy of the conversations, so it is never set aside or repaired
+/// automatically; the person decides (move it away to start empty, or restore a backup).
+fn damaged(path: &Path, detail: &str) -> StoreError {
+    StoreError::Corrupt(format!(
+        "{} is damaged ({detail}). It was left untouched; move it (with any -wal and -shm files \
+         next to it) somewhere else to start with empty engine data, or restore it from a backup",
+        path.display()
+    ))
+}
+
+/// Before anything writes to an existing database: it must be readable as SQLite and pass
+/// `PRAGMA quick_check` (structure, not foreign keys or content).
+fn check_existing(conn: &Connection, path: &Path) -> Result<u32> {
+    let current = match version(conn) {
+        Ok(v) => v,
+        Err(StoreError::Sqlite(e)) if is_damage(&e) => return Err(damaged(path, &e.to_string())),
+        Err(e) => return Err(e),
+    };
+    if current == 0 || current > SCHEMA_VERSION {
+        return Ok(current);
+    }
+    let verdict: std::result::Result<String, rusqlite::Error> =
+        conn.query_row("PRAGMA quick_check", [], |r| r.get(0));
+    match verdict {
+        Ok(ok) if ok == "ok" => Ok(current),
+        Ok(problem) => Err(damaged(path, &problem)),
+        Err(e) if is_damage(&e) => Err(damaged(path, &e.to_string())),
+        Err(e) => Err(e.into()),
+    }
+}
+
 pub fn open(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
-    // Check before configuring so a newer database is not even switched to WAL.
-    let current = version(&conn)?;
+    // Check before configuring so a newer or damaged database is not even switched to WAL.
+    let current = check_existing(&conn, path)?;
     if current > SCHEMA_VERSION {
         return Err(StoreError::NewerSchema(current));
     }

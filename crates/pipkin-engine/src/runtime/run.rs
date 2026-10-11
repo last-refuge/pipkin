@@ -691,7 +691,7 @@ impl Shared {
                     },
                 });
             }),
-            env: tool_env(&session, model.as_deref(), thinking.as_deref()),
+            env: tool_env(&session, call_id, model.as_deref(), thinking.as_deref()),
             shell: self
                 .settings_for(&session)
                 .shell_path
@@ -874,9 +874,21 @@ fn contract_of(tool: &Arc<dyn Tool>) -> Value {
     })
 }
 
-/// Session details exposed to shell commands (reference `PI_*` variables).
-fn tool_env(session: &str, model: Option<&str>, thinking: Option<&str>) -> Vec<(String, String)> {
-    let mut env = vec![("PI_SESSION_ID".to_owned(), session.to_owned())];
+/// Session details exposed to shell commands (reference `PI_*` variables), plus the call's
+/// marker so a restarted engine can reap what an interrupted call left running.
+fn tool_env(
+    session: &str,
+    call_id: &str,
+    model: Option<&str>,
+    thinking: Option<&str>,
+) -> Vec<(String, String)> {
+    let mut env = vec![
+        ("PI_SESSION_ID".to_owned(), session.to_owned()),
+        (
+            super::faults::TOOL_CALL_ENV.to_owned(),
+            super::faults::tool_call_token(session, call_id),
+        ),
+    ];
     if let Some((provider, id)) = model.and_then(|m| m.split_once('/')) {
         env.push(("PI_PROVIDER".into(), provider.into()));
         env.push(("PI_MODEL".into(), id.into()));

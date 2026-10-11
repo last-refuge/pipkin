@@ -399,3 +399,104 @@ fn acknowledged_writes_survive_reopen() {
         .unwrap();
     assert_eq!(n, 1);
 }
+
+/// Policy: a damaged engine database is refused at open with an error that names the file,
+/// and the file is left byte-for-byte as it was (no WAL switch, no migration, no repair).
+#[test]
+fn a_damaged_database_is_refused_untouched_and_named() {
+    // Garbage where the database should be.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("engine.sqlite");
+    std::fs::write(&path, vec![0x5au8; 64 * 1024]).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    let Err(StoreError::Corrupt(why)) = Store::open(dir.path()) else {
+        panic!("garbage must be refused")
+    };
+    assert!(why.contains(&path.display().to_string()), "{why}");
+    assert!(why.contains("left untouched"), "{why}");
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert!(!dir.path().join("engine.sqlite-wal").exists());
+
+    // A real database with a damaged page in the middle.
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let s = Store::open(dir.path()).unwrap();
+        session(&s, "s");
+        s.tx(|tx| {
+            for i in 0..400 {
+                Store::append_entry(tx, "s", i, None, &user(&"words ".repeat(200)))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    }
+    let path = dir.path().join("engine.sqlite");
+    let mut bytes = std::fs::read(&path).unwrap();
+    assert!(bytes.len() > 4096 * 40, "{}", bytes.len());
+    for b in &mut bytes[4096 * 20..4096 * 22] {
+        *b = 0xab;
+    }
+    std::fs::write(&path, &bytes).unwrap();
+    let Err(StoreError::Corrupt(why)) = Store::open(dir.path()) else {
+        panic!("a damaged page must be refused")
+    };
+    assert!(why.contains("engine.sqlite is damaged"), "{why}");
+    assert_eq!(std::fs::read(&path).unwrap(), bytes, "left untouched");
+    // The refusal is a storage error for clients.
+    let proto: ProtoError = StoreError::Corrupt(why).into();
+    assert_eq!(proto.code, ErrorCode::Storage);
+}
+
+/// Injected faults strike only their phase (from SQLite itself, rolling the whole transaction
+/// back), disk-full and read-only refuse real writes, and clearing restores normal service.
+#[test]
+fn injected_faults_fail_their_phase_and_roll_back_until_cleared() {
+    let s = store();
+    session(&s, "s");
+    let admit = |key: &str, text: &str| {
+        s.tx(|tx| Store::admit(tx, "s", key, InputMode::Prompt, text, &[], None, 1))
+    };
+    s.inject(Fault::Admission).unwrap();
+    let err = admit("k1", "x").unwrap_err();
+    assert!(err.to_string().contains("injected at admission"), "{err}");
+    assert!(s.request("s", "k1").unwrap().is_none(), "rolled back");
+    // Other phases still work.
+    s.tx(|tx| Store::start_run(tx, "s", None, 1)).unwrap();
+    s.clear_faults().unwrap();
+    assert!(matches!(admit("k1", "x").unwrap(), Admission::New(_)));
+
+    let run = s.tx(|tx| Store::start_run(tx, "s", None, 2)).unwrap();
+    s.inject(Fault::Settlement).unwrap();
+    let err = s
+        .tx(|tx| Store::settle_run(tx, run, &RunOutcome::Completed, 3))
+        .unwrap_err();
+    assert!(err.to_string().contains("injected at settlement"), "{err}");
+    assert_eq!(s.run(run).unwrap().unwrap().state, RunState::Running);
+    s.clear_faults().unwrap();
+
+    // Disk full: a write that needs new pages fails with SQLite's own SQLITE_FULL.
+    let dir = tempfile::tempdir().unwrap();
+    let disk = Store::open(dir.path()).unwrap();
+    session(&disk, "s");
+    disk.inject(Fault::DiskFull).unwrap();
+    let big = "x".repeat(256 * 1024);
+    let err = disk
+        .tx(|tx| Store::admit(tx, "s", "big", InputMode::Prompt, &big, &[], None, 1))
+        .unwrap_err();
+    assert!(
+        matches!(&err, StoreError::Sqlite(rusqlite::Error::SqliteFailure(f, _))
+            if f.code == rusqlite::ErrorCode::DiskFull),
+        "{err:?}"
+    );
+    assert!(disk.request("s", "big").unwrap().is_none());
+    disk.clear_faults().unwrap();
+    disk.tx(|tx| Store::admit(tx, "s", "big", InputMode::Prompt, &big, &[], None, 1))
+        .unwrap();
+
+    // Read-only: every write is refused.
+    disk.inject(Fault::ReadOnly).unwrap();
+    let err = disk.tx(|tx| Store::kv_set(tx, "s", "a", "b")).unwrap_err();
+    assert!(err.to_string().contains("readonly"), "{err}");
+    disk.clear_faults().unwrap();
+    disk.tx(|tx| Store::kv_set(tx, "s", "a", "b")).unwrap();
+}

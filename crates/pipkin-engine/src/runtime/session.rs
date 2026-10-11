@@ -189,7 +189,22 @@ impl Shared {
             }
             Err(e) => {
                 log::error!("session {id}: storage failure: {e}");
-                *sess.failed.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.to_string());
+                let first = sess
+                    .failed
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .replace(e.to_string())
+                    .is_none();
+                // Background work (a run's flush, tool result or settlement) has no caller to
+                // answer: say so once, so a client never waits on a run that cannot finish.
+                if first {
+                    self.publish(Event::Notice {
+                        message: format!(
+                            "Conversation {id} stopped after a storage error ({e}). What was \
+                             saved before it is kept; reopen the conversation to continue."
+                        ),
+                    });
+                }
                 if let Some(active) = sess
                     .active
                     .lock()
@@ -247,6 +262,7 @@ impl Shared {
         })?;
         match out {
             Ok(Out::Started(run)) => {
+                super::faults::crash_point("after-admission");
                 self.spawn_run(sess.clone(), run);
                 Ok(Reply::Admitted {
                     run: Some(run),
@@ -414,6 +430,7 @@ impl Shared {
         let Some(run) = run else {
             return Ok(Reply::Stopping { run: None });
         };
+        super::faults::crash_point("after-stop-intent");
         let active = sess
             .active
             .lock()
@@ -424,8 +441,9 @@ impl Shared {
         match active {
             Some(cancel) => cancel.cancel(),
             // Nothing executes it here (for example, a run left over from before a restart
-            // that has not been resumed): settle it now.
+            // that has not been resumed): settle it now, with any child it delegated to.
             None => {
+                self.abort_orphaned_children(session, run);
                 self.settle(&sess, run, RunOutcome::Aborted)?;
             }
         }
@@ -559,6 +577,7 @@ impl Shared {
             return Ok(());
         };
         if run.stop_requested {
+            self.abort_orphaned_children(session, run.id);
             return self.settle(&sess, run.id, RunOutcome::Aborted);
         }
         // Tool intents without a result: unconfirmed effects unless replay-safe.
@@ -570,6 +589,20 @@ impl Shared {
         for call in intents.into_iter().filter(|c| c.run == Some(run.id)) {
             if call.replay_safe && self.replay_allowed(&call) {
                 continue;
+            }
+            // Never rerun it, and do not let what it left running finish unobserved either.
+            let reaped = super::faults::kill_tool_processes(&super::faults::tool_call_token(
+                session,
+                &call.call_id,
+            ));
+            if reaped > 0 {
+                log::warn!(
+                    "session {session}: killed {reaped} process(es) left by interrupted call {}",
+                    call.call_id
+                );
+            }
+            if call.name == "subagent" {
+                self.abort_child(session, &call.call_id);
             }
             let result = crate::tools::interrupted(&call.name, "");
             self.record_tool_result(
