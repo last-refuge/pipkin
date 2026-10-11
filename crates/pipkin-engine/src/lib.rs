@@ -8,6 +8,7 @@
 pub mod auth;
 pub mod config;
 pub mod context;
+pub mod extensions;
 pub mod host;
 pub mod import;
 pub mod provider;
