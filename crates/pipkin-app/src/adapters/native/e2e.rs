@@ -127,7 +127,10 @@ impl Fixture {
     /// Stop the engine (if running) and start it again on the same data: connected harnesses
     /// see their connection end and reconnect.
     fn restart_engine(&self) {
-        if let Some(old) = self.engine.lock().unwrap().take() {
+        // Hold the slot across the restart: a reconnect in the gap waits for the new engine
+        // instead of failing (which would count against the supervisor's restart cap).
+        let mut slot = self.engine.lock().unwrap();
+        if let Some(old) = slot.take() {
             old.shutdown(Duration::from_secs(5));
         }
         let handle = EngineHandle::start_with(
@@ -136,7 +139,7 @@ impl Fixture {
             pipkin_engine::tools::builtin_tools(),
         )
         .expect("engine starts");
-        *self.engine.lock().unwrap() = Some(Arc::new(handle));
+        *slot = Some(Arc::new(handle));
     }
 
     fn host(&self) -> HostSpec {
