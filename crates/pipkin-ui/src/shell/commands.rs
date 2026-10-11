@@ -2,7 +2,10 @@
 //! `AppState::availability()` so every surface agrees.
 
 use gpui::Action;
-use pipkin_core::{AppState, Command, ItemKind, Mode, TextSize, Theme as ThemeChoice, ToolStatus};
+use pipkin_core::{
+    AppState, Command, ImportFlow, ImportKind, ItemKind, Mode, TextSize, Theme as ThemeChoice,
+    ToolStatus,
+};
 
 use super::actions::*;
 use crate::model::DemoControls;
@@ -236,6 +239,40 @@ pub fn build(state: &AppState, demo: Option<&DemoControls>) -> Vec<Cmd> {
             Run::Action(Box::new(OpenPreferences)),
         ),
     ];
+    // Importing a Pi profile: the built-in engine only, and never without a confirmation.
+    if state.import_available {
+        let can = state.can_start_import();
+        v.push(cmd(
+            "Import conversations from Pi\u{2026}",
+            "Import",
+            None,
+            can,
+            Run::Dispatch(Command::ImportFromPi(ImportKind::Conversations)),
+        ));
+        v.push(cmd(
+            "Import Pi provider settings and credentials\u{2026}",
+            "Import",
+            None,
+            can,
+            Run::Dispatch(Command::ImportFromPi(ImportKind::Credentials)),
+        ));
+        if let ImportFlow::Offered(offer) = &state.import {
+            v.push(cmd(
+                &offer.confirm_title(),
+                "Import",
+                None,
+                state.connection.is_ready(),
+                Run::Dispatch(Command::ConfirmImport),
+            ));
+            v.push(cmd(
+                "Cancel the Pi import",
+                "Import",
+                None,
+                true,
+                Run::Dispatch(Command::CancelImport),
+            ));
+        }
+    }
     // Queued input can be withdrawn without a pointer: one palette entry per queued item.
     if let Some(conversation) = state.current() {
         for queued in conversation.queue.iter().take(8) {
@@ -706,6 +743,69 @@ mod removal_tests {
             find(&commands, "Remove attachment: notes.txt").run,
             Run::Dispatch(Command::RemoveAttachment(0))
         ));
+    }
+
+    #[test]
+    fn pi_import_commands_exist_only_for_the_built_in_engine_and_confirm_explicitly() {
+        let mut state = state_with_queue_and_attachments();
+        state.mode = Mode::Real;
+        let titles = |s: &AppState| -> Vec<String> {
+            build(s, None)
+                .into_iter()
+                .filter(|c| c.group == "Import")
+                .map(|c| c.title)
+                .collect()
+        };
+        assert!(titles(&state).is_empty(), "the Pi engine offers no import");
+        state.import_available = true;
+        assert_eq!(
+            titles(&state),
+            vec![
+                "Import conversations from Pi\u{2026}",
+                "Import Pi provider settings and credentials\u{2026}"
+            ]
+        );
+        let commands = build(&state, None);
+        let start = find(&commands, "Import conversations from Pi\u{2026}");
+        assert!(start.enabled);
+        assert!(matches!(
+            start.run,
+            Run::Dispatch(Command::ImportFromPi(ImportKind::Conversations))
+        ));
+        assert!(matches!(
+            find(
+                &commands,
+                "Import Pi provider settings and credentials\u{2026}"
+            )
+            .run,
+            Run::Dispatch(Command::ImportFromPi(ImportKind::Credentials))
+        ));
+
+        state.dispatch(Command::ImportFromPi(ImportKind::Conversations));
+        assert!(
+            !find(&build(&state, None), "Import conversations from Pi\u{2026}").enabled,
+            "one import at a time"
+        );
+        state.import_discovered(Ok(ImportOffer {
+            kind: ImportKind::Conversations,
+            summary: "1 conversation can be imported.".into(),
+            sessions: vec!["s1".into()],
+            providers: vec![],
+            config: vec![],
+        }));
+        let commands = build(&state, None);
+        assert!(matches!(
+            find(&commands, "Confirm: import 1 conversation from Pi").run,
+            Run::Dispatch(Command::ConfirmImport)
+        ));
+        assert!(matches!(
+            find(&commands, "Cancel the Pi import").run,
+            Run::Dispatch(Command::CancelImport)
+        ));
+        state.connection = Connection::Offline("x".into());
+        let commands = build(&state, None);
+        assert!(!find(&commands, "Import conversations from Pi\u{2026}").enabled);
+        assert!(!find(&commands, "Confirm: import 1 conversation from Pi").enabled);
     }
 
     #[test]

@@ -13,6 +13,7 @@
 //! mirror; the transcript is remapped and sent at most every `SYNC_INTERVAL`.
 
 pub mod client;
+mod import;
 mod mapping;
 mod mirror;
 pub mod supervisor;
@@ -37,6 +38,7 @@ use pipkin_engine_protocol::{
 };
 
 use self::client::{CallError, Client, Inbound, SeqCheck, Sequencer};
+pub use self::import::{ImportDone, ImportResult, unavailable as import_unavailable};
 use self::mirror::{Mirror, Touched};
 use self::supervisor::{HostSpec, Supervisor};
 use crate::adapters::pi::attach;
@@ -89,6 +91,11 @@ enum Msg {
         scanned_through: u64,
         workspace: Workspace,
     },
+    /// An explicit Pi import step, answered through `done`.
+    Import {
+        step: pipkin_core::ImportStep,
+        done: ImportDone,
+    },
     Shutdown,
 }
 
@@ -113,6 +120,18 @@ impl NativeBackend {
             tx,
             rx: Mutex::new(Some(rx)),
             worker: Mutex::new(None),
+        }
+    }
+}
+
+impl NativeBackend {
+    /// Run one step of an explicit Pi import; `done` is called once with the answer (from the
+    /// backend's worker thread), also when the engine cannot be reached.
+    pub fn import(&self, step: pipkin_core::ImportStep, done: ImportDone) {
+        if let Err(mpsc::SendError(Msg::Import { step, done })) =
+            self.tx.send(Msg::Import { step, done })
+        {
+            done(import::unavailable(&step, OFFLINE));
         }
     }
 }
@@ -288,6 +307,7 @@ impl Worker {
                 Err(mpsc::RecvTimeoutError::Timeout) => return false,
                 Err(mpsc::RecvTimeoutError::Disconnected) | Ok(Msg::Shutdown) => return true,
                 Ok(Msg::Request(request)) => self.refuse_offline(request),
+                Ok(Msg::Import { step, done }) => done(import::unavailable(&step, OFFLINE)),
                 Ok(Msg::Engine { .. }) | Ok(Msg::Changes { .. }) => {}
             }
         }
@@ -544,6 +564,7 @@ impl Worker {
                         return Outcome::Shutdown;
                     }
                     Msg::Request(request) => live.handle_request(self, request),
+                    Msg::Import { step, done } => live.import(self, step, done),
                     Msg::Engine { conn, .. } if conn != self.conn => {}
                     Msg::Engine {
                         inbound: Inbound::Closed(reason),

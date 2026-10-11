@@ -76,7 +76,8 @@ impl Harness {
                 | Effect::SearchHistory { .. }
                 | Effect::CopyText(_)
                 | Effect::SaveText { .. }
-                | Effect::Launch(_) => {}
+                | Effect::Launch(_)
+                | Effect::Import(_) => {}
             }
         }
     }

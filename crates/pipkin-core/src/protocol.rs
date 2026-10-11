@@ -106,6 +106,13 @@ pub enum Command {
     /// The window was resized to this many logical pixels.
     SetWindowSize(f32, f32),
     SetInspectorOpen(bool),
+
+    /// Ask the engine what a Pi profile holds and offer to import it (built-in engine only).
+    ImportFromPi(crate::import::ImportKind),
+    /// Import what the current offer lists. Explicit user action only.
+    ConfirmImport,
+    /// Drop the current offer without importing anything.
+    CancelImport,
 }
 
 /// What the application can do right now. UI controls and the command palette share this.
@@ -501,6 +508,9 @@ pub enum Effect {
         request: RequestId,
         state: JournalState,
     },
+    /// One step of an explicit Pi import. The controller answers with
+    /// `AppState::import_discovered` or `AppState::import_finished`.
+    Import(crate::import::ImportStep),
 }
 
 /// Lifecycle of a journaled request after its intent is recorded.

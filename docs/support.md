@@ -27,6 +27,33 @@ state if you need full recovery; a desktop-cache or server-coordination-profile 
 backup. An externally started server may use an explicit session-directory override; verify its configuration rather
 than assuming the defaults.
 
+### Native engine (development)
+
+`--engine native` runs Pipkin's built-in engine instead of Pi. Its sessions live in `<data dir>/engine/`
+(`engine.sqlite` and artifacts) and its configuration and credentials in `~/.config/pipkin/engine/`
+(`auth.json` is `0600`; with `--data-dir`/`PIPKIN_DATA` both move under that directory). It never reads Pi's
+directories on its own, and nothing is imported at startup.
+
+Importing from Pi is explicit, from the command palette, and only in native mode:
+
+- **Import conversations from Pi…** reads the Pi agent directory (`$PI_CODING_AGENT_DIR` in the engine's
+  environment, else `~/.pi/agent`), shows what can be imported and what cannot (sessions in use by a running Pi,
+  sessions that cannot be represented without guessing, with reasons), and imports only after you choose
+  **Confirm: import…**. Each Pi session is copied consistently into `<data dir>/engine/imports/<UTC time>/<session>/`
+  first and read only from that copy. The desktop drafts, prompt history, unresolved requests and saved transcript
+  copies of the imported conversations are copied (not moved) from the Pi namespace of `pipkin.sqlite3`. Running it
+  again is safe: already imported sessions are skipped.
+- **Import Pi provider settings and credentials…** is a separate confirmation that lists provider ids only (values
+  are never shown or logged). It copies `models.json` and merges the selected `auth.json` entries into the native
+  credential store without overwriting anything already set up there. Anthropic subscription (OAuth) sign-ins stay
+  in the Pi profile, unimported, for a later integration.
+
+Rollback and ownership: an import never changes the Pi source. The Pi sessions, settings and credentials keep
+working with `--engine pi` (the default) exactly as before. History written in an imported conversation after the
+import exists only in the native engine; it is not written back to Pi. To roll back, run with `--engine pi`; to
+discard the native copies, remove `<data dir>/engine/` (and `~/.config/pipkin/engine/` for its settings and
+credentials) after making sure nothing there is needed.
+
 ## Quitting and interrupted work
 
 Save any important draft and wait for save confirmation before quitting. A visible save failure is not a durable

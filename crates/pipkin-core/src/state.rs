@@ -188,6 +188,10 @@ pub struct AppState {
     pub read_only: Option<String>,
     /// Whether the backend can create conversations (real mode); demo mode creates them locally.
     pub can_create: bool,
+    /// Whether the backend can import a Pi profile (the built-in engine only).
+    pub import_available: bool,
+    /// The explicit Pi import in progress, if any.
+    pub import: crate::import::ImportFlow,
     /// A background action failed and there is no conversation to show it on.
     pub notice: Option<String>,
     /// Saved state could not be read or written as usual; shown until dismissed.
@@ -247,6 +251,8 @@ impl AppState {
             connection: Connection::Ready,
             read_only: None,
             can_create: false,
+            import_available: false,
+            import: crate::import::ImportFlow::default(),
             notice: None,
             storage_issue: None,
             history_search: SearchResults::default(),
@@ -831,7 +837,14 @@ impl AppState {
                 if self.notice.take().is_some() {
                     out.notes.push(Note::Other);
                 }
+                // Dismissing an import offer declines it.
+                if matches!(self.import, crate::import::ImportFlow::Offered(_)) {
+                    self.import = crate::import::ImportFlow::Idle;
+                }
             }
+            Command::ImportFromPi(kind) => out = self.start_import(kind),
+            Command::ConfirmImport => out = self.confirm_import(),
+            Command::CancelImport => out = self.cancel_import(),
             Command::NewConversation => {
                 let Some(project) = self.current_project().map(|p| p.id) else {
                     return out;

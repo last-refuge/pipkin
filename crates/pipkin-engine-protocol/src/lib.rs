@@ -18,4 +18,4 @@ pub use content::*;
 pub use view::*;
 
 /// Wire protocol version. Bump on any incompatible change to [`api`], [`content`] or [`view`].
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;

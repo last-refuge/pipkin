@@ -421,3 +421,299 @@ impl std::fmt::Debug for AuthSnapshot {
             .finish_non_exhaustive()
     }
 }
+
+// ------------------------------------------------------------------------------------------
+// Import of a legacy (Pi) profile. Explicit, user-approved calls only; never automatic.
+
+/// Where one legacy session stands with respect to a native import.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum ImportSessionStatus {
+    Importable,
+    AlreadyImported {
+        native: SessionId,
+    },
+    /// A writer owns the session (a running Pi worker) or it changed while it was read.
+    Locked {
+        #[serde(default)]
+        detail: Option<String>,
+    },
+    /// The native engine cannot represent the session without guessing.
+    Blocked {
+        reasons: Vec<String>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSessionView {
+    /// The legacy session id (also the native id it is imported under).
+    pub id: String,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub created_at_ms: Option<i64>,
+    pub status: ImportSessionStatus,
+}
+
+/// One saved legacy credential: provider id and kind only, never a value.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportCredentialView {
+    pub provider: String,
+    /// The stored `type` (`api_key`, `oauth`, ...).
+    pub kind: String,
+    /// Set when this engine will not import it as usable (kept for a later integration).
+    #[serde(default)]
+    pub reserved: Option<String>,
+    /// The native credential store already has an entry for this provider (it is kept).
+    #[serde(default)]
+    pub native_exists: bool,
+}
+
+/// What a legacy profile holds that could be imported. Read-only; values are never included.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportReport {
+    pub agent_dir: String,
+    pub sessions: Vec<ImportSessionView>,
+    /// Configuration items present (`models.json`, `settings.json`, `AGENTS.md`, `skills`, ...).
+    pub config: Vec<String>,
+    pub credentials: Vec<ImportCredentialView>,
+    /// `auth.json` exists but could not be read (no contents are included).
+    #[serde(default)]
+    pub credentials_error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "camelCase")]
+pub enum ImportSessionOutcome {
+    Imported {
+        native: SessionId,
+        /// Native child sessions created for subagent conversations.
+        children: u32,
+        /// Source history entries.
+        entries: u64,
+        /// Submissions recorded as settled requests.
+        requests: u64,
+    },
+    /// An earlier import is returned; nothing was written.
+    AlreadyImported {
+        native: SessionId,
+    },
+    Locked {
+        detail: String,
+    },
+    Blocked {
+        reasons: Vec<String>,
+    },
+    Failed {
+        detail: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSessionResult {
+    pub source: String,
+    pub outcome: ImportSessionOutcome,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedView {
+    pub sessions: Vec<ImportSessionResult>,
+    /// Where consistent copies of the imported sources were kept, if any were taken.
+    #[serde(default)]
+    pub backup_dir: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "camelCase")]
+pub enum ConfigItemOutcome {
+    /// Copied `files` files into the native configuration.
+    Copied {
+        files: u32,
+    },
+    /// Some files were copied; `kept` existing native files were left as they were.
+    Partial {
+        files: u32,
+        kept: u32,
+    },
+    /// Every native file already existed and was kept.
+    KeptExisting,
+    NotFound,
+    Failed {
+        detail: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigItemResult {
+    pub name: String,
+    pub outcome: ConfigItemOutcome,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigImportView {
+    pub items: Vec<ConfigItemResult>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "camelCase")]
+pub enum CredentialImportOutcome {
+    Imported,
+    /// The native store already has an entry for this provider; it was not overwritten.
+    KeptExisting,
+    /// Preserved where it is (the legacy profile) but not imported as usable.
+    Reserved {
+        reason: String,
+    },
+    NotFound,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialImportResult {
+    pub provider: String,
+    pub outcome: CredentialImportOutcome,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialsImportView {
+    pub providers: Vec<CredentialImportResult>,
+}
+
+#[cfg(test)]
+mod import_tests {
+    use super::*;
+    use crate::api::{Call, Reply};
+
+    fn round_trip<T: Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug>(
+        value: &T,
+    ) -> Value {
+        let json = serde_json::to_value(value).unwrap();
+        let back: T = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(&back, value);
+        json
+    }
+
+    #[test]
+    fn import_calls_round_trip_with_their_wire_names() {
+        let json = round_trip(&Call::ImportDiscover { agent_dir: None });
+        assert_eq!(
+            json,
+            serde_json::json!({"call": "importDiscover", "agentDir": null})
+        );
+        let parsed: Call = serde_json::from_str(r#"{"call": "importDiscover"}"#).unwrap();
+        assert_eq!(parsed, Call::ImportDiscover { agent_dir: None });
+        let json = round_trip(&Call::ImportSessions {
+            agent_dir: Some("/a".into()),
+            sessions: vec!["s1".into()],
+        });
+        assert_eq!(json["agentDir"], "/a");
+        assert_eq!(json["sessions"][0], "s1");
+        round_trip(&Call::ImportConfig {
+            agent_dir: None,
+            items: vec!["models.json".into()],
+        });
+        let json = round_trip(&Call::ImportCredentials {
+            agent_dir: None,
+            providers: vec!["openrouter".into()],
+        });
+        assert_eq!(json["call"], "importCredentials");
+        assert_eq!(crate::PROTOCOL_VERSION, 2);
+    }
+
+    fn view(id: &str, status: ImportSessionStatus) -> ImportSessionView {
+        ImportSessionView {
+            id: id.into(),
+            cwd: None,
+            created_at_ms: None,
+            status,
+        }
+    }
+
+    #[test]
+    fn import_replies_round_trip() {
+        let json = round_trip(&Reply::ImportReport(ImportReport {
+            agent_dir: "/a".into(),
+            sessions: vec![
+                view("s1", ImportSessionStatus::Importable),
+                view("s2", ImportSessionStatus::Locked { detail: None }),
+                view(
+                    "s3",
+                    ImportSessionStatus::Blocked {
+                        reasons: vec!["a fork".into()],
+                    },
+                ),
+                view(
+                    "s4",
+                    ImportSessionStatus::AlreadyImported {
+                        native: "s4".into(),
+                    },
+                ),
+            ],
+            config: vec!["models.json".into()],
+            credentials: vec![ImportCredentialView {
+                provider: "anthropic".into(),
+                kind: "oauth".into(),
+                reserved: Some("later".into()),
+                native_exists: false,
+            }],
+            credentials_error: None,
+        }));
+        assert_eq!(json["reply"], "importReport");
+        assert_eq!(json["sessions"][2]["status"]["status"], "blocked");
+        assert_eq!(json["credentials"][0]["nativeExists"], false);
+        round_trip(&Reply::Imported(ImportedView {
+            sessions: vec![
+                ImportSessionResult {
+                    source: "s1".into(),
+                    outcome: ImportSessionOutcome::Imported {
+                        native: "s1".into(),
+                        children: 1,
+                        entries: 5,
+                        requests: 2,
+                    },
+                },
+                ImportSessionResult {
+                    source: "s2".into(),
+                    outcome: ImportSessionOutcome::Failed {
+                        detail: "io".into(),
+                    },
+                },
+            ],
+            backup_dir: Some("/d/imports/x".into()),
+        }));
+        round_trip(&Reply::ConfigImported(ConfigImportView {
+            items: vec![
+                ConfigItemResult {
+                    name: "skills".into(),
+                    outcome: ConfigItemOutcome::Partial { files: 1, kept: 2 },
+                },
+                ConfigItemResult {
+                    name: "AGENTS.md".into(),
+                    outcome: ConfigItemOutcome::KeptExisting,
+                },
+            ],
+        }));
+        round_trip(&Reply::CredentialsImported(CredentialsImportView {
+            providers: vec![
+                CredentialImportResult {
+                    provider: "openrouter".into(),
+                    outcome: CredentialImportOutcome::Imported,
+                },
+                CredentialImportResult {
+                    provider: "anthropic".into(),
+                    outcome: CredentialImportOutcome::Reserved {
+                        reason: "later".into(),
+                    },
+                },
+            ],
+        }));
+    }
+}
