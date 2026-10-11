@@ -1,0 +1,613 @@
+[
+ {
+  "name": "disjoint",
+  "file": "alpha\nbeta\ngamma\ndelta\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "alpha\n",
+     "newText": "ALPHA\n"
+    },
+    {
+     "oldText": "gamma\n",
+     "newText": "GAMMA\n"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 2 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": "-1 alpha\n+1 ALPHA\n 2 beta\n-3 gamma\n+3 GAMMA\n 4 delta",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,4 +1,4 @@\n-alpha\n+ALPHA\n beta\n-gamma\n+GAMMA\n delta\n",
+     "firstChangedLine": 1
+    }
+   }
+  },
+  "after": "ALPHA\nbeta\nGAMMA\ndelta\n"
+ },
+ {
+  "name": "crlf_bom",
+  "file": "﻿one\r\ntwo\r\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "two",
+     "newText": "TWO"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 1 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": " 1 one\n-2 two\n+2 TWO",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n",
+     "firstChangedLine": 2
+    }
+   }
+  },
+  "after": "﻿one\r\nTWO\r\n"
+ },
+ {
+  "name": "fuzzy_quotes",
+  "file": "const a = “hello”;   \nconst b = ‘x’;\nkeep this   \n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "const a = \"hello\";",
+     "newText": "const a = \"bye\";"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 1 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": "-1 const a = “hello”;   \n+1 const a = \"bye\";\n 2 const b = ‘x’;\n 3 keep this   ",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,3 +1,3 @@\n-const a = “hello”;   \n+const a = \"bye\";\n const b = ‘x’;\n keep this   \n",
+     "firstChangedLine": 1
+    }
+   }
+  },
+  "after": "const a = \"bye\";\nconst b = ‘x’;\nkeep this   \n"
+ },
+ {
+  "name": "fuzzy_dash_trailing",
+  "file": "line one  \nvalue — dash\t\nlast　line \n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "value - dash\nlast line",
+     "newText": "VALUE\nLAST"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 1 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": " 1 line one  \n-2 value — dash\t\n-3 last　line \n+2 VALUE\n+3 LAST",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,3 +1,3 @@\n line one  \n-value — dash\t\n-last　line \n+VALUE\n+LAST\n",
+     "firstChangedLine": 2
+    }
+   }
+  },
+  "after": "line one  \nVALUE\nLAST\n"
+ },
+ {
+  "name": "fuzzy_nfkc",
+  "file": "ＡＢＣ width\nnext\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "ABC width",
+     "newText": "abc"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 1 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": "-1 ＡＢＣ width\n+1 abc\n 2 next",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,2 +1,2 @@\n-ＡＢＣ width\n+abc\n next\n",
+     "firstChangedLine": 1
+    }
+   }
+  },
+  "after": "abc\nnext\n"
+ },
+ {
+  "name": "mixed_exact_fuzzy",
+  "file": "a  \nb’s\nc\nd\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "c\n",
+     "newText": "C\n"
+    },
+    {
+     "oldText": "b's",
+     "newText": "B"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 2 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": " 1 a  \n-2 b’s\n-3 c\n+2 B\n+3 C\n 4 d",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,4 +1,4 @@\n a  \n-b’s\n-c\n+B\n+C\n d\n",
+     "firstChangedLine": 2
+    }
+   }
+  },
+  "after": "a  \nB\nC\nd\n"
+ },
+ {
+  "name": "overlap",
+  "file": "one\ntwo\nthree\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "one\ntwo\n",
+     "newText": "x"
+    },
+    {
+     "oldText": "two\nthree\n",
+     "newText": "y"
+    }
+   ]
+  },
+  "result": {
+   "err": "edits[0] and edits[1] overlap in f.txt. Merge them into one edit or target disjoint regions."
+  },
+  "after": "one\ntwo\nthree\n"
+ },
+ {
+  "name": "dup_multi",
+  "file": "x\nx\ny\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "y",
+     "newText": "z"
+    },
+    {
+     "oldText": "x",
+     "newText": "w"
+    }
+   ]
+  },
+  "result": {
+   "err": "Found 2 occurrences of edits[1] in f.txt. Each oldText must be unique. Please provide more context to make it unique."
+  },
+  "after": "x\nx\ny\n"
+ },
+ {
+  "name": "missing_multi",
+  "file": "x\ny\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "y",
+     "newText": "z"
+    },
+    {
+     "oldText": "q",
+     "newText": "w"
+    }
+   ]
+  },
+  "result": {
+   "err": "Could not find edits[1] in f.txt. The oldText must match exactly including all whitespace and newlines."
+  },
+  "after": "x\ny\n"
+ },
+ {
+  "name": "empty_old",
+  "file": "x\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "",
+     "newText": "z"
+    }
+   ]
+  },
+  "result": {
+   "err": "oldText must not be empty in f.txt."
+  },
+  "after": "x\n"
+ },
+ {
+  "name": "empty_old_multi",
+  "file": "x\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "x",
+     "newText": "z"
+    },
+    {
+     "oldText": "",
+     "newText": "z"
+    }
+   ]
+  },
+  "result": {
+   "err": "edits[1].oldText must not be empty in f.txt."
+  },
+  "after": "x\n"
+ },
+ {
+  "name": "no_change",
+  "file": "x\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "x",
+     "newText": "x"
+    }
+   ]
+  },
+  "result": {
+   "err": "No changes made to f.txt. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected."
+  },
+  "after": "x\n"
+ },
+ {
+  "name": "no_change_multi",
+  "file": "x\ny\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "x",
+     "newText": "x"
+    },
+    {
+     "oldText": "y",
+     "newText": "y"
+    }
+   ]
+  },
+  "result": {
+   "err": "No changes made to f.txt. The replacements produced identical content."
+  },
+  "after": "x\ny\n"
+ },
+ {
+  "name": "no_trailing_newline",
+  "file": "a\nb\nc",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "c",
+     "newText": "C\nD"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 1 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": " 1 a\n 2 b\n-3 c\n+3 C\n+4 D",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,3 +1,4 @@\n a\n b\n-c\n\\ No newline at end of file\n+C\n+D\n\\ No newline at end of file\n",
+     "firstChangedLine": 3
+    }
+   }
+  },
+  "after": "a\nb\nC\nD"
+ },
+ {
+  "name": "delete_all",
+  "file": "a\nb\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "a\nb\n",
+     "newText": ""
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 1 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": "-1 a\n-2 b",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,2 +0,0 @@\n-a\n-b\n",
+     "firstChangedLine": 1
+    }
+   }
+  },
+  "after": ""
+ },
+ {
+  "name": "insert_into_empty_lines",
+  "file": "\n\n\nfoo\n\n\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "foo",
+     "newText": "bar\nbaz"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 1 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": " 1 \n 2 \n 3 \n-4 foo\n+4 bar\n+5 baz\n 5 \n 6 ",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,6 +1,7 @@\n \n \n \n-foo\n+bar\n+baz\n \n \n",
+     "firstChangedLine": 4
+    }
+   }
+  },
+  "after": "\n\n\nbar\nbaz\n\n\n"
+ },
+ {
+  "name": "long_context",
+  "file": "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\nl14\nl15\nl16\nl17\nl18\nl19\nl20\nl21\nl22\nl23\nl24\nl25\nl26\nl27\nl28\nl29\nl30\nl31\nl32\nl33\nl34\nl35\nl36\nl37\nl38\nl39\nl40\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "l5\n",
+     "newText": "L5\n"
+    },
+    {
+     "oldText": "l20\n",
+     "newText": ""
+    },
+    {
+     "oldText": "l38",
+     "newText": "L38\nextra"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 3 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": "  1 l1\n  2 l2\n  3 l3\n  4 l4\n- 5 l5\n+ 5 L5\n  6 l6\n  7 l7\n  8 l8\n  9 l9\n    ...\n 16 l16\n 17 l17\n 18 l18\n 19 l19\n-20 l20\n 21 l21\n 22 l22\n 23 l23\n 24 l24\n    ...\n 34 l34\n 35 l35\n 36 l36\n 37 l37\n-38 l38\n+37 L38\n+38 extra\n 39 l39\n 40 l40",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,9 +1,9 @@\n l1\n l2\n l3\n l4\n-l5\n+L5\n l6\n l7\n l8\n l9\n@@ -16,9 +16,8 @@\n l16\n l17\n l18\n l19\n-l20\n l21\n l22\n l23\n l24\n@@ -34,7 +33,8 @@\n l34\n l35\n l36\n l37\n-l38\n+L38\n+extra\n l39\n l40\n",
+     "firstChangedLine": 5
+    }
+   }
+  },
+  "after": "l1\nl2\nl3\nl4\nL5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\nl14\nl15\nl16\nl17\nl18\nl19\nl21\nl22\nl23\nl24\nl25\nl26\nl27\nl28\nl29\nl30\nl31\nl32\nl33\nl34\nl35\nl36\nl37\nL38\nextra\nl39\nl40\n"
+ },
+ {
+  "name": "close_changes",
+  "file": "r1\nr2\nr3\nr4\nr5\nr6\nr7\nr8\nr9\nr10\nr11\nr12\nr13\nr14\nr15\nr16\nr17\nr18\nr19\nr20\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "r5\n",
+     "newText": "R5\n"
+    },
+    {
+     "oldText": "r12\n",
+     "newText": "R12\n"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 2 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": "  1 r1\n  2 r2\n  3 r3\n  4 r4\n- 5 r5\n+ 5 R5\n  6 r6\n  7 r7\n  8 r8\n  9 r9\n 10 r10\n 11 r11\n-12 r12\n+12 R12\n 13 r13\n 14 r14\n 15 r15\n 16 r16\n    ...",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,16 +1,16 @@\n r1\n r2\n r3\n r4\n-r5\n+R5\n r6\n r7\n r8\n r9\n r10\n r11\n-r12\n+R12\n r13\n r14\n r15\n r16\n",
+     "firstChangedLine": 5
+    }
+   }
+  },
+  "after": "r1\nr2\nr3\nr4\nR5\nr6\nr7\nr8\nr9\nr10\nr11\nR12\nr13\nr14\nr15\nr16\nr17\nr18\nr19\nr20\n"
+ },
+ {
+  "name": "unicode",
+  "file": "héllo wörld 😀\nz\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "wörld 😀",
+     "newText": "世界"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 1 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": "-1 héllo wörld 😀\n+1 héllo 世界\n 2 z",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,2 +1,2 @@\n-héllo wörld 😀\n+héllo 世界\n z\n",
+     "firstChangedLine": 1
+    }
+   }
+  },
+  "after": "héllo 世界\nz\n"
+ },
+ {
+  "name": "lone_cr",
+  "file": "a\rb\rc\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "b\n",
+     "newText": "B\n"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 1 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": " 1 a\n-2 b\n+2 B\n 3 c",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n",
+     "firstChangedLine": 2
+    }
+   }
+  },
+  "after": "a\nB\nc\n"
+ },
+ {
+  "name": "crlf_input_old",
+  "file": "a\r\nb\r\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "a\r\nb",
+     "newText": "x\r\ny"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 1 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": "-1 a\n-2 b\n+1 x\n+2 y",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,2 +1,2 @@\n-a\n-b\n+x\n+y\n",
+     "firstChangedLine": 1
+    }
+   }
+  },
+  "after": "x\r\ny\r\n"
+ },
+ {
+  "name": "fuzzy_dup",
+  "file": "it’s\nit's\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "it's",
+     "newText": "z"
+    }
+   ]
+  },
+  "result": {
+   "err": "Found 2 occurrences of the text in f.txt. The text must be unique. Please provide more context to make it unique."
+  },
+  "after": "it’s\nit's\n"
+ },
+ {
+  "name": "legacy_args",
+  "file": "aaa\n",
+  "args": {
+   "path": "f.txt",
+   "edits": [
+    {
+     "oldText": "aaa",
+     "newText": "bbb"
+    }
+   ]
+  },
+  "result": {
+   "ok": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Successfully replaced 1 block(s) in f.txt."
+     }
+    ],
+    "details": {
+     "diff": "-1 aaa\n+1 bbb",
+     "patch": "--- f.txt\n+++ f.txt\n@@ -1,1 +1,1 @@\n-aaa\n+bbb\n",
+     "firstChangedLine": 1
+    }
+   }
+  },
+  "after": "bbb\n"
+ }
+]

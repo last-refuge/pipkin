@@ -7,16 +7,39 @@
 //! Every call goes through [`run`]: argument repair (`prepare_arguments`), schema validation,
 //! execution, output bounding (50 KiB / 2000 lines, head or tail), and the `<harness>`
 //! diagnostics block appended to the result, matching the reference result text.
+//!
+//! Streaming output: inside [`run`], [`ToolCtx::output`] (the call's `progress` callback) is the
+//! tool's output sink. `run` keeps the bounded window the model will see plus a larger retained
+//! copy (up to [`MAX_RETAINED_OUTPUT_BYTES`]), and forwards the current window text (sanitized,
+//! the whole window each time) to the session's `progress` callback: the first change after a
+//! quiet period at once, then at most every 100 ms and no faster than ~100 KiB/s of new text.
+
+pub mod bash;
+pub mod diff;
+pub mod edit;
+mod files;
+pub mod path;
+pub mod read;
+pub mod schema;
+pub mod text;
+pub mod write;
+
+#[cfg(test)]
+mod tests;
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use pipkin_engine_protocol::Block;
+use pipkin_engine_protocol::limits::MAX_RETAINED_OUTPUT_BYTES;
 use serde_json::Value;
-use tokio::sync::Semaphore;
+use tokio::sync::{Notify, Semaphore};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::provider::{BoxFuture, ToolSpec};
+use text::{OutputBuffer, bound_output};
 
 /// Which end of oversized output is kept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,12 +72,52 @@ pub enum Severity {
     Error,
 }
 
-/// A remark attached to a tool result (`[warn] ...` in the `<harness>` block).
+impl Severity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Severity::Info => "info",
+            Severity::Warn => "warn",
+            Severity::Error => "error",
+        }
+    }
+}
+
+/// A remark attached to a tool result (`[warn] ...` in the `<harness>` block). An empty `code`
+/// means the reference left the code out.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Diagnostic {
     pub severity: Severity,
     pub code: String,
     pub message: String,
+}
+
+impl Diagnostic {
+    pub fn new(severity: Severity, code: impl Into<String>, message: impl Into<String>) -> Self {
+        Diagnostic {
+            severity,
+            code: code.into(),
+            message: message.into(),
+        }
+    }
+
+    /// `{severity, code?, message}` as the reference stores it.
+    pub fn to_json(&self) -> Value {
+        let mut value = serde_json::json!({ "severity": self.severity.as_str() });
+        if !self.code.is_empty() {
+            value["code"] = Value::String(self.code.clone());
+        }
+        value["message"] = Value::String(self.message.clone());
+        value
+    }
+}
+
+/// The `<harness>` block appended to a result: one `[severity] message` line per diagnostic.
+pub fn render_diagnostics(diagnostics: &[Diagnostic]) -> String {
+    let lines: Vec<String> = diagnostics
+        .iter()
+        .map(|d| format!("[{}] {}", d.severity.as_str(), d.message))
+        .collect();
+    format!("<harness>\n{}\n</harness>", lines.join("\n"))
 }
 
 /// What a tool's `execute` returns. `content: None` means "use the streamed output".
@@ -116,12 +179,12 @@ pub struct MutationLocks {
 
 impl MutationLocks {
     pub fn lock_for(&self, path: PathBuf) -> Arc<tokio::sync::Mutex<()>> {
-        self.locks
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .entry(path)
-            .or_default()
-            .clone()
+        let mut locks = self.locks.lock().unwrap_or_else(|e| e.into_inner());
+        // Forget locks nobody holds or waits for, so the map stays small.
+        if locks.len() >= 256 {
+            locks.retain(|_, lock| Arc::strong_count(lock) > 1);
+        }
+        locks.entry(path).or_default().clone()
     }
 }
 
@@ -132,7 +195,9 @@ pub struct ToolCtx {
     pub session: String,
     pub call_id: String,
     pub cancel: CancellationToken,
-    /// Live (volatile) output progress for presentation.
+    /// Live (volatile) output progress for presentation. The session's callback receives the
+    /// call's current bounded output window (see the module docs); inside [`run`] the tool's
+    /// copy of this field is its output sink, so tools write output with [`ToolCtx::output`].
     pub progress: Arc<dyn Fn(&str) + Send + Sync>,
     /// Extra environment for child processes (e.g. `PI_SESSION_ID`).
     pub env: Vec<(String, String)>,
@@ -142,6 +207,13 @@ pub struct ToolCtx {
     /// Bounds concurrently running tool processes across the engine.
     pub processes: Arc<Semaphore>,
     pub host: Option<Arc<dyn ToolHost>>,
+}
+
+impl ToolCtx {
+    /// Append a chunk to the call's streamed output (`api.output`).
+    pub fn output(&self, chunk: &str) {
+        (self.progress)(chunk)
+    }
 }
 
 pub trait Tool: Send + Sync {
@@ -164,20 +236,328 @@ pub trait Tool: Send + Sync {
     ) -> BoxFuture<'a, Result<ToolOutput, ToolError>>;
 }
 
+/// A [`ToolSpec`] from the reference's literal JSON schema.
+pub(crate) fn spec_from_json(name: &str, description: &str, schema: &str) -> ToolSpec {
+    ToolSpec {
+        name: name.to_owned(),
+        description: description.to_owned(),
+        parameters: serde_json::from_str(schema).unwrap_or(Value::Null),
+    }
+}
+
 /// The built-in coding tools in reference order (`read`, `write`, `edit`, `bash`).
 pub fn builtin_tools() -> Vec<Arc<dyn Tool>> {
-    vec![]
+    vec![
+        Arc::new(read::ReadTool),
+        Arc::new(write::WriteTool),
+        Arc::new(edit::EditTool),
+        Arc::new(bash::BashTool),
+    ]
+}
+
+/// Minimum pause between progress publications.
+pub const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
+/// Each publication also buys a pause proportional to the new text it carried.
+pub const PROGRESS_BYTES_PER_SECOND: u64 = 100 * 1024;
+
+/// The streamed output of one call: the model window and the engine's retained copy.
+struct Stream {
+    window: OutputBuffer,
+    retained: OutputBuffer,
+    dirty: bool,
+}
+
+fn retained_limits(retain: Retain) -> OutputLimits {
+    OutputLimits {
+        max_bytes: MAX_RETAINED_OUTPUT_BYTES,
+        max_lines: usize::MAX / 4,
+        retain,
+    }
+}
+
+/// Publish the window to the session's progress callback, throttled.
+async fn publish_progress(
+    stream: &Mutex<Stream>,
+    notify: &Notify,
+    progress: &(dyn Fn(&str) + Send + Sync),
+) {
+    let mut next_at = Instant::now();
+    let mut written = String::new();
+    loop {
+        notify.notified().await;
+        if next_at > Instant::now() {
+            tokio::time::sleep_until(next_at).await;
+        }
+        let text = {
+            let mut s = stream.lock().unwrap_or_else(|e| e.into_inner());
+            if !s.dirty {
+                continue;
+            }
+            s.dirty = false;
+            s.window.snapshot().text
+        };
+        let fresh = if text.starts_with(&written) {
+            text.len() - written.len()
+        } else {
+            text.len()
+        };
+        let started = Instant::now();
+        progress(&text);
+        written = text;
+        let pace = Duration::from_millis(fresh as u64 * 1000 / PROGRESS_BYTES_PER_SECOND);
+        next_at = started + PROGRESS_INTERVAL.max(pace);
+    }
+}
+
+/// The harness's truncation diagnostic; `retain` is unknown when rebuilt after an abort.
+fn truncated(dropped_lines: u64, dropped_bytes: u64, retain: Option<Retain>) -> Diagnostic {
+    let kept = match retain {
+        None => "",
+        Some(Retain::Head) => " to its beginning",
+        Some(Retain::Tail) => " to its end",
+    };
+    Diagnostic::new(
+        Severity::Warn,
+        "truncated",
+        format!("Output truncated{kept}: {dropped_lines} lines, {dropped_bytes} bytes dropped"),
+    )
+}
+
+/// Bound the text of result content: when the joined text exceeds the limits, the text items
+/// are replaced by one bounded item at the position of the first (head) or last (tail) text
+/// item; other content is kept. Returns the dropped lines and bytes.
+fn bound_content(content: Vec<Block>, limits: OutputLimits) -> (Vec<Block>, u64, u64) {
+    let joined: String = content
+        .iter()
+        .filter_map(|b| match b {
+            Block::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    let bounded = bound_output(&joined, limits);
+    if bounded.dropped_bytes == 0 {
+        return (content, 0, 0);
+    }
+    let text_positions: Vec<usize> = content
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| matches!(b, Block::Text { .. }))
+        .map(|(i, _)| i)
+        .collect();
+    let keep = match limits.retain {
+        Retain::Head => text_positions.first().copied(),
+        Retain::Tail => text_positions.last().copied(),
+    };
+    let mut result = Vec::with_capacity(content.len());
+    let mut replacement = Some(bounded.text);
+    for (i, block) in content.into_iter().enumerate() {
+        match block {
+            Block::Text { extra, .. } if Some(i) == keep => result.push(Block::Text {
+                text: replacement.take().unwrap_or_default(),
+                extra,
+            }),
+            Block::Text { .. } => {}
+            other => result.push(other),
+        }
+    }
+    (
+        result,
+        bounded.dropped_lines as u64,
+        bounded.dropped_bytes as u64,
+    )
+}
+
+fn joined_text(content: &[Block]) -> String {
+    content
+        .iter()
+        .filter_map(|b| match b {
+            Block::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Settle a result: the content plus the rendered diagnostics block; `retained` is the full
+/// output text the engine kept, or (when there was none) the diagnostics' messages.
+fn settle(
+    mut content: Vec<Block>,
+    is_error: bool,
+    details: Option<Value>,
+    diagnostics: &[Diagnostic],
+    retained: Option<(String, u64)>,
+) -> ToolResult {
+    let (mut retained, mut dropped_bytes) = retained.unwrap_or_else(|| (joined_text(&content), 0));
+    if retained.len() > MAX_RETAINED_OUTPUT_BYTES {
+        let kept = crate::util::clip(&retained, MAX_RETAINED_OUTPUT_BYTES).len();
+        dropped_bytes += (retained.len() - kept) as u64;
+        retained.truncate(kept);
+    }
+    if retained.is_empty() {
+        retained = diagnostics
+            .iter()
+            .map(|d| d.message.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    if !diagnostics.is_empty() {
+        content.push(Block::text(render_diagnostics(diagnostics)));
+    }
+    ToolResult {
+        content,
+        is_error,
+        details,
+        retained,
+        dropped_bytes,
+    }
+}
+
+/// An error result the harness writes itself: no content and one `error` diagnostic.
+fn harness_error(code: &str, message: String) -> ToolResult {
+    settle(
+        vec![],
+        true,
+        None,
+        &[Diagnostic::new(Severity::Error, code, message)],
+        None,
+    )
 }
 
 /// Run one call through validation, execution, bounding and diagnostics.
 pub async fn run(tool: &dyn Tool, args: Value, ctx: &ToolCtx) -> ToolResult {
-    let _ = (tool, args, ctx);
-    ToolResult {
-        content: vec![Block::text("Tool machinery is not implemented yet")],
-        is_error: true,
-        details: None,
-        retained: String::new(),
-        dropped_bytes: 0,
+    let spec = tool.spec();
+    let prepared = tool.prepare_arguments(args);
+    let args = match schema::validate(&spec.name, &spec.parameters, &prepared) {
+        Ok(args) => args,
+        Err(message) => return harness_error("invalid_arguments", message),
+    };
+    if ctx.cancel.is_cancelled() {
+        return aborted(&spec.name, "");
+    }
+    let limits = tool.limits();
+    let stream = Arc::new(Mutex::new(Stream {
+        window: OutputBuffer::new(limits),
+        retained: OutputBuffer::new(retained_limits(limits.retain)),
+        dirty: false,
+    }));
+    let notify = Arc::new(Notify::new());
+    let sink = {
+        let stream = stream.clone();
+        let notify = notify.clone();
+        move |chunk: &str| {
+            if chunk.is_empty() {
+                return;
+            }
+            let mut s = stream.lock().unwrap_or_else(|e| e.into_inner());
+            s.window.push(chunk);
+            s.retained.push(chunk);
+            s.dirty = true;
+            drop(s);
+            notify.notify_one();
+        }
+    };
+    let call_ctx = ToolCtx {
+        progress: Arc::new(sink),
+        ..ctx.clone()
+    };
+    let outcome = {
+        let execution = tool.execute(args, &call_ctx);
+        let publisher = publish_progress(&stream, &notify, ctx.progress.as_ref());
+        tokio::pin!(execution, publisher);
+        tokio::select! {
+            biased;
+            outcome = &mut execution => outcome,
+            () = &mut publisher => unreachable!("progress publishing never ends"),
+        }
+    };
+    let (window, full) = {
+        let mut s = stream.lock().unwrap_or_else(|e| e.into_inner());
+        (s.window.snapshot(), s.retained.snapshot())
+    };
+    let streamed = || -> Vec<Block> {
+        if window.text.is_empty() {
+            vec![]
+        } else {
+            vec![Block::text(window.text.clone())]
+        }
+    };
+    let streamed_retained = || Some((full.text.clone(), full.dropped_bytes));
+
+    match outcome {
+        Ok(output) => {
+            let mut diagnostics = output.diagnostics;
+            let (content, retained) = match output.content {
+                Some(content) => {
+                    let text = joined_text(&content);
+                    (content, Some((text, 0)))
+                }
+                None => {
+                    if window.dropped_bytes > 0 {
+                        diagnostics.push(truncated(
+                            window.dropped_lines,
+                            window.dropped_bytes,
+                            Some(limits.retain),
+                        ));
+                    }
+                    (streamed(), streamed_retained())
+                }
+            };
+            let (content, lines, bytes) = bound_content(content, limits);
+            if bytes > 0 {
+                diagnostics.push(truncated(lines, bytes, Some(limits.retain)));
+            }
+            settle(
+                content,
+                output.is_error,
+                output.details,
+                &diagnostics,
+                retained,
+            )
+        }
+        Err(error) if ctx.cancel.is_cancelled() => {
+            // The abort path: the partial output, what the tool reported, then the abort.
+            let mut diagnostics = error.diagnostics;
+            if window.dropped_bytes > 0 {
+                diagnostics.push(truncated(window.dropped_lines, window.dropped_bytes, None));
+            }
+            diagnostics.push(Diagnostic::new(
+                Severity::Error,
+                "aborted",
+                format!("Tool {} was aborted", spec.name),
+            ));
+            settle(
+                streamed(),
+                true,
+                error.details,
+                &diagnostics,
+                streamed_retained(),
+            )
+        }
+        Err(error) => {
+            let mut diagnostics = error.diagnostics;
+            diagnostics.push(Diagnostic::new(
+                Severity::Error,
+                "tool_error",
+                error.message,
+            ));
+            if window.dropped_bytes > 0 {
+                diagnostics.push(truncated(
+                    window.dropped_lines,
+                    window.dropped_bytes,
+                    Some(limits.retain),
+                ));
+            }
+            let (content, lines, bytes) = bound_content(streamed(), limits);
+            if bytes > 0 {
+                diagnostics.push(truncated(lines, bytes, Some(limits.retain)));
+            }
+            settle(
+                content,
+                true,
+                error.details,
+                &diagnostics,
+                streamed_retained(),
+            )
+        }
     }
 }
 

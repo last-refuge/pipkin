@@ -1,0 +1,624 @@
+[
+ {
+  "tool": "read",
+  "args": {},
+  "err": "Validation failed for tool \"read\":\n  - path: must have required properties path\n\nReceived arguments:\n{}"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": 5
+  },
+  "ok": {
+   "path": "5"
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "12"
+  },
+  "ok": {
+   "path": "a",
+   "offset": 12
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "x"
+  },
+  "err": "Validation failed for tool \"read\":\n  - offset: must be number\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"offset\": \"x\"\n}"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": null
+  },
+  "ok": {
+   "path": "a"
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "limit": true
+  },
+  "ok": {
+   "path": "a",
+   "limit": 1
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": null
+  },
+  "ok": {
+   "path": "null"
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "extra": 1
+  },
+  "ok": {
+   "path": "a",
+   "extra": 1
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": [
+    "a"
+   ]
+  },
+  "err": "Validation failed for tool \"read\":\n  - path: must be string\n\nReceived arguments:\n{\n  \"path\": [\n    \"a\"\n  ]\n}"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": {
+    "a": 1
+   }
+  },
+  "err": "Validation failed for tool \"read\":\n  - path: must be string\n\nReceived arguments:\n{\n  \"path\": {\n    \"a\": 1\n  }\n}"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": " 3 "
+  },
+  "ok": {
+   "path": "a",
+   "offset": 3
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": ""
+  },
+  "ok": {
+   "path": "a",
+   "offset": 0
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "1e2"
+  },
+  "ok": {
+   "path": "a",
+   "offset": 100
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "0x10"
+  },
+  "ok": {
+   "path": "a",
+   "offset": 16
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": []
+  },
+  "err": "Validation failed for tool \"read\":\n  - offset: must be number\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"offset\": []\n}"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": [
+    "a"
+   ],
+   "offset": "x",
+   "limit": {}
+  },
+  "err": "Validation failed for tool \"read\":\n  - path: must be string\n  - offset: must be number\n  - limit: must be number\n\nReceived arguments:\n{\n  \"path\": [\n    \"a\"\n  ],\n  \"offset\": \"x\",\n  \"limit\": {}\n}"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "Infinity"
+  },
+  "err": "Validation failed for tool \"read\":\n  - offset: must be number\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"offset\": \"Infinity\"\n}"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "TRUE"
+  },
+  "ok": {
+   "path": "a",
+   "offset": 1
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "-5.5"
+  },
+  "ok": {
+   "path": "a",
+   "offset": -5.5
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": false
+  },
+  "ok": {
+   "path": "a",
+   "offset": 0
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "1_000"
+  },
+  "err": "Validation failed for tool \"read\":\n  - offset: must be number\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"offset\": \"1_000\"\n}"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "+5"
+  },
+  "ok": {
+   "path": "a",
+   "offset": 5
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": ".5"
+  },
+  "ok": {
+   "path": "a",
+   "offset": 0.5
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "5."
+  },
+  "ok": {
+   "path": "a",
+   "offset": 5
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "0b11"
+  },
+  "ok": {
+   "path": "a",
+   "offset": 3
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "0o17"
+  },
+  "ok": {
+   "path": "a",
+   "offset": 15
+  }
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "-0x10"
+  },
+  "err": "Validation failed for tool \"read\":\n  - offset: must be number\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"offset\": \"-0x10\"\n}"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "1e400"
+  },
+  "err": "Validation failed for tool \"read\":\n  - offset: must be number\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"offset\": \"1e400\"\n}"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "a",
+   "offset": "1e"
+  },
+  "err": "Validation failed for tool \"read\":\n  - offset: must be number\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"offset\": \"1e\"\n}"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "offset": "x"
+  },
+  "err": "Validation failed for tool \"read\":\n  - path: must have required properties path\n  - offset: must be number\n\nReceived arguments:\n{\n  \"offset\": \"x\"\n}"
+ },
+ {
+  "tool": "read",
+  "args": "str",
+  "err": "Validation failed for tool \"read\":\n  - root: must be object\n\nReceived arguments:\n\"str\""
+ },
+ {
+  "tool": "read",
+  "args": null,
+  "err": "Validation failed for tool \"read\":\n  - root: must be object\n\nReceived arguments:\nnull"
+ },
+ {
+  "tool": "read",
+  "args": [
+   1
+  ],
+  "err": "Validation failed for tool \"read\":\n  - root: must be object\n\nReceived arguments:\n[\n  1\n]"
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a"
+  },
+  "err": "Validation failed for tool \"edit\":\n  - edits: must have required properties edits\n\nReceived arguments:\n{\n  \"path\": \"a\"\n}"
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": [
+    {
+     "oldText": "x"
+    }
+   ]
+  },
+  "err": "Validation failed for tool \"edit\":\n  - edits.0.newText: must have required properties newText\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"edits\": [\n    {\n      \"oldText\": \"x\"\n    }\n  ]\n}"
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": "nope"
+  },
+  "err": "Validation failed for tool \"edit\":\n  - edits.0: must be object\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"edits\": \"nope\"\n}"
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": [
+    {
+     "oldText": 1,
+     "newText": 2
+    }
+   ]
+  },
+  "ok": {
+   "path": "a",
+   "edits": [
+    {
+     "oldText": "1",
+     "newText": "2"
+    }
+   ]
+  }
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": [
+    5
+   ]
+  },
+  "err": "Validation failed for tool \"edit\":\n  - edits.0: must be object\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"edits\": [\n    5\n  ]\n}"
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "edits": []
+  },
+  "err": "Validation failed for tool \"edit\":\n  - path: must have required properties path\n\nReceived arguments:\n{\n  \"edits\": []\n}"
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": {
+    "oldText": "a"
+   }
+  },
+  "err": "Validation failed for tool \"edit\":\n  - edits.0.newText: must have required properties newText\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"edits\": {\n    \"oldText\": \"a\"\n  }\n}"
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": [
+    {
+     "oldText": "a",
+     "newText": "b",
+     "x": 1
+    }
+   ]
+  },
+  "ok": {
+   "path": "a",
+   "edits": [
+    {
+     "oldText": "a",
+     "newText": "b",
+     "x": 1
+    }
+   ]
+  }
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": "[{\"oldText\":\"a\",\"newText\":\"b\"}]"
+  },
+  "ok": {
+   "path": "a",
+   "edits": [
+    {
+     "oldText": "a",
+     "newText": "b"
+    }
+   ]
+  }
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "oldText": "a",
+   "newText": "b"
+  },
+  "ok": {
+   "path": "a",
+   "edits": [
+    {
+     "oldText": "a",
+     "newText": "b"
+    }
+   ]
+  }
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": [],
+   "oldText": "a",
+   "newText": "b"
+  },
+  "ok": {
+   "path": "a",
+   "edits": [
+    {
+     "oldText": "a",
+     "newText": "b"
+    }
+   ]
+  }
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": "{\"oldText\":\"a\",\"newText\":\"b\"}",
+   "oldText": "c",
+   "newText": "d"
+  },
+  "ok": {
+   "path": "a",
+   "edits": [
+    {
+     "oldText": "a",
+     "newText": "b"
+    },
+    {
+     "oldText": "c",
+     "newText": "d"
+    }
+   ]
+  }
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": null
+  },
+  "err": "Validation failed for tool \"edit\":\n  - edits.0: must be object\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"edits\": null\n}"
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": [
+    null
+   ]
+  },
+  "err": "Validation failed for tool \"edit\":\n  - edits.0: must be object\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"edits\": [\n    null\n  ]\n}"
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "edits": [
+    {
+     "newText": 1
+    },
+    {
+     "oldText": [],
+     "newText": {}
+    }
+   ]
+  },
+  "err": "Validation failed for tool \"edit\":\n  - path: must have required properties path\n  - edits.0.oldText: must have required properties oldText\n  - edits.1.oldText: must be string\n  - edits.1.newText: must be string\n\nReceived arguments:\n{\n  \"edits\": [\n    {\n      \"newText\": 1\n    },\n    {\n      \"oldText\": [],\n      \"newText\": {}\n    }\n  ]\n}"
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "a",
+   "edits": [
+    {}
+   ]
+  },
+  "err": "Validation failed for tool \"edit\":\n  - edits.0.oldText: must have required properties oldText, newText\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"edits\": [\n    {}\n  ]\n}"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ls",
+   "timeout": "10"
+  },
+  "ok": {
+   "command": "ls",
+   "timeout": 10
+  }
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": true
+  },
+  "ok": {
+   "command": "true"
+  }
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": 1.5
+  },
+  "ok": {
+   "command": "1.5"
+  }
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "x",
+   "timeout": null
+  },
+  "ok": {
+   "command": "x"
+  }
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": {}
+  },
+  "err": "Validation failed for tool \"bash\":\n  - command: must be string\n\nReceived arguments:\n{\n  \"command\": {}\n}"
+ },
+ {
+  "tool": "write",
+  "args": {
+   "path": "a"
+  },
+  "err": "Validation failed for tool \"write\":\n  - content: must have required properties content\n\nReceived arguments:\n{\n  \"path\": \"a\"\n}"
+ },
+ {
+  "tool": "write",
+  "args": {},
+  "err": "Validation failed for tool \"write\":\n  - path: must have required properties path, content\n\nReceived arguments:\n{}"
+ },
+ {
+  "tool": "write",
+  "args": {
+   "path": true,
+   "content": 12.5
+  },
+  "ok": {
+   "path": "true",
+   "content": "12.5"
+  }
+ },
+ {
+  "tool": "write",
+  "args": {
+   "path": "a",
+   "content": 1e+21
+  },
+  "ok": {
+   "path": "a",
+   "content": "1e+21"
+  }
+ },
+ {
+  "tool": "write",
+  "args": {
+   "path": "a",
+   "content": null
+  },
+  "ok": {
+   "path": "a",
+   "content": "null"
+  }
+ },
+ {
+  "tool": "write",
+  "args": {
+   "path": "a",
+   "content": [
+    1
+   ]
+  },
+  "err": "Validation failed for tool \"write\":\n  - content: must be string\n\nReceived arguments:\n{\n  \"path\": \"a\",\n  \"content\": [\n    1\n  ]\n}"
+ }
+]

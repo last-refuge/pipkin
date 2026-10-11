@@ -9,7 +9,7 @@ license.workspace = true
 [dependencies]
 pipkin-engine-protocol = { path = "../pipkin-engine-protocol" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 log = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "process", "io-util", "macros", "fs", "net"] }
@@ -30,6 +30,7 @@ yaml-rust2 = { version = "0.13", default-features = false }
 ring = "0.17"
 zstd = { version = "0.13", default-features = false }
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
+unicode-normalization = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
