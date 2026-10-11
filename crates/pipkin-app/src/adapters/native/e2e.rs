@@ -1,0 +1,1236 @@
+//! End-to-end workflows: the real core state machine, the real `NativeBackend`, the real SQLite
+//! journal, and the real engine running in-process with a scripted provider (only the model's
+//! answers are scripted). Ported from the Pi suite (`adapters/pi/e2e.rs`); these run by default.
+//!
+//! The engine outlives each harness (as a Pi server outlives a window): a harness connects to
+//! it through a fault link that can drop a prompt's reply, or the prompt itself, and the engine
+//! can be restarted under a connected harness to exercise recovery.
+
+use std::collections::{HashSet, VecDeque};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use pipkin_core::{
+    AppState, Backend, BackendEvent, Bootstrap, Command, Connection, ConversationId, Delivery,
+    Effect, ItemKind, LifecycleEvent, Mode, Outcome, QueueMode, RequestId, RunState,
+    describe_attachment,
+};
+use pipkin_engine::config::{EngineConfig, Env};
+use pipkin_engine::provider::ProviderRequest;
+use pipkin_engine::provider::scripted::{self, Gate, Reply, Scripted};
+use pipkin_engine::runtime::{EngineHandle, registry_with};
+use pipkin_engine_protocol::{Block, Call, ClientFrame, Message, ServerFrame};
+
+use super::client::{FrameReceiver, FrameSender, Link};
+use super::supervisor::HostSpec;
+use super::{NativeBackend, NativeConfig};
+use crate::controller::Restore;
+use crate::storage::Storage;
+
+const NAMESPACE: &str = "native:e2e";
+const WAIT: Duration = Duration::from_secs(30);
+
+// ------------------------------------------------------------------------------- the engine
+
+/// What the fault link does to the next prompt.
+#[derive(Default)]
+struct Faults {
+    drop_prompt_reply: AtomicBool,
+    drop_prompt: AtomicBool,
+    fired: AtomicUsize,
+    /// Reply ids to swallow.
+    swallow: Mutex<HashSet<u64>>,
+}
+
+struct FaultSender {
+    inner: pipkin_engine::host::Sender,
+    faults: Arc<Faults>,
+}
+
+impl FrameSender for FaultSender {
+    fn send(&mut self, frame: ClientFrame) -> Result<(), String> {
+        if matches!(frame.call, Call::Prompt { .. }) {
+            if self.faults.drop_prompt.swap(false, Ordering::SeqCst) {
+                self.faults.fired.fetch_add(1, Ordering::SeqCst);
+                return Ok(()); // "sent", and lost on the way
+            }
+            if self.faults.drop_prompt_reply.swap(false, Ordering::SeqCst) {
+                self.faults.fired.fetch_add(1, Ordering::SeqCst);
+                self.faults.swallow.lock().unwrap().insert(frame.id);
+            }
+        }
+        self.inner.send(frame)
+    }
+}
+
+struct FaultReceiver {
+    inner: mpsc::Receiver<ServerFrame>,
+    faults: Arc<Faults>,
+}
+
+impl FrameReceiver for FaultReceiver {
+    fn recv(&mut self) -> Result<ServerFrame, String> {
+        loop {
+            let frame = self
+                .inner
+                .recv()
+                .map_err(|_| "the engine stopped".to_owned())?;
+            if let ServerFrame::Reply { id, .. } = &frame
+                && self.faults.swallow.lock().unwrap().remove(id)
+            {
+                continue;
+            }
+            return Ok(frame);
+        }
+    }
+}
+
+struct Fixture {
+    _dir: tempfile::TempDir,
+    root: PathBuf,
+    project: PathBuf,
+    provider: Scripted,
+    engine: Arc<Mutex<Option<Arc<EngineHandle>>>>,
+    faults: Arc<Faults>,
+}
+
+impl Fixture {
+    fn start(script: impl Fn(&ProviderRequest, usize) -> Reply + Send + Sync + 'static) -> Fixture {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let project = root.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let fx = Fixture {
+            _dir: dir,
+            root,
+            project,
+            provider: Scripted::new(script),
+            engine: Arc::new(Mutex::new(None)),
+            faults: Arc::new(Faults::default()),
+        };
+        fx.restart_engine();
+        fx
+    }
+
+    fn config(&self) -> EngineConfig {
+        let mut c = EngineConfig::new(self.root.join("engine"), self.root.join("engine-config"));
+        c.env = Env::isolated(Default::default());
+        c.extra_models = vec![scripted::model()];
+        c.default_model = Some("scripted/scripted".into());
+        c
+    }
+
+    /// Stop the engine (if running) and start it again on the same data: connected harnesses
+    /// see their connection end and reconnect.
+    fn restart_engine(&self) {
+        if let Some(old) = self.engine.lock().unwrap().take() {
+            old.shutdown(Duration::from_secs(5));
+        }
+        let handle = EngineHandle::start_with(
+            self.config(),
+            registry_with(Arc::new(self.provider.clone())),
+            pipkin_engine::tools::builtin_tools(),
+        )
+        .expect("engine starts");
+        *self.engine.lock().unwrap() = Some(Arc::new(handle));
+    }
+
+    fn host(&self) -> HostSpec {
+        let engine = self.engine.clone();
+        let faults = self.faults.clone();
+        HostSpec::Fake(Arc::new(move || {
+            let handle = engine
+                .lock()
+                .unwrap()
+                .clone()
+                .ok_or_else(|| "the engine is not running".to_owned())?;
+            let (sender, receiver) = handle.connect("e2e").split();
+            Ok(Link {
+                sender: Box::new(FaultSender {
+                    inner: sender,
+                    faults: faults.clone(),
+                }),
+                receiver: Box::new(FaultReceiver {
+                    inner: receiver,
+                    faults: faults.clone(),
+                }),
+            })
+        }))
+    }
+
+    fn native(&self, call_timeout: Duration) -> NativeConfig {
+        let mut config =
+            NativeConfig::new(self.host(), self.root.join("engine").display().to_string());
+        config.retry_delay = Duration::from_millis(50);
+        config.call_timeout = call_timeout;
+        config
+    }
+
+    fn requests(&self) -> Vec<ProviderRequest> {
+        self.provider.requests()
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        if let Some(engine) = self.engine.lock().unwrap().take() {
+            engine.shutdown(Duration::from_secs(5));
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------ the harness
+
+/// The application as the controller composes it, minus the window.
+struct Harness {
+    state: AppState,
+    backend: NativeBackend,
+    storage: Arc<Storage>,
+    restore: Restore,
+    events: async_channel::Receiver<BackendEvent>,
+    life: Arc<Mutex<VecDeque<LifecycleEvent>>>,
+    acks: mpsc::Receiver<(ConversationId, RequestId, Result<(), String>)>,
+    ack_tx: mpsc::Sender<(ConversationId, RequestId, Result<(), String>)>,
+    notices: Vec<String>,
+    copied: Vec<String>,
+}
+
+fn unique(prefix: &str) -> String {
+    static N: AtomicUsize = AtomicUsize::new(0);
+    format!(
+        "{prefix}{}x{}",
+        N.fetch_add(1, Ordering::SeqCst),
+        std::process::id()
+    )
+}
+
+impl Harness {
+    fn start(fx: &Fixture, db: &Path) -> Harness {
+        Harness::start_with(fx.native(Duration::from_secs(10)), db)
+    }
+
+    fn start_with(config: NativeConfig, db: &Path) -> Harness {
+        let storage = Arc::new(Storage::open(db, NAMESPACE).expect("storage"));
+        let loaded = storage.load_all().expect("load");
+        let mut state = AppState::new(
+            Bootstrap {
+                projects: vec![],
+                models: vec![],
+                conversations: vec![],
+                now: 1,
+            },
+            loaded.prefs.clone(),
+        );
+        state.mode = Mode::Real;
+        state.can_create = true;
+        state.set_request_prefix(unique("e2e"));
+        state.set_connection(Connection::Connecting);
+        for path in &loaded.projects {
+            state.restore_project(path);
+        }
+        for saved in storage.cached_conversations().expect("saved conversations") {
+            state.restore_cached_conversation(
+                saved.id,
+                &saved.meta.project_path,
+                saved.meta.title,
+                saved.meta.updated_at,
+            );
+        }
+        let restore = Restore::new(loaded, false);
+        let (tx, events) = async_channel::unbounded();
+        let backend = NativeBackend::new(tx, config);
+        let life = Arc::new(Mutex::new(VecDeque::new()));
+        let sink = {
+            let life = life.clone();
+            Box::new(move |e| life.lock().unwrap().push_back(e))
+        };
+        backend.start(sink);
+        let (ack_tx, acks) = mpsc::channel();
+        let mut h = Harness {
+            state,
+            backend,
+            storage,
+            restore,
+            events,
+            life,
+            acks,
+            ack_tx,
+            notices: vec![],
+            copied: vec![],
+        };
+        let mut out = h.restore.apply(&mut h.state);
+        out.merge(h.state.select_initial());
+        h.exec(out);
+        h
+    }
+
+    fn exec(&mut self, outcome: Outcome) {
+        for effect in outcome.effects {
+            match effect {
+                Effect::Backend(request) => self.backend.request(request),
+                Effect::SaveDraft {
+                    conversation,
+                    text,
+                    attachments,
+                    rev,
+                } => {
+                    let (tx, rx) = mpsc::channel();
+                    self.storage
+                        .save_draft(conversation, text, attachments, rev, move |r| {
+                            let _ = tx.send(r);
+                        });
+                    let result = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                    self.state.draft_saved(conversation, rev, result);
+                }
+                Effect::SavePrefs(prefs) | Effect::CompleteSetup(prefs) => {
+                    self.storage.save_prefs(&prefs)
+                }
+                Effect::SaveGoal {
+                    conversation,
+                    text,
+                    paused,
+                } => self.storage.save_goal(conversation, text, paused),
+                Effect::SaveProject { path } => self.storage.save_project(path),
+                Effect::SaveConversation { .. } => {}
+                Effect::SaveCache { conversation } => {
+                    if let Some(c) = self.state.conversation(conversation)
+                        && let Some(project) =
+                            self.state.projects.iter().find(|p| p.id == c.project)
+                    {
+                        let meta = crate::storage::CacheMeta {
+                            title: c.title.clone(),
+                            project_path: project.path.clone(),
+                            updated_at: c.updated_at,
+                        };
+                        self.storage.save_cache(
+                            conversation,
+                            meta,
+                            &c.items,
+                            c.has_older,
+                            self.state.now(),
+                        );
+                    }
+                }
+                Effect::LoadCache { conversation } => {
+                    if let Ok(Some(copy)) = self.storage.load_cache(conversation) {
+                        let out = self.state.apply_cache(
+                            conversation,
+                            copy.items,
+                            copy.has_older,
+                            copy.synced_at,
+                        );
+                        self.exec(out);
+                    }
+                }
+                Effect::SearchHistory { query } => {
+                    if let Ok(results) = self.storage.search(&query, 40) {
+                        let out = self.state.apply_search_results(results);
+                        self.exec(out);
+                    }
+                }
+                Effect::CopyText(text) => self.copied.push(text),
+                Effect::SaveText { .. } | Effect::Launch(_) => {}
+                Effect::JournalIntent {
+                    conversation,
+                    request,
+                    text,
+                    attachments,
+                    model,
+                    ..
+                } => {
+                    let tx = self.ack_tx.clone();
+                    let key = request.clone();
+                    self.storage.journal_intent(
+                        conversation,
+                        request,
+                        &text,
+                        &attachments,
+                        model.as_deref(),
+                        move |r| {
+                            let _ = tx.send((conversation, key, r));
+                        },
+                    );
+                }
+                Effect::JournalState { request, state, .. } => {
+                    self.storage.journal_state(request, state)
+                }
+            }
+        }
+    }
+
+    fn dispatch(&mut self, command: Command) {
+        let outcome = self.state.dispatch(command);
+        self.exec(outcome);
+    }
+
+    fn pump(&mut self) {
+        let lifecycle: Vec<LifecycleEvent> = self.life.lock().unwrap().drain(..).collect();
+        for event in lifecycle {
+            let outcome = match event {
+                LifecycleEvent::Connection(c) => self.state.set_connection(c),
+                LifecycleEvent::Catalog(boot) => {
+                    let mut out = self.state.apply_catalog(boot);
+                    out.merge(self.restore.apply(&mut self.state));
+                    out.merge(self.state.select_initial());
+                    out
+                }
+                LifecycleEvent::ModelSelected(m) => self.state.set_engine_model(m),
+                LifecycleEvent::SignIn(_) | LifecycleEvent::SetupSaved(_) => Outcome::default(),
+                LifecycleEvent::Notice(message) => {
+                    self.notices.push(message.clone());
+                    self.state.set_notice(message)
+                }
+                LifecycleEvent::StorageIssue(message) => self.state.set_storage_issue(message),
+            };
+            self.exec(outcome);
+        }
+        while let Ok(event) = self.events.try_recv() {
+            let outcome = self.state.apply_event(event);
+            self.exec(outcome);
+        }
+        while let Ok((conversation, request, result)) = self.acks.try_recv() {
+            let outcome = self.state.intent_persisted(conversation, &request, result);
+            self.exec(outcome);
+        }
+    }
+
+    fn until(&mut self, what: &str, done: impl Fn(&AppState) -> bool) {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            self.pump();
+            if done(&self.state) {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for: {what}\n  connection: {:?}\n  notices: {:?}\n  run: {:?}\n  items: {:?}",
+                self.state.connection,
+                self.notices,
+                self.state.current().map(|c| c.run.clone()),
+                self.state.current().map(|c| c.items.clone()),
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    fn open_new_conversation(&mut self, project: &Path) {
+        self.until("connected", |s| s.connection.is_ready());
+        let real = std::fs::canonicalize(project).unwrap();
+        self.dispatch(Command::AddProject(real.display().to_string()));
+        self.dispatch(Command::NewConversation);
+        self.until("the new conversation is open", |s| {
+            s.current().is_some_and(|c| c.opened)
+        });
+    }
+
+    fn until_asked(&mut self, fx: &Fixture, n: usize) {
+        self.until("the engine asked the model", |_| fx.requests().len() >= n);
+    }
+
+    fn send(&mut self, text: &str) {
+        self.dispatch(Command::EditDraft(text.into()));
+        self.dispatch(Command::Submit);
+    }
+
+    fn user_messages(&self) -> Vec<String> {
+        user_messages(&self.state)
+    }
+
+    fn stop(self) {
+        self.backend.shutdown();
+        self.storage.shutdown();
+    }
+}
+
+fn user_messages(s: &AppState) -> Vec<String> {
+    s.current()
+        .map(|c| {
+            c.items
+                .iter()
+                .filter_map(|i| match &i.kind {
+                    ItemKind::User { text, .. } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn assistant_texts(s: &AppState) -> Vec<String> {
+    s.current()
+        .map(|c| {
+            c.items
+                .iter()
+                .filter_map(|i| match &i.kind {
+                    ItemKind::Assistant { text, .. } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn queued(s: &AppState) -> Vec<(QueueMode, String)> {
+    s.current()
+        .map(|c| c.queue.iter().map(|q| (q.mode, q.text.clone())).collect())
+        .unwrap_or_default()
+}
+
+fn is_running(s: &AppState) -> bool {
+    matches!(s.current().map(|c| &c.run), Some(RunState::Running { .. }))
+}
+
+fn is_idle(s: &AppState) -> bool {
+    s.current().is_some_and(|c| c.run == RunState::Idle)
+}
+
+/// The text of every user message in a model request, oldest first.
+fn user_texts(request: &ProviderRequest) -> Vec<String> {
+    request
+        .messages
+        .iter()
+        .filter(|m| matches!(m, Message::User { .. }))
+        .map(|m| m.text())
+        .collect()
+}
+
+fn held_first(
+    gate: &Gate,
+    first: Reply,
+    rest: Vec<Reply>,
+) -> impl Fn(&ProviderRequest, usize) -> Reply + Send + Sync + 'static {
+    let gate = gate.clone();
+    move |_, n| match n {
+        0 => Reply::Gated(gate.clone(), Box::new(first.clone())),
+        n => rest
+            .get(n - 1)
+            .cloned()
+            .unwrap_or_else(|| Reply::Text(format!("extra turn {n}"))),
+    }
+}
+
+fn open_requests(db: &Path) -> usize {
+    Storage::open(db, NAMESPACE)
+        .unwrap()
+        .load_all()
+        .unwrap()
+        .open_requests
+        .len()
+}
+
+// -------------------------------------------------------------------------------- workflows
+
+#[test]
+fn a_prompt_streams_settles_and_reopens_with_the_same_history() {
+    let fx = Fixture::start(|_, _| Reply::Text("hello there, friend".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let conversation = h.state.current().unwrap().id;
+    h.send("say hi");
+    h.until("answered", |s| {
+        is_idle(s) && assistant_texts(s) == ["hello there, friend".to_owned()]
+    });
+    assert_eq!(h.user_messages(), ["say hi"]);
+    let c = h.state.current().unwrap();
+    assert!(
+        matches!(
+            &c.items[0].kind,
+            ItemKind::User {
+                delivery: Delivery::Sent,
+                ..
+            }
+        ),
+        "{:?}",
+        c.items
+    );
+    let usage = c.usage.as_ref().expect("the engine's ledger");
+    assert!(usage.models.iter().any(|(k, _)| k == "scripted/scripted"));
+    let ids: Vec<_> = c.items.iter().map(|i| i.id).collect();
+    assert_eq!(fx.requests().len(), 1);
+    h.stop();
+    assert_eq!(open_requests(&db), 0, "the journal entry closed");
+
+    let mut h2 = Harness::start(&fx, &db);
+    h2.until("the same conversation reopens", |s| {
+        s.selected == Some(conversation) && s.current().is_some_and(|c| c.opened)
+    });
+    assert_eq!(h2.user_messages(), ["say hi"]);
+    let again: Vec<_> = h2
+        .state
+        .current()
+        .unwrap()
+        .items
+        .iter()
+        .map(|i| i.id)
+        .collect();
+    assert_eq!(again, ids, "item ids are stable across reopen");
+    assert_eq!(fx.requests().len(), 1, "reopening sends nothing");
+    h2.stop();
+}
+
+#[test]
+fn a_dropped_acknowledgment_is_resolved_by_asking_and_never_runs_twice() {
+    let fx = Fixture::start(|_, _| Reply::Text("done once".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start_with(fx.native(Duration::from_millis(700)), &db);
+    h.open_new_conversation(&fx.project);
+    fx.faults.drop_prompt_reply.store(true, Ordering::SeqCst);
+    h.send("do it once");
+    h.until("the outcome is unknown", |s| {
+        matches!(s.current().unwrap().run, RunState::OutcomeUnknown { .. })
+    });
+    assert_eq!(fx.faults.fired.load(Ordering::SeqCst), 1);
+    assert!(h.state.availability().check_status);
+    assert!(!h.state.availability().retry, "never resent by default");
+    h.dispatch(Command::CheckStatus);
+    h.until("the engine says it ran", |s| {
+        is_idle(s) && assistant_texts(s) == ["done once".to_owned()]
+    });
+    assert_eq!(fx.requests().len(), 1, "the prompt ran exactly once");
+    assert_eq!(h.user_messages(), ["do it once"]);
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+#[test]
+fn a_lost_prompt_is_proven_unsent_and_only_an_explicit_retry_sends_it() {
+    let fx = Fixture::start(|_, _| Reply::Text("finally".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start_with(fx.native(Duration::from_millis(700)), &db);
+    h.open_new_conversation(&fx.project);
+    fx.faults.drop_prompt.store(true, Ordering::SeqCst);
+    h.send("maybe sent");
+    h.until("the outcome is unknown", |s| {
+        matches!(s.current().unwrap().run, RunState::OutcomeUnknown { .. })
+    });
+    h.dispatch(Command::CheckStatus);
+    h.until("proven never admitted", |s| {
+        matches!(s.current().unwrap().run, RunState::Failed { .. })
+    });
+    assert!(fx.requests().is_empty());
+    assert!(h.state.availability().retry);
+    h.dispatch(Command::Retry);
+    h.until("the retry ran", |s| {
+        is_idle(s) && assistant_texts(s) == ["finally".to_owned()]
+    });
+    assert_eq!(fx.requests().len(), 1);
+    h.stop();
+}
+
+fn stopped_input_is_not_presented_to_the_next_model_turn(as_goal: bool) {
+    let gate = Gate::new();
+    let fx = Fixture::start(held_first(
+        &gate,
+        Reply::Text("old task not completed".into()),
+        vec![Reply::Text("1 2 3 ... 100\n[PIPKIN_GOAL_MET]".into())],
+    ));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("commit and push");
+    h.until_asked(&fx, 1);
+    h.until("the original request is running", is_running);
+    h.dispatch(Command::EditDraft("also publish the old work".into()));
+    h.dispatch(Command::QueueFollowUp);
+    h.until("the old follow-up is queued", |s| {
+        !s.current().unwrap().queue.is_empty()
+    });
+    h.dispatch(Command::Cancel);
+    if as_goal {
+        h.dispatch(Command::SetGoal("count to 100".into()));
+    } else {
+        h.until("stop is confirmed and old queued work is withdrawn", |s| {
+            is_idle(s) && s.current().unwrap().queue.is_empty()
+        });
+        h.send("count to 100");
+    }
+    h.until("only the replacement finishes", |s| {
+        is_idle(s) && assistant_texts(s).iter().any(|t| t.starts_with("1 2 3"))
+    });
+    let requests = fx.requests();
+    assert_eq!(requests.len(), 2, "the withdrawn follow-up must not run");
+    let users = user_texts(&requests[1]);
+    assert_eq!(
+        users.len(),
+        1,
+        "stopped instructions must not leak: {users:?}"
+    );
+    assert!(users[0].contains("count to 100"));
+    assert!(
+        h.user_messages().iter().any(|t| t == "commit and push"),
+        "keep the visible audit trail"
+    );
+    if as_goal {
+        assert_eq!(
+            h.state
+                .current()
+                .unwrap()
+                .goal
+                .as_ref()
+                .unwrap()
+                .paused
+                .as_deref(),
+            Some("Goal met.")
+        );
+    }
+    gate.open();
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+#[test]
+fn stopping_a_prompt_flushes_its_instruction_before_a_new_prompt() {
+    stopped_input_is_not_presented_to_the_next_model_turn(false);
+}
+
+#[test]
+fn stopping_a_prompt_flushes_its_instruction_before_a_replacement_goal() {
+    stopped_input_is_not_presented_to_the_next_model_turn(true);
+}
+
+#[test]
+fn a_follow_up_waits_in_the_engines_queue_then_runs_by_itself() {
+    let gate = Gate::new();
+    let fx = Fixture::start(held_first(
+        &gate,
+        Reply::Text("first done".into()),
+        vec![Reply::Text("second done".into())],
+    ));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("first");
+    h.until_asked(&fx, 1);
+    h.until("running", is_running);
+    h.dispatch(Command::EditDraft("second".into()));
+    assert!(h.state.availability().queue);
+    h.dispatch(Command::QueueFollowUp);
+    h.until("the engine's queue shows it", |s| {
+        queued(s) == [(QueueMode::FollowUp, "second".to_owned())]
+            && s.current().unwrap().pending_queue.is_empty()
+    });
+    assert!(is_running(&h.state));
+    gate.open();
+    h.until("both ran, in order", |s| {
+        is_idle(s) && assistant_texts(s) == ["first done".to_owned(), "second done".to_owned()]
+    });
+    assert!(h.state.current().unwrap().queue.is_empty());
+    assert_eq!(h.user_messages(), ["first", "second"]);
+    let requests = fx.requests();
+    assert_eq!(requests.len(), 2, "one model turn each");
+    assert_eq!(user_texts(&requests[1]), ["first", "second"]);
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+#[test]
+fn a_queued_input_removed_before_it_runs_never_reaches_the_model() {
+    let gate = Gate::new();
+    let fx = Fixture::start(held_first(
+        &gate,
+        Reply::Text("first done".into()),
+        vec![Reply::Text("kept done".into())],
+    ));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("first");
+    h.until_asked(&fx, 1);
+    h.until("running", is_running);
+    for text in ["queued-drop-xq7", "queued-keep-xq7"] {
+        h.dispatch(Command::EditDraft(text.into()));
+        h.dispatch(Command::QueueFollowUp);
+        let want = text.to_owned();
+        h.until("queued", |s| {
+            queued(s).iter().any(|(_, t)| *t == want)
+                && s.current().unwrap().pending_queue.is_empty()
+        });
+    }
+    let first = h.state.current().unwrap().queue[0].id;
+    h.dispatch(Command::RemoveQueued(first));
+    h.until("the engine dropped it", |s| {
+        queued(s) == [(QueueMode::FollowUp, "queued-keep-xq7".to_owned())]
+    });
+    gate.open();
+    h.until("first and the kept input ran", |s| {
+        is_idle(s) && assistant_texts(s) == ["first done".to_owned(), "kept done".to_owned()]
+    });
+    let requests = fx.requests();
+    assert_eq!(requests.len(), 2);
+    for request in &requests {
+        assert!(
+            !user_texts(request)
+                .iter()
+                .any(|t| t.contains("queued-drop-xq7")),
+            "a removed input must never be sent to the model"
+        );
+    }
+    assert_eq!(user_texts(&requests[1]), ["first", "queued-keep-xq7"]);
+    h.stop();
+}
+
+/// Steering joins the run in flight: the model's next turn in the same run sees it. The tool
+/// call here is answered "not available" (no built-in tools yet), which still makes a second
+/// model turn in the same run.
+#[test]
+fn a_steer_reaches_the_next_model_turn_of_the_active_run() {
+    let gate = Gate::new();
+    let fx = Fixture::start(held_first(
+        &gate,
+        Reply::Tools(
+            Some("Working. ".into()),
+            vec![("bash".into(), serde_json::json!({ "command": "ls" }))],
+        ),
+        vec![Reply::Text("done, with tabs".into())],
+    ));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("edit the notes");
+    h.until_asked(&fx, 1);
+    h.until("running", is_running);
+    h.dispatch(Command::EditDraft("use tabs".into()));
+    assert!(h.state.availability().steer);
+    h.dispatch(Command::Steer);
+    h.until("the engine holds the steer", |s| {
+        queued(s) == [(QueueMode::Steer, "use tabs".to_owned())]
+    });
+    gate.open();
+    h.until("the run finished", |s| {
+        is_idle(s) && assistant_texts(s).iter().any(|t| t.contains("with tabs"))
+    });
+    let requests = fx.requests();
+    assert_eq!(requests.len(), 2, "one run, two model turns");
+    assert_eq!(
+        user_texts(&requests[1]),
+        ["edit the notes", "use tabs"],
+        "the second turn of the same run saw the steer"
+    );
+    assert_eq!(h.user_messages(), ["edit the notes", "use tabs"]);
+    assert!(h.state.current().unwrap().queue.is_empty());
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+#[test]
+fn a_run_and_its_queue_are_picked_up_again_after_the_app_restarts() {
+    let gate = Gate::new();
+    let fx = Fixture::start(held_first(
+        &gate,
+        Reply::Text("first done".into()),
+        vec![Reply::Text("second done".into())],
+    ));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let conversation = h.state.current().unwrap().id;
+    h.send("first");
+    h.until_asked(&fx, 1);
+    h.until("running", is_running);
+    h.dispatch(Command::EditDraft("second".into()));
+    h.dispatch(Command::QueueFollowUp);
+    h.until("queued", |s| {
+        queued(s) == [(QueueMode::FollowUp, "second".to_owned())]
+    });
+    h.stop(); // the window closes; the engine and its run carry on
+
+    let mut h2 = Harness::start(&fx, &db);
+    h2.until("the run is found running again", |s| {
+        s.selected == Some(conversation) && is_running(s) && !queued(s).is_empty()
+    });
+    assert_eq!(
+        queued(&h2.state),
+        [(QueueMode::FollowUp, "second".to_owned())]
+    );
+    assert_eq!(fx.requests().len(), 1, "nothing was resent");
+    assert_eq!(h2.user_messages(), ["first"]);
+    gate.open();
+    h2.until("everything finishes", |s| {
+        is_idle(s) && assistant_texts(s) == ["first done".to_owned(), "second done".to_owned()]
+    });
+    assert_eq!(fx.requests().len(), 2);
+    assert_eq!(h2.user_messages(), ["first", "second"]);
+    h2.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+/// The engine restarts under a connected window: the window reconnects, the engine resumes the
+/// run from its durable state (asking the model again for the same turn), and the prompt is
+/// neither resent by the app nor duplicated in the history.
+#[test]
+fn an_engine_restart_mid_run_reconnects_and_the_resumed_run_settles() {
+    let fx = Fixture::start(|_, n| match n {
+        0 => Reply::Hang,
+        _ => Reply::Text("after restart".into()),
+    });
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("long job");
+    h.until_asked(&fx, 1);
+    h.until("running", is_running);
+    fx.restart_engine();
+    h.until("the resumed run settles, on the engine's word", |s| {
+        s.connection.is_ready()
+            && is_idle(s)
+            && assistant_texts(s).contains(&"after restart".to_owned())
+    });
+    assert_eq!(h.user_messages(), ["long job"], "one prompt, once");
+    let requests = fx.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "the engine re-asked the model for the same turn"
+    );
+    assert_eq!(user_texts(&requests[1]), ["long job"]);
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+#[test]
+fn a_run_started_elsewhere_is_shown_and_can_be_stopped() {
+    let fx = Fixture::start(|_, _| Reply::Hang);
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let conversation = h.state.current().unwrap().id;
+    h.send("started here");
+    h.until_asked(&fx, 1);
+    h.until("running", is_running);
+    h.stop();
+    // Forget the journal entry, as if another client had started the run.
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute("UPDATE request_journal SET state = 'completed'", [])
+            .unwrap();
+    }
+    let mut h2 = Harness::start(&fx, &db);
+    h2.until("the busy run is shown", |s| {
+        s.selected == Some(conversation) && is_running(s)
+    });
+    assert!(h2.state.availability().cancel);
+    h2.dispatch(Command::Cancel);
+    h2.until("it stops, on the engine's word", is_idle);
+    h2.stop();
+}
+
+#[test]
+fn switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away() {
+    let gate = Gate::new();
+    let fx = Fixture::start(held_first(
+        &gate,
+        Reply::Text("a is done".into()),
+        vec![Reply::Text("b is done".into())],
+    ));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let a = h.state.current().unwrap().id;
+    h.send("work in A");
+    h.until_asked(&fx, 1);
+    h.until("A is running", is_running);
+    h.dispatch(Command::NewConversation);
+    h.until("B is open", |s| {
+        s.selected.is_some_and(|id| id != a) && s.current().is_some_and(|c| c.opened)
+    });
+    let b = h.state.selected.unwrap();
+    assert!(is_idle(&h.state), "B has no run");
+    h.send("work in B");
+    h.until("B is answered", |s| {
+        is_idle(s) && assistant_texts(s).contains(&"b is done".to_owned())
+    });
+    gate.open();
+    h.until("A settles in the background", |s| {
+        matches!(s.conversation(a).unwrap().run, RunState::Idle)
+    });
+    assert_eq!(h.state.selected, Some(b));
+    assert_eq!(h.user_messages(), ["work in B"]);
+    h.dispatch(Command::SelectConversation(a));
+    h.until("A is open again and settled", |s| {
+        s.selected == Some(a)
+            && s.current().is_some_and(|c| c.opened)
+            && is_idle(s)
+            && assistant_texts(s).contains(&"a is done".to_owned())
+    });
+    assert_eq!(h.user_messages(), ["work in A"]);
+    h.dispatch(Command::SelectConversation(b));
+    h.until("B shows its own history", |s| {
+        s.selected == Some(b)
+            && s.current().is_some_and(|c| c.opened)
+            && assistant_texts(s).contains(&"b is done".to_owned())
+    });
+    assert_eq!(h.user_messages(), ["work in B"]);
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+/// A valid 1x1 PNG.
+const TINY_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+#[test]
+fn attachments_reach_the_model_as_text_and_image_and_come_back_as_chips() {
+    use base64::Engine as _;
+    let fx = Fixture::start(|_, _| Reply::Text("I read them.".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let outside = fx.root.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    let notes = outside.join("spec.md");
+    std::fs::write(&notes, "# Spec\nUse tabs.\n").unwrap();
+    let image = outside.join("shot.png");
+    std::fs::write(
+        &image,
+        base64::engine::general_purpose::STANDARD
+            .decode(TINY_PNG)
+            .unwrap(),
+    )
+    .unwrap();
+    h.dispatch(Command::AddAttachments(vec![
+        describe_attachment(&notes),
+        describe_attachment(&image),
+    ]));
+    h.dispatch(Command::EditDraft("review these".into()));
+    h.dispatch(Command::Submit);
+    h.until("answered", |s| {
+        is_idle(s) && assistant_texts(s).contains(&"I read them.".to_owned())
+    });
+    let requests = fx.requests();
+    let user = requests[0]
+        .messages
+        .iter()
+        .find(|m| matches!(m, Message::User { .. }))
+        .unwrap();
+    assert!(user.text().contains("review these") && user.text().contains("# Spec\nUse tabs."));
+    assert!(
+        user.content()
+            .iter()
+            .any(|b| matches!(b, Block::Image { mime_type, .. } if mime_type == "image/png")),
+        "the image reached the model"
+    );
+    let c = h.state.current().unwrap();
+    let ItemKind::User {
+        text, attachments, ..
+    } = &c
+        .items
+        .iter()
+        .find(|i| matches!(i.kind, ItemKind::User { .. }))
+        .unwrap()
+        .kind
+    else {
+        unreachable!()
+    };
+    assert_eq!(text, "review these");
+    let names: Vec<_> = attachments.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["spec.md", "Image"]);
+    assert!(c.draft.attachments.is_empty());
+    h.stop();
+}
+
+#[test]
+fn effort_is_the_engines_and_is_restored_per_conversation() {
+    let fx = Fixture::start(|_, _| Reply::Text("ok".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let a = h.state.current().unwrap().id;
+    h.until("the engine reports effort levels", |s| {
+        !s.current().unwrap().thinking_levels.is_empty()
+    });
+    let levels = h.state.current().unwrap().thinking_levels.clone();
+    assert!(levels.contains(&"high".to_owned()), "{levels:?}");
+    h.dispatch(Command::SetThinkingLevel("high".into()));
+    h.until("A uses high effort", |s| {
+        s.current().unwrap().thinking_level.as_deref() == Some("high")
+    });
+    h.dispatch(Command::NewConversation);
+    h.until("B is open", |s| {
+        s.selected.is_some_and(|id| id != a) && s.current().is_some_and(|c| c.opened)
+    });
+    h.until("B reports its own effort", |s| {
+        s.current().unwrap().thinking_level.is_some()
+    });
+    h.dispatch(Command::SetThinkingLevel("low".into()));
+    h.until("B uses low effort", |s| {
+        s.current().unwrap().thinking_level.as_deref() == Some("low")
+    });
+    h.dispatch(Command::SelectConversation(a));
+    h.until("A's effort is restored from the engine", |s| {
+        s.selected == Some(a)
+            && s.current().is_some_and(|c| c.opened)
+            && s.current().unwrap().thinking_level.as_deref() == Some("high")
+    });
+    h.send("think hard");
+    h.until("answered", |s| is_idle(s) && !assistant_texts(s).is_empty());
+    assert_eq!(
+        fx.requests()[0].thinking.as_str(),
+        "high",
+        "the model was asked with A's effort"
+    );
+    h.stop();
+}
+
+#[test]
+fn the_complete_tool_output_is_copied_from_the_engine() {
+    let fx = Fixture::start(|_, n| match n {
+        0 => Reply::Tools(
+            Some("Running it. ".into()),
+            vec![("bash".into(), serde_json::json!({ "command": "ls" }))],
+        ),
+        _ => Reply::Text("done".into()),
+    });
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("list files");
+    h.until("answered", |s| {
+        is_idle(s) && assistant_texts(s).contains(&"done".to_owned())
+    });
+    let tool = h
+        .state
+        .current()
+        .unwrap()
+        .items
+        .iter()
+        .find(|i| matches!(i.kind, ItemKind::Tool(_)))
+        .expect("the tool call is shown")
+        .clone();
+    let ItemKind::Tool(call) = &tool.kind else {
+        unreachable!()
+    };
+    assert_eq!(call.name, "bash");
+    assert_ne!(
+        call.status,
+        pipkin_core::ToolStatus::Running,
+        "paired with its result"
+    );
+    h.dispatch(Command::CopyToolOutput(tool.id));
+    let deadline = Instant::now() + WAIT;
+    while h.copied.is_empty() && Instant::now() < deadline {
+        h.pump();
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(h.copied.len(), 1, "notices: {:?}", h.notices);
+    assert!(!h.copied[0].is_empty());
+    assert!(
+        call.output.is_empty() || h.copied[0].starts_with(&call.output),
+        "the copy is the complete output the preview came from"
+    );
+    h.stop();
+}
+
+#[test]
+fn older_history_pages_in_and_stays_through_later_updates() {
+    let fx = Fixture::start(|_, n| Reply::Text(format!("answer {n}")));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let conversation = h.state.current().unwrap().id;
+    // More than the engine's default window of 200 entries.
+    for n in 0..105 {
+        h.send(&format!("prompt {n}"));
+        let want = format!("answer {n}");
+        h.until("answered", |s| {
+            is_idle(s) && assistant_texts(s).last() == Some(&want)
+        });
+    }
+    h.stop();
+    let mut h2 = Harness::start(&fx, &db);
+    h2.until("reopened with a window", |s| {
+        s.selected == Some(conversation) && s.current().is_some_and(|c| c.opened)
+    });
+    let shown = h2.user_messages().len();
+    assert!(shown < 105, "only a window is shown first ({shown})");
+    assert!(h2.state.current().unwrap().has_older);
+    while h2.state.current().unwrap().has_older {
+        let before = h2.user_messages().len();
+        h2.dispatch(Command::LoadOlder);
+        h2.until("an older page arrives", |s| {
+            user_messages(s).len() > before || !s.current().unwrap().has_older
+        });
+    }
+    assert_eq!(h2.user_messages().len(), 105);
+    assert_eq!(h2.user_messages()[0], "prompt 0");
+    // A new turn does not drop what was paged in.
+    h2.send("one more");
+    h2.until("answered", |s| {
+        is_idle(s) && assistant_texts(s).last() == Some(&"answer 105".to_owned())
+    });
+    assert_eq!(h2.user_messages().len(), 106);
+    let ids: Vec<_> = h2
+        .state
+        .current()
+        .unwrap()
+        .items
+        .iter()
+        .map(|i| i.id.0)
+        .collect();
+    let mut sorted = ids.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), ids.len(), "unique item ids");
+    h2.stop();
+}
+
+/// Needs the engine's built-in `write` tool (the tools worker); until then the tool call is
+/// answered "not available" and nothing changes on disk.
+#[test]
+#[ignore = "needs the engine's built-in tools (pipkin_engine::tools::builtin_tools is empty)"]
+fn a_session_edit_shows_in_changes_until_it_is_committed() {
+    let fx = Fixture::start(|_, n| match n {
+        0 => Reply::Tools(
+            None,
+            vec![(
+                "write".into(),
+                serde_json::json!({ "path": "notes.txt", "content": "one\ntwo\n" }),
+            )],
+        ),
+        _ => Reply::Text("Done.".into()),
+    });
+    git(&fx.project, &["init", "-q", "-b", "main"]);
+    std::fs::write(fx.project.join("notes.txt"), "one\n").unwrap();
+    git(&fx.project, &["add", "-A"]);
+    git(&fx.project, &["commit", "-q", "-m", "init"]);
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("update the notes");
+    h.until("the edit shows in Changes", |s| {
+        is_idle(s)
+            && s.current()
+                .unwrap()
+                .changes
+                .iter()
+                .any(|f| f.path == "notes.txt")
+    });
+    git(&fx.project, &["commit", "-qam", "session"]);
+    h.dispatch(Command::RefreshChanges);
+    h.until("committed work leaves Changes", |s| {
+        s.current().unwrap().changes.is_empty()
+    });
+    h.stop();
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let ok = std::process::Command::new("git")
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "commit.gpgsign=false",
+        ])
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .status()
+        .expect("git runs")
+        .success();
+    assert!(ok, "git {args:?}");
+}

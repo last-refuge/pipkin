@@ -13,6 +13,65 @@ use super::workspace::Workspace;
 use crate::model::Model;
 use crate::theme::ActiveTheme;
 
+/// One subscription sign-in button on the connect step.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ProviderChoice {
+    pub provider: SignInProvider,
+    pub id: &'static str,
+    pub reason_id: &'static str,
+    pub label: &'static str,
+    /// The engine cannot sign in to this provider; the button is disabled and this says why.
+    pub reason: Option<String>,
+}
+
+/// The sign-in buttons for `auth`, in display order. An unavailable provider stays listed (so
+/// the person learns why it is missing) but can never be started.
+pub(super) fn provider_choices(
+    auth: &pipkin_core::onboarding::SignInSnapshot,
+    managing: bool,
+) -> Vec<ProviderChoice> {
+    [
+        (
+            SignInProvider::Claude,
+            "Claude Pro / Max",
+            "setup-claude",
+            "setup-claude-unavailable",
+        ),
+        (
+            SignInProvider::ChatGpt,
+            "ChatGPT Plus / Pro",
+            "setup-chatgpt",
+            "setup-chatgpt-unavailable",
+        ),
+    ]
+    .into_iter()
+    .map(|(provider, label, id, reason_id)| {
+        let reason = auth.unavailable_reason(provider).map(|why| {
+            let name = match provider {
+                SignInProvider::Claude => "Claude",
+                SignInProvider::ChatGpt => "ChatGPT",
+            };
+            format!("{name} sign-in is not available yet: {why}")
+        });
+        let label = if reason.is_none() && managing && auth.existing_providers.contains(&provider) {
+            match provider {
+                SignInProvider::Claude => "Sign in to Claude again",
+                SignInProvider::ChatGpt => "Sign in to ChatGPT again",
+            }
+        } else {
+            label
+        };
+        ProviderChoice {
+            provider,
+            id,
+            reason_id,
+            label,
+            reason,
+        }
+    })
+    .collect()
+}
+
 impl Workspace {
     fn setup_action(
         &self,
@@ -216,29 +275,26 @@ impl Workspace {
                 if !auth.available {
                     body = body.child(div().text_color(c.warning).child("Subscription sign-in is not available in this Pi engine. An updated bundled engine is required."));
                 } else {
-                    for (provider, label, id) in [
-                        (SignInProvider::Claude, "Claude Pro / Max", "setup-claude"),
-                        (
-                            SignInProvider::ChatGpt,
-                            "ChatGPT Plus / Pro",
-                            "setup-chatgpt",
-                        ),
-                    ] {
-                        let label = if managing && auth.existing_providers.contains(&provider) {
-                            match provider {
-                                SignInProvider::Claude => "Sign in to Claude again",
-                                SignInProvider::ChatGpt => "Sign in to ChatGPT again",
-                            }
-                        } else {
-                            label
-                        };
+                    for choice in provider_choices(&auth, managing) {
+                        let provider = choice.provider;
                         body = body.child(self.setup_action(
-                            id,
-                            label,
+                            choice.id,
+                            choice.label,
                             BtnKind::Subtle,
-                            connection.is_ready(),
+                            connection.is_ready() && choice.reason.is_none(),
                             move |m, cx| m.start_sign_in(provider, cx),
                         ));
+                        if let Some(reason) = choice.reason {
+                            // Said plainly, with no flow behind it: nothing is started, reused
+                            // or substituted for an unavailable provider.
+                            body = body.child(
+                                div()
+                                    .id(choice.reason_id)
+                                    .text_size(theme.small_size())
+                                    .text_color(c.text_muted)
+                                    .child(reason),
+                            );
+                        }
                     }
                     body = body.child(div().text_size(theme.small_size()).text_color(c.text_muted)
                         .child("ChatGPT sign-in uses Pi's openai-codex connection, not an OpenAI API key."));
@@ -254,7 +310,10 @@ impl Workspace {
                             "setup-reuse-chatgpt",
                         ),
                     ] {
-                        if !managing && auth.existing_providers.contains(&provider) {
+                        if !managing
+                            && auth.existing_providers.contains(&provider)
+                            && auth.can_sign_in(provider)
+                        {
                             body = body.child(self.setup_action(
                                 id,
                                 label,
@@ -597,5 +656,58 @@ impl Workspace {
                             .child(body),
                     ),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pipkin_core::onboarding::SignInSnapshot;
+
+    use super::*;
+
+    #[test]
+    fn pi_offers_both_subscriptions_as_before() {
+        let auth = SignInSnapshot {
+            available: true,
+            existing_providers: vec![SignInProvider::Claude],
+            ..SignInSnapshot::default()
+        };
+        let choices = provider_choices(&auth, false);
+        assert_eq!(choices.len(), 2);
+        assert!(choices.iter().all(|c| c.reason.is_none()));
+        assert_eq!(choices[0].label, "Claude Pro / Max");
+        assert_eq!(choices[1].label, "ChatGPT Plus / Pro");
+        let managing = provider_choices(&auth, true);
+        assert_eq!(managing[0].label, "Sign in to Claude again");
+        assert_eq!(managing[1].label, "ChatGPT Plus / Pro");
+    }
+
+    #[test]
+    fn a_reserved_claude_sign_in_is_shown_unavailable_with_its_reason_and_chatgpt_works() {
+        let auth = SignInSnapshot {
+            available: true,
+            existing_providers: vec![SignInProvider::ChatGpt],
+            unavailable: vec![(
+                SignInProvider::Claude,
+                "reserved for a later integration".into(),
+            )],
+            ..SignInSnapshot::default()
+        };
+        let choices = provider_choices(&auth, true);
+        let claude = &choices[0];
+        assert_eq!(claude.provider, SignInProvider::Claude);
+        assert_eq!(
+            claude.label, "Claude Pro / Max",
+            "no 'sign in again' for it"
+        );
+        assert_eq!(
+            claude.reason.as_deref(),
+            Some("Claude sign-in is not available yet: reserved for a later integration")
+        );
+        let chatgpt = &choices[1];
+        assert_eq!(chatgpt.reason, None);
+        assert_eq!(chatgpt.label, "Sign in to ChatGPT again");
+        assert!(!auth.can_sign_in(SignInProvider::Claude));
+        assert!(auth.can_sign_in(SignInProvider::ChatGpt));
     }
 }

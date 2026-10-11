@@ -84,6 +84,8 @@ pub fn parse(value: &Value) -> SignInSnapshot {
         url,
         device_code: text(value, "deviceCode", 128),
         challenge,
+        // Pi offers every allowlisted provider.
+        unavailable: vec![],
     }
 }
 

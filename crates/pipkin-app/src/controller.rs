@@ -12,6 +12,8 @@ use gpui::{App, AppContext as _, ClipboardItem, Entity};
 use pipkin_core::*;
 use pipkin_ui::{DemoControls, Model};
 
+use crate::adapters::native::supervisor::{HostKind, HostSpec, WorkerSpec};
+use crate::adapters::native::{NativeBackend, NativeConfig};
 use crate::adapters::pi::engine::EngineConfig;
 use crate::adapters::pi::{PiBackend, PiConfig};
 use crate::adapters::script;
@@ -51,6 +53,19 @@ pub struct Options {
     pub editor: Option<String>,
     /// The terminal command for "open terminal" (otherwise `$TERMINAL`, the desktop's).
     pub terminal: Option<String>,
+    /// Real mode: which engine backs the app. Pi unless `--engine native` is given.
+    pub engine: EngineKind,
+    /// `--engine native`: where the built-in engine runs (`--engine-host`).
+    pub engine_host: HostKind,
+}
+
+/// The engine behind real mode.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EngineKind {
+    #[default]
+    Pi,
+    /// Pipkin's built-in engine (`pipkin-engine`).
+    Native,
 }
 
 /// What a launch is for.
@@ -81,6 +96,8 @@ impl Default for Options {
             pi_extensions: vec![],
             editor: None,
             terminal: None,
+            engine: EngineKind::Pi,
+            engine_host: HostKind::Child,
         }
     }
 }
@@ -101,6 +118,7 @@ impl Options {
     /// (each also accepted as `--flag=value`).
     pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Options, String> {
         let mut options = Options::default();
+        let mut engine_host = None;
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             let (flag, inline) = match arg.split_once('=') {
@@ -143,6 +161,26 @@ impl Options {
                             .map_err(|e| format!("--pi-extension {}: {e}", path.display()))?,
                     );
                 }
+                "--engine" => {
+                    options.engine = match value("--engine")?.as_str() {
+                        "pi" => EngineKind::Pi,
+                        "native" => EngineKind::Native,
+                        other => {
+                            return Err(format!("unknown engine {other:?}; choose pi or native"));
+                        }
+                    }
+                }
+                "--engine-host" => {
+                    engine_host = Some(match value("--engine-host")?.as_str() {
+                        "child" => HostKind::Child,
+                        "inprocess" => HostKind::InProcess,
+                        other => {
+                            return Err(format!(
+                                "unknown engine host {other:?}; choose child or inprocess"
+                            ));
+                        }
+                    })
+                }
                 "--editor" => options.editor = Some(value("--editor")?),
                 "--terminal" => options.terminal = Some(value("--terminal")?),
                 "--pi-agent-dir" => {
@@ -169,6 +207,27 @@ impl Options {
                 }
                 other => return Err(format!("unknown argument {other:?}")),
             }
+        }
+        if options.engine == EngineKind::Native {
+            if options.mode == Mode::Demo {
+                return Err("--engine native cannot be combined with --demo".into());
+            }
+            if options.pi_dir.is_some()
+                || options.pi_server_id.is_some()
+                || options.pi_repo.is_some()
+                || options.pi_agent_dir.is_some()
+                || !options.pi_extensions.is_empty()
+            {
+                return Err(
+                    "the --pi-* options apply to the Pi engine, not --engine native".into(),
+                );
+            }
+        }
+        if let Some(host) = engine_host {
+            if options.engine != EngineKind::Native {
+                return Err("--engine-host applies to --engine native".into());
+            }
+            options.engine_host = host;
         }
         Ok(options)
     }
@@ -221,6 +280,15 @@ fn profile_dir(options: &Options) -> PathBuf {
 fn namespace(options: &Options) -> String {
     match options.mode {
         Mode::Demo => DEMO_NAMESPACE.to_owned(),
+        Mode::Real if options.engine == EngineKind::Native => format!(
+            "native:{:x}",
+            stable_id(
+                &platform::engine_dirs(options.data_dir.as_deref())
+                    .data
+                    .display()
+                    .to_string()
+            )
+        ),
         Mode::Real => format!(
             "pi:{:x}",
             stable_id(&profile_dir(options).display().to_string())
@@ -570,12 +638,35 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
             },
         ))
     });
-    let launch_source = (options.mode == Mode::Real)
+    let launch_source = (options.mode == Mode::Real && options.engine == EngineKind::Pi)
         .then(|| engine_to_launch(&options))
         .flatten();
     let support_report = crate::diagnostics::prepare(options.mode, launch_source.as_deref());
     let backend: Arc<dyn Backend> = match &demo {
         Some(demo) => demo.clone(),
+        None if options.engine == EngineKind::Native => {
+            let dirs = platform::engine_dirs(options.data_dir.as_deref());
+            let log_path = crate::adapters::native::engine_log_path(&platform::data_dir(
+                options.data_dir.as_deref(),
+            ));
+            let host = match options.engine_host {
+                HostKind::Child => match WorkerSpec::engine(&dirs.data, &dirs.config, &log_path) {
+                    Ok(spec) => HostSpec::Child(spec),
+                    Err(error) => {
+                        eprintln!("pipkin: {error}");
+                        std::process::exit(2);
+                    }
+                },
+                HostKind::InProcess => HostSpec::InProcess {
+                    data_dir: dirs.data.clone(),
+                    config_dir: dirs.config.clone(),
+                },
+            };
+            Arc::new(NativeBackend::new(
+                event_tx,
+                NativeConfig::new(host, dirs.data.display().to_string()),
+            ))
+        }
         None => {
             let config = match launch_source {
                 Some(repo) => match managed_engine(&options, &repo) {
@@ -1169,6 +1260,59 @@ mod tests {
         assert_eq!(
             namespace(&a),
             namespace(&parse(&["--pi-dir", "/srv/a"]).unwrap())
+        );
+    }
+
+    #[test]
+    fn the_engine_is_pi_unless_native_is_chosen_explicitly() {
+        let o = parse(&[]).unwrap();
+        assert_eq!((o.engine, o.engine_host), (EngineKind::Pi, HostKind::Child));
+        assert_eq!(parse(&["--engine", "pi"]).unwrap(), Options::default());
+        let n = parse(&["--engine=native"]).unwrap();
+        assert_eq!(
+            (n.mode, n.engine, n.engine_host),
+            (Mode::Real, EngineKind::Native, HostKind::Child)
+        );
+        let i = parse(&["--engine-host", "inprocess", "--engine", "native"]).unwrap();
+        assert_eq!(i.engine_host, HostKind::InProcess);
+        assert_eq!(
+            parse(&["--engine", "native", "--engine-host=child"])
+                .unwrap()
+                .engine_host,
+            HostKind::Child
+        );
+        assert!(
+            parse(&["--engine", "zed"])
+                .unwrap_err()
+                .contains("unknown engine")
+        );
+        assert!(parse(&["--engine"]).is_err());
+        assert!(
+            parse(&["--engine-host", "inprocess"])
+                .unwrap_err()
+                .contains("--engine native")
+        );
+        assert!(parse(&["--engine", "native", "--engine-host", "cloud"]).is_err());
+        assert!(parse(&["--engine", "native", "--demo", "normal"]).is_err());
+        assert!(parse(&["--engine", "native", "--pi-dir", "/srv"]).is_err());
+        assert!(parse(&["--pi-repo=/pi", "--engine", "native"]).is_err());
+    }
+
+    #[test]
+    fn the_native_namespace_names_the_engine_data_directory() {
+        let a = parse(&["--engine", "native", "--data-dir", "/tmp/a"]).unwrap();
+        let b = parse(&["--engine", "native", "--data-dir", "/tmp/b"]).unwrap();
+        let pi = parse(&["--data-dir", "/tmp/a"]).unwrap();
+        assert_eq!(
+            namespace(&a),
+            format!("native:{:x}", stable_id("/tmp/a/engine"))
+        );
+        assert_ne!(namespace(&a), namespace(&b));
+        assert!(namespace(&pi).starts_with("pi:"));
+        assert_ne!(
+            namespace(&a),
+            namespace(&pi),
+            "the engines never share desktop data"
         );
     }
 

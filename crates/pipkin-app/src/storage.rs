@@ -252,6 +252,15 @@ pub struct CacheMeta {
     pub updated_at: i64,
 }
 
+/// What [`Storage::copy_conversations_from`] copied: rows per kind.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CopyReport {
+    pub drafts: usize,
+    pub goals: usize,
+    pub journal: usize,
+    pub caches: usize,
+}
+
 /// A conversation known from its saved copy.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CachedConversation {
@@ -931,6 +940,97 @@ impl Storage {
         }
     }
 
+    /// Copy (never move) the desktop data of `conversations` from the `source` namespace into
+    /// this storage's namespace: drafts with their attachments, goals, the request journal
+    /// (which is also the prompt history, and carries any unresolved requests), and the saved
+    /// transcript copy with its search index. Anything the target already has for a
+    /// conversation is kept as it is. All in one transaction; the source is never changed.
+    /// Used when conversations move to another engine under the same desktop ids.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn copy_conversations_from(
+        &self,
+        source: &str,
+        conversations: &[ConversationId],
+    ) -> Result<CopyReport, String> {
+        let target = self.namespace.as_str();
+        if source == target {
+            return Err("cannot copy a namespace onto itself".into());
+        }
+        let mut conn = self.read_connection()?;
+        let tx = conn.transaction().map_err(sql_err)?;
+        let mut report = CopyReport::default();
+        for conversation in conversations {
+            let id = conversation.0 as i64;
+            // A draft (and its attachments) only when the target has none.
+            let copied = tx
+                .execute(
+                    "INSERT INTO drafts (namespace, conversation_id, text, rev, updated_at)
+                     SELECT ?1, conversation_id, text, rev, updated_at FROM drafts
+                     WHERE namespace = ?2 AND conversation_id = ?3
+                       AND NOT EXISTS (SELECT 1 FROM drafts
+                                       WHERE namespace = ?1 AND conversation_id = ?3)",
+                    params![target, source, id],
+                )
+                .map_err(sql_err)?;
+            if copied > 0 {
+                report.drafts += copied;
+                tx.execute(
+                    "INSERT OR IGNORE INTO draft_attachments
+                        (namespace, conversation_id, position, path, name, size)
+                     SELECT ?1, conversation_id, position, path, name, size FROM draft_attachments
+                     WHERE namespace = ?2 AND conversation_id = ?3",
+                    params![target, source, id],
+                )
+                .map_err(sql_err)?;
+            }
+            report.goals += tx
+                .execute(
+                    "INSERT OR IGNORE INTO session_prefs (namespace, key, value)
+                     SELECT ?1, key, value FROM session_prefs
+                     WHERE namespace = ?2 AND key = 'goal:' || ?3",
+                    params![target, source, id],
+                )
+                .map_err(sql_err)?;
+            // In submission order, so restored histories keep their order.
+            report.journal += tx
+                .execute(
+                    "INSERT OR IGNORE INTO request_journal
+                        (namespace, request_id, conversation_id, payload, state, created_at,
+                         updated_at)
+                     SELECT ?1, request_id, conversation_id, payload, state, created_at, updated_at
+                     FROM request_journal WHERE namespace = ?2 AND conversation_id = ?3
+                     ORDER BY rowid",
+                    params![target, source, id],
+                )
+                .map_err(sql_err)?;
+            let cached = tx
+                .execute(
+                    "INSERT INTO transcript_cache
+                        (namespace, conversation_id, synced_at, has_older, message_count, items,
+                         title, project_path, updated_at)
+                     SELECT ?1, conversation_id, synced_at, has_older, message_count, items,
+                            title, project_path, updated_at
+                     FROM transcript_cache WHERE namespace = ?2 AND conversation_id = ?3
+                       AND NOT EXISTS (SELECT 1 FROM transcript_cache
+                                       WHERE namespace = ?1 AND conversation_id = ?3)",
+                    params![target, source, id],
+                )
+                .map_err(sql_err)?;
+            if cached > 0 {
+                report.caches += cached;
+                tx.execute(
+                    "INSERT INTO transcript_search (text, namespace, conversation_id, item_id, at)
+                     SELECT text, ?1, conversation_id, item_id, at FROM transcript_search
+                     WHERE namespace = ?2 AND conversation_id = ?3",
+                    params![target, source, id],
+                )
+                .map_err(sql_err)?;
+            }
+        }
+        tx.commit().map_err(sql_err)?;
+        Ok(report)
+    }
+
     /// Make draft saves fail with `"injected write failure"` (developer control).
     pub fn set_write_failure(&self, fail: bool) {
         self.fail_writes.store(fail, Ordering::SeqCst);
@@ -1489,6 +1589,142 @@ mod tests {
             },
         );
         rx.recv_timeout(Duration::from_secs(10)).unwrap()
+    }
+
+    #[test]
+    fn conversation_data_is_copied_into_another_namespace_once_and_never_moved() {
+        let (dir, path) = tmp_db();
+        let (one, two, other) = (ConversationId(11), ConversationId(12), ConversationId(13));
+        let attachment = Attachment {
+            path: dir.path().join("a.txt").display().to_string(),
+            name: "a.txt".into(),
+            size: Some(2),
+            error: None,
+        };
+        let pi = Storage::open(&path, "pi:test").unwrap();
+        let (tx, rx) = mpsc::channel();
+        pi.save_draft(
+            one,
+            "draft one".into(),
+            vec![attachment.clone()],
+            3,
+            move |r| {
+                tx.send(r).unwrap();
+            },
+        );
+        rx.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
+        save_and_wait(&pi, other.0, "not asked for", 1).unwrap();
+        pi.save_goal(one, Some("ship it".into()), Some("Run stopped.".into()));
+        for (request, text) in [("r1", "first prompt"), ("r2", "second prompt")] {
+            let (tx, rx) = mpsc::channel();
+            pi.journal_intent(one, RequestId(request.into()), text, &[], None, move |r| {
+                tx.send(r).unwrap();
+            });
+            rx.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
+        }
+        pi.journal_state(RequestId("r1".into()), JournalState::Completed);
+        let items = vec![TranscriptItem {
+            id: ItemId(1024),
+            at: 5,
+            kind: ItemKind::User {
+                text: "searchable zebra words".into(),
+                attachments: vec![],
+                delivery: Delivery::Sent,
+                steer: false,
+            },
+        }];
+        let meta = CacheMeta {
+            title: "One".into(),
+            project_path: "/work".into(),
+            updated_at: 9,
+        };
+        pi.save_cache(one, meta.clone(), &items, true, 42);
+        pi.save_cache(two, meta, &items, false, 43);
+        pi.shutdown();
+
+        let native = Storage::open(&path, "native:test").unwrap();
+        // The target already has its own draft for `two`: it is kept.
+        save_and_wait(&native, two.0, "native draft", 1).unwrap();
+        let report = native
+            .copy_conversations_from("pi:test", &[one, two])
+            .unwrap();
+        assert_eq!(
+            report,
+            CopyReport {
+                drafts: 1,
+                goals: 1,
+                journal: 2,
+                caches: 2
+            }
+        );
+        let loaded = native.load_all().unwrap();
+        let draft = loaded
+            .drafts
+            .iter()
+            .find(|d| d.conversation == one)
+            .unwrap();
+        assert_eq!((draft.text.as_str(), draft.rev), ("draft one", 3));
+        assert_eq!(draft.attachments, vec![attachment]);
+        assert_eq!(
+            loaded
+                .drafts
+                .iter()
+                .find(|d| d.conversation == two)
+                .unwrap()
+                .text,
+            "native draft"
+        );
+        assert!(loaded.drafts.iter().all(|d| d.conversation != other));
+        assert_eq!(
+            loaded.goals,
+            vec![(one, "ship it".into(), Some("Run stopped.".into()))]
+        );
+        assert_eq!(
+            loaded.prompt_histories,
+            vec![(one, vec!["first prompt".into(), "second prompt".into()])]
+        );
+        assert_eq!(
+            loaded.open_requests.len(),
+            1,
+            "the unresolved request comes along"
+        );
+        assert_eq!(loaded.open_requests[0].request, RequestId("r2".into()));
+        let cache = native.load_cache(one).unwrap().unwrap();
+        assert_eq!(
+            (cache.items, cache.has_older, cache.synced_at),
+            (items, true, 42)
+        );
+        let hits = native.search("zebra", 10).unwrap().hits;
+        assert_eq!(hits.len(), 2);
+        assert!(
+            hits.iter()
+                .any(|h| h.conversation == one && h.item == ItemId(1024))
+        );
+
+        // Again: nothing new, nothing duplicated.
+        let again = native
+            .copy_conversations_from("pi:test", &[one, two])
+            .unwrap();
+        assert_eq!(
+            again,
+            CopyReport {
+                journal: 0,
+                ..CopyReport::default()
+            }
+        );
+        assert_eq!(native.search("zebra", 10).unwrap().hits.len(), 2);
+        assert!(
+            native
+                .copy_conversations_from("native:test", &[one])
+                .is_err()
+        );
+        native.shutdown();
+
+        // The source is untouched.
+        let source = Storage::open(&path, "pi:test").unwrap().load_all().unwrap();
+        assert_eq!(source.drafts.len(), 2);
+        assert_eq!(source.goals.len(), 1);
+        assert_eq!(source.open_requests.len(), 1);
     }
 
     #[test]

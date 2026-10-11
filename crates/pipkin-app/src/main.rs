@@ -15,12 +15,26 @@ mod storage;
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    // The private engine worker: serve the engine over stdin/stdout and exit, before anything
+    // else (no options parsing, no storage, no GPUI) runs in this process.
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(worker) = adapters::native::supervisor::worker_args(&raw) {
+        match worker {
+            Ok((data_dir, config_dir)) => std::process::exit(
+                adapters::native::supervisor::run_worker(data_dir, config_dir),
+            ),
+            Err(message) => {
+                eprintln!("pipkin: {message}");
+                std::process::exit(2);
+            }
+        }
+    }
     let options = match controller::Options::from_env_args() {
         Ok(options) => options,
         Err(message) => {
             eprintln!("pipkin: {message}");
             eprintln!(
-                "usage: pipkin [--version] [--diagnose [--probe]] [--pi-dir <path>] [--pi-server-id <uuid>] [--data-dir <path>]\n       pipkin --demo <scenario> [--data-dir <path>] [--speed <factor>]"
+                "usage: pipkin [--version] [--diagnose [--probe]] [--pi-dir <path>] [--pi-server-id <uuid>] [--data-dir <path>]\n       pipkin --engine native [--engine-host child|inprocess] [--data-dir <path>]\n       pipkin --demo <scenario> [--data-dir <path>] [--speed <factor>]"
             );
             std::process::exit(2);
         }
