@@ -5,8 +5,18 @@
 #
 # The tree uses the /usr layout, so it can be unpacked at / (what the PKGBUILD does) or into any
 # prefix: the binary finds the engine at ../lib/pipkin/engine relative to itself.
+#   scripts/package.sh --engine native   -> the no-Node native-engine candidate (scripts/package-native.sh)
+#   scripts/package.sh --engine pi [PI_CHECKOUT]   the same as no flag
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
+if [ "${1:-}" = --engine ]; then
+  case "${2:-}" in
+    native) shift 2; [ $# -eq 0 ] || { echo 'scripts/package.sh --engine native takes no other arguments' >&2; exit 2; }
+            exec "$here/scripts/package-native.sh" ;;
+    pi) shift 2 ;;
+    *) echo "unknown engine ${2:-(none)}; choose pi or native" >&2; exit 2 ;;
+  esac
+fi
 cd "$here"
 version=$(cargo pkgid -p pipkin-app | sed 's/.*[#@]//')
 arch=$(uname -m)

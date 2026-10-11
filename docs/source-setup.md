@@ -98,6 +98,29 @@ or open the newly installed app. Closing a Mac window is not Quit. Do not launch
 `--pi-dir` server: it can lack subagents even when the new client is built. Stop a separately launched server
 in its own terminal if you intend to replace it. Do not use `PIPKIN_ENGINE_DEV=1` with source setup.
 
+## Native engine candidate (development)
+
+Pipkin also has a built-in Rust engine that needs **no Node, npm or Pi checkout** to build or run. It is a
+development candidate: **Pi remains the default**, `setup.sh` still builds the Pi pairing, and the native
+engine is only used when you ask for it with `--engine native`. Linux x86_64 only; no additional platform
+is qualified by this path.
+
+```sh
+cargo run -p pipkin-app --release -- --engine native              # run from source with the built-in engine
+cargo run -p pipkin-app --release -- --engine native --data-dir /tmp/pk-native   # fully isolated profile
+scripts/package-native.sh                 # archive without Node/npm/Pi: dist/native/pipkin-native-*.tar.zst
+scripts/test-native-package.sh            # build, package, install in a scratch prefix and probe it
+```
+
+Only the Rust toolchain plus the Linux prerequisites above (and Python 3/binutils for the package
+inventories) are needed; no Node download happens. Native data lives in `~/.local/share/pipkin/engine`
+and its configuration and credentials in `~/.config/pipkin/engine`, separate from Pi's `~/.pi`; an explicit
+`--data-dir DIR` (or `PIPKIN_DATA`) keeps both under `DIR`. To go back, run without `--engine native` (or
+reinstall/roll back to a Pi package): native data is left untouched, and history written by the native engine
+is native-only, so Pi will not show it. Claude subscription sign-in is not available in native mode yet.
+`pipkin --diagnose --probe --engine native` checks a throwaway native worker without credentials or network.
+See [packaging](packaging.md#native-engine-candidate-development) for the archive layout and installer.
+
 ## If something fails
 
 - Missing tools: setup lists the missing prerequisites and stops; use the platform command above.

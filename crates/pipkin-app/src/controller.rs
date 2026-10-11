@@ -662,7 +662,11 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
     let launch_source = (options.mode == Mode::Real && options.engine == EngineKind::Pi)
         .then(|| engine_to_launch(&options))
         .flatten();
-    let support_report = crate::diagnostics::prepare(options.mode, launch_source.as_deref());
+    let support_report = if options.mode == Mode::Real && options.engine == EngineKind::Native {
+        crate::diagnostics::prepare_native()
+    } else {
+        crate::diagnostics::prepare(options.mode, launch_source.as_deref())
+    };
     let backend: Arc<dyn Backend> = match &demo {
         Some(demo) => demo.clone(),
         None if options.engine == EngineKind::Native => {
