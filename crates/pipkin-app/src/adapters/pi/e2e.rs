@@ -254,6 +254,11 @@ impl Harness {
                 } => self.saved.push((suggested_name, text)),
                 Effect::Launch(what) => self.launches.push(what),
                 Effect::Import(_) => {}
+                Effect::ReleaseOwnership { conversation } => {
+                    let result = self.storage.release_ownership(conversation).map(|_| ());
+                    let out = self.state.ownership_released(conversation, result);
+                    self.exec(out);
+                }
                 Effect::JournalIntent {
                     conversation,
                     request,

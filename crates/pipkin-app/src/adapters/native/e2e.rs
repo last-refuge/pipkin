@@ -377,6 +377,11 @@ impl Harness {
                 Effect::JournalState { request, state, .. } => {
                     self.storage.journal_state(request, state)
                 }
+                Effect::ReleaseOwnership { conversation } => {
+                    let result = self.storage.release_ownership(conversation).map(|_| ());
+                    let out = self.state.ownership_released(conversation, result);
+                    self.exec(out);
+                }
                 // As the controller does: the backend answers on its own thread.
                 Effect::Import(step) => {
                     let imports = self.imports.clone();
@@ -433,7 +438,7 @@ impl Harness {
                     existing,
                 } => {
                     let (report, loaded) =
-                        copy_imported(&self.storage, PI_NAMESPACE, &imported, &existing)
+                        copy_imported(&self.storage, PI_NAMESPACE, &imported, &existing, 1_700)
                             .expect("the desktop data is copied");
                     self.restore.add_imported(loaded, &imported);
                     let mut out = self.restore.apply(&mut self.state);
@@ -1668,4 +1673,221 @@ fn a_parent_delegates_and_the_inspector_pages_through_its_subagents() {
         s.current().unwrap().subagents.finished_count() == 3
     });
     h.stop();
+}
+
+/// The first event the Pi adapter emits for `op`, within the wait.
+fn pi_answer(events: &async_channel::Receiver<BackendEvent>, op: u64) -> pipkin_core::EventKind {
+    let deadline = Instant::now() + WAIT;
+    loop {
+        if let Ok(event) = events.try_recv()
+            && event.op == Some(pipkin_core::OperationId(op))
+        {
+            return event.kind;
+        }
+        assert!(Instant::now() < deadline, "no answer for op {op}");
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn an_imported_conversation_is_read_only_with_pi_until_it_is_released() {
+    use crate::adapters::pi::{PiBackend, PiConfig};
+    use pipkin_core::{ConversationOwner, EventKind, NATIVE_OWNED_NOTICE, ReleaseFlow};
+
+    let fx = Fixture::start(|_, _| Reply::Text("Continued natively.".into()));
+    if !add_pi_session(&fx, "a-text-multiturn") {
+        eprintln!("no reference fixtures; skipping");
+        return;
+    }
+    // In use by a running Pi: reported, not imported, so never owned.
+    assert!(add_pi_session(&fx, "c-stop-then-prompt"));
+    let sessions = fx.pi_agent().join("experimental/sessions");
+    std::fs::create_dir(sessions.join("c-stop-then-prompt.lock")).unwrap();
+    let a = ConversationId(pipkin_core::stable_id("a-text-multiturn"));
+    let c = ConversationId(pipkin_core::stable_id("c-stop-then-prompt"));
+    let db = fx.root.join("app.sqlite3");
+    {
+        let pi = Storage::open(&db, PI_NAMESPACE).unwrap();
+        let (tx, rx) = mpsc::channel();
+        pi.save_draft(a, "an unsent pi draft".into(), vec![], 4, move |r| {
+            tx.send(r).unwrap();
+        });
+        rx.recv_timeout(WAIT).unwrap().unwrap();
+        pi.shutdown();
+    }
+
+    // Import into the built-in engine (in-process): ownership lands with the desktop data.
+    let mut h = Harness::start(&fx, &db);
+    h.until("connected", |s| s.connection.is_ready());
+    h.state.import_available = true;
+    h.dispatch(Command::ImportFromPi(ImportKind::Conversations));
+    h.until("the offer", |s| matches!(s.import, ImportFlow::Offered(_)));
+    h.dispatch(Command::ConfirmImport);
+    h.until("the import finished", |s| s.import == ImportFlow::Idle);
+    let notice = h.state.notice.clone().unwrap();
+    assert!(notice.contains("Imported 1 conversation"), "{notice}");
+    let owned = h.storage.native_owned().unwrap();
+    assert_eq!(owned.len(), 1, "{owned:?}");
+    assert_eq!(owned[0].conversation, a);
+    assert_eq!(
+        (owned[0].engine.as_str(), owned[0].source_namespace.as_str()),
+        (NAMESPACE, PI_NAMESPACE)
+    );
+    assert_eq!(
+        h.storage.native_owner(c).unwrap(),
+        None,
+        "locked: not owned"
+    );
+    // The built-in engine ignores the record: the conversation stays writable natively.
+    h.until("listed natively", |s| s.conversation(a).is_some());
+    h.dispatch(Command::SelectConversation(a));
+    h.until("open natively", |s| s.current().is_some_and(|c| c.opened));
+    assert_eq!(h.state.read_only_reason(a), None);
+    h.dispatch(Command::SetModel("scripted/scripted".into()));
+    h.send("Please continue.");
+    h.until("answered natively", |s| {
+        is_idle(s) && assistant_texts(s).last().map(String::as_str) == Some("Continued natively.")
+    });
+    h.stop();
+    // The Pi source was not written.
+    assert!(sessions.join("a-text-multiturn/session.sqlite").is_file());
+
+    // Later, with --engine pi: ownership is restored at startup from the desktop database.
+    let pi_storage = Arc::new(Storage::open(&db, PI_NAMESPACE).unwrap());
+    let project = pipkin_core::Project {
+        id: pipkin_core::ProjectId(1),
+        name: "p".into(),
+        path: "/work/p".into(),
+    };
+    let models = vec![pipkin_core::ModelInfo {
+        id: "anthropic/sonnet".into(),
+        name: "Sonnet".into(),
+        note: String::new(),
+    }];
+    let mut pi = AppState::new(
+        Bootstrap {
+            projects: vec![],
+            models: vec![],
+            conversations: vec![],
+            now: 1,
+        },
+        pipkin_core::Prefs::default(),
+    );
+    pi.mode = Mode::Real;
+    crate::controller::restore_ownership(&pi_storage, &mut pi);
+    assert!(matches!(
+        pi.owner(a),
+        Some(ConversationOwner::NativeEngine { imported_at }) if *imported_at > 0
+    ));
+    // The Pi engine (a stub's catalog and answers) lists both sessions.
+    pi.apply_catalog(Bootstrap {
+        projects: vec![project.clone()],
+        models: models.clone(),
+        conversations: vec![
+            (a, project.id, "a".into(), 2),
+            (c, project.id, "c".into(), 1),
+        ],
+        now: 2,
+    });
+    let open = |pi: &mut AppState, id: ConversationId| {
+        pi.dispatch(Command::SelectConversation(id));
+        let generation = pi.current().unwrap().generation;
+        pi.apply_event(BackendEvent {
+            conversation: id,
+            generation,
+            op: None,
+            kind: EventKind::Opened {
+                items: vec![],
+                has_older: false,
+                changes: vec![],
+            },
+        });
+    };
+    open(&mut pi, a);
+    pi.dispatch(Command::EditDraft("continue in Pi".into()));
+    assert!(!pi.availability().submit);
+    let out = pi.dispatch(Command::Submit);
+    assert!(
+        !out.effects.iter().any(|e| matches!(
+            e,
+            Effect::JournalIntent { .. }
+                | Effect::Backend(pipkin_core::BackendRequest::Submit { .. })
+        )),
+        "{:?}",
+        out.effects
+    );
+    assert_eq!(pi.notice.as_deref(), Some(NATIVE_OWNED_NOTICE));
+    assert_eq!(pi.read_only_reason(a).as_deref(), Some(NATIVE_OWNED_NOTICE));
+    // The locked session was never imported: Pi still writes it.
+    open(&mut pi, c);
+    pi.dispatch(Command::EditDraft("still Pi's".into()));
+    assert!(pi.availability().submit);
+
+    // The Pi adapter refuses at its boundary too (no Pi running: the ownership reason comes
+    // first, a definite rejection, not "not connected" and never an unknown outcome).
+    let empty = fx.root.join("no-pi-server");
+    std::fs::create_dir_all(&empty).unwrap();
+    std::fs::set_permissions(&empty, std::os::unix::fs::PermissionsExt::from_mode(0o700)).unwrap();
+    let (tx, events) = async_channel::unbounded();
+    let mut config = PiConfig::new(empty);
+    config.retry_delay = Duration::from_millis(50);
+    config.owned_elsewhere = Some(crate::controller::ownership_check(&pi_storage));
+    let backend = PiBackend::new(tx, config);
+    backend.start(Box::new(|_| {}));
+    let submit = |conversation, op| {
+        backend.request(pipkin_core::BackendRequest::Submit {
+            conversation,
+            generation: 1,
+            op: pipkin_core::OperationId(op),
+            request: RequestId(format!("r{op}")),
+            text: "x".into(),
+            attachments: vec![],
+            model: None,
+        })
+    };
+    submit(a, 1);
+    assert_eq!(
+        pi_answer(&events, 1),
+        EventKind::Rejected {
+            reason: NATIVE_OWNED_NOTICE.into()
+        }
+    );
+
+    // Released explicitly: only the desktop record goes, and Pi may write it again.
+    open(&mut pi, a);
+    pi.dispatch(Command::ReleaseToPi);
+    assert!(matches!(pi.release, ReleaseFlow::Confirming(id) if id == a));
+    let out = pi.dispatch(Command::ConfirmRelease);
+    assert_eq!(
+        out.effects,
+        vec![Effect::ReleaseOwnership { conversation: a }]
+    );
+    let removed = pi_storage.release_ownership(a).map(|_| ());
+    pi.ownership_released(a, removed);
+    assert_eq!(pi_storage.native_owner(a).unwrap(), None);
+    assert!(
+        pi.availability().submit,
+        "the draft can be sent in Pi again"
+    );
+    submit(a, 2);
+    assert_eq!(
+        pi_answer(&events, 2),
+        EventKind::Rejected {
+            reason: "Not connected to the Pi engine.".into()
+        },
+        "past the ownership check: only the missing server refuses it now"
+    );
+    backend.shutdown();
+    // Neither engine's data was touched by releasing: the native copy is still there.
+    let native = Storage::open(&db, NAMESPACE).unwrap();
+    assert!(
+        native
+            .load_all()
+            .unwrap()
+            .prompt_histories
+            .iter()
+            .any(|(id, prompts)| *id == a && prompts.iter().any(|p| p == "Please continue.")),
+        "the native-only history stays with the built-in engine"
+    );
+    assert!(sessions.join("a-text-multiturn/session.sqlite").is_file());
 }

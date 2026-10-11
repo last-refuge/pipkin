@@ -3,8 +3,8 @@
 
 use gpui::Action;
 use pipkin_core::{
-    AppState, Command, ImportFlow, ImportKind, ItemKind, Mode, TextSize, Theme as ThemeChoice,
-    ToolStatus,
+    AppState, Command, ImportFlow, ImportKind, ItemKind, Mode, RELEASE_CANCEL_TITLE,
+    RELEASE_CONFIRM_TITLE, RELEASE_TITLE, ReleaseFlow, TextSize, Theme as ThemeChoice, ToolStatus,
 };
 
 use super::actions::*;
@@ -273,6 +273,33 @@ pub fn build(state: &AppState, demo: Option<&DemoControls>) -> Vec<Cmd> {
             ));
         }
     }
+    // Handing a conversation the built-in engine owns back to Pi. Only Pi mode restores that
+    // ownership, so this exists only there, and never without a confirmation.
+    if state.current().is_some_and(|c| state.owned_elsewhere(c.id)) {
+        v.push(cmd(
+            RELEASE_TITLE,
+            "Conversation",
+            None,
+            state.can_release(),
+            Run::Dispatch(Command::ReleaseToPi),
+        ));
+    }
+    if let ReleaseFlow::Confirming(_) = state.release {
+        v.push(cmd(
+            RELEASE_CONFIRM_TITLE,
+            "Conversation",
+            None,
+            true,
+            Run::Dispatch(Command::ConfirmRelease),
+        ));
+        v.push(cmd(
+            RELEASE_CANCEL_TITLE,
+            "Conversation",
+            None,
+            true,
+            Run::Dispatch(Command::CancelRelease),
+        ));
+    }
     // Queued input can be withdrawn without a pointer: one palette entry per queued item.
     if let Some(conversation) = state.current() {
         for queued in conversation.queue.iter().take(8) {
@@ -286,7 +313,7 @@ pub fn build(state: &AppState, demo: Option<&DemoControls>) -> Vec<Cmd> {
                 &format!("Remove queued: {text}{more}"),
                 "Run",
                 None,
-                true,
+                !state.owned_elsewhere(conversation.id),
                 Run::Dispatch(Command::RemoveQueued(queued.id)),
             ));
         }
@@ -806,6 +833,52 @@ mod removal_tests {
         let commands = build(&state, None);
         assert!(!find(&commands, "Import conversations from Pi\u{2026}").enabled);
         assert!(!find(&commands, "Confirm: import 1 conversation from Pi").enabled);
+    }
+
+    #[test]
+    fn an_owned_conversation_offers_release_with_a_confirmation_and_nothing_that_writes() {
+        let mut state = state_with_queue_and_attachments();
+        state.mode = Mode::Real;
+        let release = |s: &AppState| -> Vec<String> {
+            build(s, None)
+                .into_iter()
+                .filter(|c| c.title.contains("back to Pi") || c.title == RELEASE_CANCEL_TITLE)
+                .map(|c| c.title)
+                .collect()
+        };
+        assert!(release(&state).is_empty(), "nothing to release");
+        state.restore_owner(
+            ConversationId(1),
+            ConversationOwner::NativeEngine { imported_at: 1 },
+        );
+        assert_eq!(release(&state), vec![RELEASE_TITLE]);
+        let commands = build(&state, None);
+        assert!(find(&commands, RELEASE_TITLE).enabled);
+        assert!(!find(&commands, "Remove queued: tidy the imports").enabled);
+        for title in [
+            "Send follow-up (queue)",
+            "Steer current run",
+            "Retry last prompt",
+        ] {
+            assert!(!find(&commands, title).enabled, "{title}");
+        }
+        state.dispatch(Command::ReleaseToPi);
+        assert_eq!(
+            release(&state),
+            vec![RELEASE_TITLE, RELEASE_CONFIRM_TITLE, RELEASE_CANCEL_TITLE]
+        );
+        assert!(matches!(
+            find(&build(&state, None), RELEASE_CONFIRM_TITLE).run,
+            Run::Dispatch(Command::ConfirmRelease)
+        ));
+        assert!(matches!(
+            find(&build(&state, None), RELEASE_CANCEL_TITLE).run,
+            Run::Dispatch(Command::CancelRelease)
+        ));
+        state.dispatch(Command::ConfirmRelease);
+        assert!(!find(&build(&state, None), RELEASE_TITLE).enabled, "once");
+        state.ownership_released(ConversationId(1), Ok(()));
+        assert!(release(&state).is_empty());
     }
 
     #[test]

@@ -192,6 +192,12 @@ pub struct AppState {
     pub import_available: bool,
     /// The explicit Pi import in progress, if any.
     pub import: crate::import::ImportFlow,
+    /// Conversations another engine owns (restored from the desktop database): readable here,
+    /// never written. See [`crate::ownership`].
+    pub(crate) owners:
+        std::collections::BTreeMap<ConversationId, crate::ownership::ConversationOwner>,
+    /// Releasing a conversation back to Pi, if under way.
+    pub release: crate::ownership::ReleaseFlow,
     /// A background action failed and there is no conversation to show it on.
     pub notice: Option<String>,
     /// Saved state could not be read or written as usual; shown until dismissed.
@@ -253,6 +259,8 @@ impl AppState {
             can_create: false,
             import_available: false,
             import: crate::import::ImportFlow::default(),
+            owners: Default::default(),
+            release: Default::default(),
             notice: None,
             storage_issue: None,
             history_search: SearchResults::default(),
@@ -499,8 +507,9 @@ impl AppState {
         let ready = has_text && attachments_ok;
         let idle =
             matches!(c.run, RunState::Idle | RunState::Failed { .. }) && c.pending_intent.is_none();
-        // A read-only build offers no way to send, steer, queue or retry.
-        let can_send = self.read_only.is_none();
+        // A read-only build, or a conversation another engine owns, offers no way to send,
+        // steer, queue or retry. Stopping a run already in flight stays possible.
+        let can_send = self.read_only.is_none() && !self.owned_elsewhere(c.id);
         // Real steers and follow-ups are journaled one at a time, like prompts.
         let intent_free = self.mode == Mode::Demo || c.pending_intent.is_none();
         Availability {
@@ -671,6 +680,22 @@ impl AppState {
             | Command::ReuseSignIn(_)
             | Command::AnswerSignIn { .. }
             | Command::CancelSignIn { .. } => {}
+            // A conversation another engine owns is read here, never changed: nothing that would
+            // change it is sent (see `crate::ownership`). Stopping a run in flight stays possible.
+            Command::Submit
+            | Command::Steer
+            | Command::QueueFollowUp
+            | Command::Retry
+            | Command::SetGoal(_)
+            | Command::SetModel(_)
+            | Command::SetThinkingLevel(_)
+            | Command::SetSubagentsEnabled(_)
+            | Command::RemoveQueued(_)
+            | Command::AnswerUiRequest { .. }
+                if self.selected.is_some_and(|id| self.owned_elsewhere(id)) =>
+            {
+                self.refuse_if_owned(self.selected.unwrap(), &mut out);
+            }
             Command::SelectProject(p) => {
                 self.prefs.selected_project = Some(p);
                 let first = self.visible_conversations().first().map(|c| c.id);
@@ -845,6 +870,9 @@ impl AppState {
             Command::ImportFromPi(kind) => out = self.start_import(kind),
             Command::ConfirmImport => out = self.confirm_import(),
             Command::CancelImport => out = self.cancel_import(),
+            Command::ReleaseToPi => out = self.request_release(),
+            Command::ConfirmRelease => out = self.confirm_release(),
+            Command::CancelRelease => out = self.cancel_release(),
             Command::NewConversation => {
                 let Some(project) = self.current_project().map(|p| p.id) else {
                     return out;
@@ -1539,7 +1567,8 @@ impl AppState {
         origin: IntentOrigin,
     ) -> Outcome {
         let mut out = Outcome::default();
-        if self.conv_mut(id).unwrap().pending_intent.is_some() {
+        if self.conv_mut(id).unwrap().pending_intent.is_some() || self.refuse_if_owned(id, &mut out)
+        {
             return out;
         }
         let request = self.alloc_request();
@@ -1643,6 +1672,16 @@ impl AppState {
                 out.merge(self.start_goal_if_idle(id));
                 return out;
             }
+        }
+        // Ownership can only have been recorded while the intent was being made durable; it is
+        // then settled as never sent, and the draft keeps the text.
+        if self.refuse_if_owned(id, &mut out) {
+            out.effects.push(Effect::JournalState {
+                conversation: id,
+                request: intent.request,
+                state: JournalState::Cancelled,
+            });
+            return out;
         }
         out.merge(self.dispatch_intent(id, intent));
         out
@@ -2673,6 +2712,7 @@ impl AppState {
             || !c.pending_queue.is_empty()
             || !c.opened && self.mode == Mode::Real
             || self.read_only.is_some()
+            || self.owned_elsewhere(id)
             || !self.connection.is_ready()
         {
             return Outcome::default();

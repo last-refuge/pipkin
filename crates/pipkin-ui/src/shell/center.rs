@@ -532,7 +532,11 @@ impl Workspace {
         };
         let goal = self.state(cx).current().and_then(|cv| cv.goal.clone());
         let no_models = models.is_empty();
-        let read_only = self.state(cx).read_only.clone();
+        // This build cannot send, or the built-in engine owns this conversation.
+        let read_only = match self.state(cx).current() {
+            Some(cv) => self.state(cx).read_only_reason(cv.id),
+            None => self.state(cx).read_only.clone(),
+        };
         let model_name = models
             .iter()
             .find(|m| Some(&m.id) == model_id.as_ref())

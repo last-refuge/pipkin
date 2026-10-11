@@ -20,6 +20,10 @@
 //!
 //! The adapter never replays a *prompt* after a disconnect. It reconnects, resubscribes and
 //! refreshes what is shown; anything that mutates stays the user's explicit decision.
+//!
+//! A conversation imported into the built-in engine is owned by it (the desktop's record, see
+//! [`OwnershipCheck`]). Besides the core's own refusal, this adapter refuses at its boundary
+//! anything that would change such a conversation, with a definite answer and nothing sent.
 
 pub mod attach;
 mod auth;
@@ -91,6 +95,20 @@ pub struct PiConfig {
     pub retry_delay: Duration,
     /// Launch and own an engine instead of expecting one to be running.
     pub engine: Option<EngineConfig>,
+    /// Asks the desktop's record whether the built-in engine owns a conversation, at the moment
+    /// a change to it would be sent. `None`: no such record is kept (tests, other tools).
+    pub owned_elsewhere: Option<OwnershipCheck>,
+}
+
+/// Whether the built-in engine owns a conversation, read fresh each time so an import made by
+/// another window is seen too. An error is a reason not to send (fail closed).
+#[derive(Clone)]
+pub struct OwnershipCheck(pub Arc<dyn Fn(ConversationId) -> Result<bool, String> + Send + Sync>);
+
+impl std::fmt::Debug for OwnershipCheck {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OwnershipCheck")
+    }
 }
 
 impl PiConfig {
@@ -100,6 +118,7 @@ impl PiConfig {
             server_id: None,
             retry_delay: Duration::from_secs(3),
             engine: None,
+            owned_elsewhere: None,
         }
     }
 
@@ -110,6 +129,7 @@ impl PiConfig {
             server_id: Some(engine.server_id.clone()),
             retry_delay: Duration::from_secs(3),
             engine: Some(engine),
+            owned_elsewhere: None,
         }
     }
 }
@@ -372,13 +392,76 @@ impl Worker {
             match self.rx.recv_timeout(remaining) {
                 Err(mpsc::RecvTimeoutError::Timeout) => return false,
                 Err(mpsc::RecvTimeoutError::Disconnected) | Ok(Msg::Shutdown) => return true,
-                Ok(Msg::Request(request)) => self.refuse_offline(request),
+                Ok(Msg::Request(request)) => {
+                    if let Some(request) = self.refuse_owned(request) {
+                        self.refuse_offline(request)
+                    }
+                }
                 Ok(Msg::BackgroundSettled { op, request, kind }) => {
                     self.background_settled(op, &request, kind);
                 }
                 Ok(Msg::Client(_)) | Ok(Msg::Changes { .. }) => {} // from a connection that is gone
             }
         }
+    }
+
+    /// Refuse, before anything reaches Pi, a change to a conversation the built-in engine owns:
+    /// a prompt is rejected (never an unknown outcome), queued input is refused, an answer is
+    /// refused, settings are declined with a notice. Stopping, status checks and reads pass.
+    /// Returns the request when it may go ahead.
+    fn refuse_owned(&self, request: BackendRequest) -> Option<BackendRequest> {
+        let Some(check) = &self.config.owned_elsewhere else {
+            return Some(request);
+        };
+        let conversation = match &request {
+            BackendRequest::Submit { conversation, .. }
+            | BackendRequest::Steer { conversation, .. }
+            | BackendRequest::Queue { conversation, .. }
+            | BackendRequest::CancelQueued { conversation, .. }
+            | BackendRequest::SetModel { conversation, .. }
+            | BackendRequest::SetThinkingLevel { conversation, .. }
+            | BackendRequest::SetSubagentsEnabled { conversation, .. }
+            | BackendRequest::UiRespond { conversation, .. } => *conversation,
+            _ => return Some(request),
+        };
+        let reason = match (check.0)(conversation) {
+            Ok(false) => return Some(request),
+            Ok(true) => pipkin_core::NATIVE_OWNED_NOTICE.to_string(),
+            Err(e) => format!(
+                "Not sent: Pipkin could not confirm which engine owns this conversation ({e})."
+            ),
+        };
+        log::info!("refused a change to a conversation Pi does not own: {reason}");
+        match request {
+            BackendRequest::Submit {
+                conversation,
+                generation,
+                op,
+                ..
+            } => self.emit_op(conversation, generation, op, EventKind::Rejected { reason }),
+            BackendRequest::Queue {
+                conversation,
+                generation,
+                request,
+                ..
+            } => self.emit(
+                conversation,
+                generation,
+                EventKind::QueueRefused { request, reason },
+            ),
+            BackendRequest::UiRespond {
+                conversation,
+                generation,
+                id,
+                ..
+            } => self.emit(
+                conversation,
+                generation,
+                EventKind::UiRespondRefused { id, reason },
+            ),
+            _ => self.notice(reason),
+        }
+        None
     }
 
     fn refuse_offline(&self, request: BackendRequest) {
@@ -658,7 +741,11 @@ impl Worker {
                         live.client.disconnect();
                         return Outcome::Shutdown;
                     }
-                    Msg::Request(request) => live.handle_request(self, request),
+                    Msg::Request(request) => {
+                        if let Some(request) = self.refuse_owned(request) {
+                            live.handle_request(self, request)
+                        }
+                    }
                     Msg::Client(ClientEvent::Disconnected(error)) => {
                         log::warn!("Pi connection lost: {error}");
                         return Outcome::Retry;

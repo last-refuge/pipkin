@@ -1949,7 +1949,13 @@ impl Render for TranscriptView {
         }
         let mut empty = true;
         let mut run_label = "Idle";
-        let read_only = self.model.read(cx).state.read_only.clone();
+        let read_only = {
+            let state = &self.model.read(cx).state;
+            match self.current {
+                Some(id) => state.read_only_reason(id),
+                None => state.read_only.clone(),
+            }
+        };
         let no_model = {
             let model = self.model.read(cx);
             model.state.mode == pipkin_core::Mode::Real

@@ -137,6 +137,15 @@ fn start(pi: MockPi, serve: bool) -> Env {
 }
 
 fn start_with_mode(pi: MockPi, serve: bool, dir_mode: u32) -> Env {
+    start_configured(pi, serve, dir_mode, |_| {})
+}
+
+fn start_configured(
+    pi: MockPi,
+    serve: bool,
+    dir_mode: u32,
+    tweak: impl FnOnce(&mut PiConfig),
+) -> Env {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("server");
     std::fs::create_dir(&dir).unwrap();
@@ -148,6 +157,7 @@ fn start_with_mode(pi: MockPi, serve: bool, dir_mode: u32) -> Env {
     let (tx, events) = async_channel::unbounded();
     let mut config = PiConfig::new(dir.clone());
     config.retry_delay = Duration::from_millis(50);
+    tweak(&mut config);
     let backend = PiBackend::new(tx, config);
     let lifecycle = Arc::new(Mutex::new(Vec::new()));
     let sink = {
@@ -2981,5 +2991,157 @@ fn a_ten_thousand_message_history_pages_in_completely_with_each_page_bounded() {
     assert!(
         asked.iter().all(|(_, limit)| *limit <= 50),
         "no request for more than a page"
+    );
+}
+
+// ------------------------------------------------------------ ownership by the built-in engine
+
+#[test]
+fn changes_to_a_conversation_the_built_in_engine_owns_are_refused_before_reaching_pi() {
+    use std::sync::atomic::{AtomicU8, Ordering};
+    let (pi, agent, _) = agent_mock(&[("s", 1)], vec![("s", view(&[]))]);
+    // 0: Pi owns it; 1: the built-in engine owns it; 2: the record cannot be read.
+    let owner = Arc::new(AtomicU8::new(1));
+    let check = {
+        let owner = owner.clone();
+        super::OwnershipCheck(Arc::new(move |_| match owner.load(Ordering::SeqCst) {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err("database is locked".into()),
+        }))
+    };
+    let env = start_configured(pi, true, 0o700, |config| {
+        config.owned_elsewhere = Some(check)
+    });
+    let conv = env.open_first();
+    assert_eq!(conv, ConversationId(pipkin_core::stable_id("s")));
+    let to_pi_before = env
+        .pi
+        .requests()
+        .iter()
+        .filter(|(_, c)| c.service_id == "pi.agent-controller")
+        .count();
+
+    // A prompt gets a definite rejection with the reason: never an unknown outcome.
+    submit(&env, conv, 1, 7, "req-1", "continue here");
+    assert_eq!(
+        env.next_for(7).kind,
+        EventKind::Rejected {
+            reason: pipkin_core::NATIVE_OWNED_NOTICE.into()
+        }
+    );
+    queue(&env, conv, "q-1", pipkin_core::QueueMode::Steer, "steer");
+    assert_eq!(
+        queue_event(&env, "q-1"),
+        EventKind::QueueRefused {
+            request: RequestId("q-1".into()),
+            reason: pipkin_core::NATIVE_OWNED_NOTICE.into()
+        }
+    );
+    env.backend.request(BackendRequest::UiRespond {
+        conversation: conv,
+        generation: 1,
+        id: "q1".into(),
+        answer: pipkin_core::UiAnswer::Confirm(true),
+    });
+    let refused = loop {
+        let event = env.next_event();
+        if let EventKind::UiRespondRefused { id, reason } = event.kind {
+            break (id, reason);
+        }
+    };
+    assert_eq!(
+        refused,
+        ("q1".into(), pipkin_core::NATIVE_OWNED_NOTICE.into())
+    );
+    for request in [
+        BackendRequest::SetModel {
+            conversation: conv,
+            generation: 1,
+            model: "openai/gpt".into(),
+        },
+        BackendRequest::SetThinkingLevel {
+            conversation: conv,
+            generation: 1,
+            level: "high".into(),
+        },
+        BackendRequest::SetSubagentsEnabled {
+            conversation: conv,
+            generation: 1,
+            enabled: true,
+        },
+        BackendRequest::CancelQueued {
+            conversation: conv,
+            generation: 1,
+            entry: pipkin_core::QueueId(3),
+        },
+    ] {
+        env.lifecycle.lock().unwrap().clear();
+        env.backend.request(request);
+        env.wait_notice("continues in the built-in engine");
+    }
+    // An unreadable record is a reason not to send, said as such.
+    owner.store(2, Ordering::SeqCst);
+    submit(&env, conv, 1, 8, "req-2", "continue here");
+    let EventKind::Rejected { reason } = env.next_for(8).kind else {
+        panic!("a definite rejection")
+    };
+    assert!(
+        reason.contains("could not confirm which engine owns"),
+        "{reason}"
+    );
+
+    // Nothing reached Pi's agent controller.
+    {
+        let agent = agent.lock().unwrap();
+        assert!(agent.prompts.is_empty() && agent.queued.is_empty());
+        assert!(agent.selects.is_empty() && agent.thinking_selections.is_empty());
+        assert!(agent.cancelled.is_empty());
+    }
+    assert_eq!(
+        env.pi
+            .requests()
+            .iter()
+            .filter(|(_, c)| c.service_id == "pi.agent-controller")
+            .count(),
+        to_pi_before
+    );
+
+    // Stopping is safe: it still goes to Pi while the built-in engine owns the conversation.
+    owner.store(1, Ordering::SeqCst);
+    env.backend.request(BackendRequest::Cancel {
+        conversation: conv,
+        generation: 1,
+        op: OperationId(9),
+    });
+    wait_until("the stop reached Pi", || {
+        env.pi
+            .requests()
+            .iter()
+            .filter(|(_, c)| c.service_id == "pi.agent-controller")
+            .count()
+            > to_pi_before
+    });
+
+    // Released back to Pi: the same prompt goes through.
+    owner.store(0, Ordering::SeqCst);
+    submit(&env, conv, 1, 10, "req-3", "continue in Pi");
+    assert_eq!(env.next_for(10).kind, EventKind::Accepted);
+    assert_eq!(agent.lock().unwrap().prompts.len(), 1);
+}
+
+#[test]
+fn an_owned_conversation_is_refused_with_its_reason_even_while_pi_is_unreachable() {
+    let env = start_configured(MockPi::default(), false, 0o700, |config| {
+        config.owned_elsewhere = Some(super::OwnershipCheck(Arc::new(|_| Ok(true))))
+    });
+    submit(&env, ConversationId(4), 2, 3, "req-1", "x");
+    let event = env.next_for(3);
+    assert_eq!(
+        event.kind,
+        EventKind::Rejected {
+            reason: pipkin_core::NATIVE_OWNED_NOTICE.into()
+        },
+        "the ownership reason, not \"not connected\""
     );
 }

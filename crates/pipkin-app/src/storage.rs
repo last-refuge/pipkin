@@ -113,7 +113,20 @@ const MIGRATIONS: &[&str] = &[
         at UNINDEXED,
         tokenize = 'unicode61 remove_diacritics 2'
      );",
+    // Which engine may write a conversation. Keyed by the desktop conversation id alone: an
+    // imported session keeps its Pi session id, so the id is the same in both namespaces.
+    // Recorded in the import's transaction; never written to either engine's data.
+    "CREATE TABLE conversation_owners (
+        conversation_id INTEGER PRIMARY KEY,
+        owner TEXT NOT NULL,
+        engine TEXT NOT NULL,
+        source_namespace TEXT NOT NULL,
+        imported_at INTEGER NOT NULL
+     );",
 ];
+
+/// `conversation_owners.owner` for the built-in engine.
+pub const OWNER_NATIVE: &str = "native";
 
 /// Conversations whose saved copy is kept, per backend profile; the least recently synced go first.
 const MAX_CACHED_CONVERSATIONS: i64 = 50;
@@ -259,6 +272,18 @@ pub struct CopyReport {
     pub goals: usize,
     pub journal: usize,
     pub caches: usize,
+}
+
+/// The desktop's record that the built-in engine owns a conversation imported from Pi.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeOwnership {
+    pub conversation: ConversationId,
+    /// The built-in engine's desktop namespace (`native:<hash of its data directory>`).
+    pub engine: String,
+    /// The Pi namespace the desktop data was copied from.
+    pub source_namespace: String,
+    /// Unix seconds.
+    pub imported_at: i64,
 }
 
 /// A conversation known from its saved copy.
@@ -952,6 +977,22 @@ impl Storage {
         source: &str,
         conversations: &[ConversationId],
     ) -> Result<CopyReport, String> {
+        self.import_conversations_from(source, &[], conversations, 0)
+    }
+
+    /// After an import into the built-in engine (this storage's namespace): copy the desktop
+    /// data of `imported` and `existing` (imported earlier) from the Pi namespace `source`, as
+    /// [`Storage::copy_conversations_from`] does, and in the SAME transaction record that the
+    /// built-in engine now owns each conversation in `imported` (only those: the engine
+    /// reported them imported now). Either all of it commits or none of it does. Neither
+    /// engine's own data is touched.
+    pub fn import_conversations_from(
+        &self,
+        source: &str,
+        imported: &[ConversationId],
+        existing: &[ConversationId],
+        imported_at: i64,
+    ) -> Result<CopyReport, String> {
         let target = self.namespace.as_str();
         if source == target {
             return Err("cannot copy a namespace onto itself".into());
@@ -959,76 +1000,75 @@ impl Storage {
         let mut conn = self.read_connection()?;
         let tx = conn.transaction().map_err(sql_err)?;
         let mut report = CopyReport::default();
-        for conversation in conversations {
-            let id = conversation.0 as i64;
-            // A draft (and its attachments) only when the target has none.
-            let copied = tx
-                .execute(
-                    "INSERT INTO drafts (namespace, conversation_id, text, rev, updated_at)
-                     SELECT ?1, conversation_id, text, rev, updated_at FROM drafts
-                     WHERE namespace = ?2 AND conversation_id = ?3
-                       AND NOT EXISTS (SELECT 1 FROM drafts
-                                       WHERE namespace = ?1 AND conversation_id = ?3)",
-                    params![target, source, id],
-                )
-                .map_err(sql_err)?;
-            if copied > 0 {
-                report.drafts += copied;
-                tx.execute(
-                    "INSERT OR IGNORE INTO draft_attachments
-                        (namespace, conversation_id, position, path, name, size)
-                     SELECT ?1, conversation_id, position, path, name, size FROM draft_attachments
-                     WHERE namespace = ?2 AND conversation_id = ?3",
-                    params![target, source, id],
-                )
-                .map_err(sql_err)?;
-            }
-            report.goals += tx
-                .execute(
-                    "INSERT OR IGNORE INTO session_prefs (namespace, key, value)
-                     SELECT ?1, key, value FROM session_prefs
-                     WHERE namespace = ?2 AND key = 'goal:' || ?3",
-                    params![target, source, id],
-                )
-                .map_err(sql_err)?;
-            // In submission order, so restored histories keep their order.
-            report.journal += tx
-                .execute(
-                    "INSERT OR IGNORE INTO request_journal
-                        (namespace, request_id, conversation_id, payload, state, created_at,
-                         updated_at)
-                     SELECT ?1, request_id, conversation_id, payload, state, created_at, updated_at
-                     FROM request_journal WHERE namespace = ?2 AND conversation_id = ?3
-                     ORDER BY rowid",
-                    params![target, source, id],
-                )
-                .map_err(sql_err)?;
-            let cached = tx
-                .execute(
-                    "INSERT INTO transcript_cache
-                        (namespace, conversation_id, synced_at, has_older, message_count, items,
-                         title, project_path, updated_at)
-                     SELECT ?1, conversation_id, synced_at, has_older, message_count, items,
-                            title, project_path, updated_at
-                     FROM transcript_cache WHERE namespace = ?2 AND conversation_id = ?3
-                       AND NOT EXISTS (SELECT 1 FROM transcript_cache
-                                       WHERE namespace = ?1 AND conversation_id = ?3)",
-                    params![target, source, id],
-                )
-                .map_err(sql_err)?;
-            if cached > 0 {
-                report.caches += cached;
-                tx.execute(
-                    "INSERT INTO transcript_search (text, namespace, conversation_id, item_id, at)
-                     SELECT text, ?1, conversation_id, item_id, at FROM transcript_search
-                     WHERE namespace = ?2 AND conversation_id = ?3",
-                    params![target, source, id],
-                )
-                .map_err(sql_err)?;
-            }
+        for conversation in imported.iter().chain(existing) {
+            copy_conversation(&tx, target, source, *conversation, &mut report)?;
+        }
+        for conversation in imported {
+            tx.execute(
+                "INSERT INTO conversation_owners
+                    (conversation_id, owner, engine, source_namespace, imported_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(conversation_id) DO UPDATE SET owner = excluded.owner,
+                    engine = excluded.engine, source_namespace = excluded.source_namespace,
+                    imported_at = excluded.imported_at",
+                params![
+                    conversation.0 as i64,
+                    OWNER_NATIVE,
+                    target,
+                    source,
+                    imported_at
+                ],
+            )
+            .map_err(sql_err)?;
         }
         tx.commit().map_err(sql_err)?;
         Ok(report)
+    }
+
+    /// Every conversation the built-in engine owns, oldest import first. Read fresh from the
+    /// database each time, so an import made by another window is seen.
+    pub fn native_owned(&self) -> Result<Vec<NativeOwnership>, String> {
+        let conn = self.read_connection()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT conversation_id, engine, source_namespace, imported_at
+                 FROM conversation_owners WHERE owner = ?1 ORDER BY imported_at, conversation_id",
+            )
+            .map_err(sql_err)?;
+        stmt.query_map([OWNER_NATIVE], ownership_row)
+            .map_err(sql_err)?
+            .collect::<Result<_, _>>()
+            .map_err(sql_err)
+    }
+
+    /// Whether the built-in engine owns `conversation`, read fresh from the database.
+    pub fn native_owner(
+        &self,
+        conversation: ConversationId,
+    ) -> Result<Option<NativeOwnership>, String> {
+        let conn = self.read_connection()?;
+        match conn.query_row(
+            "SELECT conversation_id, engine, source_namespace, imported_at
+             FROM conversation_owners WHERE owner = ?1 AND conversation_id = ?2",
+            params![OWNER_NATIVE, conversation.0 as i64],
+            ownership_row,
+        ) {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(sql_err(e)),
+        }
+    }
+
+    /// Hand `conversation` back to Pi: delete only the desktop's ownership record (nothing in
+    /// either engine, and none of the desktop copies). Returns whether there was a record.
+    pub fn release_ownership(&self, conversation: ConversationId) -> Result<bool, String> {
+        let conn = self.read_connection()?;
+        conn.execute(
+            "DELETE FROM conversation_owners WHERE conversation_id = ?1",
+            [conversation.0 as i64],
+        )
+        .map(|n| n > 0)
+        .map_err(sql_err)
     }
 
     /// Make draft saves fail with `"injected write failure"` (developer control).
@@ -1053,6 +1093,93 @@ impl Drop for Storage {
     fn drop(&mut self) {
         self.shutdown();
     }
+}
+
+fn ownership_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<NativeOwnership> {
+    Ok(NativeOwnership {
+        conversation: ConversationId(r.get::<_, i64>(0)? as u64),
+        engine: r.get(1)?,
+        source_namespace: r.get(2)?,
+        imported_at: r.get(3)?,
+    })
+}
+
+/// Copy one conversation's desktop data from `source` into `target` inside `tx`, keeping what
+/// the target already has.
+fn copy_conversation(
+    tx: &rusqlite::Transaction<'_>,
+    target: &str,
+    source: &str,
+    conversation: ConversationId,
+    report: &mut CopyReport,
+) -> Result<(), String> {
+    let id = conversation.0 as i64;
+    // A draft (and its attachments) only when the target has none.
+    let copied = tx
+        .execute(
+            "INSERT INTO drafts (namespace, conversation_id, text, rev, updated_at)
+             SELECT ?1, conversation_id, text, rev, updated_at FROM drafts
+             WHERE namespace = ?2 AND conversation_id = ?3
+               AND NOT EXISTS (SELECT 1 FROM drafts
+                               WHERE namespace = ?1 AND conversation_id = ?3)",
+            params![target, source, id],
+        )
+        .map_err(sql_err)?;
+    if copied > 0 {
+        report.drafts += copied;
+        tx.execute(
+            "INSERT OR IGNORE INTO draft_attachments
+                (namespace, conversation_id, position, path, name, size)
+             SELECT ?1, conversation_id, position, path, name, size FROM draft_attachments
+             WHERE namespace = ?2 AND conversation_id = ?3",
+            params![target, source, id],
+        )
+        .map_err(sql_err)?;
+    }
+    report.goals += tx
+        .execute(
+            "INSERT OR IGNORE INTO session_prefs (namespace, key, value)
+             SELECT ?1, key, value FROM session_prefs
+             WHERE namespace = ?2 AND key = 'goal:' || ?3",
+            params![target, source, id],
+        )
+        .map_err(sql_err)?;
+    // In submission order, so restored histories keep their order.
+    report.journal += tx
+        .execute(
+            "INSERT OR IGNORE INTO request_journal
+                (namespace, request_id, conversation_id, payload, state, created_at,
+                 updated_at)
+             SELECT ?1, request_id, conversation_id, payload, state, created_at, updated_at
+             FROM request_journal WHERE namespace = ?2 AND conversation_id = ?3
+             ORDER BY rowid",
+            params![target, source, id],
+        )
+        .map_err(sql_err)?;
+    let cached = tx
+        .execute(
+            "INSERT INTO transcript_cache
+                (namespace, conversation_id, synced_at, has_older, message_count, items,
+                 title, project_path, updated_at)
+             SELECT ?1, conversation_id, synced_at, has_older, message_count, items,
+                    title, project_path, updated_at
+             FROM transcript_cache WHERE namespace = ?2 AND conversation_id = ?3
+               AND NOT EXISTS (SELECT 1 FROM transcript_cache
+                               WHERE namespace = ?1 AND conversation_id = ?3)",
+            params![target, source, id],
+        )
+        .map_err(sql_err)?;
+    if cached > 0 {
+        report.caches += cached;
+        tx.execute(
+            "INSERT INTO transcript_search (text, namespace, conversation_id, item_id, at)
+             SELECT text, ?1, conversation_id, item_id, at FROM transcript_search
+             WHERE namespace = ?2 AND conversation_id = ?3",
+            params![target, source, id],
+        )
+        .map_err(sql_err)?;
+    }
+    Ok(())
 }
 
 fn write(
@@ -3117,5 +3244,160 @@ mod tests {
             }
         );
         assert_eq!(other.cached_conversations().unwrap().len(), 1);
+    }
+
+    // ------------------------------------------------------------- conversation ownership
+
+    fn draft_text(s: &Storage, conversation: u64) -> Option<String> {
+        s.load_all()
+            .unwrap()
+            .drafts
+            .into_iter()
+            .find(|d| d.conversation.0 == conversation)
+            .map(|d| d.text)
+    }
+
+    #[test]
+    fn a_database_from_before_ownership_gains_it_on_upgrade_and_a_newer_one_is_still_refused() {
+        let (_dir, path) = tmp_db();
+        {
+            let conn = Connection::open(&path).unwrap();
+            for sql in &MIGRATIONS[..7] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.execute_batch("PRAGMA user_version = 7").unwrap();
+            conn.execute(
+                "INSERT INTO drafts (namespace, conversation_id, text, rev, updated_at)
+                 VALUES ('pi:test', 1, 'kept draft', 1, 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let s = Storage::open(&path, "pi:test").unwrap();
+        assert_eq!(SCHEMA_VERSION, 8);
+        assert_eq!(draft_text(&s, 1).as_deref(), Some("kept draft"));
+        assert_eq!(s.native_owned().unwrap(), vec![]);
+        assert!(path.with_extension("sqlite3.bak-v7").exists());
+        s.shutdown();
+        drop(s);
+
+        // A build newer than this one is refused, and its file left exactly as it was.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(&format!("PRAGMA user_version = {}", SCHEMA_VERSION + 1))
+                .unwrap();
+        }
+        let before = std::fs::read(&path).unwrap();
+        let err = Storage::open(&path, "pi:test").err().expect("must refuse");
+        assert!(err.contains("newer"), "{err}");
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn an_import_records_ownership_of_what_it_imported_in_the_copy_transaction() {
+        let (_dir, path) = tmp_db();
+        let pi = Storage::open(&path, "pi:test").unwrap();
+        save_and_wait(&pi, 1, "draft one", 1).unwrap();
+        save_and_wait(&pi, 2, "draft two", 1).unwrap();
+        pi.shutdown();
+
+        let native = Storage::open(&path, "native:abc").unwrap();
+        let (one, two) = (ConversationId(1), ConversationId(2));
+        // `two` was imported earlier (and perhaps released since): copied, not re-owned.
+        let report = native
+            .import_conversations_from("pi:test", &[one], &[two], 1_700)
+            .unwrap();
+        assert_eq!(report.drafts, 2);
+        assert_eq!(
+            native.native_owned().unwrap(),
+            vec![NativeOwnership {
+                conversation: one,
+                engine: "native:abc".into(),
+                source_namespace: "pi:test".into(),
+                imported_at: 1_700,
+            }]
+        );
+        assert!(native.native_owner(one).unwrap().is_some());
+        assert_eq!(native.native_owner(two).unwrap(), None);
+        // The record is the desktop's, keyed by the conversation alone: the Pi namespace sees it.
+        let pi = Storage::open(&path, "pi:test").unwrap();
+        assert!(pi.native_owner(one).unwrap().is_some());
+        // Nothing to copy, nothing recorded.
+        assert_eq!(
+            native
+                .import_conversations_from("pi:test", &[], &[], 1)
+                .unwrap(),
+            CopyReport::default()
+        );
+        assert!(
+            native
+                .import_conversations_from("native:abc", &[one], &[], 1)
+                .is_err(),
+            "never onto itself"
+        );
+        assert_eq!(native.native_owned().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_failed_ownership_record_rolls_the_whole_import_copy_back() {
+        let (_dir, path) = tmp_db();
+        let pi = Storage::open(&path, "pi:test").unwrap();
+        save_and_wait(&pi, 1, "draft one", 1).unwrap();
+        pi.shutdown();
+        let native = Storage::open(&path, "native:abc").unwrap();
+        // Make the ownership insert fail after the data copy has run in the same transaction.
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER refuse_owner BEFORE INSERT ON conversation_owners
+                 BEGIN SELECT RAISE(ABORT, 'injected ownership failure'); END;",
+            )
+            .unwrap();
+        let err = native
+            .import_conversations_from("pi:test", &[ConversationId(1)], &[], 1)
+            .unwrap_err();
+        assert!(err.contains("injected ownership failure"), "{err}");
+        assert_eq!(draft_text(&native, 1), None, "the copy was rolled back too");
+        assert_eq!(native.native_owned().unwrap(), vec![]);
+
+        // Without the fault, both land together.
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch("DROP TRIGGER refuse_owner")
+            .unwrap();
+        native
+            .import_conversations_from("pi:test", &[ConversationId(1)], &[], 1)
+            .unwrap();
+        assert_eq!(draft_text(&native, 1).as_deref(), Some("draft one"));
+        assert_eq!(native.native_owned().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn releasing_removes_only_the_ownership_record() {
+        let (_dir, path) = tmp_db();
+        let pi = Storage::open(&path, "pi:test").unwrap();
+        save_and_wait(&pi, 1, "pi draft", 1).unwrap();
+        pi.save_cache(
+            ConversationId(1),
+            meta("t"),
+            &[text_item(1024, true, "searchable zebra")],
+            false,
+            1,
+        );
+        flush(&pi);
+        let native = Storage::open(&path, "native:abc").unwrap();
+        native
+            .import_conversations_from("pi:test", &[ConversationId(1)], &[], 1)
+            .unwrap();
+        save_and_wait(&native, 1, "native-only draft", 9).unwrap();
+
+        assert!(pi.release_ownership(ConversationId(1)).unwrap());
+        assert!(!pi.release_ownership(ConversationId(1)).unwrap(), "once");
+        assert_eq!(pi.native_owner(ConversationId(1)).unwrap(), None);
+        // Both namespaces keep everything they had.
+        assert_eq!(draft_text(&pi, 1).as_deref(), Some("pi draft"));
+        assert_eq!(draft_text(&native, 1).as_deref(), Some("native-only draft"));
+        assert_eq!(pi.search("zebra", 5).unwrap().hits.len(), 1);
+        assert_eq!(native.search("zebra", 5).unwrap().hits.len(), 1);
     }
 }
