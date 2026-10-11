@@ -54,6 +54,24 @@ pub struct SignInSnapshot {
     pub url: Option<String>,
     pub device_code: Option<String>,
     pub challenge: Option<SignInChallenge>,
+    /// Allowlisted providers the engine cannot sign in to, with the engine's reason (a reserved
+    /// integration, say). Shown as unavailable; never started, reused or substituted.
+    pub unavailable: Vec<(SignInProvider, String)>,
+}
+
+impl SignInSnapshot {
+    /// Why `provider` cannot be signed in to here, if it cannot.
+    pub fn unavailable_reason(&self, provider: SignInProvider) -> Option<&str> {
+        self.unavailable
+            .iter()
+            .find(|(p, _)| *p == provider)
+            .map(|(_, reason)| reason.as_str())
+    }
+
+    /// Whether a sign-in to `provider` may be started (or an existing one reused).
+    pub fn can_sign_in(&self, provider: SignInProvider) -> bool {
+        self.available && self.unavailable_reason(provider).is_none()
+    }
 }
 
 impl Default for SignInSnapshot {
@@ -71,6 +89,7 @@ impl Default for SignInSnapshot {
             url: None,
             device_code: None,
             challenge: None,
+            unavailable: vec![],
         }
     }
 }
@@ -83,6 +102,7 @@ impl std::fmt::Debug for SignInSnapshot {
             .field("credential_lookup_failed", &self.credential_lookup_failed)
             .field("provider", &self.provider)
             .field("status", &self.status)
+            .field("unavailable", &self.unavailable)
             .finish_non_exhaustive()
     }
 }
@@ -269,6 +289,32 @@ mod tests {
         };
         assert!(!format!("{request:?}").contains("private-redirect-code"));
         assert!(format!("{request:?}").contains("[sign-in answer redacted]"));
+    }
+
+    #[test]
+    fn an_unavailable_provider_cannot_be_started_while_others_can() {
+        let pi = SignInSnapshot {
+            available: true,
+            ..SignInSnapshot::default()
+        };
+        assert!(pi.can_sign_in(SignInProvider::Claude));
+        assert!(pi.can_sign_in(SignInProvider::ChatGpt));
+        assert_eq!(pi.unavailable_reason(SignInProvider::Claude), None);
+        let native = SignInSnapshot {
+            available: true,
+            unavailable: vec![(
+                SignInProvider::Claude,
+                "Reserved for a later release.".into(),
+            )],
+            ..SignInSnapshot::default()
+        };
+        assert!(!native.can_sign_in(SignInProvider::Claude));
+        assert!(native.can_sign_in(SignInProvider::ChatGpt));
+        assert_eq!(
+            native.unavailable_reason(SignInProvider::Claude),
+            Some("Reserved for a later release.")
+        );
+        assert!(!SignInSnapshot::default().can_sign_in(SignInProvider::ChatGpt));
     }
 
     #[test]

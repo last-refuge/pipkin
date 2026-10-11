@@ -4419,6 +4419,8 @@ dependencies = [
  "log",
  "pi-client",
  "pipkin-core",
+ "pipkin-engine",
+ "pipkin-engine-protocol",
  "pipkin-ui",
  "rusqlite",
  "serde",

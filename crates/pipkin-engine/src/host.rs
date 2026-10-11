@@ -111,6 +111,9 @@ pub fn run_stdio(config: EngineConfig) -> i32 {
     }
     drop(sender);
     handle.shutdown(Duration::from_secs(10));
+    // The engine's client table holds this connection's reply sender; the writer only sees the
+    // end of its channel once the engine (and that table) is gone.
+    drop(handle);
     let _ = writer.join();
     0
 }
