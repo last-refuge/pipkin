@@ -57,6 +57,9 @@ pub struct Options {
     pub engine: EngineKind,
     /// `--engine native`: where the built-in engine runs (`--engine-host`).
     pub engine_host: HostKind,
+    /// `--engine native`: session extensions (`--engine-extension`, repeatable): an executable
+    /// speaking the process extension protocol, or `builtin:<name>`.
+    pub engine_extensions: Vec<String>,
 }
 
 /// The engine behind real mode.
@@ -98,6 +101,7 @@ impl Default for Options {
             terminal: None,
             engine: EngineKind::Pi,
             engine_host: HostKind::Child,
+            engine_extensions: vec![],
         }
     }
 }
@@ -170,6 +174,20 @@ impl Options {
                         }
                     }
                 }
+                "--engine-extension" => {
+                    let raw = value("--engine-extension")?;
+                    let spec = if raw.starts_with("builtin:") {
+                        raw
+                    } else {
+                        std::fs::canonicalize(&raw)
+                            .map_err(|e| format!("--engine-extension {raw}: {e}"))?
+                            .display()
+                            .to_string()
+                    };
+                    pipkin_engine::config::ExtensionSpec::parse(&spec)
+                        .map_err(|e| format!("--engine-extension: {e}"))?;
+                    options.engine_extensions.push(spec);
+                }
                 "--engine-host" => {
                     engine_host = Some(match value("--engine-host")?.as_str() {
                         "child" => HostKind::Child,
@@ -222,6 +240,9 @@ impl Options {
                     "the --pi-* options apply to the Pi engine, not --engine native".into(),
                 );
             }
+        }
+        if !options.engine_extensions.is_empty() && options.engine != EngineKind::Native {
+            return Err("--engine-extension applies to --engine native".into());
         }
         if let Some(host) = engine_host {
             if options.engine != EngineKind::Native {
@@ -650,7 +671,12 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                 options.data_dir.as_deref(),
             ));
             let host = match options.engine_host {
-                HostKind::Child => match WorkerSpec::engine(&dirs.data, &dirs.config, &log_path) {
+                HostKind::Child => match WorkerSpec::engine(
+                    &dirs.data,
+                    &dirs.config,
+                    &options.engine_extensions,
+                    &log_path,
+                ) {
                     Ok(spec) => HostSpec::Child(spec),
                     Err(error) => {
                         eprintln!("pipkin: {error}");
@@ -660,6 +686,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                 HostKind::InProcess => HostSpec::InProcess {
                     data_dir: dirs.data.clone(),
                     config_dir: dirs.config.clone(),
+                    extensions: options.engine_extensions.clone(),
                 },
             };
             Arc::new(NativeBackend::new(
@@ -1293,6 +1320,17 @@ mod tests {
                 .contains("--engine native")
         );
         assert!(parse(&["--engine", "native", "--engine-host", "cloud"]).is_err());
+        let ext = parse(&[
+            "--engine",
+            "native",
+            "--engine-extension",
+            "builtin:questions",
+        ])
+        .unwrap();
+        assert_eq!(ext.engine_extensions, vec!["builtin:questions".to_owned()]);
+        assert!(parse(&["--engine-extension", "builtin:questions"]).is_err());
+        assert!(parse(&["--engine", "native", "--engine-extension", "builtin:nope"]).is_err());
+        assert!(parse(&["--engine", "native", "--engine-extension", "/no/such/file"]).is_err());
         assert!(parse(&["--engine", "native", "--demo", "normal"]).is_err());
         assert!(parse(&["--engine", "native", "--pi-dir", "/srv"]).is_err());
         assert!(parse(&["--pi-repo=/pi", "--engine", "native"]).is_err());

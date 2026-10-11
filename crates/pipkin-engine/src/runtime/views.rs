@@ -43,7 +43,10 @@ impl Shared {
             queue,
             usage,
             thinking,
-            ui: UiView::default(),
+            ui: self
+                .session(session)
+                .map(|s| s.questions.view())
+                .unwrap_or_default(),
             subagents,
         })
     }

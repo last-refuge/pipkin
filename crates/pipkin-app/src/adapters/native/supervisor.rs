@@ -27,6 +27,16 @@ use super::client::{FrameReceiver, FrameSender, Link};
 pub const WORKER_FLAG: &str = "--engine-worker";
 const DATA_FLAG: &str = "--engine-data-dir";
 const CONFIG_FLAG: &str = "--engine-config-dir";
+/// Repeatable: a session extension (`builtin:<name>` or an executable path).
+pub const EXTENSION_FLAG: &str = "--engine-extension";
+
+/// What the worker was asked to serve.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkerArgs {
+    pub data_dir: PathBuf,
+    pub config_dir: PathBuf,
+    pub extensions: Vec<String>,
+}
 
 /// Starts allowed within `RESTART_WINDOW` before giving up.
 const MAX_STARTS: usize = 3;
@@ -46,18 +56,26 @@ pub enum HostKind {
 
 /// `--engine-worker --engine-data-dir <d> --engine-config-dir <c>`, if this run is the worker.
 /// `None` when the flag is absent, so a normal launch never mistakes its arguments for these.
-pub fn worker_args(args: &[String]) -> Option<Result<(PathBuf, PathBuf), String>> {
+pub fn worker_args(args: &[String]) -> Option<Result<WorkerArgs, String>> {
     if !args.iter().any(|a| a == WORKER_FLAG) {
         return None;
     }
     let mut data = None;
     let mut config = None;
+    let mut extensions = Vec::new();
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let (flag, inline) = match arg.split_once('=') {
             Some((f, v)) => (f, Some(v.to_owned())),
             None => (arg.as_str(), None),
         };
+        if flag == EXTENSION_FLAG {
+            match inline.or_else(|| it.next().cloned()) {
+                Some(v) if !v.is_empty() => extensions.push(v),
+                _ => return Some(Err(format!("{flag} needs a value"))),
+            }
+            continue;
+        }
         let slot = match flag {
             WORKER_FLAG => continue,
             DATA_FLAG => &mut data,
@@ -70,14 +88,39 @@ pub fn worker_args(args: &[String]) -> Option<Result<(PathBuf, PathBuf), String>
         }
     }
     Some(match (data, config) {
-        (Some(d), Some(c)) => Ok((d, c)),
+        (Some(data_dir), Some(config_dir)) => Ok(WorkerArgs {
+            data_dir,
+            config_dir,
+            extensions,
+        }),
         _ => Err(format!("{WORKER_FLAG} needs {DATA_FLAG} and {CONFIG_FLAG}")),
     })
 }
 
 /// Serve the engine over stdin/stdout until the desktop closes the channel. Returns the exit code.
-pub fn run_worker(data_dir: PathBuf, config_dir: PathBuf) -> i32 {
-    pipkin_engine::host::run_stdio(EngineConfig::new(data_dir, config_dir))
+pub fn run_worker(args: WorkerArgs) -> i32 {
+    match engine_config(&args.data_dir, &args.config_dir, &args.extensions) {
+        Ok(config) => pipkin_engine::host::run_stdio(config),
+        Err(e) => {
+            eprintln!("pipkin engine: {e}");
+            2
+        }
+    }
+}
+
+/// The engine configuration for these directories and extension specs.
+pub fn engine_config(
+    data_dir: &Path,
+    config_dir: &Path,
+    extensions: &[String],
+) -> Result<EngineConfig, String> {
+    let mut config = EngineConfig::new(data_dir, config_dir);
+    for spec in extensions {
+        config
+            .extensions
+            .push(pipkin_engine::config::ExtensionSpec::parse(spec)?);
+    }
+    Ok(config)
 }
 
 /// The worker command line: program and arguments.
@@ -94,6 +137,7 @@ impl WorkerSpec {
     pub fn engine(
         data_dir: &Path,
         config_dir: &Path,
+        extensions: &[String],
         log_path: &Path,
     ) -> Result<WorkerSpec, String> {
         let program = std::env::current_exe()
@@ -106,7 +150,14 @@ impl WorkerSpec {
                 data_dir.as_os_str().to_owned(),
                 CONFIG_FLAG.into(),
                 config_dir.as_os_str().to_owned(),
-            ],
+            ]
+            .into_iter()
+            .chain(
+                extensions
+                    .iter()
+                    .flat_map(|e| [EXTENSION_FLAG.into(), OsString::from(e)]),
+            )
+            .collect(),
             log_path: log_path.to_path_buf(),
         })
     }
@@ -118,6 +169,7 @@ pub enum HostSpec {
     InProcess {
         data_dir: PathBuf,
         config_dir: PathBuf,
+        extensions: Vec<String>,
     },
     /// Tests: a link to a fake engine the test drives.
     #[cfg(test)]
@@ -222,9 +274,11 @@ impl Supervisor {
             HostSpec::InProcess {
                 data_dir,
                 config_dir,
+                extensions,
             } => {
-                let handle = pipkin_engine::host::start(EngineConfig::new(data_dir, config_dir))
-                    .map_err(|e| format!("cannot start the engine: {e}"))?;
+                let handle =
+                    pipkin_engine::host::start(engine_config(&data_dir, &config_dir, &extensions)?)
+                        .map_err(|e| format!("cannot start the engine: {e}"))?;
                 let (sender, receiver) = handle.connect("pipkin-desktop").split();
                 self.inprocess = Some(handle);
                 Ok(Link {
@@ -337,7 +391,11 @@ mod tests {
                 "/d",
                 "--engine-config-dir=/c"
             ])),
-            Some(Ok((PathBuf::from("/d"), PathBuf::from("/c"))))
+            Some(Ok(WorkerArgs {
+                data_dir: PathBuf::from("/d"),
+                config_dir: PathBuf::from("/c"),
+                extensions: vec![],
+            }))
         );
         assert!(matches!(
             worker_args(&args(&["--engine-worker", "--engine-data-dir", "/d"])),
@@ -355,7 +413,14 @@ mod tests {
 
     #[test]
     fn the_worker_command_is_this_executable_with_private_directories() {
-        let spec = WorkerSpec::engine(Path::new("/d"), Path::new("/c"), Path::new("/l")).unwrap();
+        let extensions = vec!["builtin:questions".to_owned(), "/x/ext".to_owned()];
+        let spec = WorkerSpec::engine(
+            Path::new("/d"),
+            Path::new("/c"),
+            &extensions,
+            Path::new("/l"),
+        )
+        .unwrap();
         assert_eq!(spec.program, std::env::current_exe().unwrap());
         let args: Vec<String> = spec
             .args
@@ -364,7 +429,11 @@ mod tests {
             .collect();
         assert_eq!(
             worker_args(&args),
-            Some(Ok((PathBuf::from("/d"), PathBuf::from("/c"))))
+            Some(Ok(WorkerArgs {
+                data_dir: PathBuf::from("/d"),
+                config_dir: PathBuf::from("/c"),
+                extensions,
+            }))
         );
     }
 
@@ -532,6 +601,7 @@ mod tests {
         let mut supervisor = Supervisor::new(HostSpec::InProcess {
             data_dir: dir.path().join("engine"),
             config_dir: dir.path().join("engine-config"),
+            extensions: vec![],
         });
         let link = supervisor.start().unwrap();
         assert!(supervisor.alive());

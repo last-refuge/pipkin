@@ -37,6 +37,15 @@ const FLUSH_INTERVAL: Duration = Duration::from_millis(50);
 /// ...or once this many bytes of deltas are pending.
 const FLUSH_BYTES: usize = 16 * 1024;
 
+/// A request ready to send, with what it was built from.
+pub(super) struct Prepared {
+    pub req: ProviderRequest,
+    pub adapter: Arc<dyn crate::provider::ApiAdapter>,
+    pub model: crate::provider::Model,
+    pub settings: Settings,
+    pub entries: Vec<Entry>,
+}
+
 enum Step {
     Tools(Vec<(String, String, Value)>),
     Final,
@@ -82,6 +91,7 @@ impl Shared {
         cancel: &CancellationToken,
     ) -> Option<RunOutcome> {
         let mut attempt: u32 = 0;
+        let mut overflow_compacted = false;
         loop {
             if cancel.is_cancelled() {
                 return (sess.failure().is_none()).then_some(RunOutcome::Aborted);
@@ -111,6 +121,7 @@ impl Shared {
                         return None;
                     }
                 }
+                Step::Request if self.compact_if_needed(sess, run, cancel).await => continue,
                 Step::Request => match self.request(sess, run, cancel).await {
                     Ok(Some(message)) => {
                         let settings = self.settings_for(&sess.id);
@@ -120,6 +131,27 @@ impl Shared {
                             ..
                         } = &message
                         {
+                            // Context overflow: compact once per attempt, then ask again.
+                            let window = self
+                                .auth
+                                .catalog()
+                                .find(&format!(
+                                    "{}/{}",
+                                    message_provider(&message),
+                                    message_model(&message)
+                                ))
+                                .map_or(0, |m| m.context_window);
+                            if !overflow_compacted
+                                && settings.compaction.enabled
+                                && errors::is_context_overflow(&message, window)
+                            {
+                                overflow_compacted = true;
+                                if let Ok(super::compaction::Compacted::Done(_)) =
+                                    self.compact(sess, Some(run), None, cancel).await
+                                {
+                                    continue;
+                                }
+                            }
                             attempt += 1;
                             let retry = &settings.retry;
                             if retry.enabled
@@ -144,6 +176,7 @@ impl Shared {
                             });
                         }
                         attempt = 0;
+                        overflow_compacted = false;
                     }
                     Ok(None) => {}
                     Err(Some(outcome)) => return Some(outcome),
@@ -231,86 +264,12 @@ impl Shared {
         run: u64,
         cancel: &CancellationToken,
     ) -> Result<Option<Message>, Option<RunOutcome>> {
-        let row = match self.store.session(&sess.id) {
-            Ok(Some(r)) => r,
-            _ => return Err(None),
-        };
-        let catalog = self.auth.catalog();
-        let Some(key) = row.model.clone() else {
-            return Err(Some(RunOutcome::NoModel {
-                detail: "No model is configured".into(),
-            }));
-        };
-        let Some(model) = catalog.find(&key).cloned() else {
-            return Err(Some(RunOutcome::NoModel {
-                detail: format!("Model {key} is not available"),
-            }));
-        };
-        let Some(adapter) = self.adapters.get(&model.api) else {
-            return Err(Some(RunOutcome::ModelError {
-                detail: format!("No adapter for API {} (model {key})", model.api),
-            }));
-        };
-        let auth = match self.auth.resolve(&model, &self.http).await {
-            Ok(a) => a,
-            Err(e) => {
-                return Err(Some(RunOutcome::ModelError {
-                    detail: e.message().to_owned(),
-                }));
-            }
-        };
-        let settings = Settings::load(
-            &self.config.config_dir,
-            Some(std::path::Path::new(&row.cwd)),
-        )
-        .0;
-        let entries = match tokio::task::block_in_place(|| self.store.context_entries(&sess.id)) {
-            Ok(e) => e,
-            Err(_) => return Err(None),
-        };
-        let messages = super::glue::model_messages(&entries);
-        let tools = self.tools_for(&row);
-        let specs: Vec<ToolSpec> = tools.iter().map(|t| t.spec()).collect();
-        let system = self.system_prompt(sess, &row, &specs, &settings);
-        let thinking = row
-            .thinking
-            .as_deref()
-            .and_then(ThinkingLevel::parse)
-            .map(|l| model.clamp_thinking(l))
-            .unwrap_or(ThinkingLevel::Off);
-        let provider_session = self.provider_session_id(&sess.id);
-        let mut options = Map::new();
-        options.insert(
-            "maxRetries".into(),
-            settings.retry.provider.max_retries.into(),
-        );
-        options.insert(
-            "maxRetryDelayMs".into(),
-            settings.retry.provider.max_retry_delay_ms.into(),
-        );
-        let req = ProviderRequest {
-            model: model.clone(),
-            system,
-            messages,
-            tools: specs,
-            thinking,
-            session_id: provider_session,
-            max_tokens: None,
-            cache_retention: if self.config.env.get("PI_CACHE_RETENTION").as_deref() == Some("long")
-            {
-                CacheRetention::Long
-            } else {
-                CacheRetention::Short
-            },
-            credential: auth.credential,
-            headers: auth.headers,
-            base_url: auth.base_url,
-            timeout: settings
-                .idle_timeout()
-                .unwrap_or(Duration::from_secs(i32::MAX as u64)),
-            env: auth.env,
-            options,
-        };
+        let Prepared {
+            req,
+            adapter,
+            model,
+            ..
+        } = self.prepare(sess).await?;
         let _permit = tokio::select! {
             p = self.generations.clone().acquire_owned() => p.ok(),
             _ = cancel.cancelled() => return Ok(None),
@@ -397,6 +356,109 @@ impl Shared {
             Ok(()) => Ok(Some(message)),
             Err(_) => Err(None),
         }
+    }
+
+    /// Resolve the model, adapter, credential and context for the next request.
+    pub(super) async fn prepare(
+        self: &Arc<Self>,
+        sess: &Arc<SessionRt>,
+    ) -> Result<Prepared, Option<RunOutcome>> {
+        let row = match self.store.session(&sess.id) {
+            Ok(Some(r)) => r,
+            _ => return Err(None),
+        };
+        let catalog = self.auth.catalog();
+        let Some(key) = row.model.clone() else {
+            return Err(Some(RunOutcome::NoModel {
+                detail: "No model is configured".into(),
+            }));
+        };
+        let Some(model) = catalog.find(&key).cloned() else {
+            return Err(Some(RunOutcome::NoModel {
+                detail: format!("Model {key} is not available"),
+            }));
+        };
+        let Some(adapter) = self.adapters.get(&model.api) else {
+            return Err(Some(RunOutcome::ModelError {
+                detail: format!("No adapter for API {} (model {key})", model.api),
+            }));
+        };
+        let auth = match self.auth.resolve(&model, &self.http).await {
+            Ok(a) => a,
+            Err(e) => {
+                return Err(Some(RunOutcome::ModelError {
+                    detail: e.message().to_owned(),
+                }));
+            }
+        };
+        let settings = Settings::load(
+            &self.config.config_dir,
+            Some(std::path::Path::new(&row.cwd)),
+        )
+        .0;
+        let entries = match tokio::task::block_in_place(|| self.store.context_entries(&sess.id)) {
+            Ok(e) => e,
+            Err(_) => return Err(None),
+        };
+        let messages = super::glue::model_messages(&entries);
+        let tools = self.tools_for(&row);
+        let specs: Vec<ToolSpec> = tools.iter().map(|t| t.spec()).collect();
+        let system = self.system_prompt(sess, &row, &specs, &settings);
+        let thinking = row
+            .thinking
+            .as_deref()
+            .and_then(ThinkingLevel::parse)
+            .map(|l| model.clamp_thinking(l))
+            .unwrap_or(ThinkingLevel::Off);
+        let provider_session = self.provider_session_id(&sess.id);
+        let mut options = Map::new();
+        options.insert(
+            "maxRetries".into(),
+            settings.retry.provider.max_retries.into(),
+        );
+        options.insert(
+            "maxRetryDelayMs".into(),
+            settings.retry.provider.max_retry_delay_ms.into(),
+        );
+        // Provider-specific knobs the reference reads from settings.
+        for key in ["transport", "thinkingBudgets", "websocketConnectTimeoutMs"] {
+            if let Some(v) = settings.other.get(key) {
+                options.insert(key.into(), v.clone());
+            }
+        }
+        let mut req = ProviderRequest {
+            model: model.clone(),
+            system,
+            messages,
+            tools: specs,
+            thinking,
+            session_id: provider_session,
+            max_tokens: None,
+            cache_retention: if self.config.env.get("PI_CACHE_RETENTION").as_deref() == Some("long")
+            {
+                CacheRetention::Long
+            } else {
+                CacheRetention::Short
+            },
+            credential: auth.credential,
+            headers: auth.headers,
+            base_url: auth.base_url,
+            timeout: settings
+                .idle_timeout()
+                .unwrap_or(Duration::from_secs(i32::MAX as u64)),
+            env: auth.env,
+            options,
+        };
+        if let Err(e) = crate::provider::api::cloudflare::prepare(&mut req) {
+            return Err(Some(RunOutcome::ModelError { detail: e }));
+        }
+        Ok(Prepared {
+            req,
+            adapter,
+            model,
+            settings,
+            entries,
+        })
     }
 
     /// Commit pending deltas (creating the partial entry on first use), then publish them.
@@ -754,4 +816,18 @@ fn tool_env(session: &str, model: Option<&str>, thinking: Option<&str>) -> Vec<(
         env.push(("PI_REASONING_LEVEL".into(), t.into()));
     }
     env
+}
+
+fn message_provider(m: &Message) -> &str {
+    match m {
+        Message::Assistant { provider, .. } => provider,
+        _ => "",
+    }
+}
+
+fn message_model(m: &Message) -> &str {
+    match m {
+        Message::Assistant { model, .. } => model,
+        _ => "",
+    }
 }
