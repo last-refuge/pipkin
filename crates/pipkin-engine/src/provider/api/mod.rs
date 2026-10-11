@@ -5,7 +5,18 @@ use std::sync::Arc;
 
 use super::ApiAdapter;
 
+pub mod aws_auth;
+pub mod bedrock_converse_stream;
+pub mod bedrock_eventstream;
+pub mod cloudflare;
+pub mod mistral_conversations;
+pub mod pi_messages;
+
 /// Every built-in adapter.
 pub fn all() -> Vec<Arc<dyn ApiAdapter>> {
-    vec![]
+    vec![
+        mistral_conversations::adapter(),
+        bedrock_converse_stream::adapter(),
+        pi_messages::adapter(),
+    ]
 }
