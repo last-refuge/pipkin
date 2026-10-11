@@ -35,7 +35,9 @@ fn main() {
         }
     }
     let (Some(data), Some(config)) = (data, config) else {
-        eprintln!("usage: pipkin-engine --data-dir <dir> --config-dir <dir> [--default-model p/id]");
+        eprintln!(
+            "usage: pipkin-engine --data-dir <dir> --config-dir <dir> [--default-model p/id]"
+        );
         std::process::exit(2);
     };
     let mut cfg = pipkin_engine::config::EngineConfig::new(data, config);

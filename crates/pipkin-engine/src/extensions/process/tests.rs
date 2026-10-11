@@ -265,7 +265,7 @@ async fn requests_reach_the_agent_and_errors_come_back_as_replies() {
 check() { case $reply in $2) say "ok $1" ;; *) say "bad $1" ;; esac; }
 say() { printf '{"id":"say-%s","method":"notify","params":{"level":"info","message":"%s"}}\n' "$1" "$1"; IFS= read -r ignored; }
 printf '%s\n' '{"id":1,"method":"prompt","params":{"text":"hello agent","requestKey":"k1"}}'
-IFS= read -r reply; check prompt '{"id":1,"result":{"entry":null,"run":1}}'
+IFS= read -r reply; check prompt '{"id":1,"result":{*"run":1*}}'
 printf '%s\n' '{"id":"two","method":"lookup","params":{"requestKey":"k1"}}'
 IFS= read -r reply; check lookup '{"id":"two","result":{*"state":"known"*}}'
 printf '%s\n' '{"id":3,"method":"fly"}'

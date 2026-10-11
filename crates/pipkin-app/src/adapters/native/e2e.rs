@@ -784,7 +784,10 @@ fn a_steer_reaches_the_next_model_turn_of_the_active_run() {
         &gate,
         Reply::Tools(
             Some("Working. ".into()),
-            vec![("bash".into(), serde_json::json!({ "command": "ls" }))],
+            vec![(
+                "bash".into(),
+                serde_json::json!({ "command": "seq 1 20000" }),
+            )],
         ),
         vec![Reply::Text("done, with tabs".into())],
     ));
@@ -1080,7 +1083,10 @@ fn the_complete_tool_output_is_copied_from_the_engine() {
     let fx = Fixture::start(|_, n| match n {
         0 => Reply::Tools(
             Some("Running it. ".into()),
-            vec![("bash".into(), serde_json::json!({ "command": "ls" }))],
+            vec![(
+                "bash".into(),
+                serde_json::json!({ "command": "seq 1 20000" }),
+            )],
         ),
         _ => Reply::Text("done".into()),
     });
@@ -1117,10 +1123,16 @@ fn the_complete_tool_output_is_copied_from_the_engine() {
     }
     assert_eq!(h.copied.len(), 1, "notices: {:?}", h.notices);
     assert!(!h.copied[0].is_empty());
+    // The engine retained the complete output, beyond the model-visible 50 KiB window.
     assert!(
-        call.output.is_empty() || h.copied[0].starts_with(&call.output),
-        "the copy is the complete output the preview came from"
+        h.copied[0].starts_with("1\n2\n3\n"),
+        "{:?}",
+        &h.copied[0][..20]
     );
+    assert!(h.copied[0].trim_end().ends_with("20000"));
+    // The preview is the model-visible result (bash keeps the tail window plus the harness
+    // remarks); the copy is the engine's retained complete output, so it holds more.
+    assert!(h.copied[0].len() > call.output.len());
     h.stop();
 }
 
@@ -1180,7 +1192,6 @@ fn older_history_pages_in_and_stays_through_later_updates() {
 /// Needs the engine's built-in `write` tool (the tools worker); until then the tool call is
 /// answered "not available" and nothing changes on disk.
 #[test]
-#[ignore = "needs the engine's built-in tools (pipkin_engine::tools::builtin_tools is empty)"]
 fn a_session_edit_shows_in_changes_until_it_is_committed() {
     let fx = Fixture::start(|_, n| match n {
         0 => Reply::Tools(

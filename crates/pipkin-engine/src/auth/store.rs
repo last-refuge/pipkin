@@ -654,7 +654,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             text,
-            "{\n  \"openai\": {\n    \"key\": \"sk-test\",\n    \"type\": \"api_key\"\n  }\n}"
+            "{\n  \"openai\": {\n    \"type\": \"api_key\",\n    \"key\": \"sk-test\"\n  }\n}"
         );
         // No temporary files are left behind.
         let names: Vec<_> = std::fs::read_dir(path.parent().unwrap())
