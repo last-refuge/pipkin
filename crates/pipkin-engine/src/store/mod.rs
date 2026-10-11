@@ -831,7 +831,7 @@ impl Store {
         let row: Option<(i64, String)> = c
             .query_row(
                 "SELECT id, body FROM entries WHERE session = ?1 AND kind IN ('compaction', 'reset')
-                 ORDER BY id DESC LIMIT 1",
+                 ORDER BY +id DESC LIMIT 1",
                 [session],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -1162,7 +1162,7 @@ impl Store {
 
     pub fn open_run_in(c: &Connection, session: &str) -> Result<Option<RunRow>> {
         Ok(c.query_row(
-            "SELECT * FROM runs WHERE session = ?1 AND state != 'settled' ORDER BY id DESC LIMIT 1",
+            "SELECT * FROM runs WHERE session = ?1 AND state IN ('running', 'stopping') ORDER BY id DESC LIMIT 1",
             [session],
             Self::run_from_row,
         )
@@ -1172,7 +1172,8 @@ impl Store {
     /// Every unsettled run, for recovery after a restart.
     pub fn unsettled_runs(&self) -> Result<Vec<RunRow>> {
         self.read(|c| {
-            let mut stmt = c.prepare("SELECT * FROM runs WHERE state != 'settled' ORDER BY id")?;
+            let mut stmt =
+                c.prepare("SELECT * FROM runs WHERE state IN ('running', 'stopping') ORDER BY id")?;
             let rows = stmt
                 .query_map([], Self::run_from_row)?
                 .collect::<rusqlite::Result<Vec<_>>>()?;

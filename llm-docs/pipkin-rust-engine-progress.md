@@ -209,3 +209,17 @@ parity-ledger status refresh; Codex websocket session cleanup wiring; guarded na
 walkthrough; diagnostics-correlation advantage. Claude subscription: reserved for Codex — not
 implemented or qualified (adapter refuses OAuth credentials for `anthropic`; auth reports it
 unavailable; onboarding shows it disabled).
+
+## Handoff verification (2026-10-11, after the interim cut-off)
+
+At the commit that adds `llm-docs/pipkin-rust-engine-claude-subscription-handoff.md` (branch
+`native-engine`), with the two performance fixes (indexed head-marker lookup; flush deadline
+from the oldest pending delta):
+
+- `cargo test --workspace --no-fail-fast`: **1171 passed, 0 failed, 53 ignored** (ignored: the
+  opt-in real-Pi reference tests in `crates/pipkin-app/src/adapters/pi/{e2e,real_pi}.rs`, the 8
+  opt-in performance benchmarks in `crates/pipkin-engine/tests/perf.rs`, and the 2 opt-in tool
+  corpus comparisons). Measured.
+- `cargo clippy --workspace --all-targets`: one test-only warning, fixed in the same commit
+  (clean for `pipkin-engine` afterwards). `cargo fmt --all --check`: clean.
+- Performance after fixes: `llm-docs/pipkin-rust-engine-evidence/performance.md` § "After fixes".
