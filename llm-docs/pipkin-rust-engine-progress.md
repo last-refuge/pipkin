@@ -251,4 +251,4 @@ clippy had one test-only warning, fixed in the same commit; `cargo fmt --all --c
 At `4fc4060` (after merging import end-to-end wiring, paged subagent inspection,
 provider-helper consolidation and no-Node packaging):
 
-- Final workspace check: <filled by lead>
+- Final workspace check (native-engine at the commit recording this line, after all merges): `cargo test --workspace --no-fail-fast` **1296 passed, 0 failed, 53 ignored**; `cargo clippy --workspace --all-targets` 0 warnings; `cargo fmt --all --check` clean (after formatting one merged file). Measured 2026-10-11. The memory investigation (ledger row E2E-37) was stopped unfinished on the owner's instruction to wrap up; its partial branch `worktree-agent-a88568455d7803b4a` is not merged and the row stays failed.

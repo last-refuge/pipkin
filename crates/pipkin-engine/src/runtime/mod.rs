@@ -877,8 +877,8 @@ pub fn registry_with(extra: Arc<dyn ApiAdapter>) -> Registry {
 }
 
 #[cfg(test)]
-mod settings_tests;
-#[cfg(test)]
 mod fault_tests;
+#[cfg(test)]
+mod settings_tests;
 #[cfg(test)]
 mod tests;
