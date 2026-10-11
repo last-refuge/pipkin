@@ -219,6 +219,62 @@ impl Shared {
             .unwrap_or_default()
     }
 
+    /// Stop the children of `run`'s subagent calls that have no result yet. Used when the
+    /// parent will never wait for them again (its Stop was settled without the run executing
+    /// here), so a child must not run on unobserved.
+    pub(super) fn abort_orphaned_children(self: &Arc<Self>, parent: &str, run: u64) {
+        let calls = tokio::task::block_in_place(|| {
+            self.store
+                .read(|c| Store::tools_in_state(c, parent, "intent"))
+        })
+        .unwrap_or_default();
+        for call in calls
+            .iter()
+            .filter(|c| c.run == Some(run) && c.name == "subagent")
+        {
+            self.abort_child(parent, &call.call_id);
+        }
+    }
+
+    /// Stop the child of one subagent call (if it has one and it is still running) and mark
+    /// its task aborted. The child's own Stop is durable before its run is settled.
+    pub(super) fn abort_child(self: &Arc<Self>, parent: &str, call_id: &str) {
+        let Ok(Some(task)) = self
+            .store
+            .read(|c| Store::task_for_call(c, parent, call_id))
+        else {
+            return;
+        };
+        let child = task.child_session.clone();
+        let Ok(sess) = self.session(&child) else {
+            return;
+        };
+        match self.store.request_stop(&child, now_ms()) {
+            Ok(Some((run, _))) => {
+                let active = sess
+                    .active
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .filter(|a| a.run == run)
+                    .map(|a| a.cancel.clone());
+                match active {
+                    Some(cancel) => cancel.cancel(),
+                    None => {
+                        if let Err(e) = self.settle(&sess, run, RunOutcome::Aborted) {
+                            log::error!("cannot settle subagent {child}: {e}");
+                        }
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(e) => log::error!("cannot stop subagent {child}: {e}"),
+        }
+        if !matches!(task.status.as_str(), "done" | "aborted" | "failed") {
+            self.set_task_status(&task.root, &child, "aborted", None);
+        }
+    }
+
     fn set_task_status(&self, root: &str, child: &str, status: &str, result: Option<&str>) {
         let _ = tokio::task::block_in_place(|| {
             self.store.tx(|tx| {

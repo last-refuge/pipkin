@@ -2,6 +2,7 @@
 //! execution, and client connections.
 
 mod compaction;
+pub mod faults;
 mod glue;
 mod import;
 pub mod models;
@@ -813,5 +814,7 @@ pub fn registry_with(extra: Arc<dyn ApiAdapter>) -> Registry {
     r
 }
 
+#[cfg(test)]
+mod fault_tests;
 #[cfg(test)]
 mod tests;

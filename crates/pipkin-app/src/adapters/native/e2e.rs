@@ -15,9 +15,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use pipkin_core::{
-    AppState, Backend, BackendEvent, Bootstrap, Command, Connection, ConversationId, Delivery,
-    Effect, ImportFlow, ImportKind, ItemKind, LifecycleEvent, Mode, Outcome, QueueMode, RequestId,
-    RunState, describe_attachment,
+    AppState, Backend, BackendEvent, Bootstrap, ChangesState, Command, Connection, ConversationId,
+    Delivery, Effect, ImportFlow, ImportKind, ItemKind, LifecycleEvent, Mode, Outcome, QueueMode,
+    RequestId, RunState, describe_attachment,
 };
 use pipkin_engine::config::{EngineConfig, Env};
 use pipkin_engine::provider::ProviderRequest;
@@ -39,23 +39,34 @@ const WAIT: Duration = Duration::from_secs(30);
 
 // ------------------------------------------------------------------------------- the engine
 
-/// What the fault link does to the next prompt.
+/// What the fault link does to the next prompt, steer or follow-up.
 #[derive(Default)]
 struct Faults {
     drop_prompt_reply: AtomicBool,
     drop_prompt: AtomicBool,
+    /// Let the next steer or follow-up reach the engine, then drop its reply and sever.
+    drop_queue_reply: AtomicBool,
+    /// Sever the link instead of delivering the next steer or follow-up.
+    drop_queue: AtomicBool,
     fired: AtomicUsize,
     /// Reply ids to swallow.
     swallow: Mutex<HashSet<u64>>,
+    /// Reply ids that sever the link when they arrive (instead of being delivered).
+    sever_on: Mutex<HashSet<u64>>,
 }
 
 struct FaultSender {
     inner: pipkin_engine::host::Sender,
     faults: Arc<Faults>,
+    /// This link was cut (shared with its receiver).
+    severed: Arc<AtomicBool>,
 }
 
 impl FrameSender for FaultSender {
     fn send(&mut self, frame: ClientFrame) -> Result<(), String> {
+        if self.severed.load(Ordering::SeqCst) {
+            return Err("the link was cut".into());
+        }
         if matches!(frame.call, Call::Prompt { .. }) {
             if self.faults.drop_prompt.swap(false, Ordering::SeqCst) {
                 self.faults.fired.fetch_add(1, Ordering::SeqCst);
@@ -66,6 +77,17 @@ impl FrameSender for FaultSender {
                 self.faults.swallow.lock().unwrap().insert(frame.id);
             }
         }
+        if matches!(frame.call, Call::Enqueue { .. }) {
+            if self.faults.drop_queue.swap(false, Ordering::SeqCst) {
+                self.faults.fired.fetch_add(1, Ordering::SeqCst);
+                self.severed.store(true, Ordering::SeqCst);
+                return Ok(()); // written, and the connection died with it
+            }
+            if self.faults.drop_queue_reply.swap(false, Ordering::SeqCst) {
+                self.faults.fired.fetch_add(1, Ordering::SeqCst);
+                self.faults.sever_on.lock().unwrap().insert(frame.id);
+            }
+        }
         self.inner.send(frame)
     }
 }
@@ -73,19 +95,30 @@ impl FrameSender for FaultSender {
 struct FaultReceiver {
     inner: mpsc::Receiver<ServerFrame>,
     faults: Arc<Faults>,
+    severed: Arc<AtomicBool>,
 }
 
 impl FrameReceiver for FaultReceiver {
     fn recv(&mut self) -> Result<ServerFrame, String> {
         loop {
-            let frame = self
-                .inner
-                .recv()
-                .map_err(|_| "the engine stopped".to_owned())?;
-            if let ServerFrame::Reply { id, .. } = &frame
-                && self.faults.swallow.lock().unwrap().remove(id)
-            {
-                continue;
+            if self.severed.load(Ordering::SeqCst) {
+                return Err("the link was cut".into());
+            }
+            let frame = match self.inner.recv_timeout(Duration::from_millis(20)) {
+                Ok(frame) => frame,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err("the engine stopped".to_owned());
+                }
+            };
+            if let ServerFrame::Reply { id, .. } = &frame {
+                if self.faults.swallow.lock().unwrap().remove(id) {
+                    continue;
+                }
+                if self.faults.sever_on.lock().unwrap().remove(id) {
+                    self.severed.store(true, Ordering::SeqCst);
+                    return Err("the link was cut".into());
+                }
             }
             return Ok(frame);
         }
@@ -99,10 +132,19 @@ struct Fixture {
     provider: Scripted,
     engine: Arc<Mutex<Option<Arc<EngineHandle>>>>,
     faults: Arc<Faults>,
+    /// No built-in scripted model: models come only from the engine's `models.json`.
+    bare: bool,
 }
 
 impl Fixture {
     fn start(script: impl Fn(&ProviderRequest, usize) -> Reply + Send + Sync + 'static) -> Fixture {
+        Fixture::start_with(script, false)
+    }
+
+    fn start_with(
+        script: impl Fn(&ProviderRequest, usize) -> Reply + Send + Sync + 'static,
+        bare: bool,
+    ) -> Fixture {
         let dir = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
         let project = root.join("project");
@@ -114,6 +156,7 @@ impl Fixture {
             provider: Scripted::new(script),
             engine: Arc::new(Mutex::new(None)),
             faults: Arc::new(Faults::default()),
+            bare,
         };
         fx.restart_engine();
         fx
@@ -129,9 +172,20 @@ impl Fixture {
             )]
             .into(),
         );
-        c.extra_models = vec![scripted::model()];
-        c.default_model = Some("scripted/scripted".into());
+        if !self.bare {
+            c.extra_models = vec![scripted::model()];
+            c.default_model = Some("scripted/scripted".into());
+        }
         c
+    }
+
+    /// The running engine (tests reach into its store to inject faults).
+    fn engine(&self) -> Arc<EngineHandle> {
+        self.engine
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("the engine runs")
     }
 
     /// Stop the engine (if running) and start it again on the same data: connected harnesses
@@ -162,14 +216,17 @@ impl Fixture {
                 .clone()
                 .ok_or_else(|| "the engine is not running".to_owned())?;
             let (sender, receiver) = handle.connect("e2e").split();
+            let severed = Arc::new(AtomicBool::new(false));
             Ok(Link {
                 sender: Box::new(FaultSender {
                     inner: sender,
                     faults: faults.clone(),
+                    severed: severed.clone(),
                 }),
                 receiver: Box::new(FaultReceiver {
                     inner: receiver,
                     faults: faults.clone(),
+                    severed,
                 }),
             })
         }))
@@ -1275,6 +1332,284 @@ fn a_session_edit_shows_in_changes_until_it_is_committed() {
         s.current().unwrap().changes.is_empty()
     });
     h.stop();
+}
+
+fn init_project(project: &Path) {
+    git(project, &["init", "-q", "-b", "main"]);
+    std::fs::write(project.join("README.md"), "# Fixture project\n").unwrap();
+    git(project, &["add", "-A"]);
+    git(project, &["commit", "-q", "-m", "init"]);
+}
+
+/// E2E-02. Changes are scoped to the files the session edited, so the edit is the session's
+/// own `write` (the Pi original wrote the file from outside).
+#[test]
+fn workspace_scan_failure_keeps_the_last_diff_and_retry_recovers_without_a_prompt() {
+    let fx = Fixture::start(|_, n| match n {
+        0 => Reply::Tools(
+            None,
+            vec![(
+                "write".into(),
+                json!({ "path": "notes.txt", "content": "one\ntwo\n" }),
+            )],
+        ),
+        _ => Reply::Text("Written.".into()),
+    });
+    init_project(&fx.project);
+    let mut h = Harness::start(&fx, &fx.root.join("app.sqlite3"));
+    h.open_new_conversation(&fx.project);
+    assert!(h.state.current().unwrap().changes.is_empty());
+    h.send("write the notes");
+    h.until("a successful project scan", |s| {
+        is_idle(s)
+            && s.current()
+                .is_some_and(|c| c.changes_state == ChangesState::Ready && c.changes.len() == 1)
+    });
+    let asked = fx.requests().len();
+    let snapshot = h.state.current().unwrap().changes.clone();
+    let selection = h.state.current().unwrap().selected_change;
+    let moved = fx.root.join("moved-project");
+    std::fs::rename(&fx.project, &moved).unwrap();
+    h.dispatch(Command::RefreshChanges);
+    h.until("the scan reports the missing project", |s| {
+        s.current()
+            .is_some_and(|c| matches!(c.changes_state, ChangesState::Unavailable(_)))
+    });
+    assert_eq!(h.state.current().unwrap().changes, snapshot);
+    assert_eq!(h.state.current().unwrap().selected_change, selection);
+    assert!(h.state.availability().refresh_changes);
+
+    std::fs::rename(&moved, &fx.project).unwrap();
+    std::fs::write(fx.project.join("notes.txt"), "one\nnew\n").unwrap();
+    h.dispatch(Command::RefreshChanges);
+    h.until("retry refreshes the diff", |s| {
+        s.current()
+            .is_some_and(|c| c.changes_state == ChangesState::Ready && c.changes != snapshot)
+    });
+    assert_eq!(
+        h.state.current().unwrap().changes[0].added,
+        snapshot[0].added
+    );
+    std::fs::rename(fx.project.join(".git"), fx.root.join("saved-git")).unwrap();
+    h.dispatch(Command::RefreshChanges);
+    h.until("the non-Git folder is explicit", |s| {
+        s.current()
+            .is_some_and(|c| c.changes_state == ChangesState::NotARepository)
+    });
+    assert!(h.state.current().unwrap().changes.is_empty());
+    assert_eq!(
+        fx.requests().len(),
+        asked,
+        "scanning must not send a prompt"
+    );
+    h.stop();
+}
+
+/// A held first run with one follow-up answer after it.
+fn held_queue_fixture(gate: &Gate) -> Fixture {
+    Fixture::start(held_first(
+        gate,
+        Reply::Text("first done".into()),
+        vec![Reply::Text("second done".into())],
+    ))
+}
+
+fn queue_second_while_first_runs(h: &mut Harness, fx: &Fixture) {
+    h.open_new_conversation(&fx.project);
+    h.send("first");
+    h.until_asked(fx, 1);
+    h.until("running", is_running);
+}
+
+/// E2E-21: the engine admitted a follow-up but the acknowledgment never arrived (and the link
+/// dropped). The app reconnects, asks the engine about the key, and shows it once.
+#[test]
+fn a_follow_up_whose_acknowledgment_is_lost_is_admitted_exactly_once() {
+    let gate = Gate::new();
+    let fx = held_queue_fixture(&gate);
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    queue_second_while_first_runs(&mut h, &fx);
+    fx.faults.drop_queue_reply.store(true, Ordering::SeqCst);
+    h.dispatch(Command::EditDraft("second".into()));
+    h.dispatch(Command::QueueFollowUp);
+    h.until("the acknowledgment was lost", |_| {
+        fx.faults.fired.load(Ordering::SeqCst) == 1
+    });
+    h.until("the app resolves it by asking the engine", |s| {
+        s.connection.is_ready()
+            && queued(s) == [(QueueMode::FollowUp, "second".to_owned())]
+            && s.current().unwrap().pending_queue.is_empty()
+    });
+    assert!(is_running(&h.state));
+    gate.open();
+    h.until("both ran, once", |s| {
+        is_idle(s) && assistant_texts(s) == ["first done".to_owned(), "second done".to_owned()]
+    });
+    assert_eq!(h.user_messages(), ["first", "second"]);
+    assert_eq!(fx.requests().len(), 2);
+    assert_eq!(user_texts(&fx.requests()[1]), ["first", "second"]);
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+/// E2E-22: the follow-up never reached the engine (the link died with it). The same key is
+/// sent again after reconnecting, and it is admitted once.
+#[test]
+fn a_follow_up_that_never_reached_the_engine_is_sent_again_under_its_key_once() {
+    let gate = Gate::new();
+    let fx = held_queue_fixture(&gate);
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    queue_second_while_first_runs(&mut h, &fx);
+    fx.faults.drop_queue.store(true, Ordering::SeqCst);
+    h.dispatch(Command::EditDraft("second".into()));
+    h.dispatch(Command::QueueFollowUp);
+    h.until("the request was cut", |_| {
+        fx.faults.fired.load(Ordering::SeqCst) == 1
+    });
+    h.until("it was sent again and admitted", |s| {
+        s.connection.is_ready()
+            && queued(s) == [(QueueMode::FollowUp, "second".to_owned())]
+            && s.current().unwrap().pending_queue.is_empty()
+    });
+    gate.open();
+    h.until("both ran, once", |s| {
+        is_idle(s) && assistant_texts(s) == ["first done".to_owned(), "second done".to_owned()]
+    });
+    assert_eq!(h.user_messages(), ["first", "second"]);
+    assert_eq!(fx.requests().len(), 2);
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+/// E2E-23: the acknowledgment is lost and the app is closed before it can ask. After relaunch
+/// the engine's side of it is found, nothing is resent, and the follow-up runs exactly once.
+#[test]
+fn a_lost_follow_up_acknowledgment_then_a_kill_and_relaunch_runs_it_once() {
+    let gate = Gate::new();
+    let fx = held_queue_fixture(&gate);
+    let db = fx.root.join("app.sqlite3");
+    let mut config = fx.native(Duration::from_secs(10));
+    config.retry_delay = Duration::from_secs(30); // closed before it reconnects
+    let mut h = Harness::start_with(config, &db);
+    queue_second_while_first_runs(&mut h, &fx);
+    let conversation = h.state.current().unwrap().id;
+    fx.faults.drop_queue_reply.store(true, Ordering::SeqCst);
+    h.dispatch(Command::EditDraft("second".into()));
+    h.dispatch(Command::QueueFollowUp);
+    h.until("the acknowledgment was lost", |s| {
+        fx.faults.fired.load(Ordering::SeqCst) == 1
+            && s.current()
+                .unwrap()
+                .pending_queue
+                .iter()
+                .any(|p| p.state == pipkin_core::QueueSend::Unknown)
+    });
+    h.stop();
+
+    let mut h2 = Harness::start(&fx, &db);
+    h2.until("the engine's side of it is found", |s| {
+        s.selected == Some(conversation)
+            && is_running(s)
+            && queued(s) == [(QueueMode::FollowUp, "second".to_owned())]
+    });
+    assert_eq!(fx.requests().len(), 1, "nothing was resent");
+    gate.open();
+    h2.until("both ran, once", |s| {
+        is_idle(s) && assistant_texts(s) == ["first done".to_owned(), "second done".to_owned()]
+    });
+    assert_eq!(h2.user_messages(), ["first", "second"]);
+    assert_eq!(fx.requests().len(), 2);
+    h2.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+/// E2E-27: the engine starts with no model; a provider added to its `models.json` afterwards
+/// appears after a refresh and can then be used.
+#[test]
+fn a_provider_configured_after_start_appears_after_a_refresh_and_can_then_be_used() {
+    let fx = Fixture::start_with(
+        |_, _| Reply::Text("hello from the new provider".into()),
+        true,
+    );
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    assert!(h.state.models.is_empty(), "{:?}", h.state.models);
+    assert!(
+        h.state.availability().refresh_models,
+        "a refresh is offered when there is no model"
+    );
+    // The user adds a provider to the engine's own configuration, then refreshes. (Its API is
+    // the scripted adapter, so no network is involved.)
+    let config = fx.root.join("engine-config");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("models.json"),
+        json!({"providers": {"stub": {
+            "baseUrl": "http://127.0.0.1:9/v1",
+            "api": "scripted",
+            "apiKey": "stub",
+            "models": [{"id": "scripted", "name": "Scripted stub", "input": ["text"]}]
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    h.dispatch(Command::RefreshModels);
+    h.until("the provider's model appears", |s| {
+        s.models.iter().any(|m| m.id == "stub/scripted")
+    });
+    h.dispatch(Command::SetModel("stub/scripted".into()));
+    h.until("the engine reports the selection", |s| {
+        s.prefs.model.as_deref() == Some("stub/scripted")
+    });
+    h.send("hello");
+    h.until("it answers", |s| {
+        is_idle(s) && assistant_texts(s) == ["hello from the new provider".to_owned()]
+    });
+    assert_eq!(fx.requests().len(), 1);
+    assert_eq!(fx.requests()[0].model.provider, "stub");
+    h.stop();
+}
+
+/// DUR-DISKFULL at the desktop: the engine cannot record a run's settlement. The window is
+/// told (a notice), the run is not shown as finished, and reopening reconciles it from what
+/// the engine committed, without asking the model again.
+#[test]
+fn an_engine_storage_failure_is_shown_and_reopening_settles_the_run() {
+    let fx = Fixture::start(|_, _| Reply::Text("saved answer".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let conversation = h.state.current().unwrap().id;
+    fx.engine()
+        .shared()
+        .store
+        .inject(pipkin_engine::store::Fault::Settlement)
+        .unwrap();
+    h.send("finish this");
+    h.until("the storage failure is shown", |s| {
+        s.notice
+            .as_deref()
+            .is_some_and(|n| n.contains("storage error"))
+    });
+    thread::sleep(Duration::from_millis(300));
+    h.pump();
+    assert!(is_running(&h.state), "no invented outcome");
+    fx.engine().shared().store.clear_faults().unwrap();
+    h.stop();
+
+    let mut h2 = Harness::start(&fx, &db);
+    h2.until("reopening settles it", |s| {
+        s.selected == Some(conversation)
+            && is_idle(s)
+            && assistant_texts(s) == ["saved answer".to_owned()]
+    });
+    assert_eq!(h2.user_messages(), ["finish this"]);
+    assert_eq!(fx.requests().len(), 1, "the model was not asked again");
+    h2.stop();
+    assert_eq!(open_requests(&db), 0);
 }
 
 fn git(dir: &Path, args: &[&str]) {
