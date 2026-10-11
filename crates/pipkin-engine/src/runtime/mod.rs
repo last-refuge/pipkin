@@ -2,6 +2,7 @@
 //! execution, and client connections.
 
 mod glue;
+mod import;
 pub mod models;
 mod run;
 mod session;
@@ -500,6 +501,16 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
             shared.publish(Event::ModelsChanged);
             Ok(Reply::Ok)
         }
+        Call::ImportDiscover { agent_dir } => import::discover(shared, agent_dir).await,
+        Call::ImportSessions {
+            agent_dir,
+            sessions,
+        } => import::sessions(shared, agent_dir, sessions).await,
+        Call::ImportConfig { agent_dir, items } => import::config(shared, agent_dir, items).await,
+        Call::ImportCredentials {
+            agent_dir,
+            providers,
+        } => import::credentials(shared, agent_dir, providers).await,
         Call::Shutdown => Ok(Reply::Ok),
     }
 }

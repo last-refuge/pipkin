@@ -233,6 +233,35 @@ pub enum Call {
         provider: String,
         key: Secret,
     },
+    /// List what a legacy (Pi) profile holds: sessions with their import status, configuration
+    /// items and credential metadata. Read-only. `agent_dir` defaults to
+    /// `$PI_CODING_AGENT_DIR`, else `~/.pi/agent`.
+    ImportDiscover {
+        #[serde(default, rename = "agentDir")]
+        agent_dir: Option<String>,
+    },
+    /// Import the named legacy sessions (explicit user action). Idempotent per session; the
+    /// legacy source is never written.
+    ImportSessions {
+        #[serde(default, rename = "agentDir")]
+        agent_dir: Option<String>,
+        sessions: Vec<String>,
+    },
+    /// Copy the named configuration items (`models.json`, `settings.json`, `AGENTS.md`,
+    /// `skills`, ...) into the native configuration, never overwriting a native file.
+    ImportConfig {
+        #[serde(default, rename = "agentDir")]
+        agent_dir: Option<String>,
+        items: Vec<String>,
+    },
+    /// Merge the named providers' saved credentials into the native credential store (explicit
+    /// consent). Existing native entries are never overwritten; reserved subscription
+    /// credentials are not imported as usable.
+    ImportCredentials {
+        #[serde(default, rename = "agentDir")]
+        agent_dir: Option<String>,
+        providers: Vec<String>,
+    },
     Shutdown,
 }
 
@@ -323,6 +352,10 @@ pub enum Reply {
     Subagents(SubagentsView),
     Auth(AuthSnapshot),
     Thinking(ThinkingView),
+    ImportReport(ImportReport),
+    Imported(ImportedView),
+    ConfigImported(ConfigImportView),
+    CredentialsImported(CredentialsImportView),
     Ok,
 }
 
