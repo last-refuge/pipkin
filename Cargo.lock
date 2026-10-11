@@ -4440,6 +4440,7 @@ dependencies = [
  "pipkin-engine-protocol",
  "regex",
  "reqwest",
+ "ring",
  "rusqlite",
  "serde",
  "serde_json",

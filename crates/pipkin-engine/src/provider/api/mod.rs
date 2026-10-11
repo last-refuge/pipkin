@@ -16,6 +16,11 @@ pub mod bedrock_eventstream;
 pub mod cloudflare;
 pub mod mistral_conversations;
 pub mod pi_messages;
+pub mod anthropic_messages;
+pub mod google_auth;
+pub mod google_generative_ai;
+pub mod google_shared;
+pub mod google_vertex;
 
 /// Every built-in adapter.
 pub fn all() -> Vec<Arc<dyn ApiAdapter>> {
@@ -26,5 +31,8 @@ pub fn all() -> Vec<Arc<dyn ApiAdapter>> {
         mistral_conversations::adapter(),
         bedrock_converse_stream::adapter(),
         pi_messages::adapter(),
+        anthropic_messages::adapter(),
+        google_generative_ai::adapter(),
+        google_vertex::adapter(),
     ]
 }

@@ -27,6 +27,7 @@ globset = "0.4"
 ignore = "0.4"
 url = "2"
 yaml-rust2 = { version = "0.13", default-features = false }
+ring = "0.17"
 
 [dev-dependencies]
 tempfile = "3"
