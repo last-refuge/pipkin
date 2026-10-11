@@ -1,0 +1,299 @@
+//! Durable subagents (reference `experimental/durable/subagent.ts` + Pipkin's subagent overlay).
+//!
+//! A `subagent` call creates — or, on replay, finds — exactly one child session for its
+//! `(parent session, call id)`, committed atomically with the task row. The child receives the
+//! task as a prompt under the durable key `subagent:<call id>` (admission is idempotent), runs
+//! with the parent's model/thinking and cwd but without the `subagent` tool (children cannot
+//! delegate), and its answer (the concatenated text of its final reply) becomes the parent's
+//! tool result. The tool is replay-safe: after a restart the call reruns, finds the same child
+//! and the same admission, and waits for its settlement. Stopping the parent call stops the
+//! child.
+
+use std::sync::Arc;
+
+use pipkin_engine_protocol::limits::SUBAGENT_TASK_EXCERPT_CHARS;
+use pipkin_engine_protocol::*;
+use serde_json::{Value, json};
+use tokio_util::sync::CancellationToken;
+
+use super::Shared;
+use crate::provider::{BoxFuture, ToolSpec};
+use crate::store::{Store, TaskRow};
+use crate::tools::{Tool, ToolCtx, ToolError, ToolHost, ToolOutput};
+use crate::util::now_ms;
+
+pub const SUBAGENT_DESCRIPTION: &str = "Delegate a self-contained task to a subagent with the same tools and get its answer back. Give it everything it needs to know; it does not see this conversation.";
+
+pub struct SubagentTool;
+
+impl Tool for SubagentTool {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "subagent".into(),
+            description: SUBAGENT_DESCRIPTION.into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {"task": {"type": "string", "description": "What the subagent should do"}},
+                "required": ["task"]
+            }),
+        }
+    }
+
+    fn replay_safe(&self) -> bool {
+        true
+    }
+
+    fn execute<'a>(
+        &'a self,
+        args: Value,
+        ctx: &'a ToolCtx,
+    ) -> BoxFuture<'a, Result<ToolOutput, ToolError>> {
+        Box::pin(async move {
+            let task = args.get("task").and_then(Value::as_str).unwrap_or_default();
+            let Some(host) = &ctx.host else {
+                return Err(ToolError::new("No execution host is configured"));
+            };
+            match host.subagent(&ctx.call_id, task, ctx.cancel.clone()).await {
+                Ok((text, details)) => Ok(ToolOutput {
+                    content: Some(vec![Block::text(text)]),
+                    details: Some(details),
+                    ..ToolOutput::default()
+                }),
+                Err(message) => Err(ToolError::new(message)),
+            }
+        })
+    }
+}
+
+/// The engine side of subagent calls for one parent session.
+pub struct Host {
+    pub shared: Arc<Shared>,
+    pub parent: String,
+}
+
+impl ToolHost for Host {
+    fn subagent<'a>(
+        &'a self,
+        call_id: &'a str,
+        task: &'a str,
+        cancel: CancellationToken,
+    ) -> BoxFuture<'a, Result<(String, Value), String>> {
+        Box::pin(async move {
+            self.shared
+                .run_subagent(&self.parent, call_id, task, cancel)
+                .await
+        })
+    }
+}
+
+/// Map a child run's state to the directory status strings the desktop understands
+/// (reference: terminal `completed` -> `done`, `aborted`, else `failed`; live states raw).
+fn status_for(outcome: &RunOutcome) -> &'static str {
+    match outcome {
+        RunOutcome::Completed => "done",
+        RunOutcome::Aborted => "aborted",
+        _ => "failed",
+    }
+}
+
+impl Shared {
+    pub fn subagent_tool(&self) -> Arc<dyn Tool> {
+        Arc::new(SubagentTool)
+    }
+
+    async fn run_subagent(
+        self: &Arc<Self>,
+        parent: &str,
+        call_id: &str,
+        task: &str,
+        cancel: CancellationToken,
+    ) -> Result<(String, Value), String> {
+        let parent_row = self
+            .store
+            .session(parent)
+            .map_err(|e| e.to_string())?
+            .ok_or("The parent session no longer exists")?;
+        let root = parent_row.root.clone().unwrap_or_else(|| parent.to_owned());
+        let child_id = format!("{parent}:{call_id}");
+        // Create (or find) the child and its task mapping atomically.
+        let task_row: TaskRow = tokio::task::block_in_place(|| {
+            self.store.tx(|tx| {
+                if let Some(existing) = Store::task_for_call(tx, parent, call_id)? {
+                    return Ok(existing);
+                }
+                let now = now_ms();
+                tx.execute(
+                    "INSERT INTO sessions(id, cwd, title, created_at, updated_at, origin, model,
+                        thinking, subagents_enabled, parent, root, create_key, revision)
+                     VALUES (?1, ?2, NULL, ?3, ?3, ?4, ?5, ?6, 0, ?7, ?8, NULL, 0)",
+                    rusqlite::params![
+                        child_id,
+                        parent_row.cwd,
+                        now,
+                        serde_json::to_string(&Origin::Native).expect("serializes"),
+                        parent_row.model,
+                        parent_row.thinking,
+                        parent,
+                        root
+                    ],
+                )?;
+                let (row, _) =
+                    Store::create_task(tx, &root, parent, call_id, &child_id, task, now)?;
+                Store::bump(tx, &root, now)?;
+                Ok(row)
+            })
+        })
+        .map_err(|e| e.to_string())?;
+        self.publish_subagents(&root);
+        let child = task_row.child_session.clone();
+        let details = json!({"conversationId": child});
+        let key = format!("subagent:{call_id}");
+        let sess = self.session(&child).map_err(|e| e.message)?;
+        let mut settled = sess.settled.subscribe();
+        // Idempotent admission: a replay finds the original.
+        match self.prompt(&child, &key, task, &[]).await {
+            Ok(_) => {}
+            Err(e) if e.code == ErrorCode::Busy => {}
+            Err(e) => return Err(format!("Subagent {} failed: {}", task_row.child, e.message)),
+        }
+        self.set_task_status(&root, &child, "running", None);
+        // Wait for this key's settlement (it may already be settled).
+        let outcome = loop {
+            if let Ok(Some(req)) = self.store.request(&child, &key)
+                && let Some(outcome) = req.outcome.clone()
+                && req.state == crate::store::RequestState::Settled
+            {
+                break outcome;
+            }
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    let _ = self.stop(&child).await;
+                    // Wait briefly for the child to settle as stopped.
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(10), settled.recv()).await;
+                    self.set_task_status(&root, &child, "aborted", None);
+                    return Err(format!("Subagent {} failed: aborted", task_row.child));
+                }
+                r = settled.recv() => {
+                    if r.is_err() {
+                        settled = sess.settled.subscribe();
+                    }
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
+            }
+        };
+        let status = status_for(&outcome);
+        if outcome != RunOutcome::Completed {
+            self.set_task_status(&root, &child, status, None);
+            return Err(format!(
+                "Subagent {} failed: {}",
+                task_row.child,
+                match &outcome {
+                    RunOutcome::Aborted => "aborted".to_owned(),
+                    RunOutcome::ModelError { detail }
+                    | RunOutcome::NoModel { detail }
+                    | RunOutcome::Interrupted { detail }
+                    | RunOutcome::Failed { detail } => format!("unanswered ({detail})"),
+                    RunOutcome::Completed => unreachable!(),
+                }
+            ));
+        }
+        let answer = self.answer_text(&child);
+        self.set_task_status(&root, &child, status, Some(&answer));
+        Ok((answer, details))
+    }
+
+    /// Concatenated text blocks of the child's final assistant reply.
+    fn answer_text(&self, child: &str) -> String {
+        let (entries, _) = self.store.page(child, None, 50).unwrap_or_default();
+        entries
+            .iter()
+            .rev()
+            .find_map(|e| match &e.kind {
+                EntryKind::Message {
+                    message: m @ Message::Assistant { .. },
+                    partial: false,
+                    ..
+                } => Some(m.text()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    fn set_task_status(&self, root: &str, child: &str, status: &str, result: Option<&str>) {
+        let _ = tokio::task::block_in_place(|| {
+            self.store.tx(|tx| {
+                Store::set_task_status(tx, child, status, result, now_ms())?;
+                Store::bump(tx, root, now_ms())
+            })
+        });
+        self.publish_subagents(root);
+    }
+
+    pub fn subagents_view(&self, root: &str) -> Result<SubagentsView, ProtoError> {
+        let row = self
+            .store
+            .session(root)?
+            .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "Unknown session"))?;
+        let (tasks, truncated) = self
+            .store
+            .tasks(root, limits_rows())
+            .map_err(ProtoError::from)?;
+        Ok(SubagentsView {
+            enabled: row.subagents_enabled,
+            children: tasks
+                .into_iter()
+                .map(|t| SubagentRow {
+                    child: t.child,
+                    task_id: t.child,
+                    call_id: t.parent_call,
+                    task: t.task.chars().take(SUBAGENT_TASK_EXCERPT_CHARS).collect(),
+                    status: t.status,
+                    session: t.child_session,
+                })
+                .collect(),
+            truncated,
+        })
+    }
+
+    pub fn publish_subagents(&self, root: &str) {
+        if let Ok(view) = self.subagents_view(root) {
+            let revision = self
+                .store
+                .session(root)
+                .ok()
+                .flatten()
+                .map_or(0, |s| s.revision);
+            self.publish(Event::Session {
+                session: root.to_owned(),
+                revision,
+                change: SessionChange::SubagentsChanged { subagents: view },
+            });
+        }
+    }
+
+    /// A child's history page, after checking it belongs to `root` (ownership guard).
+    pub fn subagent_history(
+        &self,
+        root: &str,
+        child: u64,
+        before: Option<u64>,
+        limit: u32,
+    ) -> Result<Reply, ProtoError> {
+        let task = self
+            .store
+            .read(|c| Store::task_by_child(c, root, child))?
+            .ok_or_else(|| {
+                ProtoError::new(ErrorCode::NotFound, "Not a subagent of this session")
+            })?;
+        let (entries, has_older) = self.store.page(
+            &task.child_session,
+            before,
+            limit.clamp(1, pipkin_engine_protocol::limits::MAX_PAGE_ENTRIES),
+        )?;
+        Ok(Reply::Page { entries, has_older })
+    }
+}
+
+fn limits_rows() -> u32 {
+    pipkin_engine_protocol::limits::MAX_SUBAGENT_ROWS
+}

@@ -65,6 +65,7 @@ pub struct Scripted {
     script: Arc<Script>,
     seen: Arc<Mutex<Vec<ProviderRequest>>>,
     chunk: usize,
+    pace: std::time::Duration,
 }
 
 impl Scripted {
@@ -73,7 +74,14 @@ impl Scripted {
             script: Arc::new(script),
             seen: Arc::default(),
             chunk: 3,
+            pace: std::time::Duration::ZERO,
         }
+    }
+
+    /// Wait this long between streamed chunks (a slow model).
+    pub fn paced(mut self, pace: std::time::Duration) -> Self {
+        self.pace = pace;
+        self
     }
 
     /// Always answer with the same text.
@@ -121,7 +129,14 @@ impl Scripted {
                         return ctx.failed(e, "aborted");
                     }
                     e.text(index, piece);
-                    tokio::task::yield_now().await;
+                    if self.pace.is_zero() {
+                        tokio::task::yield_now().await;
+                    } else {
+                        tokio::select! {
+                            _ = ctx.cancel.cancelled() => return ctx.failed(e, "aborted"),
+                            _ = tokio::time::sleep(self.pace) => {}
+                        }
+                    }
                 }
                 usage(&mut e);
                 e.finish(ctx.req, StopReason::Stop, None)
