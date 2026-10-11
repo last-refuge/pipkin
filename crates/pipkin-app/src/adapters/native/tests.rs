@@ -732,3 +732,161 @@ fn offline_requests_are_refused_without_sending_anything() {
     assert!(matches!(event.kind, EventKind::Rejected { .. }));
     backend.shutdown();
 }
+
+fn child_entries(range: std::ops::Range<u64>) -> Vec<Entry> {
+    range
+        .map(|id| assistant(id, false, &format!("child step {id}")))
+        .collect()
+}
+
+#[test]
+fn child_history_pages_by_cursor_and_the_selected_child_refreshes_live() {
+    let fake = Fake::new();
+    let mut run = Run::start(fake.host(|call| match call {
+        Call::OpenSession { session, .. } => {
+            let mut snap = snapshot(session, vec![]);
+            snap.subagents = Some(SubagentsView {
+                enabled: true,
+                children: vec![SubagentRow {
+                    child: 3,
+                    task_id: 3,
+                    call_id: "call-3".into(),
+                    task: "Survey the crate.".into(),
+                    // The engine records a finished task as `done`.
+                    status: "done".into(),
+                    session: "s1:call-3".into(),
+                }],
+                truncated: true,
+            });
+            Some(Some(Ok(Reply::Snapshot(Box::new(snap)))))
+        }
+        Call::SubagentHistory {
+            child: 3, before, ..
+        } => Some(Some(match before {
+            None => Ok(Reply::Page {
+                entries: child_entries(300..500),
+                has_older: true,
+            }),
+            Some(300) => Ok(Reply::Page {
+                entries: child_entries(100..300),
+                has_older: true,
+            }),
+            Some(_) => Err(ProtoError::new(ErrorCode::NotFound, "gone")),
+        })),
+        _ => None,
+    }));
+    run.ready();
+    let c = run.conversation();
+    run.backend.request(BackendRequest::Open {
+        conversation: c,
+        generation: 1,
+    });
+    run.until("a pageable directory", |r| {
+        r.has(|k| {
+            matches!(k, EventKind::SubagentDirectory { truncated: true, children, .. }
+                if children.len() == 1 && children[0].status == "done")
+        })
+    });
+    run.backend.request(BackendRequest::OpenSubagent {
+        conversation: c,
+        generation: 1,
+        child: 3,
+    });
+    run.until("the newest child page", |r| {
+        r.has(|k| {
+            matches!(k, EventKind::SubagentPage { child: 3, items, has_older: true, live: true }
+                if items.len() == 200)
+        })
+    });
+    let before = run
+        .seen
+        .iter()
+        .find_map(|e| match &e.kind {
+            EventKind::SubagentPage { items, .. } => items.first().map(|i| i.id),
+            _ => None,
+        })
+        .unwrap();
+    run.backend.request(BackendRequest::LoadOlderSubagent {
+        conversation: c,
+        generation: 1,
+        child: 3,
+        before,
+    });
+    run.until("the older page, naming its cursor", |r| {
+        r.has(|k| {
+            matches!(k, EventKind::SubagentOlderPage { child: 3, before: b, items, has_older: true }
+                if *b == before && items.len() == 200)
+        })
+    });
+    assert!(fake.calls().contains(&Call::SubagentHistory {
+        session: "s1".into(),
+        child: 3,
+        before: Some(300),
+        limit: 200,
+    }));
+    // A refused page is reported against the same cursor; nothing is invented.
+    let oldest = run
+        .seen
+        .iter()
+        .find_map(|e| match &e.kind {
+            EventKind::SubagentOlderPage { items, .. } => items.first().map(|i| i.id),
+            _ => None,
+        })
+        .unwrap();
+    run.backend.request(BackendRequest::LoadOlderSubagent {
+        conversation: c,
+        generation: 1,
+        child: 3,
+        before: oldest,
+    });
+    run.until("a failed older page", |r| {
+        r.has(|k| matches!(k, EventKind::SubagentOlderFailed { child: 3, before: b, .. } if *b == oldest))
+    });
+    // A stale attachment is refused without a call.
+    let calls = fake.count(|c| matches!(c, Call::SubagentHistory { .. }));
+    run.backend.request(BackendRequest::LoadOlderSubagent {
+        conversation: c,
+        generation: 7,
+        child: 3,
+        before,
+    });
+    run.until("the stale request is refused", |r| {
+        r.seen
+            .iter()
+            .any(|e| e.generation == 7 && matches!(e.kind, EventKind::SubagentOlderFailed { .. }))
+    });
+    assert_eq!(
+        fake.count(|c| matches!(c, Call::SubagentHistory { .. })),
+        calls
+    );
+    // Commits in an unrelated session do not re-read; the selected child's do (coalesced).
+    let pages = |r: &Run| {
+        r.seen
+            .iter()
+            .filter(|e| matches!(e.kind, EventKind::SubagentPage { .. }))
+            .count()
+    };
+    let mut rev = 10;
+    for session in ["elsewhere", "s1:call-3"] {
+        for id in 0..20 {
+            rev += 1;
+            fake.publish(Event::Session {
+                session: session.into(),
+                revision: rev,
+                change: SessionChange::EntryAppended {
+                    entry: assistant(600 + id, false, "more"),
+                },
+            });
+        }
+        if session == "elsewhere" {
+            thread::sleep(Duration::from_millis(400));
+            run.pump();
+            assert_eq!(pages(&run), 1, "an unrelated session refreshed the child");
+        }
+    }
+    run.until("a live refresh of the newest page", |r| pages(r) >= 2);
+    thread::sleep(Duration::from_millis(400));
+    run.pump();
+    assert!(pages(&run) <= 3, "{} refreshes for 20 commits", pages(&run));
+    run.backend.shutdown();
+}

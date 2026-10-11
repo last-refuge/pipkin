@@ -175,8 +175,6 @@ pub struct Workspace {
     pub(super) diff_rows: DiffRows,
     pub(super) inspector_tab: super::subagents::InspectorTab,
     pub(super) subagent_rows: super::subagents::SubagentRows,
-    pub(super) subagent_directory_scroll: ScrollHandle,
-    pub(super) subagent_activity_scroll: ScrollHandle,
     live_nav: Option<f32>,
     live_insp: Option<f32>,
     last_change_sel: Option<(ConversationId, Option<usize>)>,
@@ -273,8 +271,6 @@ impl Workspace {
             diff_rows: DiffRows::default(),
             inspector_tab: super::subagents::InspectorTab::default(),
             subagent_rows: super::subagents::SubagentRows::default(),
-            subagent_directory_scroll: ScrollHandle::new(),
-            subagent_activity_scroll: ScrollHandle::new(),
             live_nav: None,
             live_insp: None,
             last_change_sel: None,
@@ -843,7 +839,6 @@ impl Workspace {
             }
             Run::Dispatch(c) => self.dispatch(c.clone(), cx),
             Run::InspectSubagent(child) => {
-                self.subagent_activity_scroll = ScrollHandle::new();
                 self.dispatch(Command::SelectSubagent(*child), cx);
                 window.dispatch_action(Box::new(ShowSubagents), cx);
             }

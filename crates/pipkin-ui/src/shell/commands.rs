@@ -375,7 +375,43 @@ pub fn build(state: &AppState, demo: Option<&DemoControls>) -> Vec<Cmd> {
             true,
             Run::InspectSubagent(None),
         ));
-        for child in conv.subagents.children.iter().take(100) {
+        let sub = &conv.subagents;
+        // A paged (native) directory pages its history, so the palette follows it: all
+        // current work, then finished tasks newest first through the revealed pages (at least
+        // the first, so finished work stays inspectable with history collapsed). Pi's
+        // unpaged directory keeps its first-100 bound.
+        let reachable: Vec<&pipkin_core::SubagentInfo> = if sub.paged {
+            let current = sub
+                .children
+                .iter()
+                .filter(|c| !pipkin_core::subagent_finished(&c.status));
+            let finished = sub
+                .children
+                .iter()
+                .rev()
+                .filter(|c| pipkin_core::subagent_finished(&c.status))
+                .take(sub.history_shown().max(pipkin_core::SUBAGENT_HISTORY_PAGE));
+            current.chain(finished).collect()
+        } else {
+            sub.children.iter().take(100).collect()
+        };
+        if sub.paged {
+            v.push(cmd(
+                "Show more finished tasks",
+                "Subagents",
+                None,
+                sub.can_show_more_history(),
+                Run::Dispatch(Command::ShowMoreSubagentHistory),
+            ));
+            v.push(cmd(
+                "Load earlier subagent activity",
+                "Subagents",
+                None,
+                sub.can_load_older() && state.connection.is_ready(),
+                Run::Dispatch(Command::LoadOlderSubagent),
+            ));
+        }
+        for child in reachable {
             v.push(cmd(
                 &format!("Inspect subagent {}: {}", child.id, child.task),
                 "Subagents",
@@ -584,6 +620,63 @@ mod removal_tests {
             find(&commands, "Show all subagent tasks").run,
             Run::InspectSubagent(None)
         ));
+    }
+
+    #[test]
+    fn paged_directories_offer_history_and_older_activity_paging_by_keyboard() {
+        let mut state = state_with_queue_and_attachments();
+        let sub = &mut state.conversations[0].subagents;
+        sub.enabled = Some(true);
+        sub.children = (1..=250)
+            .map(|id| SubagentInfo {
+                id,
+                task_id: id,
+                call_id: format!("call-{id}"),
+                task: format!("Task {id}."),
+                status: if id == 7 { "running" } else { "done" }.into(),
+            })
+            .collect();
+        // Pi (unpaged): no paging entries, first 100 tasks only.
+        let commands = build(&state, None);
+        assert!(
+            !commands
+                .iter()
+                .any(|c| c.title == "Show more finished tasks")
+        );
+        assert!(
+            !commands
+                .iter()
+                .any(|c| c.title == "Load earlier subagent activity")
+        );
+        assert!(
+            !commands
+                .iter()
+                .any(|c| c.title.starts_with("Inspect subagent 250:"))
+        );
+        // Native (paged): current work plus the newest finished page, then more as revealed.
+        state.conversations[0].subagents.paged = true;
+        let commands = build(&state, None);
+        let more = find(&commands, "Show more finished tasks");
+        assert!(more.enabled);
+        assert!(matches!(
+            more.run,
+            Run::Dispatch(Command::ShowMoreSubagentHistory)
+        ));
+        assert!(!find(&commands, "Load earlier subagent activity").enabled);
+        let inspect = |commands: &[Cmd]| {
+            commands
+                .iter()
+                .filter(|c| matches!(c.run, Run::InspectSubagent(Some(_))))
+                .count()
+        };
+        assert_eq!(inspect(&commands), 101);
+        find(&commands, "Inspect subagent 250: Task 250.");
+        find(&commands, "Inspect subagent 7: Task 7.");
+        state.conversations[0].subagents.history = 300;
+        let commands = build(&state, None);
+        assert_eq!(inspect(&commands), 250);
+        assert!(!find(&commands, "Show more finished tasks").enabled);
+        find(&commands, "Inspect subagent 1: Task 1.");
     }
 
     #[test]

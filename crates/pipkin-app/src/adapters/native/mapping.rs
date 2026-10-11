@@ -312,9 +312,11 @@ pub fn subagents(view: &SubagentsView) -> Result<Vec<SubagentInfo>, String> {
             if row.call_id.is_empty() || row.call_id.len() > 256 {
                 return Err("The engine returned an invalid subagent: Invalid parent call.".into());
             }
+            // The engine records terminal tasks as `done`/`aborted`; the protocol also names
+            // them `completed`/`stopped`. Both spellings mean the same status.
             let status = match row.status.as_str() {
-                "completed" => "done",
-                "stopped" => "aborted",
+                "completed" | "done" => "done",
+                "stopped" | "aborted" => "aborted",
                 s @ ("pending" | "running" | "waiting" | "completing" | "failed") => s,
                 _ => {
                     return Err(
@@ -696,12 +698,18 @@ mod tests {
     fn subagent_statuses_use_the_names_the_core_expects() {
         let list = subagents(&SubagentsView {
             enabled: true,
-            children: vec![row(1, "completed"), row(2, "stopped"), row(3, "waiting")],
+            children: vec![
+                row(1, "completed"),
+                row(2, "stopped"),
+                row(3, "waiting"),
+                row(4, "done"),
+                row(5, "aborted"),
+            ],
             truncated: false,
         })
         .unwrap();
         let statuses: Vec<_> = list.iter().map(|c| c.status.as_str()).collect();
-        assert_eq!(statuses, ["done", "aborted", "waiting"]);
+        assert_eq!(statuses, ["done", "aborted", "waiting", "done", "aborted"]);
         assert_eq!(list[0].task.chars().count(), MAX_TASK_CHARS);
         assert!(
             subagents(&SubagentsView {

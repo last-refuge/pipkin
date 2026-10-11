@@ -65,8 +65,12 @@ pub struct SubagentInfo {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SubagentPreview {
     pub id: ItemId,
+    /// Changes whenever this preview is prepared again, so a view can remeasure only what
+    /// changed. Unique within one `SubagentState`.
+    pub rev: u64,
     pub speaker: &'static str,
-    pub text: String,
+    /// Shared so retained previews are not copied on each page or live update.
+    pub text: std::sync::Arc<str>,
     pub clipped: bool,
 }
 
@@ -85,6 +89,20 @@ pub struct SubagentState {
     pub loading: bool,
     /// Avoid remounting a successfully read but empty child on each activity update.
     pub viewed: Option<u64>,
+    /// The engine pages this directory and child history (native engine). Pi's directory and
+    /// bounded previews are unpaged; this stays false for them.
+    pub paged: bool,
+    /// The engine cut the published directory at its bound; later children are not listed.
+    pub truncated: bool,
+    /// Finished (history) rows revealed in the directory; 0 means history is collapsed.
+    pub history: usize,
+    /// The selected child has entries older than `items` (paged engines only).
+    pub has_older: bool,
+    /// Cursor of the one in-flight older-activity page: its answer must name it.
+    pub loading_older: Option<ItemId>,
+    pub older_error: Option<String>,
+    /// Source of `SubagentPreview::rev`.
+    pub preview_rev: u64,
 }
 
 #[derive(Clone, Debug, PartialEq)]

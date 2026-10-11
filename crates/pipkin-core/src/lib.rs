@@ -10,6 +10,7 @@ pub mod onboarding;
 pub mod prompt_history;
 pub mod protocol;
 pub mod state;
+pub mod subagents;
 
 pub use attach::*;
 pub use backend::*;
@@ -17,3 +18,4 @@ pub use ids::*;
 pub use model::*;
 pub use protocol::*;
 pub use state::*;
+pub use subagents::*;

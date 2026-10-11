@@ -445,6 +445,20 @@ impl Worker {
                     reason: OFFLINE.into(),
                 },
             ),
+            BackendRequest::LoadOlderSubagent {
+                conversation,
+                generation,
+                child,
+                before,
+            } => self.emit(
+                conversation,
+                generation,
+                EventKind::SubagentOlderFailed {
+                    child,
+                    before,
+                    reason: OFFLINE.into(),
+                },
+            ),
             BackendRequest::SetSubagentsEnabled { .. }
             | BackendRequest::RemoveSignIn(_)
             | BackendRequest::StartSignIn(_)
@@ -1106,6 +1120,22 @@ impl Live {
             } => {
                 self.open_subagent(worker, conversation, generation, child);
             }
+            // Pi serves one bounded child view; it has no older-page cursor. The core never
+            // asks for one (Pi views are unpaged), but an answer must still be honest.
+            BackendRequest::LoadOlderSubagent {
+                conversation,
+                generation,
+                child,
+                before,
+            } => worker.emit(
+                conversation,
+                generation,
+                EventKind::SubagentOlderFailed {
+                    child,
+                    before,
+                    reason: "Earlier subagent activity is not available from Pi.".into(),
+                },
+            ),
             BackendRequest::SetSubagentsEnabled {
                 conversation,
                 generation,
