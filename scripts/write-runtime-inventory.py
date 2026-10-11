@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Inspect staged native artifacts without executing them; not a complete binary SBOM."""
+"""Inspect staged native artifacts without executing them; not a complete binary SBOM.
+
+    write-runtime-inventory.py STAGE                    the Pi package (bundled Node engine)
+    write-runtime-inventory.py STAGE --native-engine    a native-engine candidate (no Node)
+"""
 import hashlib
 import json
 import os
@@ -9,6 +13,9 @@ import subprocess
 import sys
 
 stage = Path(sys.argv[1]).resolve()
+native = sys.argv[2:] == ['--native-engine']
+if sys.argv[2:] and not native:
+    raise SystemExit('usage: write-runtime-inventory.py STAGE [--native-engine]')
 readelf_env = {**os.environ, 'LC_ALL': 'C'}
 records = []
 for path in sorted(stage.rglob('*')):
@@ -36,6 +43,12 @@ report = {'formatVersion': 1, 'inspection': 'readelf only; native artifacts are 
           'scope': 'actual staged ELF files and non-ELF .node artifacts; direct NEEDED/ABI references only',
           'limitations': 'Not a complete linked/static/dlopen dependency or license audit. Foreign artifacts are shipped source-tree contents, not supported runtimes. System Node and desktop/GPU libraries remain external requirements.',
           'requiredNodeMinimum': '22.19', 'artifacts': records}
+if native:
+    report['limitations'] = ('Not a complete linked/static/dlopen dependency or license audit. The built-in engine is '
+                             'statically linked Rust inside usr/bin/pipkin (run as `pipkin --engine-worker`); '
+                             'desktop/GPU libraries remain external requirements.')
+    report['engine'] = 'native (built into usr/bin/pipkin; no Node runtime, npm tree or Pi engine)'
+    report['requiredNodeMinimum'] = None
 output = stage / 'usr/share/doc/pipkin/runtime-inventory.json'
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(json.dumps(report, indent=2) + '\n')

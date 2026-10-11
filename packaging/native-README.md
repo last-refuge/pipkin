@@ -1,0 +1,28 @@
+# Pipkin installed help (native-engine candidate)
+
+This is a **development candidate** package for Pipkin's built-in Rust engine. It carries only the `pipkin`
+binary (which also runs the engine as a private `pipkin --engine-worker` process), the desktop entry, icons,
+notices and inventories. It contains **no Node runtime, npm tree or Pi engine**, and it does not install system
+Node, Git or graphics/desktop libraries. It is not a release, not signed and not qualified on any additional
+platform.
+
+- The desktop entry launches `pipkin --engine native`. Running `pipkin` without that flag still selects the Pi
+  engine (the production default), which this package does not include.
+- Native engine data lives in its own directories (`~/.local/share/pipkin/engine` and `~/.config/pipkin/engine`,
+  or under an explicit `--data-dir`), separate from Pi's `~/.pi`. History written by the native engine is
+  native-only: Pi does not read it.
+- Claude subscription sign-in is not available with the native engine yet.
+- Roll back by reinstalling a Pi package (`./install.sh --rollback` when it is the previous installed version);
+  native data is left in place and is not migrated back.
+
+`pipkin --diagnose --engine native` reports the engine identity and directories; add `--probe` to start a
+throwaway worker in a scratch profile (no credentials, no network) and check that it answers. Detailed
+diagnostics can include sensitive log text; review before sharing.
+
+`build-info.json` identifies this build; `runtime-inventory.json` records direct native library/ABI references;
+`third-party/inventory.json` records conservative Rust dependency notices and open review flags. Neither
+inventory is legal clearance or a complete binary SBOM.
+
+- [Data ownership, diagnostics privacy and recovery](docs/support.md)
+- [Install/update/rollback and the native candidate](docs/packaging.md)
+- [Bundled notices and inventory scope](docs/bundled-licenses.md)

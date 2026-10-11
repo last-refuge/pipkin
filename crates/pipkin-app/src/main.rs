@@ -32,13 +32,17 @@ fn main() {
         Err(message) => {
             eprintln!("pipkin: {message}");
             eprintln!(
-                "usage: pipkin [--version] [--diagnose [--probe]] [--pi-dir <path>] [--pi-server-id <uuid>] [--data-dir <path>]\n       pipkin --engine native [--engine-host child|inprocess] [--data-dir <path>]\n       pipkin --demo <scenario> [--data-dir <path>] [--speed <factor>]"
+                "usage: pipkin [--version] [--diagnose [--probe]] [--pi-dir <path>] [--pi-server-id <uuid>] [--data-dir <path>]\n       pipkin --engine native [--engine-host child|inprocess] [--data-dir <path>] [--version | --diagnose [--probe]]\n       pipkin --demo <scenario> [--data-dir <path>] [--speed <factor>]"
             );
             std::process::exit(2);
         }
     };
     match options.action {
         controller::Action::Run => {}
+        controller::Action::Version if options.engine == controller::EngineKind::Native => {
+            println!("{}", install::native_version_line(storage::SCHEMA_VERSION));
+            return;
+        }
         controller::Action::Version => {
             println!(
                 "pipkin {} (source {}, dirty: {}, protocol {}, schema {})",
@@ -49,6 +53,13 @@ fn main() {
                 storage::SCHEMA_VERSION
             );
             return;
+        }
+        controller::Action::Diagnose { probe }
+            if options.engine == controller::EngineKind::Native =>
+        {
+            let (text, bad) = install::diagnose_native(options.data_dir.as_deref(), probe);
+            print!("{text}");
+            std::process::exit(if bad { 1 } else { 0 });
         }
         controller::Action::Diagnose { probe } => {
             let data_dir = platform::data_dir(options.data_dir.as_deref());

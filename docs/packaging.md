@@ -148,6 +148,60 @@ Checked here with a throwaway gpg key (signature verifies; a modified tarball fa
 release key exists, nothing is published, and there is no in-app update check: an update is "download, verify,
 `./install.sh`", with `--rollback` selecting a retained prior package, subject to the schema/backup requirements above.
 
+## Native engine candidate (development)
+
+Pipkin's built-in Rust engine can be packaged on its own, with **no Node, npm or Pi** used to build it or
+shipped in it. This is a development candidate for x86_64 Linux only: **Pi remains the default engine**, the
+default `scripts/package.sh`, `release.sh`, PKGBUILD and macOS packaging are unchanged, nothing is signed, and no
+new platform is qualified by it.
+
+```
+scripts/package-native.sh               # dist/native/pipkin-native-<ver>-<arch>.tar.zst and dist/native/stage/
+scripts/package.sh --engine native      # the same; `--engine pi` (or no flag) is the existing Pi package
+scripts/test-native-package.sh          # build, package, install into a scratch prefix, bare-env probe
+```
+
+Build requirements: Rust (pinned by `rust-toolchain.toml`), a C compiler/cmake for the bundled SQLite and zstd,
+Python 3 and binutils (inventories), zstd and coreutils. Build identity is written by the POSIX
+`scripts/write-native-build-info.sh` instead of the Node `write-build-info.mjs` (which the Pi package still uses).
+
+The archive contains `usr/bin/pipkin` (the app; it runs the engine as a private `pipkin --engine-worker` child),
+`usr/lib/pipkin/native-engine.json` (a marker naming the engine version/protocol/schema), a desktop entry that
+launches `pipkin --engine native`, icons, licences, installed help (`packaging/native-README.md`),
+`build-info.json`, a Rust-only `third-party/inventory.json` and `runtime-inventory.json`. There is no
+`lib/pipkin/engine` or `lib/pipkin/runtime`; packaging fails if any Node/npm/Pi file appears. `./install.sh`
+recognises the marker, skips the Node checks, verifies the binary hash and runs
+`pipkin --diagnose --probe --engine native` in a throwaway profile before activating the version
+(`<ver>-native-<binary hash>`), so `--list`/`--rollback` work across Pi and native versions in one prefix.
+
+- **Selecting it:** the engine is always chosen explicitly with `--engine native` (the desktop entry does this).
+  The marker never changes the default: `pipkin` without the flag still looks for a Pi engine, and
+  `pipkin --diagnose` on a native install says the Pi engine is missing and points to `--engine native`.
+- **Isolation:** native data lives in `~/.local/share/pipkin/engine` and configuration (including provider
+  credentials) in `~/.config/pipkin/engine`, separate from Pi's `~/.pi`. `--data-dir DIR` (or `PIPKIN_DATA`)
+  puts everything under `DIR` (`DIR/engine`, `DIR/engine-config`) for disposable tests.
+- **Rollback:** reinstall or `./install.sh --rollback` to a Pi package. Native data is left in place and is not
+  migrated back: history written by the native engine is native-only and Pi does not read it.
+- **Not available yet:** Claude subscription sign-in is not available in native mode.
+
+```
+pipkin --version --engine native             # adds engine version, protocol and schema to the version line
+pipkin --diagnose --engine native            # engine identity, data/config directories, database, log tail
+pipkin --diagnose --probe --engine native    # also starts a throwaway worker: Hello + ListSessions, then stops
+```
+
+The native probe starts this binary as a worker in a new scratch directory with a cleared environment (no
+inherited API keys or proxies), no network access and no Node or Pi, checks the protocol/schema and an empty
+session list, shuts it down and deletes the scratch directory; your own engine data is not touched. The same
+privacy caution as the Pi report applies to the log tail.
+
+Measured sizes for one candidate (2026-10-11, unstripped release binary with debug information, like the Pi
+package's `!strip`): installed version **345,345,187 bytes** (binary 338,998,112), archive **72,638,449 bytes**.
+A stripped copy measured 58,493,851 bytes installed / 20,599,672 bytes archived (measurement only; the package
+is not stripped). For comparison, the **historical** 2026-10-06 Pi baseline staged 453 MiB with a
+89,114,048-byte tarball, before the private Node runtime was added. See
+`llm-docs/pipkin-rust-engine-evidence/packaging.md` for commands, inventories and what is unverified.
+
 ## Display servers
 
 The binary is built with both `wayland` and `x11`; it uses Wayland when `WAYLAND_DISPLAY` is set, else X11.

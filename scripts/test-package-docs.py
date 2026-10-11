@@ -5,10 +5,16 @@ from pathlib import Path
 import sys
 
 root = Path(__file__).resolve().parent.parent
+# test-package-docs.py STAGE [--native]   (--native: the native-engine candidate's installed help)
 help_dir = Path(sys.argv[1]) / 'usr/share/doc/pipkin'
-files = {'README.md': 'packaging/README.md', 'SECURITY.md': 'SECURITY.md',
-         'assets/PROVENANCE.md': 'assets/PROVENANCE.md', 'packaging/PKGBUILD': 'packaging/PKGBUILD',
-         'llm-docs/pipkin-v1-release-plan.md': 'llm-docs/pipkin-v1-release-plan.md'}
+native = sys.argv[2:] == ['--native']
+if native:
+    files = {'README.md': 'packaging/native-README.md', 'SECURITY.md': 'SECURITY.md',
+             'assets/PROVENANCE.md': 'assets/PROVENANCE.md'}
+else:
+    files = {'README.md': 'packaging/README.md', 'SECURITY.md': 'SECURITY.md',
+             'assets/PROVENANCE.md': 'assets/PROVENANCE.md', 'packaging/PKGBUILD': 'packaging/PKGBUILD',
+             'llm-docs/pipkin-v1-release-plan.md': 'llm-docs/pipkin-v1-release-plan.md'}
 for guide in (root / 'docs').glob('*.md'):
     relative = str(guide.relative_to(root))
     files[relative] = relative

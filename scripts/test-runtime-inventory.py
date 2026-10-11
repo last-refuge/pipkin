@@ -36,4 +36,9 @@ with tempfile.TemporaryDirectory() as directory:
     assert any(a['reviewRequired'] for a in report['artifacts'])
     subprocess.run(['python3', str(script), str(stage)], check=True)
     assert report_path.read_text() == before
+    subprocess.run(['python3', str(script), str(stage), '--native-engine'], check=True)
+    native = json.loads(report_path.read_text())
+    assert native['requiredNodeMinimum'] is None and 'no Node runtime' in native['engine']
+    assert native['artifacts'] == report['artifacts']
+    assert subprocess.run(['python3', str(script), str(stage), '--bogus'], capture_output=True).returncode != 0
 print('native dependencies, ABI references, foreign flags, path omission and non-execution verified')

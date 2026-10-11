@@ -6,6 +6,9 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 cd "$here"
+[ "${1:-}" != --engine ] || [ "${2:-}" = pi ] || {
+  echo 'release packages the default Pi engine only; the native-engine candidate is not a release' >&2; exit 1;
+}
 [ "${PIPKIN_ENGINE_DEV:-0}" != 1 ] || {
   echo "release cannot use PIPKIN_ENGINE_DEV=1; package development engines separately" >&2; exit 1;
 }

@@ -17,7 +17,8 @@ while (($#)); do
     -h|--help)
       printf '%s\n' 'Usage: ./install.sh [--prefix DIR] [--keep N] [--list | --rollback | --uninstall]' \
         'Run from the extracted x86_64 Linux archive. Default prefix: ~/.local.' \
-        'Installation includes a private Node runtime; provider setup happens in the app.'
+        'Installation includes a private Node runtime; provider setup happens in the app.' \
+        'A native-engine candidate archive (usr/lib/pipkin/native-engine.json) needs no Node at all.'
       exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -81,10 +82,11 @@ link_all() {
   activated=1
   ln -sfn "$current/usr/bin/pipkin" "$prefix/bin/pipkin"
   awk -v binary="$prefix/bin/pipkin" '
-    /^Exec=pipkin$/ {
+    /^Exec=pipkin( |$)/ {
+      rest = substr($0, length("Exec=pipkin") + 1)
       gsub(/\\/, "\\\\", binary)
       gsub(/"/, "\\\"", binary)
-      print "Exec=\"" binary "\""; next
+      print "Exec=\"" binary "\"" rest; next
     }
     { print }
   ' "$root/usr/share/applications/pipkin.desktop" > "$prefix/share/applications/pipkin.desktop"
@@ -103,7 +105,12 @@ case "$action" in
     for tool in sha256sum sed awk tr mktemp cp mv install env grep uname; do
       command -v "$tool" >/dev/null || die "Missing basic system tool: $tool. Install coreutils and retry."
     done
-    [[ -f "$here/usr/lib/pipkin/engine/engine.json" && -x "$here/usr/bin/pipkin" ]] || die 'Run this from a complete extracted Pipkin archive (usr/ is missing).'
+    native=0
+    if [[ -f "$here/usr/lib/pipkin/native-engine.json" ]]; then
+      native=1
+      [[ ! -e "$here/usr/lib/pipkin/engine" && ! -e "$here/usr/lib/pipkin/runtime" ]] || die 'A native-engine archive must not also carry a Pi engine or Node runtime.'
+    fi
+    [[ ( "$native" = 1 || -f "$here/usr/lib/pipkin/engine/engine.json" ) && -x "$here/usr/bin/pipkin" ]] || die 'Run this from a complete extracted Pipkin archive (usr/ is missing).'
     [[ ! -L "$versions" ]] || die 'Refusing a symlinked installation versions directory.'
     guard_links
     command -v git >/dev/null || die 'Git is required for project tools. Install it with your distribution package manager (Arch: sudo pacman -S git), then retry.'
@@ -115,6 +122,9 @@ case "$action" in
 
     runtime="$here/usr/lib/pipkin/runtime"
     engine="$here/usr/lib/pipkin/engine"
+    if [[ "$native" = 1 ]]; then
+      progress OK 'Built-in native engine: no Node runtime needed; no system changes'
+    else
     [[ -x "$runtime/bin/node" && -f "$runtime/runtime.json" ]] || die 'Bundled Node is missing. Download the complete Linux archive; no system Node installation is needed.'
     grep -Fq '"target": "x86_64-unknown-linux-gnu"' "$runtime/runtime.json" || die 'Bundled Node has the wrong Linux architecture.'
     grep -Eq '"requiresBundledNode"[[:space:]]*:[[:space:]]*true' "$engine/engine.json" || die 'This engine does not declare the paired private Node runtime.'
@@ -124,19 +134,27 @@ case "$action" in
     runtime_version=$(sed -n 's/.*"version": "\([0-9][0-9.]*\)".*/\1/p' "$runtime/runtime.json" | head -1)
     [[ -n "$runtime_version" && $("$runtime/bin/node" --version) = "v$runtime_version" ]] || die 'The bundled Node runtime cannot run on this system.'
     progress OK "Private Node $runtime_version verified; no system changes"
+    fi
 
     info="$here/usr/share/doc/pipkin/build-info.json"
-    [[ -f "$info" && -f "$engine/pi-test.sh" && -d "$engine/node_modules" ]] || die 'App or paired Pi engine is incomplete.'
+    [[ -f "$info" && ( "$native" = 1 || ( -f "$engine/pi-test.sh" && -d "$engine/node_modules" ) ) ]] || die 'App or paired Pi engine is incomplete.'
     expected=$(sed -n 's/.*"binarySha256": "\([0-9a-f]\{64\}\)".*/\1/p' "$info" | head -1)
     [[ ${#expected} = 64 && $(sha256sum "$here/usr/bin/pipkin" | awk '{print $1}') = "$expected" ]] || die 'Pipkin executable checksum mismatch; do not run this archive.'
     "$here/usr/bin/pipkin" --version >/dev/null || die 'Pipkin cannot start here. Check your Linux library/GLIBC compatibility.'
+    if [[ "$native" = 1 ]]; then
+    "$here/usr/bin/pipkin" --version --engine native | grep -q 'engine native' || die 'This Pipkin does not identify a built-in native engine.'
+    # App identity only: the engine is part of the binary.
+    name="$(app_version "$here")-native-${expected:0:12}"
+    else
     bridge_digest=$(sed -n 's/.*"pipkinAuthBridgeSha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{64\}\)".*/\1/p' "$engine/engine.json" | head -1)
     [[ ${#bridge_digest} = 64 ]] || die 'Cannot identify the staged OAuth bridge.'
     # Version + app, Pi bridge and Node identities: fixes built at the same 0.0.1/Pi
     # revision must not silently reuse an older installation.
     name="$(app_version "$here")-$(version_of "$here")-${expected:0:12}-${bridge_digest:0:12}-${node_digest:0:12}" || die 'Cannot identify the app and paired engine.'
+    fi
     [[ "$name" != -* && "$name" != .* && "$name" != *[!a-zA-Z0-9._-]* ]] || die 'Invalid app or engine version.'
-    progress OK 'Pipkin and paired Pi engine verified'
+    if [[ "$native" = 1 ]]; then progress OK 'Pipkin and built-in native engine verified'
+    else progress OK 'Pipkin and paired Pi engine verified'; fi
 
     mkdir -p "$versions"
     candidate=$versions/$name
@@ -153,9 +171,11 @@ case "$action" in
     # A throwaway offline profile; this neither touches Pi credentials nor makes model requests.
     scratch=$(mktemp -d /tmp/pi-XXXXXX)
     mkdir -p "$scratch/home"
+    probe_args=(--diagnose --probe)
+    [[ "$native" = 0 ]] || probe_args+=(--engine native)
     if ! env -i HOME="$scratch/home" XDG_DATA_HOME="$scratch/home/.local/share" \
       TMPDIR="$scratch" PATH=/usr/bin:/bin PI_OFFLINE=1 \
-      "$candidate/usr/bin/pipkin" --diagnose --probe >"$scratch/probe.log" 2>&1; then
+      "$candidate/usr/bin/pipkin" "${probe_args[@]}" >"$scratch/probe.log" 2>&1; then
       die 'The installed engine failed its offline handshake. The previous version is unchanged; inspect local libraries and try again.'
     fi
     grep -q 'engine probe: OK' "$scratch/probe.log" || die 'The installed engine did not answer its offline handshake.'
