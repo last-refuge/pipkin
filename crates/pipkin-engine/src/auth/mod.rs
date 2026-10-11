@@ -109,7 +109,8 @@ pub(crate) struct Inner {
     config: EngineConfig,
     store: Arc<dyn CredentialStore>,
     endpoints: Endpoints,
-    http: reqwest::Client,
+    /// Sign-in traffic; replaced when the engine's network settings change.
+    http: RwLock<reqwest::Client>,
     catalog: RwLock<Arc<Catalog>>,
     models: RwLock<Arc<ModelsConfig>>,
     copilot_ids: Vec<String>,
@@ -160,15 +161,13 @@ impl Auth {
 
     /// Use another credential store (a future OS secret store, or tests).
     pub fn with_store(config: &EngineConfig, store: Arc<dyn CredentialStore>) -> Auth {
-        let http = if config.env.ambient {
-            crate::provider::http::client()
-        } else {
-            reqwest::Client::builder()
-                .no_proxy()
-                .connect_timeout(Duration::from_secs(30))
-                .build()
-                .expect("the HTTP client configuration is valid")
-        };
+        // Proxies come from the engine's own environment (never the ambient one when isolated)
+        // and global settings `httpProxy`.
+        let global = crate::config::Settings::load(&config.config_dir, None).0;
+        let http = crate::provider::http::client_with(&crate::provider::http::NetSettings::new(
+            &config.env,
+            &global,
+        ));
         let copilot_ids = crate::provider::model::builtin_models()
             .into_iter()
             .filter(|m| m.provider == "github-copilot")
@@ -179,7 +178,7 @@ impl Auth {
                 endpoints: Endpoints::from_env(&config.env),
                 config: config.clone(),
                 store,
-                http,
+                http: RwLock::new(http),
                 catalog: RwLock::new(Arc::new(Catalog::default())),
                 models: RwLock::new(Arc::new(ModelsConfig::default())),
                 copilot_ids,
@@ -191,6 +190,11 @@ impl Auth {
         };
         auth.reload();
         auth
+    }
+
+    /// Use another HTTP client for sign-in flows (the engine rebuilt its network settings).
+    pub fn set_http(&self, http: reqwest::Client) {
+        *self.inner.http.write().unwrap_or_else(|e| e.into_inner()) = http;
     }
 
     pub fn set_listener(&self, listener: AuthListener) {

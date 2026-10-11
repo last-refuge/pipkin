@@ -365,7 +365,8 @@ impl Inner {
         let attempt = id.clone();
         let provider = provider.to_owned();
         tokio::spawn(async move {
-            let ctx = inner.flow_ctx(inner.http.clone(), device_id);
+            let http = inner.http.read().unwrap_or_else(|e| e.into_inner()).clone();
+            let ctx = inner.flow_ctx(http, device_id);
             let io = Interaction::new(
                 Arc::new(AttemptSink {
                     inner: inner.clone(),

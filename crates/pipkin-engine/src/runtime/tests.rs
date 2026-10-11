@@ -35,8 +35,13 @@ impl Fixture {
     }
 
     pub fn start(&self, provider: &Scripted) -> Engine {
+        self.start_config(provider, self.config())
+    }
+
+    /// Start with an adjusted configuration (see [`Fixture::config`]).
+    pub fn start_config(&self, provider: &Scripted, config: EngineConfig) -> Engine {
         let handle = EngineHandle::start_with(
-            self.config(),
+            config,
             registry_with(Arc::new(provider.clone())),
             crate::tools::builtin_tools(),
         )

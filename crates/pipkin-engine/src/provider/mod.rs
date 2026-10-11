@@ -17,6 +17,7 @@ pub mod http;
 #[cfg(any(test, feature = "test-support"))]
 pub mod mock;
 pub mod model;
+pub mod proxy;
 pub mod scripted;
 pub mod sse;
 

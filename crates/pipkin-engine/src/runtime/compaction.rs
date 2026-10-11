@@ -83,7 +83,7 @@ impl Shared {
                 .adapter
                 .stream(StreamCtx {
                     req: &req,
-                    http: &self.http,
+                    http: &prepared.http,
                     events: None,
                     cancel: cancel.clone(),
                 })

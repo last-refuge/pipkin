@@ -43,8 +43,11 @@ pub(super) struct Prepared {
     pub req: ProviderRequest,
     pub adapter: Arc<dyn crate::provider::ApiAdapter>,
     pub model: crate::provider::Model,
+    /// The session's settings, with compaction's per-model overrides already applied.
     pub settings: Settings,
     pub entries: Vec<Entry>,
+    /// The engine HTTP client as of this request (rebuilt when network settings change).
+    pub http: reqwest::Client,
 }
 
 enum Step {
@@ -269,6 +272,7 @@ impl Shared {
             req,
             adapter,
             model,
+            http,
             ..
         } = self.prepare(sess).await?;
         let _permit = tokio::select! {
@@ -278,7 +282,7 @@ impl Shared {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
         let fut = adapter.stream(StreamCtx {
             req: &req,
-            http: &self.http,
+            http: &http,
             events: Some(tx),
             cancel: cancel.clone(),
         });
@@ -388,7 +392,13 @@ impl Shared {
                 detail: format!("No adapter for API {} (model {key})", model.api),
             }));
         };
-        let auth = match self.auth.resolve(&model, &self.http).await {
+        // Network settings may have changed since the last request.
+        let http = self.refresh_net();
+        let proxy = self.proxy_config();
+        if let Err(detail) = unusable_proxy(&proxy, &model.base_url) {
+            return Err(Some(RunOutcome::ModelError { detail }));
+        }
+        let auth = match self.auth.resolve(&model, &http).await {
             Ok(a) => a,
             Err(e) => {
                 return Err(Some(RunOutcome::ModelError {
@@ -396,11 +406,12 @@ impl Shared {
                 }));
             }
         };
-        let settings = Settings::load(
+        let mut settings = Settings::load(
             &self.config.config_dir,
             Some(std::path::Path::new(&row.cwd)),
         )
         .0;
+        settings.compaction = settings.compaction.for_model(&model.key());
         let entries = match tokio::task::block_in_place(|| self.store.context_entries(&sess.id)) {
             Ok(e) => e,
             Err(_) => return Err(None),
@@ -457,12 +468,23 @@ impl Shared {
         if let Err(e) = crate::provider::api::cloudflare::prepare(&mut req) {
             return Err(Some(RunOutcome::ModelError { detail: e }));
         }
+        if let Err(detail) = unusable_proxy(&proxy, req.base_url()) {
+            return Err(Some(RunOutcome::ModelError { detail }));
+        }
+        // Transports outside the shared client (Codex WebSockets) read the proxy from the
+        // request env; a credential's own proxy variables win, as in the reference.
+        for (key, value) in proxy.env_pairs() {
+            if !req.env.contains_key(&key) && !req.env.contains_key(&key.to_ascii_uppercase()) {
+                req.env.insert(key, value);
+            }
+        }
         Ok(Prepared {
             req,
             adapter,
             model,
             settings,
             entries,
+            http,
         })
     }
 
@@ -853,6 +875,18 @@ fn tool_env(session: &str, model: Option<&str>, thinking: Option<&str>) -> Vec<(
         env.push(("PI_REASONING_LEVEL".into(), t.into()));
     }
     env
+}
+
+/// A model request whose proxy is configured but unusable (SOCKS, PAC, malformed) fails with
+/// the reference message instead of bypassing the proxy (`resolveHttpProxyUrlForTarget`).
+fn unusable_proxy(
+    proxy: &crate::provider::proxy::ProxyConfig,
+    base_url: &str,
+) -> Result<(), String> {
+    match url::Url::parse(base_url) {
+        Ok(target) => proxy.proxy_for(&target).map(|_| ()),
+        Err(_) => Ok(()),
+    }
 }
 
 fn message_provider(m: &Message) -> &str {
