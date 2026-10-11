@@ -1,0 +1,147 @@
+{
+ "model": {
+  "id": "gpt-5.5",
+  "name": "GPT-5.5",
+  "api": "openai-codex-responses",
+  "provider": "openai-codex",
+  "baseUrl": "http://127.0.0.1:1",
+  "reasoning": true,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 5,
+   "output": 30,
+   "cacheRead": 0.5,
+   "cacheWrite": 0
+  },
+  "contextWindow": 272000,
+  "maxTokens": 128000,
+  "thinkingLevelMap": {
+   "xhigh": "xhigh",
+   "minimal": "low"
+  },
+  "headers": {
+   "x-model-header": "m"
+  },
+  "compat": {}
+ },
+ "systemPrompt": "You are Pipkin.",
+ "messages": [
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "Hello"
+    },
+    {
+     "type": "image",
+     "data": "AAAA",
+     "mimeType": "image/png"
+    }
+   ],
+   "timestamp": 1
+  },
+  {
+   "role": "assistant",
+   "content": [
+    {
+     "type": "thinking",
+     "thinking": "thought",
+     "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_1\",\"summary\":[],\"encrypted_content\":\"enc\"}"
+    },
+    {
+     "type": "text",
+     "text": "Hi there",
+     "textSignature": "{\"v\":1,\"id\":\"msg_1\",\"phase\":\"final_answer\"}"
+    },
+    {
+     "type": "toolCall",
+     "id": "call_1|fc_1",
+     "name": "read",
+     "arguments": {
+      "path": "a.txt"
+     }
+    }
+   ],
+   "api": "openai-codex-responses",
+   "provider": "openai-codex",
+   "model": "gpt-5.5",
+   "usage": {
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 0,
+    "cost": {
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "total": 0
+    }
+   },
+   "stopReason": "toolUse",
+   "timestamp": 2
+  },
+  {
+   "role": "toolResult",
+   "toolCallId": "call_1|fc_1",
+   "toolName": "read",
+   "content": [
+    {
+     "type": "text",
+     "text": "file body"
+    }
+   ],
+   "isError": false,
+   "timestamp": 3
+  },
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "Thanks"
+    }
+   ],
+   "timestamp": 4
+  }
+ ],
+ "tools": [
+  {
+   "name": "read",
+   "description": "Read a file",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "path": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "path"
+    ]
+   }
+  }
+ ],
+ "options": {
+  "apiKey": "eyJhbGciOiJub25lIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF8xMjMifX0.sig",
+  "transport": "sse",
+  "sessionId": "sess-1",
+  "reasoningEffort": "high",
+  "headers": {
+   "x-extra": "e",
+   "x-model-header": null
+  }
+ },
+ "replies": [
+  {
+   "sse": [
+    ": keepalive\n\nevent: response.created\ndata: {\"type\": \"response.created\", \"response\": {\"id\": \"resp_1\", \"status\": \"in_progress\"}}\n\nevent: response.output_item.added\ndata: {\"type\": \"response.output_item.added\", \"output_index\": 0, \"item\": {\"type\": \"reasoning\", \"id\": \"rs_9\", \"summary\": []}}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"type\": \"response.reasoning_summary_text.delta\", \"output_index\": 0, \"delta\": \"Thinking about \"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"type\": \"response.reasoning_summary_text.delta\", \"output_index\": 0, \"delta\": \"files\"}\n\nevent: response.reasoning_summary_part.done\ndata: {\"type\": \"response.reasoning_summary_part.done\", \"output_index\": 0}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"type\": \"response.reasoning_summary_text.delta\", \"output_index\": 0, \"delta\": \"Second part\"}\n\nevent: response.reasoning_summary_part.done\ndata: {\"type\": \"response.reasoning_summary_part.done\", \"output_index\": 0}\n\nevent: response.output_item.done\ndata: {\"type\": \"response.output_item.done\", \"output_index\": 0, \"item\": {\"type\": \"reasoning\", \"id\": \"rs_9\", \"summary\": [{\"type\": \"summary_text\", \"text\": \"Thinking about files\"}, {\"type\": \"summary_text\", \"text\": \"Second part\"}], \"encrypted_content\": \"ENC9\"}}\n\nevent: response.output_item.added\ndata: {\"type\": \"response.output_item.added\", \"output_index\": 1, \"item\": {\"type\": \"message\", \"id\": \"msg_9\", \"role\": \"assistant\", \"content\": [], \"phase\": \"commentary\"}}\n\nevent: response.output_text.delta\ndata: {\"type\": \"response.output_text.delta\", \"output_index\": 1, \"delta\": \"Let me read héllo 😀 \"}\n\nevent: response.output_text.delta\ndata: {\"type\": \"response.output_text.delta\", \"output_index\": 1, \"delta\": \"the file.\"}\n\nevent: response.output_item.done\ndata: {\"type\": \"response.output_item.done\", \"output_index\": 1, \"item\": {\"type\": \"message\", \"id\": \"msg_9\", \"role\": \"assistant\", \"phase\": \"commentary\", \"content\": [{\"type\": \"output_text\", \"text\": \"Let me read héllo 😀 the file.\", \"annotations\": []}]}}\n\nevent: response.output_item.added\ndata: {\"type\": \"response.output_item.added\", \"output_index\": 2, \"item\": {\"type\": \"function_call\", \"id\": \"fc_9\", \"call_id\": \"call_9\", \"name\": \"read\", \"arguments\": \"\"}}\n\nevent: response.function_call_arguments.delta\ndata: {\"type\": \"response.function_call_arguments.delta\", \"output_index\": 2, \"delta\": \"{\\\"path\\\":\"}\n\nevent: response.function_call_arguments.delta\ndata: {\"type\": \"response.function_call_arguments.delta\", \"output_index\": 2, \"delta\": \"\\\"b.txt\\\"}\"}\n\nevent: response.function_call_arguments.done\ndata: {\"type\": \"response.function_call_arguments.done\", \"output_index\": 2, \"arguments\": \"{\\\"path\\\":\\\"b.txt\\\"}\"}\n\nevent: response.output_item.done\ndata: {\"type\": \"response.output_item.done\", \"output_index\": 2, \"item\": {\"type\": \"function_call\", \"id\": \"fc_9\", \"call_id\": \"call_9\", \"name\": \"read\", \"arguments\": \"{\\\"path\\\":\\\"b.txt\\\"}\"}}\n\nevent: response.completed\ndata: {\"type\": \"response.completed\", \"response\": {\"id\": \"resp_1\", \"status\": \"completed\", \"end_turn\": false, \"service_tier\": \"default\", \"usage\": {\"input_tokens\": 1000, \"input_tokens_details\": {\"cached_tokens\": 200}, \"output_tokens\": 300, \"output_tokens_details\": {\"reasoning_tokens\": 50}, \"total_tokens\": 1300}}}\n\ndata: [DONE]\n\n"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,264 @@
+{
+ "model": {
+  "id": "gpt-5.5",
+  "name": "GPT-5.5",
+  "api": "openai-codex-responses",
+  "provider": "openai-codex",
+  "baseUrl": "http://127.0.0.1:1",
+  "reasoning": true,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 5,
+   "output": 30,
+   "cacheRead": 0.5,
+   "cacheWrite": 0
+  },
+  "contextWindow": 272000,
+  "maxTokens": 128000,
+  "thinkingLevelMap": {
+   "off": null,
+   "minimal": "low"
+  },
+  "headers": {
+   "x-model-header": "m"
+  },
+  "compat": {}
+ },
+ "systemPrompt": "sys",
+ "messages": [
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "look"
+    },
+    {
+     "type": "image",
+     "data": "AAAA",
+     "mimeType": "image/png"
+    },
+    {
+     "type": "image",
+     "data": "BBBB",
+     "mimeType": "image/png"
+    }
+   ],
+   "timestamp": 1
+  },
+  {
+   "role": "assistant",
+   "content": [
+    {
+     "type": "thinking",
+     "thinking": "foreign thought",
+     "thinkingSignature": "sig"
+    },
+    {
+     "type": "text",
+     "text": "foreign text",
+     "textSignature": "msg_foreign"
+    },
+    {
+     "type": "toolCall",
+     "id": "call_x|item.with.dots",
+     "name": "read",
+     "arguments": {
+      "path": "x"
+     }
+    }
+   ],
+   "api": "openai-responses",
+   "provider": "openai",
+   "model": "gpt-4o",
+   "usage": {
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 0,
+    "cost": {
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "total": 0
+    }
+   },
+   "stopReason": "toolUse",
+   "timestamp": 2
+  },
+  {
+   "role": "toolResult",
+   "toolCallId": "call_x|item.with.dots",
+   "toolName": "read",
+   "content": [
+    {
+     "type": "text",
+     "text": "out"
+    },
+    {
+     "type": "image",
+     "data": "CCCC",
+     "mimeType": "image/png"
+    }
+   ],
+   "isError": false,
+   "timestamp": 3
+  },
+  {
+   "role": "assistant",
+   "content": [
+    {
+     "type": "text",
+     "text": "broken"
+    }
+   ],
+   "api": "openai-codex-responses",
+   "provider": "openai-codex",
+   "model": "gpt-5.5",
+   "usage": {
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 0,
+    "cost": {
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "total": 0
+    }
+   },
+   "stopReason": "error",
+   "errorMessage": "boom",
+   "timestamp": 4
+  },
+  {
+   "role": "assistant",
+   "content": [
+    {
+     "type": "text",
+     "text": "older model text",
+     "textSignature": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "type": "toolCall",
+     "id": "call_o|fc_o",
+     "name": "read",
+     "arguments": {
+      "path": "o"
+     }
+    }
+   ],
+   "api": "openai-codex-responses",
+   "provider": "openai-codex",
+   "model": "gpt-5.4",
+   "usage": {
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 0,
+    "cost": {
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "total": 0
+    }
+   },
+   "stopReason": "toolUse",
+   "timestamp": 5
+  },
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "next"
+    }
+   ],
+   "timestamp": 6
+  },
+  {
+   "role": "assistant",
+   "content": [
+    {
+     "type": "text",
+     "text": "a"
+    },
+    {
+     "type": "text",
+     "text": "b"
+    }
+   ],
+   "api": "openai-codex-responses",
+   "provider": "openai-codex",
+   "model": "gpt-5.5",
+   "usage": {
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 0,
+    "cost": {
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "total": 0
+    }
+   },
+   "stopReason": "stop",
+   "timestamp": 7
+  },
+  {
+   "role": "user",
+   "content": [],
+   "timestamp": 8
+  },
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "last"
+    }
+   ],
+   "timestamp": 9
+  }
+ ],
+ "tools": [
+  {
+   "name": "read",
+   "description": "Read a file",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "path": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "path"
+    ]
+   }
+  }
+ ],
+ "options": {
+  "apiKey": "eyJhbGciOiJub25lIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF8xMjMifX0.sig",
+  "transport": "sse",
+  "sessionId": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssséééééééééé"
+ },
+ "replies": [
+  {
+   "sse": [
+    ": keepalive\n\nevent: response.output_item.added\ndata: {\"type\": \"response.output_item.added\", \"output_index\": 0, \"item\": {\"type\": \"message\", \"id\": \"msg_3\", \"role\": \"assistant\", \"content\": []}}\n\nevent: response.output_text.delta\ndata: {\"type\": \"response.output_text.delta\", \"output_index\": 0, \"delta\": \"partial\"}\n\nevent: response.incomplete\ndata: {\"type\": \"response.incomplete\", \"response\": {\"id\": \"resp_3\", \"status\": \"incomplete\", \"incomplete_details\": {\"reason\": \"max_output_tokens\"}, \"usage\": {\"input_tokens\": 50, \"input_tokens_details\": {\"cached_tokens\": 10, \"cache_write_tokens\": 5}, \"output_tokens\": 7, \"total_tokens\": 57}}}\n\ndata: [DONE]\n\n"
+   ]
+  }
+ ]
+}

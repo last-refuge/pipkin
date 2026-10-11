@@ -1,0 +1,160 @@
+{
+ "requests": [
+  {
+   "url": "http://127.0.0.1:1/codex/responses",
+   "headers": {
+    "accept": "text/event-stream",
+    "authorization": "Bearer eyJhbGciOiJub25lIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF8xMjMifX0.sig",
+    "chatgpt-account-id": "acct_123",
+    "content-encoding": "zstd",
+    "content-type": "application/json",
+    "openai-beta": "responses=experimental",
+    "originator": "pi",
+    "session-id": "sess-1",
+    "user-agent": "pi (linux 7.2.5-3-omarchy; x64)",
+    "x-client-request-id": "sess-1",
+    "x-extra": "e"
+   },
+   "body": {
+    "model": "gpt-5.5",
+    "store": false,
+    "stream": true,
+    "instructions": "You are Pipkin.",
+    "input": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "input_text",
+        "text": "Hello"
+       },
+       {
+        "type": "input_image",
+        "detail": "auto",
+        "image_url": "data:image/png;base64,AAAA"
+       }
+      ]
+     },
+     {
+      "type": "reasoning",
+      "id": "rs_1",
+      "summary": [],
+      "encrypted_content": "enc"
+     },
+     {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+       {
+        "type": "output_text",
+        "text": "Hi there",
+        "annotations": []
+       }
+      ],
+      "status": "completed",
+      "id": "msg_1",
+      "phase": "final_answer"
+     },
+     {
+      "type": "function_call",
+      "id": "fc_1",
+      "call_id": "call_1",
+      "name": "read",
+      "arguments": "{\"path\":\"a.txt\"}"
+     },
+     {
+      "type": "function_call_output",
+      "call_id": "call_1",
+      "output": "file body"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "input_text",
+        "text": "Thanks"
+       }
+      ]
+     }
+    ],
+    "text": {
+     "verbosity": "low"
+    },
+    "include": [
+     "reasoning.encrypted_content"
+    ],
+    "prompt_cache_key": "sess-1",
+    "tool_choice": "auto",
+    "parallel_tool_calls": true,
+    "tools": [
+     {
+      "type": "function",
+      "name": "read",
+      "description": "Read a file",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "path": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "path"
+       ]
+      },
+      "strict": null
+     }
+    ],
+    "reasoning": {
+     "effort": "high",
+     "summary": "auto"
+    }
+   }
+  }
+ ],
+ "message": {
+  "role": "assistant",
+  "content": [
+   {
+    "type": "thinking",
+    "thinking": "Thinking about files\n\nSecond part",
+    "thinkingSignature": "{\"type\":\"reasoning\",\"id\":\"rs_9\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"Thinking about files\"},{\"type\":\"summary_text\",\"text\":\"Second part\"}],\"encrypted_content\":\"ENC9\"}"
+   },
+   {
+    "type": "text",
+    "text": "Let me read héllo 😀 the file.",
+    "textSignature": "{\"v\":1,\"id\":\"msg_9\",\"phase\":\"commentary\"}"
+   },
+   {
+    "type": "toolCall",
+    "id": "call_9|fc_9",
+    "name": "read",
+    "arguments": {
+     "path": "b.txt"
+    }
+   }
+  ],
+  "api": "openai-codex-responses",
+  "provider": "openai-codex",
+  "model": "gpt-5.5",
+  "usage": {
+   "input": 800,
+   "output": 300,
+   "cacheRead": 200,
+   "cacheWrite": 0,
+   "reasoning": 50,
+   "totalTokens": 1300,
+   "cost": {
+    "input": 0.004,
+    "output": 0.009000000000000001,
+    "cacheRead": 0.00009999999999999999,
+    "cacheWrite": 0,
+    "total": 0.0131
+   }
+  },
+  "stopReason": "toolUse",
+  "responseId": "resp_1",
+  "endTurn": false,
+  "rawStopReason": "completed"
+ }
+}

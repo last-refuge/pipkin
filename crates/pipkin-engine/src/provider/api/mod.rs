@@ -21,6 +21,7 @@ pub mod google_auth;
 pub mod google_generative_ai;
 pub mod google_shared;
 pub mod google_vertex;
+pub mod openai_codex_responses;
 
 /// Every built-in adapter.
 pub fn all() -> Vec<Arc<dyn ApiAdapter>> {
@@ -34,5 +35,7 @@ pub fn all() -> Vec<Arc<dyn ApiAdapter>> {
         anthropic_messages::adapter(),
         google_generative_ai::adapter(),
         google_vertex::adapter(),
+        // One adapter per line, so parallel additions merge cleanly.
+        openai_codex_responses::adapter(),
     ]
 }

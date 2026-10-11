@@ -1,0 +1,69 @@
+{
+ "requests": [
+  {
+   "url": "http://127.0.0.1:1/codex/responses",
+   "headers": {
+    "accept": "text/event-stream",
+    "authorization": "Bearer eyJhbGciOiJub25lIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF8xMjMifX0.sig",
+    "chatgpt-account-id": "acct_123",
+    "content-encoding": "zstd",
+    "content-type": "application/json",
+    "openai-beta": "responses=experimental",
+    "originator": "pi",
+    "user-agent": "pi (linux 7.2.5-3-omarchy; x64)",
+    "x-model-header": "m"
+   },
+   "body": {
+    "model": "gpt-5.5",
+    "store": false,
+    "stream": true,
+    "instructions": "You are a helpful assistant.",
+    "input": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "input_text",
+        "text": "hi"
+       }
+      ]
+     }
+    ],
+    "text": {
+     "verbosity": "low"
+    },
+    "include": [
+     "reasoning.encrypted_content"
+    ],
+    "tool_choice": "auto",
+    "parallel_tool_calls": true,
+    "reasoning": {
+     "effort": "minimal"
+    }
+   }
+  }
+ ],
+ "message": {
+  "role": "assistant",
+  "content": [],
+  "api": "openai-codex-responses",
+  "provider": "openai-codex",
+  "model": "gpt-5.5",
+  "usage": {
+   "input": 0,
+   "output": 0,
+   "cacheRead": 0,
+   "cacheWrite": 0,
+   "totalTokens": 0,
+   "cost": {
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "total": 0
+   }
+  },
+  "stopReason": "error",
+  "errorMessage": "Invalid Codex SSE JSON: Expected property name or '}' in JSON at position 1 (line 1 column 2)"
+ }
+}
