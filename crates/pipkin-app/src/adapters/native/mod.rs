@@ -53,6 +53,8 @@ const BATCH: usize = 256;
 const HISTORY_PAGE: u32 = 50;
 const EVIDENCE_PAGES: usize = 8;
 const SUBAGENT_PAGE: u32 = 200;
+/// A selected child's newest page is re-read at most this often while it is changing.
+const CHILD_SYNC_INTERVAL: Duration = Duration::from_millis(250);
 const SHUTDOWN_CALL: Duration = Duration::from_secs(2);
 const OFFLINE: &str = "Not connected to the built-in engine.";
 
@@ -373,6 +375,20 @@ impl Worker {
                     reason: OFFLINE.into(),
                 },
             ),
+            BackendRequest::LoadOlderSubagent {
+                conversation,
+                generation,
+                child,
+                before,
+            } => self.emit(
+                conversation,
+                generation,
+                EventKind::SubagentOlderFailed {
+                    child,
+                    before,
+                    reason: OFFLINE.into(),
+                },
+            ),
             BackendRequest::Cancel {
                 conversation,
                 generation,
@@ -588,6 +604,7 @@ impl Worker {
                 }
             }
             live.flush_sync(self, false);
+            live.flush_child(self);
             if let Some(current) = &live.current
                 && current.workspace_ready
                 && Instant::now() >= current.next_changes_scan
@@ -610,6 +627,9 @@ struct Current {
     last_sync: Instant,
     /// The child transcript selected in this session.
     child: Option<u64>,
+    /// The selected child's session committed something since its newest page was last read.
+    child_dirty: bool,
+    child_sync: Instant,
     tools_done: usize,
     workspace_ready: bool,
     last_workspace: Option<Workspace>,
@@ -737,10 +757,10 @@ impl Live {
         let current = self.current.as_ref()?;
         let sync = current.dirty.then_some(current.last_sync + SYNC_INTERVAL);
         let scan = current.workspace_ready.then_some(current.next_changes_scan);
-        match (sync, scan) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        let child = current
+            .child_dirty
+            .then_some(current.child_sync + CHILD_SYNC_INTERVAL);
+        [sync, scan, child].into_iter().flatten().min()
     }
 
     /// Send the open conversation's transcript if it changed, at most every `SYNC_INTERVAL`
@@ -813,6 +833,7 @@ impl Live {
         revision: u64,
         change: SessionChange,
     ) {
+        self.mark_child(&session, &change);
         match change {
             SessionChange::RunSettled {
                 request, outcome, ..
@@ -971,14 +992,58 @@ impl Live {
         let Some(view) = &c.mirror.subagents else {
             return;
         };
+        // The native engine pages child history, so its directory is marked pageable.
         let kind = match mapping::subagents(view) {
-            Ok(children) => EventKind::SubagentsSynced {
+            Ok(children) => EventKind::SubagentDirectory {
                 enabled: view.enabled,
                 children,
+                truncated: view.truncated,
             },
             Err(reason) => EventKind::SubagentsUnavailable(reason),
         };
         worker.emit(c.conversation, c.generation, kind);
+    }
+
+    /// A committed change in the selected child's own session makes its newest page stale.
+    /// The page is re-read coalesced (`CHILD_SYNC_INTERVAL`), never per streamed token.
+    fn mark_child(&mut self, session: &str, change: &SessionChange) {
+        let Some(current) = self.current.as_mut() else {
+            return;
+        };
+        let Some(child) = current.child else { return };
+        let affects_history = matches!(
+            change,
+            SessionChange::EntryAppended { .. }
+                | SessionChange::EntryReplaced { .. }
+                | SessionChange::EntryDelta { .. }
+                | SessionChange::RunSettled { .. }
+                | SessionChange::BoundaryMoved { .. }
+        );
+        if affects_history
+            && current.session != session
+            && current.mirror.subagents.as_ref().is_some_and(|view| {
+                view.children
+                    .iter()
+                    .any(|row| row.child == child && row.session == session)
+            })
+        {
+            current.child_dirty = true;
+        }
+    }
+
+    /// Re-read the selected child's newest page if it changed and the interval has passed.
+    fn flush_child(&mut self, worker: &Worker) {
+        let Some(current) = self.current.as_mut() else {
+            return;
+        };
+        if !current.child_dirty || current.child_sync.elapsed() < CHILD_SYNC_INTERVAL {
+            return;
+        }
+        current.child_dirty = false;
+        let (conversation, generation) = (current.conversation, current.generation);
+        if let Some(child) = current.child {
+            self.load_child(worker, conversation, generation, child);
+        }
     }
 
     /// Re-read everything derived from events: the catalogue, the open session, and the outcome
@@ -1144,6 +1209,12 @@ impl Live {
                     ),
                 }
             }
+            BackendRequest::LoadOlderSubagent {
+                conversation,
+                generation,
+                child,
+                before,
+            } => self.load_older_child(worker, conversation, generation, child, before),
             BackendRequest::SetSubagentsEnabled {
                 conversation,
                 enabled,
@@ -1593,19 +1664,24 @@ impl Live {
         let Some(session) = self.current.as_ref().map(|c| c.session.clone()) else {
             return;
         };
+        if let Some(current) = self.current.as_mut() {
+            current.child_dirty = false;
+            current.child_sync = Instant::now();
+        }
         match self.call(Call::SubagentHistory {
             session,
             child,
             before: None,
             limit: SUBAGENT_PAGE,
         }) {
-            Ok(Reply::Page { entries, .. }) => worker.emit(
+            Ok(Reply::Page { entries, has_older }) => worker.emit(
                 conversation,
                 generation,
-                EventKind::SubagentView {
+                EventKind::SubagentPage {
                     child,
                     items: transcript::map_entries(&entries, &HashMap::new()).items,
                     live: true,
+                    has_older,
                 },
             ),
             other => worker.emit(
@@ -1621,6 +1697,59 @@ impl Live {
                     },
                 },
             ),
+        }
+    }
+
+    /// The bounded page of a child's history before `before`, ownership-checked by the
+    /// engine. Every answer names the child and cursor so the core can drop stale ones.
+    fn load_older_child(
+        &mut self,
+        worker: &Worker,
+        conversation: ConversationId,
+        generation: u64,
+        child: u64,
+        before: ItemId,
+    ) {
+        let fail = |reason: String| {
+            worker.emit(
+                conversation,
+                generation,
+                EventKind::SubagentOlderFailed {
+                    child,
+                    before,
+                    reason,
+                },
+            )
+        };
+        let Some(session) = self
+            .current
+            .as_ref()
+            .filter(|c| c.conversation == conversation && c.generation == generation)
+            .map(|c| c.session.clone())
+        else {
+            return fail("The session is no longer open.".into());
+        };
+        let Some(entry) = transcript::entry_of_item(before) else {
+            return fail("Earlier activity cannot be located for this entry.".into());
+        };
+        match self.call(Call::SubagentHistory {
+            session,
+            child,
+            before: Some(entry),
+            limit: SUBAGENT_PAGE,
+        }) {
+            Ok(Reply::Page { entries, has_older }) => worker.emit(
+                conversation,
+                generation,
+                EventKind::SubagentOlderPage {
+                    child,
+                    before,
+                    items: transcript::map_entries(&entries, &HashMap::new()).items,
+                    has_older,
+                },
+            ),
+            Ok(_) => fail("Could not load earlier subagent activity.".into()),
+            Err(error) => fail(format!("Could not load earlier subagent activity: {error}")),
         }
     }
 
@@ -1903,6 +2032,8 @@ impl Live {
             dirty: false,
             last_sync: Instant::now(),
             child: None,
+            child_dirty: false,
+            child_sync: Instant::now(),
             tools_done: done,
             workspace_ready: done > 0 || has_older,
             last_workspace: None,

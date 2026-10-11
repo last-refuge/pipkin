@@ -22,6 +22,12 @@ pub enum Command {
     SelectSubagent(Option<u64>),
     /// This session's engine setting, not an app-local visibility preference.
     SetSubagentsEnabled(bool),
+    /// Expand or collapse the directory's finished-task history (a projection, not deletion).
+    ToggleSubagentHistory,
+    /// Reveal the next page of finished tasks (paged engines only).
+    ShowMoreSubagentHistory,
+    /// Read the page of child activity before the oldest shown entry (paged engines only).
+    LoadOlderSubagent,
     NewConversation,
     RenameConversation(ConversationId, String),
     SetSearch(String),
@@ -155,6 +161,14 @@ pub enum BackendRequest {
         conversation: ConversationId,
         generation: u64,
         enabled: bool,
+    },
+    /// The bounded page of `child`'s history strictly before the item `before`. Answered by
+    /// `SubagentOlderPage` or `SubagentOlderFailed` naming the same child and cursor.
+    LoadOlderSubagent {
+        conversation: ConversationId,
+        generation: u64,
+        child: u64,
+        before: ItemId,
     },
     LoadOlder {
         conversation: ConversationId,
@@ -295,6 +309,33 @@ pub enum EventKind {
     },
     SubagentViewFailed {
         child: u64,
+        reason: String,
+    },
+    /// A paging engine's directory (native): like `SubagentsSynced`, and marks the session's
+    /// directory and child history as pageable. `truncated`: the engine cut it at its bound.
+    SubagentDirectory {
+        enabled: bool,
+        children: Vec<SubagentInfo>,
+        truncated: bool,
+    },
+    /// The newest bounded page of the selected child's history (oldest first; item ids grow
+    /// with history order). Older pages already shown are kept when this page overlaps them.
+    SubagentPage {
+        child: u64,
+        items: Vec<TranscriptItem>,
+        live: bool,
+        has_older: bool,
+    },
+    /// The page strictly before `before` (oldest first), answering `LoadOlderSubagent`.
+    SubagentOlderPage {
+        child: u64,
+        before: ItemId,
+        items: Vec<TranscriptItem>,
+        has_older: bool,
+    },
+    SubagentOlderFailed {
+        child: u64,
+        before: ItemId,
         reason: String,
     },
     /// The engine's authoritative per-session ledger, independent of the displayed history.

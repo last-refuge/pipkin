@@ -438,6 +438,22 @@ impl Worker {
                 };
                 self.ctx.emit(conversation, generation, None, kind);
             }
+            // Demo child views are frozen, unpaged snapshots.
+            BackendRequest::LoadOlderSubagent {
+                conversation,
+                generation,
+                child,
+                before,
+            } => self.ctx.emit(
+                conversation,
+                generation,
+                None,
+                EventKind::SubagentOlderFailed {
+                    child,
+                    before,
+                    reason: "Demo child snapshots have no earlier activity.".into(),
+                },
+            ),
             BackendRequest::SetSubagentsEnabled {
                 conversation,
                 generation,

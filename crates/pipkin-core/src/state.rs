@@ -699,6 +699,10 @@ impl AppState {
                 self.conv_mut(id).unwrap().unseen_completion = false;
                 self.prefs.selected_conversation = Some(id);
                 let c = self.conv_mut(id).unwrap();
+                // Finished-task history starts collapsed whenever a conversation is entered.
+                if prev != Some(id) {
+                    c.subagents.history = 0;
+                }
                 // A real engine is attached to one session at a time, so coming back to a
                 // conversation attaches it again; the demo keeps what it already loaded.
                 if !c.opened || (real && prev != Some(id)) {
@@ -735,13 +739,7 @@ impl AppState {
                 if child.is_some_and(|id| !c.subagents.children.iter().any(|row| row.id == id)) {
                     return out;
                 }
-                c.subagents.selected = child;
-                c.subagents.items.clear();
-                c.subagents.previews.clear();
-                c.subagents.error = None;
-                c.subagents.live = false;
-                c.subagents.loading = false;
-                c.subagents.viewed = None;
+                c.subagents.select(child);
                 if let Some(child) = child
                     && c.opened
                     && c.subagents.enabled.is_some()
@@ -772,6 +770,38 @@ impl AppState {
                 }
             }
             Command::SelectSubagent(_) | Command::SetSubagentsEnabled(_) => {}
+            // A projection of the directory the engine sent; nothing is read or deleted.
+            Command::ToggleSubagentHistory => {
+                if let Some(c) = self.selected.and_then(|id| self.conv_mut(id))
+                    && c.subagents.enabled.is_some()
+                {
+                    c.subagents.toggle_history();
+                    out.notes.push(Note::Other);
+                }
+            }
+            Command::ShowMoreSubagentHistory => {
+                if let Some(c) = self.selected.and_then(|id| self.conv_mut(id))
+                    && c.subagents.show_more_history()
+                {
+                    out.notes.push(Note::Other);
+                }
+            }
+            Command::LoadOlderSubagent if self.connection.is_ready() => {
+                if let Some(c) = self.selected.and_then(|id| self.conv_mut(id))
+                    && c.opened
+                    && let Some((child, before)) = c.subagents.begin_older()
+                {
+                    out.effects
+                        .push(Effect::Backend(BackendRequest::LoadOlderSubagent {
+                            conversation: c.id,
+                            generation: c.generation,
+                            child,
+                            before,
+                        }));
+                    out.notes.push(Note::Other);
+                }
+            }
+            Command::LoadOlderSubagent => {}
             // Real sessions are created and renamed by the engine; a local-only row would be
             // simulated success.
             Command::RenameConversation(..) if self.mode == Mode::Real => {}
@@ -1857,22 +1887,37 @@ impl AppState {
                 | EventKind::SubagentsUnavailable(_)
                 | EventKind::SubagentView { .. }
                 | EventKind::SubagentViewFailed { .. }
+                | EventKind::SubagentDirectory { .. }
+                | EventKind::SubagentPage { .. }
+                | EventKind::SubagentOlderPage { .. }
+                | EventKind::SubagentOlderFailed { .. }
         );
         if scoped && ev.op != c.run.op() {
             return out;
         }
         match ev.kind {
-            EventKind::SubagentsSynced { enabled, children } if c.opened => {
+            EventKind::SubagentsSynced { .. } | EventKind::SubagentDirectory { .. } if c.opened => {
+                let (enabled, children, paged, truncated) = match ev.kind {
+                    EventKind::SubagentDirectory {
+                        enabled,
+                        children,
+                        truncated,
+                    } => (enabled, children, true, truncated),
+                    EventKind::SubagentsSynced { enabled, children } => {
+                        (enabled, children, false, false)
+                    }
+                    _ => unreachable!(),
+                };
                 c.subagents.enabled = Some(enabled);
                 c.subagents.children = children;
+                c.subagents.paged = paged;
+                c.subagents.truncated = truncated;
                 if c.subagents
                     .selected
                     .is_some_and(|id| !c.subagents.children.iter().any(|row| row.id == id))
                 {
                     c.subagents.selected = None;
-                    c.subagents.items.clear();
-                    c.subagents.previews.clear();
-                    c.subagents.viewed = None;
+                    c.subagents.clear_activity();
                 }
                 c.subagents.error = None;
                 if let Some(child) = c.subagents.selected
@@ -1893,25 +1938,49 @@ impl AppState {
             EventKind::SubagentsUnavailable(reason) => {
                 c.subagents.enabled = None;
                 c.subagents.children.clear();
-                c.subagents.selected = None;
-                c.subagents.items.clear();
-                c.subagents.previews.clear();
-                c.subagents.viewed = None;
+                c.subagents.paged = false;
+                c.subagents.truncated = false;
+                c.subagents.history = 0;
+                c.subagents.select(None);
                 c.subagents.error = Some(reason);
-                c.subagents.live = false;
-                c.subagents.loading = false;
                 out.notes.push(Note::Other);
             }
             EventKind::SubagentView { child, items, live }
                 if c.subagents.selected == Some(child) =>
             {
-                c.subagents.items = items;
-                c.subagents.previews = subagent_previews(&c.subagents.items);
-                c.subagents.viewed = Some(child);
-                c.subagents.error = None;
-                c.subagents.live = live;
-                c.subagents.loading = false;
+                c.subagents.apply_view(child, items, live);
                 out.notes.push(Note::Other);
+            }
+            EventKind::SubagentPage {
+                child,
+                items,
+                live,
+                has_older,
+            } if c.subagents.selected == Some(child) => {
+                c.subagents.apply_newest(child, items, live, has_older);
+                out.notes.push(Note::Other);
+            }
+            EventKind::SubagentOlderPage {
+                child,
+                before,
+                items,
+                has_older,
+            } => {
+                if c.subagents
+                    .apply_older(child, before, items, has_older)
+                    .is_some()
+                {
+                    out.notes.push(Note::Other);
+                }
+            }
+            EventKind::SubagentOlderFailed {
+                child,
+                before,
+                reason,
+            } => {
+                if c.subagents.older_failed(child, before, reason) {
+                    out.notes.push(Note::Other);
+                }
             }
             EventKind::SubagentViewFailed { child, reason }
                 if c.subagents.selected == Some(child) =>
@@ -1922,7 +1991,9 @@ impl AppState {
                 out.notes.push(Note::Other);
             }
             EventKind::SubagentsSynced { .. }
+            | EventKind::SubagentDirectory { .. }
             | EventKind::SubagentView { .. }
+            | EventKind::SubagentPage { .. }
             | EventKind::SubagentViewFailed { .. } => {}
             EventKind::UsageSynced(usage) => {
                 if c.opened {
@@ -2712,37 +2783,6 @@ impl AppState {
 /// A page of older history can end on a tool call whose result is the first thing already
 /// shown (or the other way round). Join the two so one call is one item. Returns whether
 /// anything was joined.
-fn subagent_previews(items: &[TranscriptItem]) -> Vec<SubagentPreview> {
-    items
-        .iter()
-        .skip(items.len().saturating_sub(80))
-        .map(|item| {
-            let (speaker, text): (&'static str, std::borrow::Cow<'_, str>) = match &item.kind {
-                ItemKind::User { text, .. } => ("Task", text.into()),
-                ItemKind::Assistant { text, .. } => ("Pi", text.into()),
-                ItemKind::Tool(tool) => (
-                    "Tool",
-                    format!(
-                        "{}: {}\n{}",
-                        tool.name,
-                        tool.input.chars().take(2048).collect::<String>(),
-                        tool.output.chars().take(2048).collect::<String>()
-                    )
-                    .into(),
-                ),
-                ItemKind::Notice { text, .. } => ("Notice", text.into()),
-            };
-            let clipped = text.chars().nth(4096).is_some();
-            SubagentPreview {
-                id: item.id,
-                speaker,
-                text: text.chars().take(4096).collect(),
-                clipped,
-            }
-        })
-        .collect()
-}
-
 fn merge_boundary_tools(items: &mut Vec<TranscriptItem>, new: usize) -> bool {
     let mut merged = false;
     let mut i = 0;

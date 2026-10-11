@@ -350,3 +350,24 @@ message is written once, and the chunk rows are deleted after finalization.
 * Installed and archive package bytes of a real native package versus the Pi package.
 * Sessions with many `runs`/`requests`/`tool_calls` rows for the history test (direct inserts create
   entries only).
+
+## After fixes (2026-10-11, lead)
+
+The two engine bugs reported above were fixed on `native-engine` and re-measured with the same
+harness (`cargo test --release -p pipkin-engine --test perf -- --ignored --nocapture
+--test-threads=1 history stream_latency`; same machine, other builds still running). Raw data:
+`fixtures/native-bench/2026-10-11-after-fixes/`.
+
+1. `Store::last_head` now orders by `+id` (the session/kind index is used), and open-run
+   lookups use `state IN ('running', 'stopping')`. **Measured** warm OpenSession p50/p95:
+   0.69/0.75 ms (1k entries), 0.92/1.01 ms (10k), 0.65/0.80 ms (100k) — flat in history size
+   (previously 0.85 / 3.2 / 22 ms p50). HistoryPage(50) p95 ≤ 0.53 ms at every size.
+2. Streaming commits now run from the **oldest pending delta** with a 40 ms deadline, leaving
+   room for the durable commit inside the 50 ms budget. Durability is unchanged (every
+   published delta is committed first; `synchronous=FULL`). **Measured** chunk arrival →
+   committed `EntryDelta` at the client: p95 43.7 ms (2 ms gaps), 44.3 ms (5 ms), 45.1 ms
+   (20 ms); max 49.7 ms; burst p95 15.5 ms. The plan §7 streaming-overhead target (p95 ≤ 50 ms)
+   is now **met** on this machine under this load.
+
+Still open from the list above: RSS growth over a single very long session, and peak memory
+for very large single replies.

@@ -865,8 +865,8 @@ fn subagents_run_once_per_call_deliver_their_answer_and_are_listed() {
     let last_req = provider
         .requests()
         .into_iter()
-        .filter(|r| r.messages.iter().any(|m| m.text() == "again"))
-        .last()
+        .rev()
+        .find(|r| r.messages.iter().any(|m| m.text() == "again"))
         .unwrap();
     assert!(last_req.tools.iter().all(|t| t.name != "subagent"));
 }

@@ -32,8 +32,9 @@ use crate::store::{RequestRow, Store, ToolState};
 use crate::tools::{self, Tool, ToolCtx};
 use crate::util::now_ms;
 
-/// Committed streaming progress is flushed at least this often...
-const FLUSH_INTERVAL: Duration = Duration::from_millis(50);
+/// A streamed delta is committed and published within this long of arriving. It leaves room
+/// for the durable commit itself inside the 50 ms chunk-to-client budget (plan §7)...
+const FLUSH_INTERVAL: Duration = Duration::from_millis(40);
 /// ...or once this many bytes of deltas are pending.
 const FLUSH_BYTES: usize = 16 * 1024;
 
@@ -285,9 +286,12 @@ impl Shared {
         let mut partial: Option<u64> = None;
         let mut pending: Vec<Delta> = Vec::new();
         let mut pending_bytes = 0usize;
-        let mut last_flush = Instant::now();
+        // When the oldest uncommitted delta arrived: the flush deadline runs from it.
+        let mut oldest: Option<Instant> = None;
         let message = loop {
-            let wait = FLUSH_INTERVAL.saturating_sub(last_flush.elapsed());
+            let wait = oldest.map_or(FLUSH_INTERVAL, |t| {
+                FLUSH_INTERVAL.saturating_sub(t.elapsed())
+            });
             tokio::select! {
                 m = &mut fut => break m,
                 Some(StreamEvent::Delta(d)) = rx.recv() => {
@@ -296,17 +300,18 @@ impl Shared {
                         Delta::ToolCall { .. } => 64,
                     };
                     pending.push(d);
+                    oldest.get_or_insert_with(Instant::now);
                     if pending_bytes >= FLUSH_BYTES && self.flush(sess, run, &model, &mut partial, &mut pending).is_err() {
                         cancel.cancel();
                     }
-                    if pending.is_empty() { pending_bytes = 0; last_flush = Instant::now(); }
+                    if pending.is_empty() { pending_bytes = 0; oldest = None; }
                 }
                 _ = tokio::time::sleep(wait), if !pending.is_empty() => {
                     if self.flush(sess, run, &model, &mut partial, &mut pending).is_err() {
                         cancel.cancel();
                     }
                     pending_bytes = 0;
-                    last_flush = Instant::now();
+                    oldest = None;
                 }
             }
         };
