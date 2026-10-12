@@ -285,26 +285,57 @@ impl Shared {
         check_input(key, text, images)?;
         let sess = self.session(session)?;
         let _guard = sess.lock.lock().await;
-        enum Out {
-            Started(u64),
-            Existing(Option<u64>),
+        struct Out {
+            start: Option<u64>,
+            run: Option<u64>,
+            entry: Option<u64>,
         }
+        let settings = self.settings_for(session);
         let out = self.commit(&sess, |tx| {
             if let Some(existing) = Store::request_in(tx, session, key)? {
                 if existing.fingerprint != store::fingerprint(InputMode::Prompt, text, images) {
                     return Ok((Err(ErrorCode::Conflict), vec![]));
                 }
-                return Ok((Ok(Out::Existing(existing.run)), vec![]));
+                return Ok((
+                    Ok(Out {
+                        start: None,
+                        run: existing.run,
+                        entry: existing.queue_entry,
+                    }),
+                    vec![],
+                ));
             }
             if Store::open_run_in(tx, session)?.is_some() {
                 return Ok((Err(ErrorCode::Busy), vec![]));
             }
             let now = now_ms();
-            let row =
-                match Store::admit(tx, session, key, InputMode::Prompt, text, images, None, now)? {
-                    Admission::New(row) => row,
-                    _ => return Ok((Err(ErrorCode::Conflict), vec![])),
-                };
+            let waiting: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM requests WHERE session = ?1 AND state = 'queued')",
+                [session],
+                |r| r.get(0),
+            )?;
+            let admission = if waiting {
+                Store::admit_queued_prompt(tx, session, key, text, images, now)?
+            } else {
+                Store::admit(tx, session, key, InputMode::Prompt, text, images, None, now)?
+            };
+            let row = match admission {
+                Admission::New(row) => row,
+                Admission::Full => return Ok((Err(ErrorCode::TooLarge), vec![])),
+                _ => return Ok((Err(ErrorCode::Conflict), vec![])),
+            };
+            if waiting {
+                let (start, changes) = Self::start_queued_run(tx, session, &settings)?;
+                let admitted = Store::request_in(tx, session, key)?.expect("just admitted");
+                return Ok((
+                    Ok(Out {
+                        start,
+                        run: admitted.run,
+                        entry: admitted.queue_entry,
+                    }),
+                    changes,
+                ));
+            }
             let mut changes = Self::flush_summary_writes(tx, session)?;
             let run = Store::start_run(tx, session, Some(key), now)?;
             let entry = Store::append_entry(tx, session, now, Some(run), &user_entry(&row))?;
@@ -313,21 +344,33 @@ impl Shared {
                 SessionChange::EntryAppended { entry },
                 SessionChange::RunChanged { run: view },
             ]);
-            Ok((Ok(Out::Started(run)), changes))
-        })?;
-        match out {
-            Ok(Out::Started(run)) => {
-                super::faults::crash_point("after-admission");
-                self.spawn_run(sess.clone(), run);
-                Ok(Reply::Admitted {
+            Ok((
+                Ok(Out {
+                    start: Some(run),
                     run: Some(run),
                     entry: None,
+                }),
+                changes,
+            ))
+        })?;
+        match out {
+            Ok(out) => {
+                if let Some(run) = out.start {
+                    super::faults::crash_point("after-admission");
+                    self.spawn_run(sess.clone(), run);
+                }
+                Ok(Reply::Admitted {
+                    run: out.run,
+                    entry: out.entry,
                 })
             }
-            Ok(Out::Existing(run)) => Ok(Reply::Admitted { run, entry: None }),
             Err(ErrorCode::Busy) => Err(ProtoError::new(
                 ErrorCode::Busy,
                 format!("Conversation {session} is busy"),
+            )),
+            Err(ErrorCode::TooLarge) => Err(ProtoError::new(
+                ErrorCode::TooLarge,
+                "The queue is full. Withdraw a queued input before submitting another message.",
             )),
             Err(code) => Err(ProtoError::new(
                 code,
@@ -351,40 +394,37 @@ impl Shared {
         check_input(key, text, images)?;
         let sess = self.session(session)?;
         let _guard = sess.lock.lock().await;
+        let settings = self.settings_for(session);
         let result = self.commit(&sess, |tx| {
             let now = now_ms();
             let row = match Store::admit(tx, session, key, mode, text, images, None, now)? {
                 Admission::New(row) => row,
-                Admission::Existing(row) => return Ok((Ok((row.queue_entry, None)), vec![])),
+                Admission::Existing(row) => {
+                    return Ok((Ok((row.queue_entry, None, row.run)), vec![]));
+                }
                 Admission::Conflict => return Ok((Err(ErrorCode::Conflict), vec![])),
                 Admission::Full => return Ok((Err(ErrorCode::TooLarge), vec![])),
             };
             if Store::open_run_in(tx, session)?.is_some() {
                 let queue = Store::queue_view(&Store::queue_in(tx, session)?);
                 return Ok((
-                    Ok((row.queue_entry, None)),
+                    Ok((row.queue_entry, None, None)),
                     vec![SessionChange::QueueChanged { queue }],
                 ));
             }
-            // Idle: place it now as a new run.
-            let mut changes = Self::flush_summary_writes(tx, session)?;
-            let run = Store::start_run(tx, session, Some(key), now)?;
-            Store::consume_queued(tx, session, std::slice::from_ref(&row.key), run)?;
-            let entry = Store::append_entry(tx, session, now, Some(run), &user_entry(&row))?;
-            let view = Store::run_in(tx, run)?.and_then(|r| r.view());
-            changes.extend([
-                SessionChange::EntryAppended { entry },
-                SessionChange::RunChanged { run: view },
-            ]);
-            Ok((Ok((row.queue_entry, Some(run))), changes))
+            // Idle admission resumes waiting work through the same final boundary as
+            // ordinary completion; it cannot jump ahead of older inputs.
+            let (started, changes) = Self::start_queued_run(tx, session, &settings)?;
+            let admitted = Store::request_in(tx, session, key)?.expect("just admitted");
+            Ok((Ok((row.queue_entry, started, admitted.run)), changes))
         })?;
         match result {
-            Ok((entry, started)) => {
+            Ok((entry, started, admitted)) => {
                 if let Some(run) = started {
                     self.spawn_run(sess.clone(), run);
                 }
                 Ok(Reply::Admitted {
-                    run: started,
+                    run: admitted,
                     entry,
                 })
             }

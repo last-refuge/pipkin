@@ -1062,6 +1062,8 @@ mod fault_tests;
 #[cfg(test)]
 mod generation_reference_tests;
 #[cfg(test)]
+mod queue_reference_tests;
+#[cfg(test)]
 mod settings_tests;
 #[cfg(test)]
 mod tests;

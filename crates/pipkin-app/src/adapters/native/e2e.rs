@@ -885,6 +885,61 @@ fn a_follow_up_waits_in_the_engines_queue_then_runs_by_itself() {
 }
 
 #[test]
+fn a_prompt_grouped_with_a_retained_steer_settles_the_desktop_journal() {
+    let gate = Gate::new();
+    let fx = Fixture::start(held_first(
+        &gate,
+        Reply::Error("invalid request".into()),
+        vec![Reply::Text("resumed together".into())],
+    ));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("first");
+    h.until_asked(&fx, 1);
+    h.until("running", is_running);
+    h.dispatch(Command::EditDraft("retained steer".into()));
+    h.dispatch(Command::Steer);
+    h.until("steer durably queued", |s| {
+        queued(s) == [(QueueMode::Steer, "retained steer".to_owned())]
+            && s.current().unwrap().pending_queue.is_empty()
+    });
+    gate.open();
+    h.until("failed turn leaves queue waiting", |s| {
+        matches!(s.current().unwrap().run, RunState::Failed { .. })
+            && queued(s) == [(QueueMode::Steer, "retained steer".to_owned())]
+    });
+    h.stop();
+    fx.restart_engine();
+    let mut h = Harness::start(&fx, &db);
+    h.until("reconnected with retained queue", |s| {
+        s.connection == Connection::Ready
+            && s.current().is_some_and(|c| c.opened)
+            && matches!(
+                s.current().unwrap().run,
+                RunState::Idle | RunState::Failed { .. }
+            )
+            && queued(s) == [(QueueMode::Steer, "retained steer".to_owned())]
+    });
+    assert_eq!(fx.requests().len(), 1);
+    h.send("wake");
+    h.until("grouped prompt settled and journal reconciled", |s| {
+        is_idle(s)
+            && assistant_texts(s).contains(&"resumed together".to_owned())
+            && queued(s).is_empty()
+            && open_requests(&db) == 0
+    });
+    assert_eq!(fx.requests().len(), 2);
+    assert_eq!(
+        user_texts(&fx.requests()[1]),
+        ["first", "retained steer", "wake"]
+    );
+    assert_eq!(h.user_messages(), ["first", "retained steer", "wake"]);
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+#[test]
 fn a_queued_input_removed_before_it_runs_never_reaches_the_model() {
     let gate = Gate::new();
     let fx = Fixture::start(held_first(

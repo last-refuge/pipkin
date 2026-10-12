@@ -11,7 +11,28 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — executed generation control-flow comparison
+## Current follow-up — failed queue retention and ordered explicit resumption
+
+2026-10-12, following **`e6951d4`**, protocol 12/schema 10 unchanged. Eleven actual pinned
+Pi Harness runs compare queue modes/order, projected model requests, full visible history and
+each input's result at final/tool/failure boundaries. Native's automatic execution after model
+failure and idle submissions bypassing older inputs were reproduced. Failed queues now remain
+paused through reopen; explicit admission atomically selects the same ordered one/all boundary
+as ordinary completion. See [queue evidence](pipkin-rust-engine-evidence/queue-runtime.md).
+
+Full queue rejection, withdrawal, Prompt idempotency/conflicts and restart replay pass. Actual
+SIGKILL between settlement and queue scheduling preserves successful automatic continuation
+and failed-run pauses. Desktop core/adapter/journal coverage includes a new Prompt grouped
+with an older steer and verifies its own journal settlement after desktop/engine reopen.
+The reference corpus regenerates byte-for-byte; no cloud service or user profile was used.
+
+Required checks: **1,653 passed, 0 failed, 56 ignored**, clean Clippy/all-targets and formatting.
+Existing measured rows gain evidence; counts stay **445 measured, 9 observed, 1 unverified,
+49 not started; 0 fully qualified**. Remaining comparisons, installed/desktop fault checks,
+sustained desktop use, CI/platform and notice review, native-default and Pi retirement remain
+open. Owner plan/worktree changes are preserved.
+
+## Prior follow-up — executed generation control-flow comparison
 
 2026-10-12, following **`9fd1bb5`**, protocol 12/schema 10 unchanged. Twenty-five cases
 execute the pinned Pi durable Harness with deterministic normalized model responses, then

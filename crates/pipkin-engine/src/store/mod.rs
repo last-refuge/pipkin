@@ -1127,6 +1127,44 @@ impl Store {
         now: i64,
     ) -> Result<Admission> {
         let fp = fingerprint(mode, text, images);
+        Self::admit_fingerprint(tx, session, key, mode, text, images, model, now, fp)
+    }
+
+    /// An idle Prompt behind retained inputs is delivered as a follow-up, while its
+    /// idempotency key still identifies the original Prompt API payload. The queue uses
+    /// the existing follow-up representation, including in older native readers.
+    pub fn admit_queued_prompt(
+        tx: &Connection,
+        session: &str,
+        key: &str,
+        text: &str,
+        images: &[ImageInput],
+        now: i64,
+    ) -> Result<Admission> {
+        Self::admit_fingerprint(
+            tx,
+            session,
+            key,
+            InputMode::FollowUp,
+            text,
+            images,
+            None,
+            now,
+            fingerprint(InputMode::Prompt, text, images),
+        )
+    }
+
+    fn admit_fingerprint(
+        tx: &Connection,
+        session: &str,
+        key: &str,
+        mode: InputMode,
+        text: &str,
+        images: &[ImageInput],
+        model: Option<&str>,
+        now: i64,
+        fp: String,
+    ) -> Result<Admission> {
         if let Some(existing) = Self::request_in(tx, session, key)? {
             return Ok(if existing.fingerprint == fp {
                 Admission::Existing(existing)

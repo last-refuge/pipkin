@@ -1,0 +1,2866 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "packages/durable/src/harness/generation.ts": "bcfc8584adb9987173a7db528eceb8054151fd879ef88de4e878c63d234f7274",
+    "packages/durable/src/harness/submissions.ts": "7cd938247893f9b86efc60eee35a0180849800c1682b7ae216df5568c9216701",
+    "packages/durable/src/harness/inbox.ts": "d2bb7fd00ca2e117c6a9a7d1f0cbba7f08ca10d991931824cfbc7b8b2614cccf",
+    "packages/durable/src/harness/scheduler.ts": "d69b7a6880aed16f034b6c3f07530ce0eb182f5741da90005a1ab8b1015be4f4"
+  },
+  "node": "v26.8.1",
+  "scope": "Executed durable Harness with a gated first model response, real inbox/submission boundaries and deterministic normalized replies. No external services.",
+  "cases": [
+    {
+      "name": "final-one",
+      "first": "answer",
+      "queued": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "before": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "afterFirst": {
+        "queue": [],
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "answer:main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "answer:main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ]
+      },
+      "expected": {
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "answer:main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "answer:main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ],
+        "queue": [],
+        "history": [
+          [
+            "user",
+            "main",
+            []
+          ],
+          [
+            "assistant",
+            "answer:main",
+            []
+          ],
+          [
+            "user",
+            "s1",
+            []
+          ],
+          [
+            "user",
+            "f1",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f1",
+            []
+          ],
+          [
+            "user",
+            "s2",
+            []
+          ],
+          [
+            "user",
+            "f2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f2",
+            []
+          ]
+        ],
+        "outcomes": {
+          "main": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:main"
+          },
+          "s1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f1"
+          },
+          "f1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f1"
+          },
+          "s2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          },
+          "f2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          }
+        }
+      }
+    },
+    {
+      "name": "final-all",
+      "first": "answer",
+      "queued": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "steeringMode": "all",
+      "followUpMode": "all",
+      "before": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "afterFirst": {
+        "queue": [],
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "answer:main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ]
+      },
+      "expected": {
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "answer:main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ],
+        "queue": [],
+        "history": [
+          [
+            "user",
+            "main",
+            []
+          ],
+          [
+            "assistant",
+            "answer:main",
+            []
+          ],
+          [
+            "user",
+            "s1",
+            []
+          ],
+          [
+            "user",
+            "f1",
+            []
+          ],
+          [
+            "user",
+            "s2",
+            []
+          ],
+          [
+            "user",
+            "f2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f2",
+            []
+          ]
+        ],
+        "outcomes": {
+          "main": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:main"
+          },
+          "s1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          },
+          "f1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          },
+          "s2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          },
+          "f2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          }
+        }
+      }
+    },
+    {
+      "name": "tools-one",
+      "first": "tools",
+      "queued": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "before": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "afterFirst": {
+        "queue": [],
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s2",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ]
+      },
+      "expected": {
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s2",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ],
+        "queue": [],
+        "history": [
+          [
+            "user",
+            "main",
+            []
+          ],
+          [
+            "assistant",
+            "",
+            [
+              "not-installed"
+            ]
+          ],
+          [
+            "toolResult",
+            "<harness>\n[error] Tool not-installed is not available\n</harness>",
+            []
+          ],
+          [
+            "user",
+            "s1",
+            []
+          ],
+          [
+            "assistant",
+            "answer:s1",
+            []
+          ],
+          [
+            "user",
+            "f1",
+            []
+          ],
+          [
+            "user",
+            "s2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:s2",
+            []
+          ],
+          [
+            "user",
+            "f2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f2",
+            []
+          ]
+        ],
+        "outcomes": {
+          "main": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s1"
+          },
+          "s1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s1"
+          },
+          "f1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s2"
+          },
+          "s2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s2"
+          },
+          "f2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          }
+        }
+      }
+    },
+    {
+      "name": "tools-all-steers",
+      "first": "tools",
+      "queued": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "steeringMode": "all",
+      "before": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "afterFirst": {
+        "queue": [],
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s2",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s2",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f1",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ]
+      },
+      "expected": {
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s2",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s2",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f1",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ],
+        "queue": [],
+        "history": [
+          [
+            "user",
+            "main",
+            []
+          ],
+          [
+            "assistant",
+            "",
+            [
+              "not-installed"
+            ]
+          ],
+          [
+            "toolResult",
+            "<harness>\n[error] Tool not-installed is not available\n</harness>",
+            []
+          ],
+          [
+            "user",
+            "s1",
+            []
+          ],
+          [
+            "user",
+            "s2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:s2",
+            []
+          ],
+          [
+            "user",
+            "f1",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f1",
+            []
+          ],
+          [
+            "user",
+            "f2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f2",
+            []
+          ]
+        ],
+        "outcomes": {
+          "main": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s2"
+          },
+          "s1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s2"
+          },
+          "f1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f1"
+          },
+          "s2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s2"
+          },
+          "f2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          }
+        }
+      }
+    },
+    {
+      "name": "tools-all-follow-ups",
+      "first": "tools",
+      "queued": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "followUpMode": "all",
+      "before": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "afterFirst": {
+        "queue": [],
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ]
+      },
+      "expected": {
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ],
+        "queue": [],
+        "history": [
+          [
+            "user",
+            "main",
+            []
+          ],
+          [
+            "assistant",
+            "",
+            [
+              "not-installed"
+            ]
+          ],
+          [
+            "toolResult",
+            "<harness>\n[error] Tool not-installed is not available\n</harness>",
+            []
+          ],
+          [
+            "user",
+            "s1",
+            []
+          ],
+          [
+            "assistant",
+            "answer:s1",
+            []
+          ],
+          [
+            "user",
+            "f1",
+            []
+          ],
+          [
+            "user",
+            "s2",
+            []
+          ],
+          [
+            "user",
+            "f2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f2",
+            []
+          ]
+        ],
+        "outcomes": {
+          "main": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s1"
+          },
+          "s1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s1"
+          },
+          "f1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          },
+          "s2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          },
+          "f2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          }
+        }
+      }
+    },
+    {
+      "name": "withdraw-before-final",
+      "first": "answer",
+      "queued": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "withdraw": "f1",
+      "before": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "afterFirst": {
+        "queue": [],
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "answer:main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "answer:main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f2",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ]
+          ]
+        ]
+      },
+      "expected": {
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "answer:main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "answer:main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f2",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ]
+          ]
+        ],
+        "queue": [],
+        "history": [
+          [
+            "user",
+            "main",
+            []
+          ],
+          [
+            "assistant",
+            "answer:main",
+            []
+          ],
+          [
+            "user",
+            "s1",
+            []
+          ],
+          [
+            "user",
+            "f2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f2",
+            []
+          ],
+          [
+            "user",
+            "s2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:s2",
+            []
+          ]
+        ],
+        "outcomes": {
+          "main": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:main"
+          },
+          "s1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          },
+          "f1": {
+            "status": "unanswered",
+            "reason": "aborted",
+            "answer": null
+          },
+          "s2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s2"
+          },
+          "f2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          }
+        }
+      }
+    },
+    {
+      "name": "withdraw-before-tools",
+      "first": "tools",
+      "queued": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "withdraw": "s1",
+      "before": [
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "afterFirst": {
+        "queue": [],
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s2",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s2",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f1",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ]
+      },
+      "expected": {
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s2",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "assistant",
+              "",
+              [
+                "not-installed"
+              ]
+            ],
+            [
+              "toolResult",
+              "<harness>\n[error] Tool not-installed is not available\n</harness>",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:s2",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f1",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ]
+        ],
+        "queue": [],
+        "history": [
+          [
+            "user",
+            "main",
+            []
+          ],
+          [
+            "assistant",
+            "",
+            [
+              "not-installed"
+            ]
+          ],
+          [
+            "toolResult",
+            "<harness>\n[error] Tool not-installed is not available\n</harness>",
+            []
+          ],
+          [
+            "user",
+            "s2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:s2",
+            []
+          ],
+          [
+            "user",
+            "f1",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f1",
+            []
+          ],
+          [
+            "user",
+            "f2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f2",
+            []
+          ]
+        ],
+        "outcomes": {
+          "main": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s2"
+          },
+          "s1": {
+            "status": "unanswered",
+            "reason": "aborted",
+            "answer": null
+          },
+          "f1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f1"
+          },
+          "s2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s2"
+          },
+          "f2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          }
+        }
+      }
+    },
+    {
+      "name": "failure-follow-ups-then-prompt",
+      "first": "error",
+      "queued": [
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "wake": {
+        "key": "wake",
+        "mode": "reject"
+      },
+      "before": [
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "afterFirst": {
+        "queue": [
+          {
+            "key": "f1",
+            "mode": "followUp"
+          },
+          {
+            "key": "f2",
+            "mode": "followUp"
+          }
+        ],
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ]
+        ]
+      },
+      "expected": {
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f1",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f1",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f2",
+              []
+            ],
+            [
+              "user",
+              "wake",
+              []
+            ]
+          ]
+        ],
+        "queue": [],
+        "history": [
+          [
+            "user",
+            "main",
+            []
+          ],
+          [
+            "assistant",
+            "",
+            []
+          ],
+          [
+            "user",
+            "f1",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f1",
+            []
+          ],
+          [
+            "user",
+            "f2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f2",
+            []
+          ],
+          [
+            "user",
+            "wake",
+            []
+          ],
+          [
+            "assistant",
+            "answer:wake",
+            []
+          ]
+        ],
+        "outcomes": {
+          "main": {
+            "status": "unanswered",
+            "reason": "model_error",
+            "answer": null
+          },
+          "f1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f1"
+          },
+          "f2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          },
+          "wake": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:wake"
+          }
+        }
+      }
+    },
+    {
+      "name": "failure-steers-then-prompt",
+      "first": "error",
+      "queued": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        }
+      ],
+      "wake": {
+        "key": "wake",
+        "mode": "reject"
+      },
+      "before": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        }
+      ],
+      "afterFirst": {
+        "queue": [
+          {
+            "key": "s1",
+            "mode": "steer"
+          },
+          {
+            "key": "s2",
+            "mode": "steer"
+          }
+        ],
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ]
+        ]
+      },
+      "expected": {
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "wake",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "wake",
+              []
+            ],
+            [
+              "assistant",
+              "answer:wake",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ]
+          ]
+        ],
+        "queue": [],
+        "history": [
+          [
+            "user",
+            "main",
+            []
+          ],
+          [
+            "assistant",
+            "",
+            []
+          ],
+          [
+            "user",
+            "s1",
+            []
+          ],
+          [
+            "user",
+            "wake",
+            []
+          ],
+          [
+            "assistant",
+            "answer:wake",
+            []
+          ],
+          [
+            "user",
+            "s2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:s2",
+            []
+          ]
+        ],
+        "outcomes": {
+          "main": {
+            "status": "unanswered",
+            "reason": "model_error",
+            "answer": null
+          },
+          "s1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:wake"
+          },
+          "s2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:s2"
+          },
+          "wake": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:wake"
+          }
+        }
+      }
+    },
+    {
+      "name": "failure-mixed-then-steer",
+      "first": "error",
+      "queued": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "wake": {
+        "key": "wake",
+        "mode": "steer"
+      },
+      "before": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "afterFirst": {
+        "queue": [
+          {
+            "key": "s1",
+            "mode": "steer"
+          },
+          {
+            "key": "f1",
+            "mode": "followUp"
+          },
+          {
+            "key": "s2",
+            "mode": "steer"
+          },
+          {
+            "key": "f2",
+            "mode": "followUp"
+          }
+        ],
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ]
+        ]
+      },
+      "expected": {
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ],
+            [
+              "assistant",
+              "answer:f2",
+              []
+            ],
+            [
+              "user",
+              "wake",
+              []
+            ]
+          ]
+        ],
+        "queue": [],
+        "history": [
+          [
+            "user",
+            "main",
+            []
+          ],
+          [
+            "assistant",
+            "",
+            []
+          ],
+          [
+            "user",
+            "s1",
+            []
+          ],
+          [
+            "user",
+            "f1",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f1",
+            []
+          ],
+          [
+            "user",
+            "s2",
+            []
+          ],
+          [
+            "user",
+            "f2",
+            []
+          ],
+          [
+            "assistant",
+            "answer:f2",
+            []
+          ],
+          [
+            "user",
+            "wake",
+            []
+          ],
+          [
+            "assistant",
+            "answer:wake",
+            []
+          ]
+        ],
+        "outcomes": {
+          "main": {
+            "status": "unanswered",
+            "reason": "model_error",
+            "answer": null
+          },
+          "s1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f1"
+          },
+          "f1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f1"
+          },
+          "s2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          },
+          "f2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:f2"
+          },
+          "wake": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:wake"
+          }
+        }
+      }
+    },
+    {
+      "name": "failure-all-then-prompt",
+      "first": "error",
+      "queued": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "steeringMode": "all",
+      "followUpMode": "all",
+      "wake": {
+        "key": "wake",
+        "mode": "reject"
+      },
+      "before": [
+        {
+          "key": "s1",
+          "mode": "steer"
+        },
+        {
+          "key": "f1",
+          "mode": "followUp"
+        },
+        {
+          "key": "s2",
+          "mode": "steer"
+        },
+        {
+          "key": "f2",
+          "mode": "followUp"
+        }
+      ],
+      "afterFirst": {
+        "queue": [
+          {
+            "key": "s1",
+            "mode": "steer"
+          },
+          {
+            "key": "f1",
+            "mode": "followUp"
+          },
+          {
+            "key": "s2",
+            "mode": "steer"
+          },
+          {
+            "key": "f2",
+            "mode": "followUp"
+          }
+        ],
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ]
+        ]
+      },
+      "expected": {
+        "requests": [
+          [
+            [
+              "user",
+              "main",
+              []
+            ]
+          ],
+          [
+            [
+              "user",
+              "main",
+              []
+            ],
+            [
+              "user",
+              "s1",
+              []
+            ],
+            [
+              "user",
+              "f1",
+              []
+            ],
+            [
+              "user",
+              "s2",
+              []
+            ],
+            [
+              "user",
+              "f2",
+              []
+            ],
+            [
+              "user",
+              "wake",
+              []
+            ]
+          ]
+        ],
+        "queue": [],
+        "history": [
+          [
+            "user",
+            "main",
+            []
+          ],
+          [
+            "assistant",
+            "",
+            []
+          ],
+          [
+            "user",
+            "s1",
+            []
+          ],
+          [
+            "user",
+            "f1",
+            []
+          ],
+          [
+            "user",
+            "s2",
+            []
+          ],
+          [
+            "user",
+            "f2",
+            []
+          ],
+          [
+            "user",
+            "wake",
+            []
+          ],
+          [
+            "assistant",
+            "answer:wake",
+            []
+          ]
+        ],
+        "outcomes": {
+          "main": {
+            "status": "unanswered",
+            "reason": "model_error",
+            "answer": null
+          },
+          "s1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:wake"
+          },
+          "f1": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:wake"
+          },
+          "s2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:wake"
+          },
+          "f2": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:wake"
+          },
+          "wake": {
+            "status": "done",
+            "reason": null,
+            "answer": "answer:wake"
+          }
+        }
+      }
+    }
+  ]
+}

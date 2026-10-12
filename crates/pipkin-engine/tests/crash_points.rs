@@ -654,6 +654,101 @@ fn sigkill_after_admission_before_the_acknowledgment() {
     w.close();
 }
 
+#[test]
+fn sigkill_after_settlement_resumes_only_successful_run_queues() {
+    for success in [true, false] {
+        let released = Arc::new(AtomicBool::new(false));
+        let gate = released.clone();
+        let stub = Stub::start(move |n, _| {
+            if n == 0 {
+                let deadline = Instant::now() + WAIT;
+                while !gate.load(Ordering::SeqCst) {
+                    assert!(Instant::now() < deadline, "first response gate timed out");
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                if !success {
+                    return Plan {
+                        pieces: vec!["data: {\"error\":{\"message\":\"invalid request\",\"type\":\"invalid_request_error\"}}\n\n".into()],
+                        hang: false,
+                    };
+                }
+            }
+            text_plan("done")
+        });
+        let p = Profile::new(&stub.url());
+        std::fs::write(
+            p.config.join("settings.json"),
+            r#"{"retry":{"enabled":false},"compaction":{"enabled":false}}"#,
+        )
+        .unwrap();
+        let mut w = Worker::start(&p, Some("after-settlement-before-queue"));
+        let s = w.create(&p.project);
+        w.prompt(&s, "main", "main").unwrap().unwrap();
+        for key in ["f1", "f2"] {
+            w.ok(Call::Enqueue {
+                session: s.clone(),
+                request: key.into(),
+                mode: InputMode::FollowUp,
+                text: key.into(),
+                images: vec![],
+            });
+        }
+        released.store(true, Ordering::SeqCst);
+        let deadline = Instant::now() + WAIT;
+        while w.child.try_wait().unwrap().is_none() {
+            assert!(
+                Instant::now() < deadline,
+                "worker did not reach settlement crash point"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        w.reap_killed();
+        drop(w);
+        assert_eq!(stub.bodies().len(), 1);
+        let mut w = Worker::start(&p, None);
+        let main = w.settled(&s, "main");
+        if success {
+            assert_eq!(main, RunOutcome::Completed);
+        } else {
+            assert!(matches!(main, RunOutcome::ModelError { .. }), "{main:?}");
+            std::thread::sleep(Duration::from_millis(200));
+            let snap = w.snapshot(&s);
+            assert!(snap.run.is_none());
+            assert_eq!(
+                snap.queue
+                    .iter()
+                    .map(|q| q.request.as_str())
+                    .collect::<Vec<_>>(),
+                ["f1", "f2"]
+            );
+            assert_eq!(
+                stub.bodies().len(),
+                1,
+                "failed queues require explicit input"
+            );
+            w.prompt(&s, "wake", "wake").unwrap().unwrap();
+        }
+        assert_eq!(w.settled(&s, "f2"), RunOutcome::Completed);
+        if !success {
+            assert_eq!(w.settled(&s, "wake"), RunOutcome::Completed);
+        }
+        let seen: Vec<_> = stub
+            .bodies()
+            .iter()
+            .map(|b| messages_with_role(b, "user").last().unwrap().clone())
+            .collect();
+        assert_eq!(
+            seen,
+            if success {
+                vec!["main", "f1", "f2"]
+            } else {
+                vec!["main", "f1", "f2", "wake"]
+            }
+        );
+        w.close();
+    }
+}
+
 /// (b) Killed mid-stream after partial deltas were committed (and published). The restart
 /// resumes the run: the next request carries the prompt once and no half reply; the committed
 /// part is kept in history, finalized as aborted.

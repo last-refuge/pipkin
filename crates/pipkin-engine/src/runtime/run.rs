@@ -88,10 +88,14 @@ impl Shared {
                     *active = None;
                 }
             }
-            if let Some(outcome) = outcome
-                && shared.settle(&sess, run, outcome).is_ok()
-            {
-                shared.next_from_queue(&sess).await;
+            if let Some(outcome) = outcome {
+                let continue_queue = outcome == RunOutcome::Completed;
+                if shared.settle(&sess, run, outcome).is_ok() {
+                    super::faults::crash_point("after-settlement-before-queue");
+                    if continue_queue {
+                        shared.next_from_queue(&sess).await;
+                    }
+                }
             }
         });
     }
@@ -914,7 +918,8 @@ impl Shared {
         })
     }
 
-    /// After a run settles: start the next run from queued steers and follow-ups.
+    /// After successful settlement: start the next run from queued inputs. A failed
+    /// run leaves its queue waiting for explicit new input, including across restart.
     pub async fn next_from_queue(self: &Arc<Self>, sess: &Arc<SessionRt>) {
         let _guard = sess.lock.lock().await;
         if sess.active_run().is_some() {
@@ -926,36 +931,61 @@ impl Shared {
             if Store::open_run_in(tx, &session)?.is_some() {
                 return Ok((None, vec![]));
             }
-            let queue = Store::queue_in(tx, &session)?;
-            let chosen = choose(
-                &queue,
-                settings.steering_mode,
-                true,
-                settings.follow_up_mode,
-            );
-            let Some(first) = chosen.first() else {
+            use rusqlite::OptionalExtension;
+            let last: Option<Option<String>> = tx
+                .query_row(
+                    "SELECT outcome FROM runs WHERE session = ?1 ORDER BY id DESC LIMIT 1",
+                    [&session],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(outcome) = last
+                && outcome
+                    .as_deref()
+                    .and_then(|v| serde_json::from_str::<RunOutcome>(v).ok())
+                    != Some(RunOutcome::Completed)
+            {
                 return Ok((None, vec![]));
-            };
-            let mut changes = Self::flush_summary_writes(tx, &session)?;
-            let now = now_ms();
-            let run = Store::start_run(tx, &session, Some(&first.key), now)?;
-            let keys: Vec<String> = chosen.iter().map(|r| r.key.clone()).collect();
-            Store::consume_queued(tx, &session, &keys, run)?;
-            for row in &chosen {
-                let entry = Store::append_entry(tx, &session, now, Some(run), &user_entry(row))?;
-                changes.push(SessionChange::EntryAppended { entry });
             }
-            changes.push(SessionChange::QueueChanged {
-                queue: Store::queue_view(&Store::queue_in(tx, &session)?),
-            });
-            changes.push(SessionChange::RunChanged {
-                run: Store::run_in(tx, run)?.and_then(|r| r.view()),
-            });
-            Ok((Some(run), changes))
+            Self::start_queued_run(tx, &session, &settings)
         });
         if let Ok(Some(run)) = started {
             self.spawn_run(sess.clone(), run);
         }
+    }
+
+    /// Shared final-boundary selection, also used atomically with a new idle admission.
+    pub(super) fn start_queued_run(
+        tx: &rusqlite::Connection,
+        session: &str,
+        settings: &Settings,
+    ) -> crate::store::Result<(Option<u64>, Vec<SessionChange>)> {
+        let queue = Store::queue_in(tx, session)?;
+        let chosen = choose(
+            &queue,
+            settings.steering_mode,
+            true,
+            settings.follow_up_mode,
+        );
+        let Some(first) = chosen.first() else {
+            return Ok((None, vec![]));
+        };
+        let mut changes = Self::flush_summary_writes(tx, session)?;
+        let now = now_ms();
+        let run = Store::start_run(tx, session, Some(&first.key), now)?;
+        let keys: Vec<_> = chosen.iter().map(|r| r.key.clone()).collect();
+        Store::consume_queued(tx, session, &keys, run)?;
+        for row in &chosen {
+            let entry = Store::append_entry(tx, session, now, Some(run), &user_entry(row))?;
+            changes.push(SessionChange::EntryAppended { entry });
+        }
+        changes.push(SessionChange::QueueChanged {
+            queue: Store::queue_view(&Store::queue_in(tx, session)?),
+        });
+        changes.push(SessionChange::RunChanged {
+            run: Store::run_in(tx, run)?.and_then(|r| r.view()),
+        });
+        Ok((Some(run), changes))
     }
 
     /// The provider's cache/affinity id for this session (stable across restarts).
