@@ -1088,6 +1088,22 @@ async fn closing_sessions_drops_pooled_connections() {
 }
 
 #[tokio::test]
+async fn retiring_a_session_discards_pooled_connections_and_fallback_state() {
+    let mock = WsMock::start(|_, index, _| answer(index)).await;
+    let adapter = OpenAICodexResponses::new();
+    let req = ws_request(&mock.url, vec![user("hi")]);
+    let _ = run(&adapter, &req).await;
+    ws::record_failure(&adapter.ws, Some("ws-sess"), "old lifetime failed");
+    assert!(ws::is_fallback_active(&adapter.ws, Some("ws-sess")));
+    adapter.retire_session("ws-sess");
+    assert!(adapter.websocket_debug_stats("ws-sess").is_none());
+    assert!(!ws::is_fallback_active(&adapter.ws, Some("ws-sess")));
+    let reply = run(&adapter, &req).await;
+    assert_eq!(reply.text(), "answer 1");
+    assert_eq!(mock.handshakes().len(), 2);
+}
+
+#[tokio::test]
 async fn a_server_closed_idle_connection_is_replaced_not_failed() {
     // The server closes every connection right after answering.
     let mock = WsMock::start(|_, index, _| {

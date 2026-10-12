@@ -172,6 +172,11 @@ impl ApiAdapter for OpenAICodexResponses {
     fn close_sessions(&self, session_id: Option<&str>) {
         self.close_websocket_sessions(session_id);
     }
+
+    fn retire_session(&self, session_id: &str) {
+        self.close_websocket_sessions(Some(session_id));
+        ws::reset_debug_stats(&self.ws, Some(session_id));
+    }
 }
 
 /// Parsed `ProviderRequest::options`.

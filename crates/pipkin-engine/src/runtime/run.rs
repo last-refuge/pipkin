@@ -529,7 +529,11 @@ impl Shared {
             .and_then(ThinkingLevel::parse)
             .map(|l| model.clamp_thinking(l))
             .unwrap_or(ThinkingLevel::Off);
-        let provider_session = self.provider_session_id(&sess.id);
+        let provider_session = self.provider_session_id(&sess.id).map_err(|error| {
+            Some(RunOutcome::ModelError {
+                detail: format!("Cannot persist provider session identity: {error}"),
+            })
+        })?;
         let mut options = Map::new();
         options.insert(
             "maxRetries".into(),
@@ -902,19 +906,12 @@ impl Shared {
     }
 
     /// The provider's cache/affinity id for this session (stable across restarts).
-    fn provider_session_id(&self, session: &str) -> String {
-        if let Ok(Some(id)) = self.store.kv_get(session, "provider_session_id") {
-            return id;
+    fn provider_session_id(&self, session: &str) -> crate::store::Result<String> {
+        if let Some(id) = self.store.kv_get(session, "provider_session_id")? {
+            return Ok(id);
         }
-        let id = crate::util::uuid_v4();
-        let _ = self
-            .store
-            .tx(|tx| Store::kv_set(tx, session, "provider_session_id", &id));
         self.store
-            .kv_get(session, "provider_session_id")
-            .ok()
-            .flatten()
-            .unwrap_or(id)
+            .kv_get_or_insert(session, "provider_session_id", &crate::util::uuid_v4())
     }
 }
 

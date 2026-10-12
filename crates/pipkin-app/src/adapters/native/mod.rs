@@ -2101,6 +2101,15 @@ impl Live {
                 }
             }
         }
+        if let Some(old) = self.current.as_ref().filter(|c| c.session != summary.id) {
+            // Attachment release never cancels a background run. The engine keeps its
+            // runtime until active work and every other client's demand have ended.
+            if let Err(error) = self.call(Call::ReleaseSession {
+                session: old.session.clone(),
+            }) {
+                log::warn!("could not release conversation attachment: {error}");
+            }
+        }
         let previous = self
             .current
             .take()

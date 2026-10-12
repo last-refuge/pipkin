@@ -549,6 +549,12 @@ pub trait ApiAdapter: Send + Sync {
     /// Release per-session transport resources (e.g. pooled WebSockets) for one provider
     /// session id, or all of them with `None`. Most adapters hold none.
     fn close_sessions(&self, _session_id: Option<&str>) {}
+    /// End an idle runtime lifetime, also discarding session-local fallback/debug state.
+    /// Called only after all exchanges and session operations finish. Must not block or
+    /// call back into the engine: retirement serializes this against a new lifetime.
+    fn retire_session(&self, session_id: &str) {
+        self.close_sessions(Some(session_id));
+    }
 }
 
 /// The adapters this build provides, by API kind.

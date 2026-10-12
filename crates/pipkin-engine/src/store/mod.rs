@@ -1475,6 +1475,22 @@ impl Store {
         })
     }
 
+    /// Atomically initialize a stable session value. Concurrent first users all receive
+    /// the same value, unlike a read followed by an overwriting kv_set.
+    pub fn kv_get_or_insert(&self, session: &str, key: &str, value: &str) -> Result<String> {
+        self.tx(|tx| {
+            tx.execute(
+                "INSERT INTO kv(session, key, value) VALUES (?1, ?2, ?3) ON CONFLICT(session, key) DO NOTHING",
+                params![session, key, value],
+            )?;
+            Ok(tx.query_row(
+                "SELECT value FROM kv WHERE session = ?1 AND key = ?2",
+                params![session, key],
+                |r| r.get(0),
+            )?)
+        })
+    }
+
     pub fn kv_set(tx: &Connection, session: &str, key: &str, value: &str) -> Result<()> {
         tx.execute(
             "INSERT INTO kv(session, key, value) VALUES (?1, ?2, ?3)

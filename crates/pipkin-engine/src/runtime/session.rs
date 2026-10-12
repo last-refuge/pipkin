@@ -35,6 +35,8 @@ pub struct Settled {
 
 pub struct SessionRt {
     pub id: String,
+    /// Completion of the preceding lifetime's extension teardown, if any.
+    pub(super) predecessor: Option<Arc<CancellationToken>>,
     /// Serializes this session's admission/stop/settlement sequences.
     pub lock: tokio::sync::Mutex<()>,
     pub active: Mutex<Option<Active>>,
@@ -54,6 +56,7 @@ impl SessionRt {
     pub fn new(id: &str, questions: crate::extensions::questions::QuestionHost) -> SessionRt {
         SessionRt {
             questions,
+            predecessor: None,
             extensions: tokio::sync::Mutex::new(None),
             compacting: std::sync::atomic::AtomicBool::new(false),
             id: id.to_owned(),

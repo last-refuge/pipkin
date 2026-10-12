@@ -13,12 +13,21 @@ use pipkin_engine_protocol::{ClientFrame, ServerFrame};
 
 use crate::config::EngineConfig;
 
+/// Dropping the last input handle wakes the engine even when reply backpressure is full.
+pub(crate) struct ClientLifetime(pub tokio_util::sync::CancellationToken);
+impl Drop for ClientLifetime {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
 /// A client's end of a connection.
 pub struct Connection {
     pub(crate) control: tokio::sync::mpsc::Sender<ClientFrame>,
     pub(crate) tx: tokio::sync::mpsc::Sender<ClientFrame>,
     pub(crate) rx: crate::delivery::Receiver,
     pub(crate) client: u64,
+    pub(crate) lifetime: std::sync::Arc<ClientLifetime>,
 }
 
 impl Connection {
@@ -51,6 +60,7 @@ impl Connection {
             Sender {
                 tx: self.tx,
                 control: self.control,
+                _lifetime: self.lifetime,
             },
             self.rx,
         )
@@ -60,6 +70,7 @@ impl Connection {
 /// The sending half of a [`Connection`].
 #[derive(Clone)]
 pub struct Sender {
+    _lifetime: std::sync::Arc<ClientLifetime>,
     tx: tokio::sync::mpsc::Sender<ClientFrame>,
     control: tokio::sync::mpsc::Sender<ClientFrame>,
 }

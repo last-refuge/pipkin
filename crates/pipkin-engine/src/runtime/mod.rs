@@ -5,6 +5,7 @@ mod compaction;
 pub mod faults;
 mod glue;
 mod import;
+mod lifecycle;
 pub mod models;
 mod run;
 mod session;
@@ -48,7 +49,7 @@ pub struct Shared {
     publication: Mutex<()>,
     clients: Mutex<HashMap<u64, crate::delivery::Delivery>>,
     cursors: Mutex<HashMap<u64, (u64, u64)>>,
-    sessions: Mutex<HashMap<String, Arc<SessionRt>>>,
+    sessions: Mutex<lifecycle::Sessions>,
     handle: tokio::runtime::Handle,
     me: std::sync::Weak<Shared>,
 }
@@ -107,46 +108,6 @@ impl Shared {
         F: std::future::Future<Output = ()> + Send + 'static,
     {
         self.handle.spawn(future);
-    }
-
-    /// The runtime state of an existing session.
-    pub fn session(&self, id: &str) -> Result<Arc<SessionRt>, ProtoError> {
-        if let Some(s) = self
-            .sessions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(id)
-        {
-            return Ok(s.clone());
-        }
-        if self.store.session(id)?.is_none() {
-            return Err(ProtoError::new(
-                ErrorCode::NotFound,
-                format!("Session {id} does not exist"),
-            ));
-        }
-        let weak = self.me.clone();
-        let session = id.to_owned();
-        Ok(self
-            .sessions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .entry(id.to_owned())
-            .or_insert_with(|| {
-                let questions = crate::extensions::questions::QuestionHost::new(Some(Arc::new(
-                    move |ui: UiView| {
-                        if let Some(shared) = weak.upgrade() {
-                            shared.publish(Event::Session {
-                                session: session.clone(),
-                                revision: 0,
-                                change: SessionChange::UiChanged { ui },
-                            });
-                        }
-                    },
-                )));
-                Arc::new(SessionRt::new(id, questions))
-            })
-            .clone())
     }
 
     /// Tools offered to a session's model: the coding tools, plus `subagent` for root sessions
@@ -256,7 +217,7 @@ impl EngineHandle {
             cursors: Mutex::new(HashMap::new()),
             publication: Mutex::new(()),
             clients: Mutex::new(HashMap::new()),
-            sessions: Mutex::new(HashMap::new()),
+            sessions: Mutex::new(lifecycle::Sessions::default()),
             handle: runtime.handle().clone(),
         });
         {
@@ -285,6 +246,7 @@ impl EngineHandle {
                 }
             });
         }
+        lifecycle::start_reaper(&shared);
         Ok(EngineHandle {
             runtime: Mutex::new(Some(runtime)),
             shared,
@@ -313,6 +275,8 @@ impl EngineHandle {
             .unwrap_or_else(|e| e.into_inner())
             .insert(client, out_tx.clone());
         let shared = self.shared.clone();
+        let lifetime = tokio_util::sync::CancellationToken::new();
+        let sender_lifetime = Arc::new(crate::host::ClientLifetime(lifetime.clone()));
         if let Some(rt) = self
             .runtime
             .lock()
@@ -320,6 +284,8 @@ impl EngineHandle {
             .as_ref()
         {
             rt.spawn(async move {
+                let mut tasks = tokio::task::JoinSet::new();
+                let mut disconnected = false;
                 let normal_slots = Arc::new(Semaphore::new(16));
                 let control_slots = Arc::new(Semaphore::new(4));
                 loop {
@@ -327,6 +293,13 @@ impl EngineHandle {
                     // Control has independent capacity and is polled first.
                     let (frame, permit) = tokio::select! {
                         biased;
+                        _ = lifetime.cancelled(), if !disconnected => {
+                            disconnected = true;
+                            shared.auth.client_gone(client);
+                            out_tx.close();
+                            continue;
+                        }
+                        Some(_) = tasks.join_next(), if !tasks.is_empty() => continue,
                         v = async {
                             let p = control_slots.clone().acquire_owned().await.ok()?;
                             Some((controls.recv().await?, p))
@@ -339,12 +312,27 @@ impl EngineHandle {
                     };
                     let shared = shared.clone();
                     let out = out_tx.clone();
-                    tokio::spawn(async move {
+                    let lifetime = lifetime.clone();
+                    tasks.spawn(async move {
                         let _permit = permit;
-                        let result = dispatch(&shared, client, frame.call).await;
+                        let signing_in = matches!(&frame.call,
+                            Call::AuthStart { .. } | Call::AuthReuse { .. } | Call::AuthAnswer { .. });
+                        let result = tokio::select! {
+                            biased;
+                            _ = lifetime.cancelled(), if signing_in => {
+                                shared.auth.client_gone(client);
+                                Err(ProtoError::new(ErrorCode::ShuttingDown, "the client disconnected"))
+                            }
+                            result = dispatch(&shared, client, frame.call) => result,
+                        };
                         out.reply(ServerFrame::Reply { id: frame.id, result }).await;
                     });
                 }
+                // Drain accepted calls before dropping their attachment demand. Replies no
+                // longer hold capacity when a disconnected client stopped reading.
+                out_tx.close();
+                while tasks.join_next().await.is_some() {}
+                shared.release_client(client);
                 shared.clients.lock().unwrap_or_else(|e| e.into_inner()).remove(&client);
                 shared.cursors.lock().unwrap_or_else(|e| e.into_inner()).remove(&client);
                 shared.auth.client_gone(client);
@@ -356,6 +344,7 @@ impl EngineHandle {
             control,
             rx: out_rx,
             client,
+            lifetime: sender_lifetime,
         }
     }
 
@@ -380,8 +369,9 @@ impl EngineHandle {
             .sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
+            .live
             .values()
-            .cloned()
+            .map(|entry| entry.rt.clone())
             .collect();
         if let Some(rt) = self
             .runtime
@@ -451,6 +441,7 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
                 epoch: shared.epoch,
                 capabilities: vec![
                     "durableInvalidations".into(),
+                    "sessionAttachments".into(),
                     "subagents".into(),
                     "questions".into(),
                     "compaction".into(),
@@ -491,13 +482,19 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
             shared.publish(Event::SessionsChanged);
             Ok(Reply::Ok)
         }
+        Call::ReleaseSession { session } => {
+            shared.release_session(client, &session);
+            Ok(Reply::Ok)
+        }
         Call::OpenSession { session, window } => {
+            let _demand = shared.session(&session)?;
             shared.recover_session(&session)?;
             shared.ensure_extensions(&session).await;
-            Ok(Reply::Snapshot(Box::new(shared.snapshot(
-                &session,
-                window.unwrap_or(limits::DEFAULT_WINDOW_ENTRIES),
-            )?)))
+            let snapshot =
+                shared.snapshot(&session, window.unwrap_or(limits::DEFAULT_WINDOW_ENTRIES))?;
+            // Attach only after a successful open; a refused snapshot must not leak demand.
+            shared.attach_session(client, &session)?;
+            Ok(Reply::Snapshot(Box::new(snapshot)))
         }
         Call::HistoryPage {
             session,
@@ -847,7 +844,7 @@ impl Shared {
 }
 
 impl Shared {
-    /// Start the configured extensions for a root session, once per engine process.
+    /// Start configured extensions once per active session lifetime.
     async fn ensure_extensions(self: &Arc<Self>, session: &str) {
         if self.config.extensions.is_empty() {
             return;
@@ -858,24 +855,15 @@ impl Shared {
         if !matches!(self.store.session(session), Ok(Some(row)) if row.parent.is_none()) {
             return;
         }
+        // A new lifetime must not activate extensions until the old generation exited.
+        if let Some(previous) = &sess.predecessor {
+            previous.cancelled().await;
+        }
         let mut slot = sess.extensions.lock().await;
         if slot.is_some() {
             return;
         }
-        let weak = self.me.clone();
-        let dispatch: crate::extensions::Dispatch = Arc::new(move |call: Call| {
-            let weak = weak.clone();
-            match weak.upgrade() {
-                // Client 0: extensions act inside the engine, not as a connection.
-                Some(shared) => dispatch_boxed(shared, 0, call),
-                None => Box::pin(async {
-                    Err(ProtoError::new(
-                        ErrorCode::ShuttingDown,
-                        "the engine is stopping",
-                    ))
-                }),
-            }
-        });
+        let dispatch = self.extension_dispatch(&sess);
         let host = Arc::new(crate::extensions::CallHost::new(
             session.to_owned(),
             sess.questions.clone(),

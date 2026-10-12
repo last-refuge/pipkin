@@ -127,10 +127,16 @@ pub enum Call {
         session: SessionId,
         title: String,
     },
+    /// Attach this client to the session (idempotent until ReleaseSession/disconnect).
     OpenSession {
         session: SessionId,
         #[serde(default)]
         window: Option<u32>,
+    },
+    /// Release this client's attachment without cancelling runs or deleting history.
+    /// Idempotent, including sessions that are no longer loaded.
+    ReleaseSession {
+        session: SessionId,
     },
     /// Entries strictly before `before` (or the newest when absent), oldest first.
     HistoryPage {

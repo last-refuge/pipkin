@@ -407,3 +407,48 @@ async fn an_unexpected_reply_is_an_internal_error() {
     let error = host.prompt("x".into(), None).await.unwrap_err();
     assert_eq!(error.code, ErrorCode::Internal);
 }
+
+struct PanicsOnClose;
+impl Extension for PanicsOnClose {
+    fn id(&self) -> &str {
+        "panics-on-close"
+    }
+    fn activate(&self, host: Arc<dyn ExtensionHost>) -> BoxFuture<'static, ()> {
+        Box::pin(async move {
+            host.ask(
+                Question::confirm("Waiting"),
+                Some(Duration::ZERO),
+                CancellationToken::new(),
+            )
+            .await;
+        })
+    }
+    fn deactivate(&self) {
+        panic!("broken deactivation")
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_panicking_deactivation_still_aborts_tasks_and_releases_questions() {
+    let (host, _) = TestHost::new("s1");
+    let mut runner = ExtensionRunner::new(host.clone());
+    let deactivated = Arc::new(AtomicBool::new(false));
+    runner.start(Arc::new(PanicsOnClose)).unwrap();
+    runner
+        .start(Arc::new(Waiter {
+            deactivated: deactivated.clone(),
+        }))
+        .unwrap();
+    tokio::task::yield_now().await;
+    assert_eq!(host.questions().view().questions.len(), 2);
+    runner.shutdown(Duration::from_millis(10)).await;
+    assert!(
+        deactivated.load(Ordering::SeqCst),
+        "other extensions must still deactivate"
+    );
+    assert!(host.questions().view().questions.is_empty());
+    assert!(
+        host.notices()
+            .contains(&"Extension panics-on-close failed while closing.".into())
+    );
+}

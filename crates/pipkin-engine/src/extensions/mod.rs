@@ -412,7 +412,14 @@ impl ExtensionRunner {
     /// Deactivate every extension, give their tasks `grace` to finish, then abort the rest.
     pub async fn shutdown(self, grace: Duration) {
         for running in &self.running {
-            running.extension.deactivate();
+            if std::panic::catch_unwind(AssertUnwindSafe(|| running.extension.deactivate()))
+                .is_err()
+            {
+                self.host.notify(
+                    NoticeLevel::Error,
+                    &format!("Extension {} failed while closing.", running.extension.id()),
+                );
+            }
         }
         let deadline = tokio::time::Instant::now() + grace;
         for mut running in self.running {

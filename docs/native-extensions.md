@@ -24,9 +24,9 @@ The desktop only shows the questions, notices and status lines.
 
 ## The question rules
 
-`QuestionHost` follows `ui-requests-provider.ts` exactly. A presentation shows each refusal text below as it is.
+`QuestionHost` follows the question and refusal behavior of `ui-requests-provider.ts`. Runtime identities are scoped to a session lifetime as described below.
 
-- **Ids.** Questions are `q<n>` and notices are `n<n>`. Both come from one counter per session.
+- **Ids.** Treat IDs as opaque strings. Runtime questions and notices include a fresh session-lifetime scope plus a shared counter; delayed answers from a retired lifetime cannot resolve new questions. Standalone `QuestionHost` fixtures use the reference `q<n>` / `n<n>` format.
 - **Timeout.**
   - A question waits two minutes by default. A timeout of `0` waits indefinitely.
   - When the time runs out, an info notice `No answer to "<title>"; it was cancelled.` is posted (the title is quoted up to 80 characters). The question then resolves as unanswered.
@@ -86,6 +86,14 @@ pub trait Extension: Send + Sync {
 - It refuses an extension that declares another API version, or a duplicate id. Each refusal comes with a warning notice.
 - It reports a panic once, as an error notice, and does not restart the extension.
 - On session close it calls `deactivate`, gives the tasks a grace period, and then aborts them. Aborting withdraws any question an extension was still asking.
+
+The protocol's `OpenSession` attaches a client; `ReleaseSession` releases that client's
+attachment without cancelling work. The desktop releases the prior attachment when switching
+conversations. Once the last attachment and active operation are gone, the runtime disposes
+questions and shuts down extensions. A disconnect allows a thirty-second reconnect grace;
+a newly loaded unattached session has a ten-second initial grace. Reopening starts a fresh
+extension lifetime after previous shutdown completes. Old hosts cannot submit work or UI
+updates into the replacement lifetime. History and admitted work remain durable.
 
 `extensions::testing::TestHost` (under `cfg(test)` or the `test-support` feature) is a test double. It pairs a real `QuestionHost` with a recording agent.
 

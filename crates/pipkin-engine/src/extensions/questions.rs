@@ -155,6 +155,7 @@ struct Pending {
 
 #[derive(Default)]
 struct State {
+    scope: String,
     counter: u64,
     pending: Vec<Pending>,
     status: Vec<(String, String)>,
@@ -174,7 +175,7 @@ impl State {
     fn notify(&mut self, level: NoticeLevel, message: &str) {
         self.counter += 1;
         self.notices.push_back(NoticeView {
-            id: format!("n{}", self.counter),
+            id: format!("n{}{}", self.scope, self.counter),
             level,
             message: clip_utf16(message, UI_MAX_NOTICE_CHARS).to_string(),
         });
@@ -230,10 +231,27 @@ impl QuestionHost {
         QuestionHost::with_clock(on_change, Arc::new(crate::util::now_ms))
     }
 
+    /// Runtime hosts use fresh identities so an answer from a retired lifetime can never
+    /// resolve a new question after the same durable session is reopened.
+    pub(crate) fn scoped(on_change: Option<UiChangeFn>) -> QuestionHost {
+        Self::with_scope(
+            on_change,
+            Arc::new(crate::util::now_ms),
+            format!("{}-", crate::util::uuid_v4()),
+        )
+    }
+
     pub fn with_clock(on_change: Option<UiChangeFn>, clock: ClockFn) -> QuestionHost {
+        Self::with_scope(on_change, clock, String::new())
+    }
+
+    fn with_scope(on_change: Option<UiChangeFn>, clock: ClockFn, scope: String) -> QuestionHost {
         QuestionHost {
             shared: Arc::new(Shared {
-                state: Mutex::new(State::default()),
+                state: Mutex::new(State {
+                    scope,
+                    ..State::default()
+                }),
                 on_change,
                 clock,
             }),
@@ -449,7 +467,7 @@ fn open(
             return (None, true);
         }
         state.counter += 1;
-        let id = format!("q{}", state.counter);
+        let id = format!("q{}{}", state.scope, state.counter);
         let created = (shared.clock)();
         let deadline_ms = (!timeout.is_zero()).then(|| {
             created.saturating_add(i64::try_from(timeout.as_millis()).unwrap_or(i64::MAX))

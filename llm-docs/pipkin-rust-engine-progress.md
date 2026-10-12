@@ -11,7 +11,26 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — verified WebSocket proxy TLS
+## Current follow-up — native session attachments and retirement
+
+Implemented on top of **`c3134df`**, protocol **6** / schema **4**. OpenSession now holds
+client attachment demand; ReleaseSession and disconnect release it without cancelling work.
+Idle retirement releases provider pools by affinity ID, Codex fallback/debug state, prompt
+caches, questions and extension tasks. In-flight work holds retirement; short disconnects
+allow readoption. Old extension generations cannot write into new ones, and reopening waits
+for prior teardown. The desktop releases its previous conversation when switching.
+See [lifecycle evidence](pipkin-rust-engine-evidence/session-lifecycle.md).
+
+Required checks: **1371 passed, 0 failed, 53 ignored**, Clippy and formatting clean.
+Logs: `/tmp/pipkin-lifecycle-release-{workspace,clippy,fmt}.log`. The first workspace run
+found a device-login mock race, now made deterministic; the second found a protocol fixture
+pinned to version 5, now updated. Failed logs are retained in the evidence record. Final
+review also made first provider identity assignment atomic and contained deactivation panics.
+Counts remain **503 rows; 420 measured, 7 observed, 0 currently failed, 10 unverified,
+66 not started; 0 qualified**. External attachment/server re-adoption, full differentials,
+extension package compatibility and release qualification remain open. Native remains opt-in.
+
+## Previous follow-up — verified WebSocket proxy TLS
 
 Constrained-tool integration is committed as **`1077005`**. Codex WebSockets now support
 HTTP and HTTPS CONNECT proxies for WS and WSS targets. TLS to the proxy and TLS inside the

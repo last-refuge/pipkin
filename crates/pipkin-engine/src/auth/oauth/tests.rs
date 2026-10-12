@@ -673,8 +673,8 @@ async fn radius_device_login_for_a_models_json_gateway() {
 
 #[tokio::test]
 async fn xai_device_flow_and_cancellation() {
-    let polls = Arc::new(AtomicUsize::new(0));
-    let p = polls.clone();
+    let approved = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let approval = approved.clone();
     let server = MockServer::start(move |req: &Recorded, _| match req.path.as_str() {
         "/oauth2/device/code" => {
             assert_eq!(form(req)["referrer"], "pi");
@@ -682,9 +682,9 @@ async fn xai_device_flow_and_cancellation() {
                 "verification_uri": "https://accounts.x.ai/device",
                 "verification_uri_complete": "https://accounts.x.ai/device?c=X-1", "expires_in": 900}))
         }
-        "/oauth2/token" => match p.fetch_add(1, Ordering::SeqCst) {
-            0 => MockResponse::json(400, &json!({"error": "authorization_pending"})),
-            _ => MockResponse::json(200, &json!({"access_token": "x-at", "refresh_token": "x-rt", "expires_in": 3600})),
+        "/oauth2/token" => match approval.load(Ordering::SeqCst) {
+            false => MockResponse::json(400, &json!({"error": "authorization_pending"})),
+            true => MockResponse::json(200, &json!({"access_token": "x-at", "refresh_token": "x-rt", "expires_in": 3600})),
         },
         other => panic!("{other}"),
     })
@@ -694,6 +694,11 @@ async fn xai_device_flow_and_cancellation() {
     auth.start(1, "xai").await.unwrap();
     let s = wait_for(&auth, 1, "device code", |s| s.device_code.is_some()).await;
     assert_eq!(s.url.as_deref(), Some("https://accounts.x.ai/device?c=X-1"));
+    wait_for(&auth, 1, "pending device poll", |_| {
+        server.requests().len() >= 2
+    })
+    .await;
+    approved.store(true, Ordering::SeqCst);
     done(&auth, 1).await;
     assert_eq!(stored(&f, "xai").access, "x-at");
 
