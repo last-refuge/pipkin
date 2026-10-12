@@ -244,6 +244,7 @@ pub trait Tool: Send + Sync {
 /// A [`ToolSpec`] from the reference's literal JSON schema.
 pub(crate) fn spec_from_json(name: &str, description: &str, schema: &str) -> ToolSpec {
     ToolSpec {
+        constrained_sampling: None,
         name: name.to_owned(),
         description: description.to_owned(),
         parameters: serde_json::from_str(schema).unwrap_or(Value::Null),

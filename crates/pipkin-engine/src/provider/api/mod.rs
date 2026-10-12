@@ -39,3 +39,6 @@ pub fn all() -> Vec<Arc<dyn ApiAdapter>> {
         openai_codex_responses::adapter(),
     ]
 }
+
+#[cfg(test)]
+pub(crate) mod constrained_tests;

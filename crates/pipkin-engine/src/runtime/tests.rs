@@ -1112,6 +1112,7 @@ struct Probe {
 impl crate::tools::Tool for Probe {
     fn spec(&self) -> crate::provider::ToolSpec {
         crate::provider::ToolSpec {
+            constrained_sampling: None,
             name: self.name.into(),
             description: "probe".into(),
             parameters: json!({"type": "object", "properties": {"tag": {"type": "string"}}, "required": ["tag"]}),
@@ -1386,4 +1387,102 @@ fn positional_system_baseline_survives_restart_and_only_changed_sections_are_app
             .count(),
         2
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn constrained_grammar_tool_executes_and_replays_after_restart() {
+    use crate::provider::api::constrained_tests::{grammar_events, grammar_tool};
+    use crate::provider::api::openai_completions::tests::responses_sse;
+    use crate::provider::mock::{MockResponse, MockServer};
+    struct Patch;
+    impl crate::tools::Tool for Patch {
+        fn spec(&self) -> crate::provider::ToolSpec {
+            grammar_tool()
+        }
+        fn execute<'a>(
+            &'a self,
+            args: serde_json::Value,
+            ctx: &'a crate::tools::ToolCtx,
+        ) -> crate::provider::BoxFuture<'a, Result<crate::tools::ToolOutput, crate::tools::ToolError>>
+        {
+            Box::pin(async move {
+                // This is the executor boundary: a wrong property would fail schema validation
+                // before this code runs. The effect uses only the isolated fixture project.
+                std::fs::write(ctx.cwd.join("grammar.txt"), args["patch"].as_str().unwrap())
+                    .unwrap();
+                Ok(crate::tools::ToolOutput {
+                    content: Some(vec![Block::text("applied")]),
+                    ..Default::default()
+                })
+            })
+        }
+    }
+    let server = MockServer::start(|_, n| {
+        let events = if n == 0 {
+            grammar_events("hello é\n")
+        } else {
+            vec![json!({"type":"response.completed","response":{"status":"completed","output":[]}})]
+        };
+        MockResponse::sse(vec![responses_sse(&events)])
+    })
+    .await;
+    tokio::task::spawn_blocking(move || {
+    let fx = Fixture::new();
+    let mut config = fx.config();
+    config.env = Env::isolated(std::collections::HashMap::from([(
+        "OPENAI_API_KEY".into(),
+        "sk-local-fixture".into(),
+    )]));
+    config.extra_models=vec![serde_json::from_value(json!({"id":"grammar-test","provider":"openai","api":"openai-responses","baseUrl":server.url,"compat":{"supportsOpenAIGrammarTools":true}})).unwrap()];
+    config.default_model = Some("openai/grammar-test".into());
+    let start = || {
+        let handle = EngineHandle::start_with(
+            config.clone(),
+            registry_with(crate::provider::api::openai_responses::adapter()),
+            vec![Arc::new(Patch)],
+        )
+        .unwrap();
+        let conn = handle.connect("test");
+        Engine {
+            handle,
+            conn,
+            next: 0,
+            events: vec![],
+        }
+    };
+    let session;
+    {
+        let mut e = start();
+        session = e.create(&fx.project, "c");
+        e.prompt(&session, "r1", "apply").unwrap();
+        assert_eq!(e.settled("r1"), RunOutcome::Completed);
+        assert_eq!(
+            std::fs::read_to_string(fx.project.join("grammar.txt")).unwrap(),
+            "hello é\n"
+        );
+        let snapshot = e.snapshot(&session);
+        assert!(snapshot.entries.iter().any(|e| matches!(&e.kind,EntryKind::Message{message:Message::System(s),..} if s.tools_added.iter().any(|t|t.constrained_sampling.is_some()))));
+        e.handle.shutdown(Duration::from_secs(1));
+    }
+    let mut e = start();
+    e.prompt(&session, "r2", "continue").unwrap();
+    assert_eq!(e.settled("r2"), RunOutcome::Completed);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3);
+    for r in &requests[1..] {
+        let b = r.json();
+        let input = b["input"].as_array().unwrap();
+        assert!(
+            input
+                .iter()
+                .any(|v| v["type"] == "custom_tool_call" && v["input"] == "hello é\n")
+        );
+        assert!(
+            input
+                .iter()
+                .any(|v| v["type"] == "custom_tool_call_output" && v["output"] == "applied")
+        );
+        assert_eq!(b["tools"][0]["type"], "custom");
+    }
+    }).await.unwrap();
 }

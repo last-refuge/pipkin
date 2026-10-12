@@ -159,6 +159,7 @@ mod tests {
         req.max_tokens = Some(4000);
         req.headers.insert("x-extra".into(), Some("1".into()));
         req.tools = vec![ToolSpec {
+            constrained_sampling: None,
             name: "read".into(),
             description: "Read a file".into(),
             parameters: json!({"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
@@ -288,6 +289,7 @@ mod tests {
         req.options.insert("temperature".into(), json!(0.5));
         req.options.insert("toolChoice".into(), json!("any"));
         req.tools = vec![ToolSpec {
+            constrained_sampling: None,
             name: "t".into(),
             description: "d".into(),
             parameters: json!({"type": "object", "$schema": "x", "properties": {}}),

@@ -57,7 +57,8 @@ fn context(req: &ProviderRequest) -> Value {
                 req.tools
                     .iter()
                     .map(|t| {
-                        json!({"name": t.name, "description": t.description, "parameters": t.parameters})
+                        serde_json::to_value(pipkin_engine_protocol::ToolDeclaration::from(t))
+                            .expect("tool declaration serializes")
                     })
                     .collect(),
             );
@@ -448,6 +449,7 @@ mod tests {
             system: "Sys".into(),
             messages: vec![Message::user_text("hi", 5)],
             tools: vec![ToolSpec {
+                constrained_sampling: None,
                 name: "read".into(),
                 description: "Read".into(),
                 parameters: json!({"type": "object"}),

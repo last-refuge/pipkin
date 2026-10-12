@@ -85,8 +85,8 @@ pub fn parse_json_with_repair(json: &str) -> Result<Value, serde_json::Error> {
 pub enum ToolArgs {
     /// A JSON argument string.
     Json(String),
-    /// A grammar (custom) tool's raw input, sent as `{"input": ...}`.
-    Custom(String),
+    /// A grammar tool's raw input under its declared schema property.
+    Custom { property: String, input: String },
 }
 
 /// Settle tool arguments on the emitter. JSON is parsed with repair; arguments that still do
@@ -95,7 +95,9 @@ pub enum ToolArgs {
 pub fn finalize_tool_args(e: &mut Emitter, args: impl IntoIterator<Item = (usize, ToolArgs)>) {
     for (index, args) in args {
         match args {
-            ToolArgs::Custom(input) => e.tool_args_value(index, json!({"input": input})),
+            ToolArgs::Custom { property, input } => {
+                e.tool_args_value(index, json!({property: input}))
+            }
             ToolArgs::Json(raw) => {
                 if raw.trim().is_empty() {
                     e.tool_args_value(index, json!({}));

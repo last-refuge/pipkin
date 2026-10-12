@@ -1,5 +1,5 @@
 //! Strict JSON-schema tools (reference `api/constrained-sampling.ts`), used by the adapters
-//! that support provider constrained sampling (Anthropic, Google).
+//! that support provider constrained sampling, plus Responses grammar tool declarations.
 
 use serde_json::{Value, json};
 
@@ -163,11 +163,83 @@ pub fn make_strict_json_schema(
     Ok(cloned)
 }
 
-/// A tool's constrained-sampling configuration. `ToolSpec` has no field for it, so it comes
-/// from the `toolConstrainedSampling` option: `{ "<tool name>": {"type": "json_schema",
-/// "strict": "prefer" | "require"} }` (reference `Tool.constrainedSampling`).
-pub fn constrained_sampling<'a>(req: &'a ProviderRequest, tool: &str) -> Option<&'a Value> {
-    opt(req, "toolConstrainedSampling")?.get(tool)
+/// Prefer the durable tool declaration; retain the legacy request option for callers.
+pub fn constrained_sampling<'a>(req: &'a ProviderRequest, tool: &'a ToolSpec) -> Option<&'a Value> {
+    tool.constrained_sampling
+        .as_ref()
+        .or_else(|| opt(req, "toolConstrainedSampling")?.get(&tool.name))
+}
+
+#[derive(Clone, Debug)]
+pub struct Grammar {
+    pub format: &'static str,
+    pub definition: String,
+    pub input_property: String,
+}
+
+/// Reference `resolveGrammarConstrainedSampling`. Unsupported endpoints use JSON tools.
+pub fn resolve_grammar(req: &ProviderRequest, tool: &ToolSpec) -> Result<Option<Grammar>, String> {
+    let Some(config) = constrained_sampling(req, tool) else {
+        return Ok(None);
+    };
+    if config.get("type").and_then(Value::as_str) != Some("grammar")
+        || req.model.compat_bool("supportsOpenAIGrammarTools") != Some(true)
+    {
+        return Ok(None);
+    }
+    let fail = |reason: &str| {
+        format!(
+            "Tool \"{}\" cannot use grammar constrained sampling: {reason}.",
+            tool.name
+        )
+    };
+    let variant = |key: &str| {
+        config
+            .get("variants")
+            .and_then(|v| v.get(key))
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+    };
+    let (format, definition) = if let Some(v) = variant("openai_lark") {
+        ("lark", v)
+    } else if let Some(v) = variant("openai_regex") {
+        ("regex", v)
+    } else {
+        return Err(fail("no supported grammar variant was provided"));
+    };
+    if tool.parameters.get("type").and_then(Value::as_str) != Some("object") {
+        return Err(fail(
+            "grammar constrained sampling requires an object parameter schema",
+        ));
+    }
+    let required = tool
+        .parameters
+        .get("required")
+        .and_then(Value::as_array)
+        .filter(|a| a.len() == 1)
+        .and_then(|a| a[0].as_str())
+        .ok_or_else(|| {
+            fail("grammar constrained sampling requires exactly one required string property")
+        })?;
+    let property = tool
+        .parameters
+        .get("properties")
+        .and_then(|p| p.get(required))
+        .ok_or_else(|| {
+            fail(&format!(
+                "grammar constrained sampling requires a properties entry for {required}"
+            ))
+        })?;
+    if property.get("type").and_then(Value::as_str) != Some("string") {
+        return Err(fail(&format!(
+            "grammar constrained sampling property {required} must have type string"
+        )));
+    }
+    Ok(Some(Grammar {
+        format,
+        definition: definition.into(),
+        input_property: required.into(),
+    }))
 }
 
 /// Reference `resolveJsonSchemaStrictSampling`: `Ok(Some(true))` to send the tool strict,
@@ -178,7 +250,7 @@ pub fn resolve_strict(
     supports_strict: bool,
     check: Option<&UnsupportedKeyword>,
 ) -> Result<Option<bool>, String> {
-    let Some(config) = constrained_sampling(req, &tool.name) else {
+    let Some(config) = constrained_sampling(req, tool) else {
         return Ok(None);
     };
     if config.get("type").and_then(Value::as_str) != Some("json_schema") {

@@ -8,10 +8,8 @@
 //!
 //! Positional system changes are retained when supported and collapsed otherwise; additive
 //! tool histories can use `additional_tools` or client `tool_search_*` anchors.
-//! Remaining differences:
-//! - `ToolSpec` has no `constrainedSampling`, so grammar (`custom`) tools and strict JSON-schema
-//!   sampling never apply; every tool is a `function` tool.
-//! - Rust strings are always valid UTF-8, so `sanitizeSurrogates` is a no-op.
+//! Grammar custom tools retain their declared input property through stream and replay.
+//! Rust strings are always valid UTF-8, so `sanitizeSurrogates` is a no-op.
 
 use std::collections::HashMap;
 use std::ops::ControlFlow;
@@ -20,6 +18,7 @@ use pipkin_engine_protocol::{Block, Message, StopReason, Usage};
 use reqwest::header::HeaderMap;
 use serde_json::{Map, Value, json};
 
+use super::common::schema::{resolve_grammar, resolve_strict, tool_parameters};
 use super::common::{
     Mapped, NO_TIMEOUT, ToolArgs, data_url, finalize_tool_args, idle_timeout, js_truthy,
     mapped_level, post_json, resolve_sampling_params, sanitize_id_chars, short_hash, take_chars,
@@ -159,6 +158,10 @@ fn convert_messages_inner(
     allowed_tool_call_providers: &[&str],
     request: Option<&ProviderRequest>,
 ) -> Result<Vec<Value>, String> {
+    let grammar = request
+        .map(grammar_properties)
+        .transpose()?
+        .unwrap_or_default();
     let allowed = allowed_tool_call_providers.contains(&model.provider.as_str());
     let mut normalize = |id: &str, source: &Message| -> String {
         if !allowed || !id.contains('|') {
@@ -178,7 +181,7 @@ fn convert_messages_inner(
         } else {
             normalize_id_part(item_id)
         };
-        if !item.starts_with("fc_") {
+        if !item.starts_with("fc_") && !item.starts_with("ctc_") {
             item = normalize_id_part(&format!("fc_{item}"));
         }
         format!("{call_id}|{item}")
@@ -215,7 +218,7 @@ fn convert_messages_inner(
                     let codex = model.api == "openai-codex-responses";
                     let strict = model.compat_bool("supportsStrictMode").unwrap_or(codex);
                     let mut definitions =
-                        convert_tools(&added, strict, if codex { None } else { Some(false) });
+                        convert_tools(req, &added, strict, if codex { None } else { Some(false) })?;
                     if req.model.compat_bool("supportsAdditionalTools") == Some(true) {
                         out.push(json!({"type":"additional_tools", "role":"developer", "tools":definitions}));
                     } else if req.model.compat_bool("supportsToolSearch") == Some(true) {
@@ -320,17 +323,33 @@ fn convert_messages_inner(
                         } => {
                             let mut parts = id.split('|');
                             let call_id = parts.next().unwrap_or_default();
+                            let property = grammar.get(name);
+                            let prefix = if property.is_some() { "ctc_" } else { "fc_" };
                             let item_id = parts
                                 .next()
-                                .filter(|i| !different_model && i.starts_with("fc_"));
+                                .filter(|i| !different_model && i.starts_with(prefix));
                             let mut item = Map::new();
-                            item.insert("type".into(), "function_call".into());
+                            item.insert(
+                                "type".into(),
+                                if property.is_some() {
+                                    "custom_tool_call"
+                                } else {
+                                    "function_call"
+                                }
+                                .into(),
+                            );
                             if let Some(i) = item_id {
                                 item.insert("id".into(), json!(i));
                             }
                             item.insert("call_id".into(), json!(call_id));
                             item.insert("name".into(), json!(name));
-                            item.insert("arguments".into(), json!(arguments.to_string()));
+                            if let Some(property) = property {
+                                let input = arguments.get(property).and_then(Value::as_str).ok_or_else(||
+                                    format!("Grammar tool call \"{name}\" requires argument \"{property}\" to be a string."))?;
+                                item.insert("input".into(), json!(input));
+                            } else {
+                                item.insert("arguments".into(), json!(arguments.to_string()));
+                            }
                             if same_model && let Some(ns) = extra.get("namespace") {
                                 item.insert("namespace".into(), ns.clone());
                             }
@@ -346,12 +365,13 @@ fn convert_messages_inner(
             }
             Message::ToolResult {
                 tool_call_id,
+                tool_name,
                 content,
                 ..
             } => {
                 let call_id = tool_call_id.split('|').next().unwrap_or_default();
                 out.push(json!({
-                    "type": "function_call_output",
+                    "type": if grammar.contains_key(tool_name) { "custom_tool_call_output" } else { "function_call_output" },
                     "call_id": call_id,
                     "output": tool_result_output(model, content),
                 }));
@@ -366,24 +386,45 @@ fn convert_messages_inner(
 /// `strict` is the `strict` option (`None` = JSON `null`, as Codex sends it; the reference
 /// default is `false`) and is only sent when the endpoint supports strict mode.
 pub fn convert_tools(
+    req: &ProviderRequest,
     tools: &[ToolSpec],
     supports_strict_mode: bool,
-    strict: Option<bool>,
-) -> Vec<Value> {
-    tools
-        .iter()
-        .map(|t| {
-            let mut tool = Map::new();
-            tool.insert("type".into(), json!("function"));
-            tool.insert("name".into(), json!(t.name));
-            tool.insert("description".into(), json!(t.description));
-            tool.insert("parameters".into(), t.parameters.clone());
-            if supports_strict_mode {
-                tool.insert("strict".into(), strict.map_or(Value::Null, Value::Bool));
+    default_strict: Option<bool>,
+) -> Result<Vec<Value>, String> {
+    tools.iter().map(|t| {
+        if let Some(grammar) = resolve_grammar(req, t)? {
+            return Ok(json!({"type":"custom", "name":t.name, "description":t.description,
+                "format":{"type":"grammar", "syntax":grammar.format, "definition":grammar.definition}}));
+        }
+        let strict = resolve_strict(req, t, supports_strict_mode, None)?.or(default_strict);
+        let mut tool = json!({"type":"function", "name":t.name, "description":t.description,
+            "parameters":tool_parameters(t, strict)?});
+        if supports_strict_mode { tool["strict"] = strict.map_or(Value::Null, Value::Bool); }
+        Ok(tool)
+    }).collect()
+}
+
+/// Resolve the effective tool set, including declarations held in positional anchors.
+pub fn grammar_properties(req: &ProviderRequest) -> Result<HashMap<String, String>, String> {
+    let mut tools = req.tools.clone();
+    for message in &req.messages {
+        if let Message::System(system) = message {
+            for removed in &system.tools_removed {
+                tools.retain(|t| t.name != removed.name);
             }
-            Value::Object(tool)
-        })
-        .collect()
+            for added in &system.tools_added {
+                tools.retain(|t| t.name != added.name);
+                tools.push(ToolSpec::from(added));
+            }
+        }
+    }
+    let mut properties = HashMap::new();
+    for tool in &tools {
+        if let Some(grammar) = resolve_grammar(req, tool)? {
+            properties.insert(tool.name.clone(), grammar.input_property);
+        }
+    }
+    Ok(properties)
 }
 
 /// `reasoning` / `include` / sampling for a Responses request. `skip_off` suppresses the
@@ -481,7 +522,11 @@ enum Slot {
 #[derive(Debug)]
 enum PendingArgs {
     Json(String),
-    Custom(String),
+    Custom {
+        input: String,
+        property: String,
+        closed: bool,
+    },
 }
 
 /// Event-by-event state for one Responses stream (reference `processResponsesStream`,
@@ -489,6 +534,7 @@ enum PendingArgs {
 #[derive(Debug, Default)]
 pub struct ResponsesStream {
     slots: HashMap<i64, Slot>,
+    grammar: HashMap<String, String>,
     /// Tool calls whose `output_item.done` has not arrived, with their streamed arguments
     /// (reference `partialJson` / `customInput` still on the block).
     pending: HashMap<usize, PendingArgs>,
@@ -554,6 +600,47 @@ fn output_index(event: &Value) -> i64 {
 }
 
 impl ResponsesStream {
+    pub fn for_request(req: &ProviderRequest) -> Result<Self, String> {
+        Ok(Self {
+            grammar: grammar_properties(req)?,
+            ..Self::default()
+        })
+    }
+
+    fn custom_input(
+        &mut self,
+        e: &mut Emitter,
+        index: usize,
+        next: &str,
+        close: bool,
+    ) -> Result<(), String> {
+        let Some(PendingArgs::Custom {
+            input,
+            property,
+            closed,
+        }) = self.pending.get_mut(&index)
+        else {
+            return Ok(());
+        };
+        if *closed {
+            if close && next == input {
+                return Ok(());
+            }
+            return Err(format!(
+                "grammar tool input for property \"{property}\" changed after it was closed"
+            ));
+        }
+        if !next.starts_with(input.as_str()) {
+            return Err(format!(
+                "grammar tool input for property \"{property}\" changed non-monotonically"
+            ));
+        }
+        *input = next.into();
+        *closed = close;
+        e.tool_args_value(index, json!({property.as_str(): input}));
+        Ok(())
+    }
+
     fn create_slot(&mut self, e: &mut Emitter, output_index: i64, item: &Value) -> Option<Slot> {
         let slot = match item.get("type").and_then(Value::as_str)? {
             "reasoning" => Slot::Thinking(e.start_thinking()),
@@ -587,7 +674,19 @@ impl ResponsesStream {
                 let pending = if kind == "function_call" {
                     PendingArgs::Json(initial)
                 } else {
-                    PendingArgs::Custom(initial)
+                    {
+                        let property = self
+                            .grammar
+                            .get(name)
+                            .cloned()
+                            .unwrap_or_else(|| "input".into());
+                        e.tool_args_value(index, json!({property.as_str(): initial}));
+                        PendingArgs::Custom {
+                            input: initial,
+                            property,
+                            closed: false,
+                        }
+                    }
                 };
                 self.pending.insert(index, pending);
                 Slot::Tool(index)
@@ -746,27 +845,26 @@ impl ResponsesStream {
             }
             "response.custom_tool_call_input.delta" => {
                 if let Some(Slot::Tool(i)) = slot
-                    && let Some(PendingArgs::Custom(buf)) = self.pending.get_mut(&i)
+                    && let Some(PendingArgs::Custom { input, .. }) = self.pending.get(&i)
                 {
-                    buf.push_str(delta);
+                    let next = format!("{input}{delta}");
+                    self.custom_input(e, i, &next, false)?;
                 }
             }
             "response.custom_tool_call_input.done" => {
-                if let Some(Slot::Tool(i)) = slot
-                    && let Some(PendingArgs::Custom(buf)) = self.pending.get_mut(&i)
-                {
-                    *buf = event
+                if let Some(Slot::Tool(i)) = slot {
+                    let next = event
                         .get("input")
                         .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned();
+                        .unwrap_or_default();
+                    self.custom_input(e, i, next, true)?;
                 }
             }
             "response.output_item.done" => {
                 let Some(item) = event.get("item") else {
                     return Ok(());
                 };
-                self.item_done(e, output_index, slot, item);
+                self.item_done(e, output_index, slot, item)?;
             }
             "response.completed" | "response.incomplete" => {
                 let response = event.get("response").cloned().unwrap_or(Value::Null);
@@ -812,7 +910,13 @@ impl ResponsesStream {
         Ok(())
     }
 
-    fn item_done(&mut self, e: &mut Emitter, output_index: i64, slot: Option<Slot>, item: &Value) {
+    fn item_done(
+        &mut self,
+        e: &mut Emitter,
+        output_index: i64,
+        slot: Option<Slot>,
+        item: &Value,
+    ) -> Result<(), String> {
         let kind = item.get("type").and_then(Value::as_str).unwrap_or_default();
         if kind == "message" && item.get("phase").and_then(Value::as_str) == Some("final_answer") {
             self.stop = Some(StopReason::Stop);
@@ -893,13 +997,14 @@ impl ResponsesStream {
                 }
             }
             ("custom_tool_call", Some(Slot::Tool(i))) => {
-                if let Some(PendingArgs::Custom(buf)) = self.pending.remove(&i) {
+                if let Some(PendingArgs::Custom { input, .. }) = self.pending.get(&i) {
                     let input = item
                         .get("input")
                         .and_then(Value::as_str)
-                        .map(str::to_owned)
-                        .unwrap_or(buf);
-                    finalize_tool_args(e, [(i, ToolArgs::Custom(input))]);
+                        .unwrap_or(input)
+                        .to_owned();
+                    self.custom_input(e, i, &input, true)?;
+                    self.pending.remove(&i);
                     if let Some(ns) = item.get("namespace") {
                         e.block_extra(i, "namespace", ns.clone());
                     }
@@ -908,6 +1013,7 @@ impl ResponsesStream {
             }
             _ => {}
         }
+        Ok(())
     }
 
     /// Settle every unfinished tool call's arguments (failure and success paths alike).
@@ -922,7 +1028,9 @@ impl ResponsesStream {
                     i,
                     match p {
                         PendingArgs::Json(raw) => ToolArgs::Json(raw),
-                        PendingArgs::Custom(input) => ToolArgs::Custom(input),
+                        PendingArgs::Custom {
+                            input, property, ..
+                        } => ToolArgs::Custom { input, property },
                     },
                 )
             }),
@@ -1004,7 +1112,10 @@ pub async fn exchange(
         Ok(r) => r,
         Err(m) => return (ctx.failed(e, http_error(&m)), None),
     };
-    let mut state = ResponsesStream::default();
+    let mut state = match ResponsesStream::for_request(req) {
+        Ok(state) => state,
+        Err(m) => return (ctx.failed(e, m), None),
+    };
     let mut failure: Option<String> = None;
     let read = http::read_sse(resp, idle_timeout(req, NO_TIMEOUT), &ctx.cancel, |ev| {
         let data = ev.data.trim();

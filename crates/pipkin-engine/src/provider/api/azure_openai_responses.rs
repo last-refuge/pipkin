@@ -156,7 +156,7 @@ pub fn build_params(req: &ProviderRequest) -> Result<Value, String> {
     if !req.tools.is_empty() {
         p.insert(
             "tools".into(),
-            Value::Array(convert_tools(&req.tools, strict, Some(false))),
+            Value::Array(convert_tools(req, &req.tools, strict, Some(false))?),
         );
     }
     if let Some(choice) = req.options.get("toolChoice").filter(|v| !v.is_null()) {

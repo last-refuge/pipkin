@@ -29,6 +29,7 @@ pub struct SubagentTool;
 impl Tool for SubagentTool {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
+            constrained_sampling: None,
             name: "subagent".into(),
             description: SUBAGENT_DESCRIPTION.into(),
             parameters: json!({

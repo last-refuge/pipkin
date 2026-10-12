@@ -41,6 +41,8 @@ pub struct ToolSpec {
     pub description: String,
     /// JSON Schema object.
     pub parameters: Value,
+    /// Reference `Tool.constrainedSampling`: JSON-schema strictness or grammar variants.
+    pub constrained_sampling: Option<Value>,
 }
 
 impl From<&pipkin_engine_protocol::ToolDeclaration> for ToolSpec {
@@ -49,6 +51,7 @@ impl From<&pipkin_engine_protocol::ToolDeclaration> for ToolSpec {
             name: t.name.clone(),
             description: t.description.clone(),
             parameters: t.parameters.clone(),
+            constrained_sampling: t.constrained_sampling.clone(),
         }
     }
 }
@@ -58,7 +61,7 @@ impl From<&ToolSpec> for pipkin_engine_protocol::ToolDeclaration {
             name: t.name.clone(),
             description: t.description.clone(),
             parameters: t.parameters.clone(),
-            constrained_sampling: None,
+            constrained_sampling: t.constrained_sampling.clone(),
         }
     }
 }

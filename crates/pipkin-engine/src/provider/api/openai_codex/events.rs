@@ -65,6 +65,17 @@ impl ResponsesState {
         }
     }
 
+    pub(crate) fn for_request(
+        req: &crate::provider::ProviderRequest,
+        requested_tier: Option<String>,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            stream: ResponsesStream::for_request(req)?,
+            requested_tier,
+            ..Self::default()
+        })
+    }
+
     pub(crate) fn started(&self) -> bool {
         self.events_processed > 0
     }

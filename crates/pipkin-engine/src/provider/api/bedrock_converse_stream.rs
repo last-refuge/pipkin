@@ -505,25 +505,35 @@ fn convert_messages(req: &ProviderRequest, caching: bool) -> Result<Vec<Value>, 
     Ok(out)
 }
 
-fn tool_config(req: &ProviderRequest) -> Option<Value> {
+fn tool_config(req: &ProviderRequest) -> Result<Option<Value>, String> {
     if req.tools.is_empty() {
-        return None;
+        return Ok(None);
     }
     let choice = req.options.get("toolChoice");
     if choice.and_then(Value::as_str) == Some("none") {
-        return None;
+        return Ok(None);
     }
     let tools: Vec<Value> = req
         .tools
         .iter()
         .map(|t| {
-            json!({"toolSpec": {
+            let strict = super::common::schema::resolve_strict(
+                req,
+                t,
+                req.model.compat_bool("supportsStrictMode").unwrap_or(false),
+                None,
+            )?;
+            let mut tool = json!({"toolSpec": {
                 "name": t.name,
                 "description": t.description,
-                "inputSchema": {"json": t.parameters},
-            }})
+                "inputSchema": {"json": super::common::schema::tool_parameters(t, strict)?},
+            }});
+            if strict == Some(true) {
+                tool["toolSpec"]["strict"] = json!(true);
+            }
+            Ok(tool)
         })
-        .collect();
+        .collect::<Result<_, String>>()?;
     let mut config = json!({"tools": tools});
     let tool_choice = match choice {
         Some(Value::String(s)) if s == "auto" => Some(json!({"auto": {}})),
@@ -537,7 +547,7 @@ fn tool_config(req: &ProviderRequest) -> Option<Value> {
     if let Some(tc) = tool_choice {
         config["toolChoice"] = tc;
     }
-    Some(config)
+    Ok(Some(config))
 }
 
 /// `(maxTokens, thinking budget)` for budget-based Claude thinking (reference `streamSimple`,
@@ -648,7 +658,7 @@ fn build_body(env: &Env<'_>) -> Result<Value, String> {
         inference["temperature"] = t.clone();
     }
     body.insert("inferenceConfig".into(), inference);
-    if let Some(tc) = tool_config(req) {
+    if let Some(tc) = tool_config(req)? {
         body.insert("toolConfig".into(), tc);
     }
     if let Some(fields) = additional_fields(env, budget) {
@@ -1463,6 +1473,7 @@ mod tests {
         req.options
             .insert("requestMetadata".into(), json!({"team": "a"}));
         req.tools = vec![ToolSpec {
+            constrained_sampling: None,
             name: "read".into(),
             description: "Read".into(),
             parameters: json!({"type": "object"}),
@@ -2082,6 +2093,27 @@ mod tests {
         assert_eq!(
             body["additionalModelRequestFields"]["thinking"]["budget_tokens"],
             json!(3780)
+        );
+    }
+    #[test]
+    fn constrained_tool_metadata_reaches_bedrock_and_rejects_unsupported_require() {
+        let mut req = request(serde_json::from_value(json!({"id":"claude","provider":"amazon-bedrock","api":"bedrock-converse-stream","compat":{"supportsStrictMode":true}})).unwrap());
+        let mut tool = super::super::constrained_tests::grammar_tool();
+        tool.constrained_sampling = Some(json!({"type":"json_schema","strict":"require"}));
+        req.tools = vec![tool];
+        let body = tool_config(&req).unwrap().unwrap();
+        assert_eq!(body["tools"][0]["toolSpec"]["strict"], true);
+        assert_eq!(
+            body["tools"][0]["toolSpec"]["inputSchema"]["json"]["additionalProperties"],
+            false
+        );
+        req.model
+            .compat
+            .insert("supportsStrictMode".into(), json!(false));
+        assert!(
+            tool_config(&req)
+                .unwrap_err()
+                .contains("strict tools are unsupported")
         );
     }
 }

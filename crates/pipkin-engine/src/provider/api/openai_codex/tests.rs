@@ -173,6 +173,7 @@ fn request_from_spec(spec: &Value, base: &str) -> ProviderRequest {
         .unwrap()
         .iter()
         .map(|t| ToolSpec {
+            constrained_sampling: t.get("constrainedSampling").cloned(),
             name: t["name"].as_str().unwrap().into(),
             description: t["description"].as_str().unwrap().into(),
             parameters: t["parameters"].clone(),

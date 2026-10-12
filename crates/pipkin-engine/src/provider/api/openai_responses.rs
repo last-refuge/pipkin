@@ -142,10 +142,11 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Result<Value, Str
         p.insert(
             "tools".into(),
             Value::Array(convert_tools(
+                req,
                 &req.tools,
                 compat.supports_strict_mode,
                 Some(false),
-            )),
+            )?),
         );
     }
     if let Some(choice) = req.options.get("toolChoice").filter(|v| !v.is_null()) {

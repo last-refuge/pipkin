@@ -32,6 +32,7 @@ fn fake(
 impl Tool for Fake {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
+            constrained_sampling: None,
             name: "fake".into(),
             description: "test".into(),
             parameters: json!({"type": "object", "properties": {"text": {"type": "string"}}}),

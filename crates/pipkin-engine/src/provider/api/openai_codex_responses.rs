@@ -431,7 +431,7 @@ fn build_request_body(
         let strict = model.compat_bool("supportsStrictMode").unwrap_or(true);
         body.insert(
             "tools".into(),
-            Value::Array(convert_tools(&req.tools, strict, None)),
+            Value::Array(convert_tools(req, &req.tools, strict, None)?),
         );
     }
     let map = &model.thinking_level_map;
@@ -743,7 +743,10 @@ impl OpenAICodexResponses {
             let mut retried_missing_continuation = false;
             loop {
                 let mut emitter = ctx.emitter();
-                let mut state = ResponsesState::new(opts.service_tier.clone());
+                let mut state = match ResponsesState::for_request(req, opts.service_tier.clone()) {
+                    Ok(s) => s,
+                    Err(m) => return setup_failure(m),
+                };
                 let result = ws::run(
                     &self.ws,
                     ws::WsRequest {
@@ -813,7 +816,10 @@ impl OpenAICodexResponses {
         }
 
         let mut emitter = ctx.emitter();
-        let mut state = ResponsesState::new(opts.service_tier.clone());
+        let mut state = match ResponsesState::for_request(req, opts.service_tier.clone()) {
+            Ok(s) => s,
+            Err(m) => return setup_failure(m),
+        };
         let result = match self.send_sse(ctx, &opts, &sse, &body_json, timeout).await {
             Ok(resp) => {
                 let idle = timeout.unwrap_or(Duration::from_millis(2_147_483_647));

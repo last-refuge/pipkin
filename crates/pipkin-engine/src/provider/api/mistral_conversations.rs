@@ -301,7 +301,7 @@ fn reasoning_controls(model: &Model, level: ThinkingLevel) -> (Option<String>, O
 }
 
 /// The wire body (snake_case), as sent.
-pub(crate) fn build_payload(req: &ProviderRequest) -> Value {
+pub(crate) fn build_payload(req: &ProviderRequest) -> Result<Value, String> {
     let resolved =
         req.resolve_systems(req.model.compat_bool("supportsMidConvoSystemMessages") == Some(true));
     let req = resolved.as_ref();
@@ -320,14 +320,15 @@ pub(crate) fn build_payload(req: &ProviderRequest) -> Value {
             .tools
             .iter()
             .map(|t| {
-                json!({"type": "function", "function": {
+                let strict = super::common::schema::resolve_strict(req, t, true, None)?;
+                Ok(json!({"type": "function", "function": {
                     "name": t.name,
                     "description": t.description,
-                    "parameters": t.parameters,
-                    "strict": false,
-                }})
+                    "parameters": super::common::schema::tool_parameters(t, strict)?,
+                    "strict": strict.unwrap_or(false),
+                }}))
             })
-            .collect();
+            .collect::<Result<_, String>>()?;
         body.insert("tools".into(), Value::Array(tools));
     }
     if let Some(t) = req.options.get("temperature").filter(|v| v.is_number()) {
@@ -351,7 +352,7 @@ pub(crate) fn build_payload(req: &ProviderRequest) -> Value {
     if caching(req) {
         body.insert("prompt_cache_key".into(), json!(req.session_id));
     }
-    Value::Object(body)
+    Ok(Value::Object(body))
 }
 
 pub(crate) fn build_headers(req: &ProviderRequest, key: &str) -> Headers {
@@ -575,7 +576,10 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
             format!("No API key for provider: {}", req.model.provider),
         );
     };
-    let body = build_payload(req);
+    let body = match build_payload(req) {
+        Ok(v) => v,
+        Err(m) => return ctx.failed(e, m),
+    };
     let headers = match build_headers(req, &key).to_header_map() {
         Ok(h) => h,
         Err(m) => return ctx.failed(e, m),
@@ -822,6 +826,7 @@ mod tests {
             json!({"type": "function", "function": {"name": "read"}}),
         );
         req.tools = vec![ToolSpec {
+            constrained_sampling: None,
             name: "read".into(),
             description: "Read a file".into(),
             parameters: json!({"type": "object", "properties": {"path": {"type": "string"}}}),
@@ -861,7 +866,7 @@ mod tests {
                 extra: Map::new(),
             },
         ];
-        let body = build_payload(&req);
+        let body = build_payload(&req).unwrap();
         let id = "1jdyro11m";
         assert_eq!(
             body,
@@ -1114,6 +1119,6 @@ mod tests {
         let mut req = request(model(json!({"contextWindow": 10000, "maxTokens": 32000})));
         req.max_tokens = None;
         crowd_context(&mut req);
-        assert_eq!(build_payload(&req)["max_tokens"], json!(4804));
+        assert_eq!(build_payload(&req).unwrap()["max_tokens"], json!(4804));
     }
 }

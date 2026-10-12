@@ -1335,6 +1335,7 @@ mod tests {
 
     fn read_tool() -> ToolSpec {
         ToolSpec {
+            constrained_sampling: None,
             name: "read".into(),
             description: "Read a file".into(),
             parameters: json!({"type": "object", "properties": {"path": {"type": "string"}},
@@ -1466,6 +1467,7 @@ mod tests {
         req.credential = Credential::ApiKey("sk-ant-oat-legacy".into());
         req.tools = vec![read_tool()];
         req.tools.push(ToolSpec {
+            constrained_sampling: None,
             name: "myCustomTool".into(),
             description: "Custom".into(),
             parameters: json!({"type":"object"}),
@@ -1986,10 +1988,7 @@ mod tests {
         assert!(body.get("thinking").is_none());
 
         // "require" with an unsupported schema fails before sending.
-        req.options.insert(
-            "toolConstrainedSampling".into(),
-            json!({"count": {"type": "json_schema", "strict": "require"}}),
-        );
+        req.tools[1].constrained_sampling = Some(json!({"type":"json_schema","strict":"require"}));
         let m = run_req(&req).await;
         assert!(
             error_text(&m).starts_with("Tool \"count\" requires JSON-schema constrained sampling")
@@ -1997,6 +1996,7 @@ mod tests {
         assert_eq!(server.requests().len(), 1);
 
         req.options.remove("toolConstrainedSampling");
+        req.tools[1].constrained_sampling = None;
         req.cache_retention = CacheRetention::None;
         run_req(&req).await;
         let r = &server.requests()[1];

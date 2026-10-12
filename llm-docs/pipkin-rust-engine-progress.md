@@ -11,7 +11,22 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — positional system context
+## Current follow-up — constrained tool declarations and execution
+
+The positional context/paging batch is committed as **`ea0a98b`**. The next batch carries
+`constrainedSampling` through native tool specs and durable declarations. Strict JSON-schema
+sampling now reaches the applicable adapters; Responses, Azure and Codex support grammar
+custom tools, declared argument properties, paired replay, and interrupted-input preservation.
+Fifteen declaration cases match executed pinned Pi helpers. A native runtime test executes a
+custom grammar tool and verifies durable replay after restart. See
+[constrained-tool evidence](pipkin-rust-engine-evidence/constrained-tools.md).
+
+Required checks: **1353 passed, 0 failed, 53 ignored**, Clippy and formatting clean. Counts remain **503 rows; 420 measured,
+7 observed, 0 currently failed, 10 unverified, 66 not started; 0 qualified**. This closes
+specific implementation gaps within already measured adapter rows, not full release qualification.
+Native remains opt-in; extension compatibility and the other release gates remain open.
+
+## Previous follow-up — positional system context
 
 Implemented on top of **`7872c91`**. Protocol **5** / schema **4** preserve ordered system
 sections and tool declarations in durable history. Runtime commits minimal patches and
@@ -116,8 +131,8 @@ Full records: `llm-docs/pipkin-rust-engine-adr/` (index in its `README.md`).
 | ADR | Decision (summary) | Status |
 | --- | --- | --- |
 | 0001 Execution topology | One shipped `pipkin` executable; a private worker mode runs the GPUI-free `pipkin-engine` as an **owned child** over inherited pipes; one engine process for all conversations; in-process host (same API) for tests/headless/benchmark; not a sandbox | Accepted; implemented (`--engine-worker`, `App/adapters/native/supervisor.rs`, headless `pipkin-engine` binary) |
-| 0002 Protocol and transport | Length-prefixed JSON frames (32 MiB max); typed `Call`/`Reply`/`Event`; `epoch`+`seq` events, session `revision`, snapshot on gap; control lane for Stop/Shutdown; protocol version mismatch refused | Accepted; protocol **4**, durable invalidation outbox/acknowledged catch-up and bounded delivery implemented; serialize-once fan-out/external attachment open |
-| 0003 Durable store and recovery | One OS-locked SQLite store per data root; explicit schema v3, backup-before-migrate, newer refused untouched; short transactions; state-driven run loop; fail closed on storage error; `synchronous=FULL` (reference `NORMAL`) | Accepted; implemented; actual worker SIGKILL and injected disk-full/read-only cases tested; v1 → current and v2 → v3 backup/migration tested; power loss unverified |
+| 0002 Protocol and transport | Length-prefixed JSON frames (32 MiB max); typed `Call`/`Reply`/`Event`; `epoch`+`seq` events, session `revision`, snapshot on gap; control lane for Stop/Shutdown; protocol version mismatch refused | Accepted; protocol **5**, positional system declarations, durable invalidation outbox/acknowledged catch-up and bounded delivery implemented; serialize-once fan-out/external attachment open |
+| 0003 Durable store and recovery | One OS-locked SQLite store per data root; explicit schema v4, backup-before-migrate, newer refused untouched; short transactions; state-driven run loop; fail closed on storage error; `synchronous=FULL` (reference `NORMAL`) | Accepted; implemented; actual worker SIGKILL and injected disk-full/read-only cases tested; v1 → current, v2 → v3 and v3 → v4 backup/migration tested; power loss unverified |
 | 0004 Stop and queue | Reference queue boundaries and outcomes; durable Stop intent then cancellation; retirement by `entries.retired` flag instead of `pi.cancelled-input` omit-edit entries | Accepted; implemented; `all` delivery modes tested; differential qualification and general Stop-after-completion race pending |
 | 0005 Tool replay and subagent recovery | Intent before effect; unsafe-by-default replay; `subagent` is the replay-safe registration with an atomic `(parent session, call)` → child mapping and once-only delivery; recorded-contract check | Accepted; implemented incl. recorded-contract check; mismatch, disabled recovery and Stop-child tests pass |
 | 0006 Extension compatibility | Native versioned extension contract + out-of-process protocol; existing TypeScript facet packages need Node, so their rows stay **blocked** and run on the **legacy bridge** (Pi) | Proposed; native contract implemented (`E/extensions`, `docs/native-extensions.md`); TS facets blocked |
@@ -128,7 +143,7 @@ Full records: `llm-docs/pipkin-rust-engine-adr/` (index in its `README.md`).
 | What | Where |
 | --- | --- |
 | Reference audit (RE-01) | `llm-docs/pipkin-rust-engine-audit/` — `README.md`, `engine-tools-durable-usage.md`, `prompt-settings-layout.md`, `service-api.md`, `extensions-subagents.md`, `providers-auth.md` |
-| Parity ledger | `llm-docs/pipkin-rust-engine-parity.md` (503 rows; 0 qualified; reconciled at `e4c3a8c`: 415 measured, 7 observed, 1 failed, 11 unverified, 69 not started; partial evidence is explicit in each row) |
+| Parity ledger | `llm-docs/pipkin-rust-engine-parity.md` (503 rows; 0 qualified; current evidence: 420 measured, 7 observed, 0 currently failed, 10 unverified, 66 not started; partial evidence is explicit in each row) |
 | Frozen reference fixtures (RE-02) | `fixtures/pi-sessions/` (8 scenarios a–h with `session.sqlite`, `requests.jsonl`, `view.json`, `history.json`; `BASELINE.md` for the reference measurements) |
 | Evidence | `llm-docs/pipkin-rust-engine-evidence/` — `performance.md` (RE-22), `packaging.md` (RE-23), `native-walkthrough.md` (guarded GUI walkthrough) |
 | Claude subscription handoff | `llm-docs/pipkin-rust-engine-claude-subscription-handoff.md` |
@@ -158,16 +173,16 @@ platform/provider gates have not closed it; Claude has separate live evidence.
 | RE-03B | Claude subscription feasibility review | Codex | reviewed; user-confirmed approval | `pipkin-rust-engine-evidence/claude-subscription.md`; user-confirmed approval; live access subsequently exercised in RE-13B |
 | RE-04 | Context, durable-task and extension-state import spike | Opus | implemented-but-unverified | `8290556`; all 8 reference fixtures import and continue equivalently (`rti::reference_fixtures_import_open_and_continue_equivalently`); plugin profile protection now detects/refuses nonempty selections (IMP-PLUGIN-STATE) |
 | RE-05 | Extension compatibility spike and ADRs | Opus | in progress | ADR 0006 still Proposed; native ports of the two baseline examples (`ext::`, `extp::`); TS facets blocked |
-| RE-06 | Typed engine contract and private worker transport | Opus | in progress | Protocol v2 + frame and import-call round-trip tests (`frm::`, `P/view.rs`); gap detection (`ncl::sequencer_detects_gaps_and_new_epochs`); durable outbox/acknowledged cursor missing (XPORT-OUTBOX) |
+| RE-06 | Typed engine contract and private worker transport | Opus | in progress | Protocol v5; typed frame/import tests; durable outbox, acknowledged bounded catch-up, gap/reset and pressure tests implemented; external attach/fan-out and complete qualification remain |
 | RE-07 | Engine library, host/supervisor and headless harness | Opus | implemented-but-unverified | `nsup::` (7), `ew::` (2), `wp::` (2: SIGKILL + second-writer refusal), headless `pipkin-engine` binary |
-| RE-08 | SQLite store, migrations, lock, request ledger and outbox | Opus | in progress | `st::` (12), `wp::admission_survives_sigkill_and_is_found_by_lookup_after_restart`; outbox remains; v1 → v2 backup/migration passes; injected disk-full/read-only faults and damaged-database refusal pass (`rtf::`, `cp::`) |
+| RE-08 | SQLite store, migrations, lock, request ledger and outbox | Opus | in progress | `st::` (12), `wp::admission_survives_sigkill_and_is_found_by_lookup_after_restart`; durable invalidation outbox implemented; schema v4 with tested v1/v2/v3 upgrade backups; injected disk-full/read-only faults and damaged-database refusal pass (`rtf::`, `cp::`) |
 | RE-09 | Durable scripted generation and NativeBackend | Opus | implemented-but-unverified | `rt::` (19), `ne2e::` (20 workflows), `nt::` (9); observed in `native-walkthrough.md` |
 | RE-10 | Stop, queue, steering and recovery | Opus | implemented-but-unverified | Stop/queue/steer/restart measured (`rt::`, `ne2e::`); `all` modes tested (`rts::`); durable retry wait/count and Stop across restart now pass (REC-RETRY); general Stop-after-completion race remains |
 | RE-11 | Coding tools and execution environments | Opus | implemented-but-unverified | `5768dda`; `trd::`/`twr::`/`ted::`/`tbs::`/`tout::`/`trun::`/`tsch::` incl. reference-captured goldens; corpus tests ignored with no recorded run; sequential-tool rounds tested (`rt::tool_rounds_run_in_parallel_unless_a_tool_is_sequential`); reference setting override needs comparison |
 | RE-12 | First provider and real coding slice | Opus | implemented-but-unverified | Walkthrough §3 (real `write` tool via an `openai-completions` custom provider to a local stub); perf harness uses the same path; Claude live coding slice now passed (RE-13B) |
 | RE-13A | Generic credentials and non-reserved providers | Opus | implemented-but-unverified | `dd43920`, 10 wire adapters + `provider/api/common`; `auth::`, `oauth::`, adapter suites; Codex adapter goldens are reference captures |
 | RE-13B | Claude subscription integration | Codex | implemented; live smoke passed | `pipkin-rust-engine-evidence/claude-subscription.md`; browser/copy-code sign-in, refresh, saved reuse and Pi-fixture Stop/reopen passed; full qualification pending |
-| RE-14 | Context/resources, attachments, models and accounting | Opus | implemented-but-unverified | `384da75`, `e4fe919`; `drv::`/`prm::`/`res::`/`cmp::`; gap: no `reasoning`/`cacheWrite1h` usage counters |
+| RE-14 | Context/resources, attachments, models and accounting | Opus | implemented-but-unverified | `384da75`, `e4fe919`; `drv::`/`prm::`/`res::`/`cmp::`; usage subsets and positional system patches now preserved and tested; see follow-up evidence |
 | RE-15 | Durable subagent/task scheduler and recovery | Opus | implemented-but-unverified | `rt::subagents_run_once_per_call_deliver_their_answer_and_are_listed`, `rt::a_subagent_call_interrupted_by_a_restart_resumes_its_one_child`; disabled/contract-mismatch and Stop-child recovery tests pass (`rtf::`); actual child-run SIGKILL passes (`cp::`) |
 | RE-16 | Native extension compatibility implementation | Opus | implemented-but-unverified (native) / blocked (TS facets) | `01e0511`, `e4fe919`; `--engine-extension`; TypeScript facet packages stay `BL / LB` (ADR 0006) |
 | RE-17 | Multi-session engine, history and child presentation | Opus | implemented-but-unverified | `7ba1340` paged subagent inspection (`core-sub::`, `ui-sub::`, `nt::child_history_pages_by_cursor_and_the_selected_child_refreshes_live`); history paging flat after fixes (perf-ev) |
@@ -175,7 +190,7 @@ platform/provider gates have not closed it; Claude has separate live evidence.
 | RE-19 | Production importer and atomic backend ownership | Opus | implemented-but-unverified | `8290556`, `21ff99a` (protocol v2 `Import*`, desktop palette flow); desktop ownership record written in the import's copy transaction; Pi mode read-only for owned conversations (core + Pi adapter boundary), explicit release from the palette (D-11, IMP-OWNERSHIP) |
 | RE-20 | Desktop integration including goals, offline state and Changes | Opus | implemented-but-unverified | `6b7980f`; `ne2e::`, `nmap::`; walkthrough observed onboarding, first conversation, Changes, SIGKILL recovery |
 | RE-21 | Full parity and fault qualification | Opus (+ Codex for reserved rows) | planned | Ledger refreshed; no backend-parameterized differential harness; storage-fault injection and actual worker crash boundaries pass; full differential, power-loss and remaining ledger assertions are open |
-| RE-22 | Integration advantages and performance | Opus | in progress | `c539808`, `ae95240`; `performance.md`: most §7 targets met; missed: 1500-prompt RSS stability; diagnostics-correlation advantage not done |
+| RE-22 | Integration advantages and performance | Opus | in progress | `c539808`, `ae95240`; `performance.md`: most §7 targets met; headless 1500-prompt RSS budget now passes; desktop/streaming/platform qualification and diagnostics-correlation advantage remain |
 | RE-23 | Native build, packaging, CI, support and rollback | Opus | in progress | `c8d005c`; `packaging.md` (Linux candidate verified by `scripts/test-native-package.sh`); not in CI; no PKGBUILD/macOS package |
 | RE-24 | Beta and accepted default | Opus + owner, after Codex | planned | Blocked on full parity, remaining live/platform acceptance and performance/release gates; RE-13B lifecycle smoke passed |
 | RE-25 | Pi retirement and conversion completion | Opus + owner, after Codex | planned | Blocked on RE-24 |
@@ -192,8 +207,8 @@ platform/provider gates have not closed it; Claude has separate live evidence.
 | Subagents overlay hash (`pipkinSubagentsSha256`) | `9fb846e55a931d829e2ca25bde08ae98d2f128c14ceb6f1bc033b0a2e6fb3664` = `sha256(pi-subagents.patch ‖ pi-subagents/subagents.ts ‖ pi-subagents/subagents-provider.ts)` |
 | Model-data manifest hash | `b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05` (`crates/pipkin-engine/model-data/manifest.json`, equal to the archive's `.manifest.json`) |
 | Model-data archive | `packaging/pi-model-data-d2a311097cbcf669e699479587332ae3988a49d0.tar.zst`, sha256 `2be5f68d90695e71372c01ccbd08d5728b93691e07c45918846997c8949bcabb` |
-| Native engine schema | **2** (`crates/pipkin-engine/src/store/schema.rs::SCHEMA_VERSION`) |
-| Native protocol | **3** (`crates/pipkin-engine-protocol/src/lib.rs::PROTOCOL_VERSION`; 2 → 3 adds guarded import `serverDir`; 1 → 2 added `ImportDiscover`/`ImportSessions`/`ImportConfig`/`ImportCredentials` in `21ff99a`) |
+| Native engine schema | **4** (`crates/pipkin-engine/src/store/schema.rs::SCHEMA_VERSION`) |
+| Native protocol | **5** (`crates/pipkin-engine-protocol/src/lib.rs::PROTOCOL_VERSION`; v5 adds typed positional system declarations; v4 added durable catch-up; v3 guarded plugin-profile imports) |
 | Native engine version | `0.0.1` (`pipkin_engine::runtime::ENGINE_VERSION` = crate version) |
 | Reference protocol / app DB schema (unchanged) | Pi protocol 8; desktop `pipkin.sqlite3` schema 8 (`storage.rs` migration assertion) |
 | Toolchain | Rust 1.99.0 (`rustc 1.99.0 (b940084d7 2026-09-28)`), installed user-locally via rustup (`~/.cargo/bin`) with the owner's approval |
@@ -267,8 +282,9 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
 
 1. **Correctness and migration gaps:** positional system patches and reasoning/1h-cache counters
    are now preserved and tested, including imported system context. Plugin-profile import protection
-   and durable retry waits/counts are implemented. TypeScript execution, constrained/grammar tool
-   semantics and remaining unsupported-history conversion (replacement edits/forks) remain open.
+   and durable retry waits/counts are implemented. Constrained/grammar tool
+   support is now implemented with focused differential/runtime evidence. TypeScript execution
+   and remaining unsupported-history conversion (replacement edits/forks) remain open.
 2. **Transport and compatibility:** durable invalidation replay and bounded engine/reader delivery
    now have passing recovery/pressure evidence. External attach, serialize-once fan-out and
    frontend/provider-internal queue budgeting remain. TypeScript facets, sticky profiles,
@@ -290,8 +306,8 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
 2. Completed next batch: bounded delivery, atomic invalidation outbox, acknowledged catch-up,
    commit/snapshot ordering, and the headless memory-budget fix; see delivery/memory evidence.
    Remaining transport and broader memory qualification boundaries are listed above.
-3. Usage counters and positional prompt updates are implemented and tested. Close constrained/grammar
-   tool support, Codex WebSocket lifecycle/proxy gaps and external attachment. Resolve facet ports/profile lifecycle while
+3. Usage counters and positional prompt updates are implemented and tested. Constrained/grammar
+   tool support is implemented with passing targeted/workspace checks. Next: Codex WebSocket lifecycle/proxy gaps and external attachment. Resolve facet ports/profile lifecycle while
    keeping Pi as the continuity path.
 4. Add the specific missing assertions in the reconciliation report; build the full native/Pi
    differential harness. Existing disk-full, child recovery and `all` delivery tests do not

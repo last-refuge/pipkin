@@ -1,0 +1,531 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "packages/ai/src/api/constrained-sampling.ts": "f795db4afbbdf2918b346a7f260841ca477c29b26bcdb1084e039697a715a22a",
+    "packages/ai/src/api/openai-responses-shared.ts": "09100e0bfe8fa4ad212312956930f4a9e70cd29ca823d2e1f1c97f87b4541afe"
+  },
+  "cases": [
+    {
+      "name": "ordinary",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "patch"
+          ]
+        }
+      },
+      "options": {},
+      "tools": [
+        {
+          "type": "function",
+          "name": "patch",
+          "description": "Apply a patch",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "patch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "patch"
+            ]
+          },
+          "strict": false
+        }
+      ],
+      "grammar": null
+    },
+    {
+      "name": "codex-null-strict",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "patch"
+          ]
+        }
+      },
+      "options": {
+        "strict": null
+      },
+      "tools": [
+        {
+          "type": "function",
+          "name": "patch",
+          "description": "Apply a patch",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "patch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "patch"
+            ]
+          },
+          "strict": null
+        }
+      ],
+      "grammar": null
+    },
+    {
+      "name": "strict-required",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "patch"
+          ]
+        },
+        "constrainedSampling": {
+          "type": "json_schema",
+          "strict": "require"
+        }
+      },
+      "options": {},
+      "tools": [
+        {
+          "type": "function",
+          "name": "patch",
+          "description": "Apply a patch",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "patch": {
+                "type": "string"
+              },
+              "note": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "patch",
+              "note"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        }
+      ],
+      "grammar": null
+    },
+    {
+      "name": "strict-unsupported-required",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "patch"
+          ]
+        },
+        "constrainedSampling": {
+          "type": "json_schema",
+          "strict": "require"
+        }
+      },
+      "options": {
+        "supportsStrictMode": false
+      },
+      "error": "Tool \"patch\" requires JSON-schema constrained sampling, but strict tools are unsupported."
+    },
+    {
+      "name": "strict-unsupported-prefer",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "patch"
+          ]
+        },
+        "constrainedSampling": {
+          "type": "json_schema",
+          "strict": "prefer"
+        }
+      },
+      "options": {
+        "supportsStrictMode": false
+      },
+      "tools": [
+        {
+          "type": "function",
+          "name": "patch",
+          "description": "Apply a patch",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "patch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "patch"
+            ]
+          }
+        }
+      ],
+      "grammar": null
+    },
+    {
+      "name": "schema-unsupported-required",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "oneOf": []
+        },
+        "constrainedSampling": {
+          "type": "json_schema",
+          "strict": "require"
+        }
+      },
+      "options": {},
+      "error": "Tool \"patch\" requires JSON-schema constrained sampling, but oneOf schemas are unsupported."
+    },
+    {
+      "name": "schema-unsupported-prefer",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "oneOf": []
+        },
+        "constrainedSampling": {
+          "type": "json_schema",
+          "strict": "prefer"
+        }
+      },
+      "options": {},
+      "tools": [
+        {
+          "type": "function",
+          "name": "patch",
+          "description": "Apply a patch",
+          "parameters": {
+            "type": "object",
+            "oneOf": []
+          },
+          "strict": false
+        }
+      ],
+      "grammar": null
+    },
+    {
+      "name": "grammar-lark-preferred",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "patch"
+          ]
+        },
+        "constrainedSampling": {
+          "type": "grammar",
+          "variants": {
+            "openai_lark": "start: /.+/s",
+            "openai_regex": ".+"
+          }
+        }
+      },
+      "options": {
+        "supportsOpenAIGrammarTools": true
+      },
+      "tools": [
+        {
+          "type": "custom",
+          "name": "patch",
+          "description": "Apply a patch",
+          "format": {
+            "type": "grammar",
+            "syntax": "lark",
+            "definition": "start: /.+/s"
+          }
+        }
+      ],
+      "grammar": {
+        "format": "lark",
+        "definition": "start: /.+/s",
+        "inputProperty": "patch"
+      }
+    },
+    {
+      "name": "grammar-regex",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "patch"
+          ]
+        },
+        "constrainedSampling": {
+          "type": "grammar",
+          "variants": {
+            "openai_lark": " ",
+            "openai_regex": ".+"
+          }
+        }
+      },
+      "options": {
+        "supportsOpenAIGrammarTools": true
+      },
+      "tools": [
+        {
+          "type": "custom",
+          "name": "patch",
+          "description": "Apply a patch",
+          "format": {
+            "type": "grammar",
+            "syntax": "regex",
+            "definition": ".+"
+          }
+        }
+      ],
+      "grammar": {
+        "format": "regex",
+        "definition": ".+",
+        "inputProperty": "patch"
+      }
+    },
+    {
+      "name": "grammar-fallback",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "patch"
+          ]
+        },
+        "constrainedSampling": {
+          "type": "grammar",
+          "variants": {
+            "openai_lark": "start: /.+/s",
+            "openai_regex": ".+"
+          }
+        }
+      },
+      "options": {
+        "supportsOpenAIGrammarTools": false
+      },
+      "tools": [
+        {
+          "type": "function",
+          "name": "patch",
+          "description": "Apply a patch",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "patch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "patch"
+            ]
+          },
+          "strict": false
+        }
+      ],
+      "grammar": null
+    },
+    {
+      "name": "grammar-missing-variant",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "patch"
+          ]
+        },
+        "constrainedSampling": {
+          "type": "grammar",
+          "variants": {}
+        }
+      },
+      "options": {
+        "supportsOpenAIGrammarTools": true
+      },
+      "error": "Tool \"patch\" cannot use grammar constrained sampling: no supported grammar variant was provided."
+    },
+    {
+      "name": "grammar-non-object",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "string"
+        },
+        "constrainedSampling": {
+          "type": "grammar",
+          "variants": {
+            "openai_lark": "start: /.+/s",
+            "openai_regex": ".+"
+          }
+        }
+      },
+      "options": {
+        "supportsOpenAIGrammarTools": true
+      },
+      "error": "Tool \"patch\" cannot use grammar constrained sampling: grammar constrained sampling requires an object parameter schema."
+    },
+    {
+      "name": "grammar-many-required",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "patch",
+            "other"
+          ]
+        },
+        "constrainedSampling": {
+          "type": "grammar",
+          "variants": {
+            "openai_lark": "start: /.+/s",
+            "openai_regex": ".+"
+          }
+        }
+      },
+      "options": {
+        "supportsOpenAIGrammarTools": true
+      },
+      "error": "Tool \"patch\" cannot use grammar constrained sampling: grammar constrained sampling requires exactly one required string property."
+    },
+    {
+      "name": "grammar-missing-property",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "patch"
+          ]
+        },
+        "constrainedSampling": {
+          "type": "grammar",
+          "variants": {
+            "openai_lark": "start: /.+/s",
+            "openai_regex": ".+"
+          }
+        }
+      },
+      "options": {
+        "supportsOpenAIGrammarTools": true
+      },
+      "error": "Tool \"patch\" cannot use grammar constrained sampling: grammar constrained sampling requires a properties entry for patch."
+    },
+    {
+      "name": "grammar-non-string",
+      "tool": {
+        "name": "patch",
+        "description": "Apply a patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "patch"
+          ]
+        },
+        "constrainedSampling": {
+          "type": "grammar",
+          "variants": {
+            "openai_lark": "start: /.+/s",
+            "openai_regex": ".+"
+          }
+        }
+      },
+      "options": {
+        "supportsOpenAIGrammarTools": true
+      },
+      "error": "Tool \"patch\" cannot use grammar constrained sampling: grammar constrained sampling property patch must have type string."
+    }
+  ]
+}

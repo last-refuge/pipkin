@@ -461,19 +461,22 @@ fn normalize_tool_call_id(provider: &str, id: &str) -> String {
     id.to_owned()
 }
 
-fn convert_tools(tools: &[ToolSpec], compat: &Compat) -> Vec<Value> {
+fn convert_tools(
+    req: &ProviderRequest,
+    tools: &[ToolSpec],
+    compat: &Compat,
+) -> Result<Vec<Value>, String> {
     tools
         .iter()
         .map(|t| {
-            let mut function = json!({
-                "name": t.name,
-                "description": t.description,
-                "parameters": t.parameters,
-            });
+            let strict =
+                super::common::schema::resolve_strict(req, t, compat.supports_strict_mode, None)?;
+            let mut function = json!({"name":t.name, "description":t.description,
+            "parameters":super::common::schema::tool_parameters(t, strict)?});
             if compat.supports_strict_mode {
-                function["strict"] = json!(false);
+                function["strict"] = json!(strict.unwrap_or(false));
             }
-            json!({"type": "function", "function": function})
+            Ok(json!({"type":"function", "function":function}))
         })
         .collect()
 }
@@ -489,7 +492,7 @@ fn text_of(content: &[Block]) -> Vec<&str> {
 }
 
 /// Context -> Chat Completions `messages` (reference `convertMessages`).
-pub fn convert_messages(req: &ProviderRequest, compat: &Compat) -> Vec<Value> {
+pub fn convert_messages(req: &ProviderRequest, compat: &Compat) -> Result<Vec<Value>, String> {
     let model = &req.model;
     let mut params: Vec<Value> = Vec::new();
     let instruction_role = if model.reasoning && compat.supports_developer_role {
@@ -526,7 +529,9 @@ pub fn convert_messages(req: &ProviderRequest, compat: &Compat) -> Vec<Value> {
                     && !system.tools_added.is_empty()
                 {
                     let tools: Vec<_> = system.tools_added.iter().map(ToolSpec::from).collect();
-                    params.push(json!({"role": "system", "tools": convert_tools(&tools, compat)}));
+                    params.push(
+                        json!({"role": "system", "tools": convert_tools(req, &tools, compat)?}),
+                    );
                 }
                 let text = crate::context::system::update_text(system);
                 if !text.is_empty() {
@@ -735,7 +740,7 @@ pub fn convert_messages(req: &ProviderRequest, compat: &Compat) -> Vec<Value> {
         }
         i += 1;
     }
-    params
+    Ok(params)
 }
 
 fn cache_control_value(compat: &Compat, retention: CacheRetention) -> Option<Value> {
@@ -842,14 +847,14 @@ fn template_values(
 }
 
 /// The full request body (reference `buildParams`).
-pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
+pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Result<Value, String> {
     let resolved =
         req.resolve_systems(req.model.compat_bool("supportsMidConvoSystemMessages") == Some(true));
     let req = resolved.as_ref();
     let model = &req.model;
     let retention = req.cache_retention;
     let effort = reasoning_effort(req);
-    let mut messages = convert_messages(req, compat);
+    let mut messages = convert_messages(req, compat)?;
     let cc = cache_control_value(compat, retention);
     let mut p = Map::new();
     p.insert("model".into(), json!(model.id));
@@ -884,7 +889,7 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
     }
     let mut tools: Option<Vec<Value>> = None;
     if !req.tools.is_empty() {
-        tools = Some(convert_tools(&req.tools, compat));
+        tools = Some(convert_tools(req, &req.tools, compat)?);
         if compat.zai_tool_stream {
             p.insert("tool_stream".into(), json!(true));
         }
@@ -960,7 +965,7 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
             p.insert(k, v);
         }
     }
-    Value::Object(p)
+    Ok(Value::Object(p))
 }
 
 /// The eleven `thinkingFormat` shapes.
@@ -1465,9 +1470,16 @@ impl State {
         }
         finalize_tool_args(
             e,
-            std::mem::take(&mut self.tools)
-                .into_iter()
-                .map(|(i, s)| (i, s.custom.map_or(ToolArgs::Json(s.raw), ToolArgs::Custom))),
+            std::mem::take(&mut self.tools).into_iter().map(|(i, s)| {
+                (
+                    i,
+                    s.custom
+                        .map_or(ToolArgs::Json(s.raw), |input| ToolArgs::Custom {
+                            property: "input".into(),
+                            input,
+                        }),
+                )
+            }),
         );
     }
 }
@@ -1484,7 +1496,10 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
         Ok(h) => h,
         Err(m) => return ctx.failed(e, m),
     };
-    let body = build_params(req, &compat);
+    let body = match build_params(req, &compat) {
+        Ok(v) => v,
+        Err(m) => return ctx.failed(e, m),
+    };
     let url = format!("{}/chat/completions", req.base_url().trim_end_matches('/'));
     let resp = match post_json(&ctx, &url, headers, &body).await {
         Ok(r) => r,
@@ -1601,6 +1616,7 @@ pub(crate) mod tests {
 
     pub(crate) fn read_tool() -> ToolSpec {
         ToolSpec {
+            constrained_sampling: None,
             name: "read".into(),
             description: "Read a file".into(),
             parameters: json!({"type": "object", "properties": {"path": {"type": "string"}}}),
@@ -1721,7 +1737,7 @@ pub(crate) mod tests {
     }
 
     fn body(req: &ProviderRequest) -> Value {
-        build_params(req, &Compat::resolve(&req.model, req.base_url()))
+        build_params(req, &Compat::resolve(&req.model, req.base_url())).unwrap()
     }
 
     fn openai_model() -> Value {
@@ -1859,6 +1875,7 @@ pub(crate) mod tests {
         req.tools = vec![
             read_tool(),
             ToolSpec {
+                constrained_sampling: None,
                 name: "bash".into(),
                 description: "Run".into(),
                 parameters: json!({"type": "object"}),
