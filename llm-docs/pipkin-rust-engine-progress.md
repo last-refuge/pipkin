@@ -11,7 +11,31 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — HTTP timeout validation and live sign-in repair
+## Current follow-up — native-only history labels
+
+2026-10-12, following **`ee5b5d7`**. Snapshots and paged history now carry the importer's
+saved entry boundary. Native transcript items and subagent previews label history written
+in the built-in engine, including tool results merged into older imported calls. Labels survive
+paging, engine restart and newly saved offline copies; item IDs, source text, model context
+and searchable text are unchanged. Older caches without provenance remain unlabelled until
+refreshed. Pi's existing conversation-level rollback warning remains because Pi cannot show
+native entries that are absent from its source.
+
+Three new regression tests cover mapping/tool provenance, offline copies and subagent page
+stitching. Expanded frozen-reference import tests verify immutable boundaries and unchanged
+context/source history. The real engine/adapter/core import-and-continue test now verifies
+labels across an engine restart. Required checks: **1634 passed, 0 failed, 53 ignored**, clean
+Clippy (all targets) and formatting. See [history provenance evidence](pipkin-rust-engine-evidence/native-history-labels.md)
+for logs and initial compile corrections. No visual/native installed rollback acceptance is claimed.
+
+Protocol **12** / schema **9**. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**. Native remains opt-in. Configuration/model edge behavior,
+credential/transport comparisons, sustained workloads, complete archive/restore and installed
+rollback, release/CI/platform qualification, default switch and Pi removal remain open.
+Owner plan/worktree changes are preserved.
+
+## Previous follow-up — HTTP timeout validation and live sign-in repair
 
 2026-10-12, following **`2eec3e1`**. Supplied invalid HTTP timeouts now report the
 reference error instead of silently falling back to 300 seconds. Explicit null remains

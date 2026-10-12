@@ -73,6 +73,7 @@ pub struct SubagentInfo {
 /// Bounded, plain-text child entry prepared outside GPUI rendering.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SubagentPreview {
+    pub native_only: bool,
     pub id: ItemId,
     /// Changes whenever this preview is prepared again, so a view can remeasure only what
     /// changed. Unique within one `SubagentState`.
@@ -180,6 +181,8 @@ pub enum ItemKind {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TranscriptItem {
+    /// This item contains history that exists only in the built-in engine.
+    pub native_only: bool,
     pub id: ItemId,
     /// Unix seconds.
     pub at: i64,

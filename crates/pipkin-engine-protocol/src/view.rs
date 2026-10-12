@@ -338,6 +338,8 @@ pub struct SubagentsView {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSnapshot {
+    /// First entry id allocated by native; earlier entries are the imported source copy.
+    pub native_history_start: EntryId,
     pub summary: SessionSummary,
     pub revision: u64,
     /// The newest window of history, oldest first, starting at the live context boundary at
@@ -650,7 +652,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 11);
+        assert_eq!(crate::PROTOCOL_VERSION, 12);
         let release = Call::ReleaseSession {
             session: "s1".into(),
         };

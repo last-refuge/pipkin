@@ -641,7 +641,11 @@ async fn dispatch_with_cancel(
                 shared
                     .store
                     .page(&session, before, limit.clamp(1, limits::MAX_PAGE_ENTRIES))?;
-            Ok(Reply::Page { entries, has_older })
+            Ok(Reply::Page {
+                entries,
+                has_older,
+                native_history_start: shared.store.native_history_start(&session)?,
+            })
         }
         Call::Prompt {
             session,

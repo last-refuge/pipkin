@@ -402,6 +402,8 @@ pub enum Reply {
     },
     Snapshot(Box<SessionSnapshot>),
     Page {
+        /// Same stable provenance boundary as the session snapshot, including child pages.
+        native_history_start: u64,
         entries: Vec<Entry>,
         has_older: bool,
     },

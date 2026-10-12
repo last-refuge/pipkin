@@ -88,6 +88,7 @@ fn transcript_prompts_are_available_and_empty_history_is_a_noop() {
     assert!(s.current().unwrap().draft.text.is_empty());
     let generation = s.current().unwrap().generation;
     let user = |id, text: &str| TranscriptItem {
+        native_only: false,
         id: ItemId(id),
         at: 0,
         kind: ItemKind::User {

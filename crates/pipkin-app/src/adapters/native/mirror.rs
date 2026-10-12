@@ -30,6 +30,7 @@ pub enum Touched {
 
 #[derive(Clone, Debug)]
 pub struct Mirror {
+    pub native_history_start: u64,
     pub entries: Vec<Entry>,
     pub has_older: bool,
     pub run: Option<RunView>,
@@ -49,6 +50,7 @@ impl Mirror {
         let mut entries = snapshot.entries;
         entries.sort_by_key(|e| e.id);
         Mirror {
+            native_history_start: snapshot.native_history_start,
             entries,
             has_older: snapshot.has_older,
             run: snapshot.run,
@@ -229,6 +231,7 @@ mod tests {
 
     fn snapshot(revision: u64, entries: Vec<Entry>) -> SessionSnapshot {
         SessionSnapshot {
+            native_history_start: 1,
             summary: pipkin_engine_protocol::SessionSummary {
                 id: "s".into(),
                 cwd: "/w".into(),

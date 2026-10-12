@@ -656,6 +656,7 @@ fn demo_subagent_directory() -> Vec<SubagentInfo> {
 
 fn demo_item(id: u64, at: i64, kind: ItemKind) -> TranscriptItem {
     TranscriptItem {
+        native_only: false,
         id: ItemId(id),
         at,
         kind,

@@ -119,6 +119,7 @@ impl SubagentState {
         };
         let clipped = text.chars().nth(PREVIEW_CHARS).is_some();
         SubagentPreview {
+            native_only: item.native_only,
             id: item.id,
             rev: self.preview_rev,
             speaker,
@@ -270,6 +271,7 @@ fn stitch_tools(items: &mut Vec<TranscriptItem>, boundary: usize) -> (Vec<usize>
             continue;
         };
         let later = items.remove(j);
+        items[i].native_only |= later.native_only;
         if let (ItemKind::Tool(done), ItemKind::Tool(t)) = (later.kind, &mut items[i].kind) {
             if done.status != ToolStatus::Running || !done.output.is_empty() {
                 t.output = done.output;
@@ -293,6 +295,7 @@ mod tests {
 
     fn text(id: u64) -> TranscriptItem {
         TranscriptItem {
+            native_only: false,
             id: ItemId(id),
             at: 0,
             kind: ItemKind::Assistant {
@@ -304,6 +307,7 @@ mod tests {
 
     fn tool(id: u64, call: &str, output: &str, status: ToolStatus) -> TranscriptItem {
         TranscriptItem {
+            native_only: false,
             id: ItemId(id),
             at: 0,
             kind: ItemKind::Tool(ToolCall {
@@ -354,6 +358,28 @@ mod tests {
             revs[..5]
         );
         assert!(s.previews[5..].iter().all(|p| p.rev > revs[9]));
+    }
+
+    #[test]
+    fn native_history_provenance_survives_subagent_page_stitching_and_previews() {
+        let mut state = paged();
+        let mut result = tool(30, "c", "native result", ToolStatus::Ok);
+        result.native_only = true;
+        state.apply_newest(1, vec![result.clone()], false, true);
+        state.begin_older().unwrap();
+        state.apply_older(
+            1,
+            ItemId(30),
+            vec![tool(21, "c", "", ToolStatus::Running)],
+            false,
+        );
+        assert_eq!(state.items.len(), 1);
+        assert!(state.items[0].native_only);
+        assert!(state.previews[0].native_only);
+        assert!(state.previews[0].text.contains("native result"));
+        state.apply_newest(1, vec![result], true, false);
+        assert_eq!(state.items.len(), 1);
+        assert!(state.previews[0].native_only);
     }
 
     #[test]

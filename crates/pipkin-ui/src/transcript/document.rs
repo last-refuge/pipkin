@@ -494,6 +494,7 @@ mod tests {
 
     fn user(id: u64, text: &str) -> TranscriptItem {
         TranscriptItem {
+            native_only: false,
             id: ItemId(id),
             at: 0,
             kind: ItemKind::User {
@@ -507,6 +508,7 @@ mod tests {
 
     fn asst(id: u64, text: &str) -> TranscriptItem {
         TranscriptItem {
+            native_only: false,
             id: ItemId(id),
             at: 0,
             kind: ItemKind::Assistant {
@@ -518,6 +520,7 @@ mod tests {
 
     fn tool(id: u64, input: &str, output: &str) -> TranscriptItem {
         TranscriptItem {
+            native_only: false,
             id: ItemId(id),
             at: 0,
             kind: ItemKind::Tool(ToolCall {

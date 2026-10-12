@@ -271,9 +271,11 @@ fn full_history(e: &mut Engine, session: &str) -> Vec<Entry> {
             limit: 200,
         }) {
             Ok(Reply::Page {
+                native_history_start,
                 entries: older,
                 has_older: more,
             }) => {
+                assert_eq!(native_history_start, snapshot.native_history_start);
                 assert!(!older.is_empty(), "a page with older history is not empty");
                 entries.splice(0..0, older);
                 has_older = more;
@@ -395,6 +397,14 @@ fn reference_fixtures_import_open_and_continue_equivalently() {
             .collect();
         assert_eq!(native, reference, "{id}: the opened transcript is complete");
 
+        let imported = e.snapshot(id);
+        let boundary = imported.native_history_start;
+        assert!(boundary > 1, "{id}: fixture has imported history");
+        assert!(
+            full_history(&mut e, id)
+                .iter()
+                .all(|entry| entry.id < boundary)
+        );
         // Continue natively with the scripted model.
         e.call(Call::SetModel {
             session: id.clone(),
@@ -433,7 +443,9 @@ fn reference_fixtures_import_open_and_continue_equivalently() {
             sent.len() - reference.len() - 1
         ));
         let snapshot = e.snapshot(id);
+        assert_eq!(snapshot.native_history_start, boundary);
         let last = snapshot.entries.last().unwrap();
+        assert!(last.id >= boundary);
         assert!(
             matches!(
                 &last.kind,

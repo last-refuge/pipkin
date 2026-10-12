@@ -2053,10 +2053,42 @@ fn pi_conversations_are_imported_on_confirmation_with_their_desktop_data() {
         ]
     );
     h.dispatch(Command::SetModel("scripted/scripted".into()));
+    assert!(
+        h.state
+            .current()
+            .unwrap()
+            .items
+            .iter()
+            .filter(|i| matches!(i.kind, ItemKind::User { .. } | ItemKind::Assistant { .. }))
+            .all(|i| !i.native_only)
+    );
     h.send("Please continue.");
     h.until("answered natively", |s| {
         is_idle(s) && assistant_texts(s).last().map(String::as_str) == Some("Continued natively.")
     });
+    let native_ids: Vec<_> = h
+        .state
+        .current()
+        .unwrap()
+        .items
+        .iter()
+        .filter(|i| i.native_only)
+        .map(|i| i.id)
+        .collect();
+    assert!(native_ids.len() >= 2);
+    assert!(
+        h.state
+            .current()
+            .unwrap()
+            .items
+            .iter()
+            .filter(|i| match &i.kind {
+                ItemKind::User { text, .. } => text == "Please continue.",
+                ItemKind::Assistant { text, .. } => text == "Continued natively.",
+                _ => false,
+            })
+            .all(|i| i.native_only)
+    );
     let request = fx.requests().last().cloned().unwrap();
     assert_eq!(
         user_texts(&request),
@@ -2078,6 +2110,26 @@ fn pi_conversations_are_imported_on_confirmation_with_their_desktop_data() {
     );
     assert!(offer(&h.state).is_none());
     h.stop();
+    fx.restart_engine();
+    let mut reopened = Harness::start(&fx, &db);
+    reopened.until("reconnected", |s| s.connection.is_ready());
+    reopened.dispatch(Command::SelectConversation(a));
+    reopened.until("imported history reopened", |s| {
+        s.current().is_some_and(|c| c.opened)
+    });
+    assert_eq!(
+        reopened
+            .state
+            .current()
+            .unwrap()
+            .items
+            .iter()
+            .filter(|i| i.native_only)
+            .map(|i| i.id)
+            .collect::<Vec<_>>(),
+        native_ids
+    );
+    reopened.stop();
 }
 
 #[test]

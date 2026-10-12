@@ -47,6 +47,7 @@ fn summary(id: &str) -> SessionSummary {
 
 fn snapshot(id: &str, entries: Vec<Entry>) -> SessionSnapshot {
     SessionSnapshot {
+        native_history_start: 1,
         summary: summary(id),
         revision: 1,
         entries,
@@ -764,10 +765,12 @@ fn child_history_pages_by_cursor_and_the_selected_child_refreshes_live() {
             child: 3, before, ..
         } => Some(Some(match before {
             None => Ok(Reply::Page {
+                native_history_start: 1,
                 entries: child_entries(300..500),
                 has_older: true,
             }),
             Some(300) => Ok(Reply::Page {
+                native_history_start: 1,
                 entries: vec![Entry {
                     id: 299,
                     at_ms: 1,
@@ -783,6 +786,7 @@ fn child_history_pages_by_cursor_and_the_selected_child_refreshes_live() {
                 has_older: true,
             }),
             Some(299) => Ok(Reply::Page {
+                native_history_start: 1,
                 entries: child_entries(100..299),
                 has_older: true,
             }),

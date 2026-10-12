@@ -62,6 +62,7 @@ impl Agent {
             },
             Call::Stop { .. } => Reply::Stopping { run: None },
             Call::HistoryPage { .. } => Reply::Page {
+                native_history_start: 1,
                 entries: Vec::new(),
                 has_older: false,
             },

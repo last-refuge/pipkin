@@ -348,6 +348,7 @@ fn subagents<R>(ui: &Ui, cx: &mut VisualTestContext, f: impl FnOnce(&SubagentSta
 
 fn entry(id: u64) -> TranscriptItem {
     TranscriptItem {
+        native_only: false,
         id: ItemId(id),
         at: 0,
         kind: ItemKind::Assistant {

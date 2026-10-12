@@ -632,7 +632,8 @@ impl Workspace {
                                 .text_size(t.small_size())
                                 .font_weight(gpui::FontWeight::SEMIBOLD)
                                 .text_color(c.text_muted)
-                                .child(entry.speaker),
+                                .child(entry.speaker)
+                                .when(entry.native_only, |d| d.child(" · Native-only history")),
                         )
                         .child(
                             div()

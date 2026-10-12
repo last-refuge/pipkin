@@ -51,7 +51,7 @@ fn encode_item(item: &TranscriptItem) -> Value {
             json!({ "text": text, "error": *level == NoticeLevel::Error }),
         ),
     };
-    json!({ "id": item.id.0, "at": item.at, "kind": kind, "body": body })
+    json!({ "id": item.id.0, "at": item.at, "native_only": item.native_only, "kind": kind, "body": body })
 }
 
 fn decode_item(value: &Value) -> Option<TranscriptItem> {
@@ -110,7 +110,15 @@ fn decode_item(value: &Value) -> Option<TranscriptItem> {
         },
         _ => return None,
     };
-    Some(TranscriptItem { id, at, kind })
+    Some(TranscriptItem {
+        native_only: value
+            .get("native_only")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        id,
+        at,
+        kind,
+    })
 }
 
 /// The newest items that fit the bounds, as JSON, and how many were kept.
@@ -160,9 +168,35 @@ pub fn search_text(item: &TranscriptItem) -> Option<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn native_only_history_labels_survive_offline_copies_without_changing_text() {
+        let mut original = items();
+        for item in &mut original[1..] {
+            item.native_only = true;
+        }
+        let encoded = encode_items(&original).0;
+        let decoded = decode_items(&encoded);
+        assert!(!decoded[0].native_only);
+        assert!(decoded[1..].iter().all(|item| item.native_only));
+        for (a, b) in original.iter().zip(&decoded) {
+            assert_eq!(a.id, b.id);
+            assert_eq!(search_text(a), search_text(b));
+        }
+        let mut legacy: Value = serde_json::from_str(&encoded).unwrap();
+        for item in legacy.as_array_mut().unwrap() {
+            item.as_object_mut().unwrap().remove("native_only");
+        }
+        assert!(
+            decode_items(&legacy.to_string())
+                .iter()
+                .all(|item| !item.native_only)
+        );
+    }
+
     fn items() -> Vec<TranscriptItem> {
         vec![
             TranscriptItem {
+                native_only: false,
                 id: ItemId(1024),
                 at: 10,
                 kind: ItemKind::User {
@@ -178,6 +212,7 @@ mod tests {
                 },
             },
             TranscriptItem {
+                native_only: false,
                 id: ItemId(2048),
                 at: 11,
                 kind: ItemKind::Assistant {
@@ -186,6 +221,7 @@ mod tests {
                 },
             },
             TranscriptItem {
+                native_only: false,
                 id: ItemId(3072),
                 at: 12,
                 kind: ItemKind::Tool(ToolCall {
@@ -200,6 +236,7 @@ mod tests {
                 }),
             },
             TranscriptItem {
+                native_only: false,
                 id: ItemId(4096),
                 at: 13,
                 kind: ItemKind::Notice {
@@ -250,6 +287,7 @@ mod tests {
     fn the_newest_items_are_kept_within_the_count_and_size_bounds() {
         let many: Vec<_> = (0..MAX_ITEMS as u64 + 50)
             .map(|n| TranscriptItem {
+                native_only: false,
                 id: ItemId(n * 1024),
                 at: n as i64,
                 kind: ItemKind::Assistant {
@@ -269,6 +307,7 @@ mod tests {
 
         // Three 1 MB messages cannot all fit in 2 MB: the oldest goes.
         let big = |n: u64| TranscriptItem {
+            native_only: false,
             id: ItemId(n),
             at: 0,
             kind: ItemKind::Assistant {
@@ -299,6 +338,7 @@ mod tests {
         assert!(search_text(&it[0]).is_some() && search_text(&it[1]).is_some());
         assert!(search_text(&it[2]).is_none() && search_text(&it[3]).is_none());
         let long = TranscriptItem {
+            native_only: false,
             id: ItemId(1),
             at: 0,
             kind: ItemKind::Assistant {
@@ -309,6 +349,7 @@ mod tests {
         let t = search_text(&long).unwrap();
         assert!(t.len() <= MAX_SEARCH_TEXT && t.chars().all(|c| c == 'é'));
         let blank = TranscriptItem {
+            native_only: false,
             id: ItemId(1),
             at: 0,
             kind: ItemKind::User {

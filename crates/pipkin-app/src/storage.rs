@@ -1751,6 +1751,7 @@ mod tests {
         }
         pi.journal_state(RequestId("r1".into()), JournalState::Completed);
         let items = vec![TranscriptItem {
+            native_only: false,
             id: ItemId(1024),
             at: 5,
             kind: ItemKind::User {
@@ -2911,6 +2912,7 @@ mod tests {
 
     fn text_item(id: u64, role_user: bool, text: &str) -> TranscriptItem {
         TranscriptItem {
+            native_only: false,
             id: ItemId(id),
             at: id as i64,
             kind: if role_user {

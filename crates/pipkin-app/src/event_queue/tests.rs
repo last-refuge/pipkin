@@ -78,6 +78,7 @@ fn payload_accounting_includes_spare_capacity_nested_text_and_vector_storage() {
     text.push('x');
     let mut items = Vec::with_capacity(5);
     items.push(TranscriptItem {
+        native_only: false,
         id: ItemId(1),
         at: 0,
         kind: ItemKind::User {

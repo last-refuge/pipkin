@@ -123,7 +123,18 @@ continuing in both afterwards makes the two differ.
 Rollback: an import never changes the Pi source. The Pi sessions, settings and credentials keep working with
 `--engine pi` (the default) as before, except that the imported conversations are read-only there until released.
 History written in an imported conversation after the import exists only in the native engine; it is not written
-back to Pi. To roll back, run with `--engine pi` (and release any conversation you want Pi to continue); to discard
+back to Pi. Native transcript rows display **Native-only history · not in the Pi copy** for that work;
+subagent previews carry the same distinction. Imported rows retain their original text and item IDs.
+The labels also survive newly saved offline copies. Older saved copies have no provenance label until
+refreshed from the native engine. These labels are presentation metadata, never added to model prompts.
+
+Keep the known-good package and archive the complete `<data dir>/engine/` directory after quitting all
+Pipkin processes before rollback or deletion; retain the separate native settings/credentials directory
+if you need to restore sign-in. Reopening that archive with a compatible native package preserves access
+to the native history. The saved desktop transcript is a bounded reading cache, not a complete archive.
+Rolling back does not undo changes made to project files.
+
+To roll back, run with `--engine pi` (and release any conversation you want Pi to continue); to discard
 the native copies, remove `<data dir>/engine/` (and `~/.config/pipkin/engine/` for its settings and credentials)
 after making sure nothing there is needed. Removing the engine directory does not remove the ownership records:
 release those conversations from the palette as well.

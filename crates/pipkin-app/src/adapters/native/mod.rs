@@ -894,7 +894,11 @@ impl Live {
         }
         current.dirty = false;
         current.last_sync = Instant::now();
-        let mapped = transcript::map_entries(&current.mirror.entries, &current.mirror.progress);
+        let mapped = transcript::map_entries_with_origin(
+            &current.mirror.entries,
+            &current.mirror.progress,
+            Some(current.mirror.native_history_start),
+        );
         let done = tools_done(&mapped.items);
         let finished_tool = done != current.tools_done;
         current.tools_done = done;
@@ -1867,13 +1871,22 @@ impl Live {
                 before,
                 limit: SUBAGENT_PAGE,
             })?;
-            let Reply::Page { entries, has_older } = &reply else {
+            let Reply::Page {
+                entries,
+                has_older,
+                native_history_start,
+            } = &reply
+            else {
                 return Ok(reply);
             };
             if !has_older
-                || !transcript::map_entries(entries, &HashMap::new())
-                    .items
-                    .is_empty()
+                || !transcript::map_entries_with_origin(
+                    entries,
+                    &HashMap::new(),
+                    Some(*native_history_start),
+                )
+                .items
+                .is_empty()
             {
                 return Ok(reply);
             }
@@ -1906,12 +1919,21 @@ impl Live {
             current.child_sync = Instant::now();
         }
         match self.child_history_page(session, child, None) {
-            Ok(Reply::Page { entries, has_older }) => worker.emit(
+            Ok(Reply::Page {
+                entries,
+                has_older,
+                native_history_start,
+            }) => worker.emit(
                 conversation,
                 generation,
                 EventKind::SubagentPage {
                     child,
-                    items: transcript::map_entries(&entries, &HashMap::new()).items,
+                    items: transcript::map_entries_with_origin(
+                        &entries,
+                        &HashMap::new(),
+                        Some(native_history_start),
+                    )
+                    .items,
                     live: true,
                     has_older,
                 },
@@ -1965,13 +1987,22 @@ impl Live {
             return fail("Earlier activity cannot be located for this entry.".into());
         };
         match self.child_history_page(session, child, Some(entry)) {
-            Ok(Reply::Page { entries, has_older }) => worker.emit(
+            Ok(Reply::Page {
+                entries,
+                has_older,
+                native_history_start,
+            }) => worker.emit(
                 conversation,
                 generation,
                 EventKind::SubagentOlderPage {
                     child,
                     before,
-                    items: transcript::map_entries(&entries, &HashMap::new()).items,
+                    items: transcript::map_entries_with_origin(
+                        &entries,
+                        &HashMap::new(),
+                        Some(native_history_start),
+                    )
+                    .items,
                     has_older,
                 },
             ),
@@ -2016,8 +2047,17 @@ impl Live {
             before: Some(entry),
             limit: HISTORY_PAGE,
         }) {
-            Ok(Reply::Page { entries, has_older }) => {
-                let items = transcript::map_entries(&entries, &HashMap::new()).items;
+            Ok(Reply::Page {
+                entries,
+                has_older,
+                native_history_start,
+            }) => {
+                let items = transcript::map_entries_with_origin(
+                    &entries,
+                    &HashMap::new(),
+                    Some(native_history_start),
+                )
+                .items;
                 if let Some(current) = self.current.as_mut() {
                     for e in entries.iter().filter(|e| mapping::is_change_evidence(e)) {
                         current.evidence.insert(e.id, e.clone());
@@ -2179,9 +2219,9 @@ impl Live {
                     before,
                     limit: HISTORY_PAGE,
                 }) {
-                    Ok(Reply::Page { entries, has_older })
-                        if !entries.is_empty() && entries.first().map(|e| e.id) < before =>
-                    {
+                    Ok(Reply::Page {
+                        entries, has_older, ..
+                    }) if !entries.is_empty() && entries.first().map(|e| e.id) < before => {
                         snapshot.has_older = has_older;
                         snapshot.entries.splice(0..0, entries);
                     }
@@ -2203,7 +2243,11 @@ impl Live {
             .take()
             .filter(|c| c.conversation == conversation);
         let mirror = Mirror::new(snapshot);
-        let mapped = transcript::map_entries(&mirror.entries, &mirror.progress);
+        let mapped = transcript::map_entries_with_origin(
+            &mirror.entries,
+            &mirror.progress,
+            Some(mirror.native_history_start),
+        );
         let done = tools_done(&mapped.items);
         let has_older = mirror.has_older;
         worker.emit(
@@ -2270,11 +2314,14 @@ impl Live {
             let mut before = mirror.oldest();
             for _ in 0..EVIDENCE_PAGES {
                 let Some(b) = before else { break };
-                let Ok(Reply::Page { entries, has_older }) = self.call(Call::HistoryPage {
+                let Ok(Reply::Page {
+                    entries, has_older, ..
+                }) = self.call(Call::HistoryPage {
                     session: summary.id.clone(),
                     before: Some(b),
                     limit: HISTORY_PAGE,
-                }) else {
+                })
+                else {
                     break;
                 };
                 let next = entries.first().map(|e| e.id);

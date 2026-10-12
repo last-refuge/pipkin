@@ -593,7 +593,12 @@ impl AppState {
         let id = self.alloc_item();
         let at = self.now;
         let c = self.conv_mut(conv)?;
-        c.items.push(TranscriptItem { id, at, kind });
+        c.items.push(TranscriptItem {
+            native_only: false,
+            id,
+            at,
+            kind,
+        });
         out.notes.push(Note::ItemsAppended(conv, 1));
         Some(c.items.len() - 1)
     }
@@ -2088,6 +2093,7 @@ impl AppState {
             EventKind::OpenFailed { message } => {
                 if !c.opened {
                     c.items = vec![TranscriptItem {
+                        native_only: false,
                         id: ItemId(LOCAL_ITEM_BASE - 1),
                         at: 0,
                         kind: ItemKind::Notice {

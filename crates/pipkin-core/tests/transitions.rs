@@ -608,6 +608,7 @@ fn history_prepend_reports_count_and_shifts_streaming_index() {
     s.apply_event(e);
     let page: Vec<_> = (0..5)
         .map(|i| TranscriptItem {
+            native_only: false,
             id: ItemId(i),
             at: 0,
             kind: ItemKind::Notice {
@@ -1010,6 +1011,7 @@ fn failed_queue_journal_write_puts_the_prompt_back() {
 fn synced_replaces_items_only_once_opened() {
     let mut s = state();
     let item = |id: u64, text: &str| TranscriptItem {
+        native_only: false,
         id: ItemId(id),
         at: 0,
         kind: ItemKind::Assistant {

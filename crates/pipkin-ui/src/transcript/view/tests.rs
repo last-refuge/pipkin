@@ -62,6 +62,7 @@ fn item(i: u64) -> TranscriptItem {
         },
     };
     TranscriptItem {
+        native_only: false,
         id: ItemId(i),
         at: 1_700_000_000 + i as i64,
         kind,
@@ -539,6 +540,7 @@ fn stress_content_renders_without_panicking(cx: &mut TestAppContext) {
     let long = "x".repeat(5000);
     let nasty = vec![
         TranscriptItem {
+            native_only: false,
             id: ItemId(1),
             at: 0,
             kind: ItemKind::User {
@@ -554,6 +556,7 @@ fn stress_content_renders_without_panicking(cx: &mut TestAppContext) {
             },
         },
         TranscriptItem {
+            native_only: false,
             id: ItemId(2),
             at: 0,
             kind: ItemKind::Assistant {
@@ -564,6 +567,7 @@ fn stress_content_renders_without_panicking(cx: &mut TestAppContext) {
             },
         },
         TranscriptItem {
+            native_only: false,
             id: ItemId(3),
             at: 0,
             kind: ItemKind::Tool(ToolCall {
@@ -578,6 +582,7 @@ fn stress_content_renders_without_panicking(cx: &mut TestAppContext) {
             }),
         },
         TranscriptItem {
+            native_only: false,
             id: ItemId(4),
             at: 0,
             kind: ItemKind::Assistant {
@@ -586,6 +591,7 @@ fn stress_content_renders_without_panicking(cx: &mut TestAppContext) {
             },
         },
         TranscriptItem {
+            native_only: false,
             id: ItemId(5),
             at: 0,
             kind: ItemKind::Notice {
@@ -670,6 +676,7 @@ fn repeated_traversal_of_ten_thousand_items_with_live_updates_stays_bounded(
 
 fn tool(i: u64) -> TranscriptItem {
     TranscriptItem {
+        native_only: false,
         id: ItemId(i),
         at: 1_700_000_000 + i as i64,
         kind: ItemKind::Tool(ToolCall {
@@ -693,6 +700,7 @@ fn scroll_extent(h: &Harness, cx: &mut VisualTestContext) -> f32 {
 
 fn notice(i: u64, text: &str) -> TranscriptItem {
     TranscriptItem {
+        native_only: false,
         id: ItemId(i),
         at: 1_700_000_000 + i as i64,
         kind: ItemKind::Notice {
@@ -1030,6 +1038,7 @@ fn an_error_notice_is_never_folded_into_a_run(cx: &mut TestAppContext) {
     all.extend((0..30).map(|n| tool(100 + n)));
     // An error between two runs keeps them apart and stays visible itself.
     all.push(TranscriptItem {
+        native_only: false,
         id: ItemId(500),
         at: 1_700_000_500,
         kind: ItemKind::Notice {

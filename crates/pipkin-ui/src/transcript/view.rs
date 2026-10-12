@@ -898,7 +898,9 @@ impl TranscriptView {
         // (so every index stays valid); the hidden ones simply have no height.
         let mut steps = None;
         if is_activity(&item.kind) {
-            let is_tool = |i: usize| is_activity(&conv.items[i].kind);
+            let is_tool = |i: usize| {
+                is_activity(&conv.items[i].kind) && conv.items[i].native_only == item.native_only
+            };
             if let Some((first, last)) = super::tools::tool_run(conv.items.len(), item_ix, is_tool)
                 && last > first
             {
@@ -1004,6 +1006,14 @@ impl TranscriptView {
                     .px(px(24.0))
                     .pt(px(pad_top * scale))
                     .pb(px(pad_bottom * scale))
+                    .when(item.native_only, |row| {
+                        row.child(
+                            div()
+                                .text_size(ctx.theme.small_size())
+                                .text_color(ctx.theme.colors.text_muted)
+                                .child("Native-only history · not in the Pi copy"),
+                        )
+                    })
                     .child(body),
             )
             .into_any_element()

@@ -1768,7 +1768,9 @@ fn history_case(stub: &Stub, n: u64) -> Value {
             before: Some(b),
             limit: 500,
         }) {
-            Reply::Page { entries, has_older } => {
+            Reply::Page {
+                entries, has_older, ..
+            } => {
                 walk.push(ms(t0.elapsed()));
                 pages += 1;
                 seen += entries.len() as u64;

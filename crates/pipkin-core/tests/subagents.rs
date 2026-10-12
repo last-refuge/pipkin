@@ -98,6 +98,7 @@ fn advertised_demo_directory_opens_and_accepts_only_matching_synthetic_view() {
         );
         assert_eq!(s.current().unwrap().subagents.selected, Some(10));
         let items = vec![TranscriptItem {
+            native_only: false,
             id: ItemId(101),
             at: 1,
             kind: ItemKind::Assistant {
@@ -248,6 +249,7 @@ fn unsupported_session_cannot_toggle_or_open_and_disable_is_engine_authoritative
         EventKind::SubagentView {
             child: 10,
             items: vec![TranscriptItem {
+                native_only: false,
                 id: ItemId(1),
                 at: 0,
                 kind: ItemKind::Assistant {
@@ -330,6 +332,7 @@ fn child_identity_generation_and_parent_are_guarded_and_draft_is_unchanged() {
 
 fn entry(id: u64) -> TranscriptItem {
     TranscriptItem {
+        native_only: false,
         id: ItemId(id),
         at: 0,
         kind: ItemKind::Assistant {

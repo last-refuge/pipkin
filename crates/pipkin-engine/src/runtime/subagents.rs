@@ -383,7 +383,11 @@ impl Shared {
             before,
             limit.clamp(1, pipkin_engine_protocol::limits::MAX_PAGE_ENTRIES),
         )?;
-        Ok(Reply::Page { entries, has_older })
+        Ok(Reply::Page {
+            entries,
+            has_older,
+            native_history_start: self.store.native_history_start(&task.child_session)?,
+        })
     }
 }
 

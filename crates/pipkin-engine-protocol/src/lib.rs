@@ -18,7 +18,7 @@ pub use content::*;
 pub use view::*;
 
 /// Wire protocol version. Bump on any incompatible change to [`api`], [`content`] or [`view`].
-// Version 11 adds durable root-session removal.
-pub const PROTOCOL_VERSION: u32 = 11;
+// Version 12 carries native-history provenance in snapshots and history pages.
+pub const PROTOCOL_VERSION: u32 = 12;
 
 pub mod delivery;

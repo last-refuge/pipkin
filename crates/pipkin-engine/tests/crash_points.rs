@@ -499,6 +499,7 @@ impl Worker {
             Reply::Page {
                 entries,
                 has_older: false,
+                ..
             } => entries,
             other => panic!("fixture should fit one history page: {other:?}"),
         }

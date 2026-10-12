@@ -203,6 +203,7 @@ fn seconds(message: &Value) -> i64 {
 impl Builder {
     fn push(&mut self, id: u64, at: i64, kind: ItemKind) -> usize {
         self.items.push(TranscriptItem {
+            native_only: false,
             id: ItemId(id),
             at,
             kind,

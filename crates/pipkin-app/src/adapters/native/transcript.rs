@@ -47,6 +47,7 @@ pub struct Mapped {
 }
 
 struct Builder<'a> {
+    native_only: bool,
     items: Vec<TranscriptItem>,
     tools: HashMap<String, usize>,
     unsupported: usize,
@@ -95,6 +96,7 @@ fn result_text(content: &[Block]) -> String {
 impl Builder<'_> {
     fn push(&mut self, id: u64, at: i64, kind: ItemKind) -> usize {
         self.items.push(TranscriptItem {
+            native_only: self.native_only,
             id: ItemId(id),
             at,
             kind,
@@ -132,6 +134,7 @@ impl Builder<'_> {
         let Some(&index) = self.tools.get(call_id) else {
             return false;
         };
+        self.items[index].native_only |= self.native_only;
         if let ItemKind::Tool(tool) = &mut self.items[index].kind {
             let (preview, truncated) = preview_output(output);
             tool.output = preview;
@@ -328,14 +331,25 @@ impl Builder<'_> {
 }
 
 /// Map entries (oldest first). `progress` holds streamed output of tool calls still running.
+#[cfg(test)]
 pub fn map_entries(entries: &[Entry], progress: &HashMap<String, String>) -> Mapped {
+    map_entries_with_origin(entries, progress, None)
+}
+
+pub fn map_entries_with_origin(
+    entries: &[Entry],
+    progress: &HashMap<String, String>,
+    native_start: Option<u64>,
+) -> Mapped {
     let mut b = Builder {
+        native_only: false,
         items: Vec::new(),
         tools: HashMap::new(),
         unsupported: 0,
         progress,
     };
     for entry in entries {
+        b.native_only = native_start.is_some_and(|first| entry.id >= first);
         b.entry(entry);
     }
     Mapped {
@@ -433,6 +447,44 @@ mod tests {
             retired: false,
             kind,
         }
+    }
+
+    #[test]
+    fn native_history_labels_preserve_ids_content_and_paged_tool_provenance() {
+        let entries = vec![
+            user(4, "imported"),
+            assistant(
+                7,
+                vec![Block::ToolCall {
+                    id: "call".into(),
+                    name: "bash".into(),
+                    arguments: json!({"command":"pwd"}),
+                    extra: Map::new(),
+                }],
+            ),
+            result(10, "call", "bash", "native result", false),
+            user(11, "native"),
+        ];
+        let original = map_entries(&entries, &HashMap::new());
+        let marked = map_entries_with_origin(&entries, &HashMap::new(), Some(10));
+        assert_eq!(original.items.len(), marked.items.len());
+        for (a, b) in original.items.iter().zip(&marked.items) {
+            assert_eq!(a.id, b.id);
+            assert_eq!(a.kind, b.kind);
+        }
+        assert!(!marked.items[0].native_only);
+        assert!(marked.items[1..].iter().all(|item| item.native_only));
+        let older = map_entries_with_origin(&entries[..2], &HashMap::new(), Some(10));
+        let newer = map_entries_with_origin(&entries[2..], &HashMap::new(), Some(10));
+        assert!(older.items.iter().all(|item| !item.native_only));
+        assert!(newer.items.iter().all(|item| item.native_only));
+        // Native sessions (including those imported empty) allocate from 1.
+        assert!(
+            map_entries_with_origin(&entries, &HashMap::new(), Some(1))
+                .items
+                .iter()
+                .all(|item| item.native_only)
+        );
     }
 
     fn message(id: u64, message: Message) -> Entry {

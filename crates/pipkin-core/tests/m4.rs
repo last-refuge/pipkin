@@ -68,6 +68,7 @@ fn apply(s: &mut AppState, kind: EventKind) -> Outcome {
 
 fn user(id: u64, text: &str) -> TranscriptItem {
     TranscriptItem {
+        native_only: false,
         id: ItemId(id),
         at: 1,
         kind: ItemKind::User {
@@ -81,6 +82,7 @@ fn user(id: u64, text: &str) -> TranscriptItem {
 
 fn tool(id: u64, call: &str, status: ToolStatus, output: &str, truncated: bool) -> TranscriptItem {
     TranscriptItem {
+        native_only: false,
         id: ItemId(id),
         at: 1,
         kind: ItemKind::Tool(ToolCall {

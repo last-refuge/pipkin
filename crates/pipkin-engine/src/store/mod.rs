@@ -754,6 +754,11 @@ impl Store {
         Self::insert_entry(tx, session, next as u64, at_ms, run, kind, false)
     }
 
+    /// Immutable import boundary: no schema write or source-profile access is needed.
+    pub fn native_history_start(&self, session: &str) -> Result<u64> {
+        self.read(|c| Self::entry_floor(c, session))
+    }
+
     /// Imported sessions keep their legacy entry ids; native ids continue above them.
     fn entry_floor(tx: &Connection, session: &str) -> Result<u64> {
         Ok(tx

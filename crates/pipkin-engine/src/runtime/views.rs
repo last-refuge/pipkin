@@ -55,6 +55,7 @@ impl Shared {
             summary.blocked = Some(why);
         }
         Ok(SessionSnapshot {
+            native_history_start: self.store.native_history_start(session)?,
             summary,
             revision: row.revision,
             entries,

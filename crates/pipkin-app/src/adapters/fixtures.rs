@@ -268,6 +268,7 @@ impl Fixtures {
             matches!(self.spec(conv).map(|s| s.kind), Some(Kind::Stress)).then(stress_kinds);
         (start..end)
             .map(|idx| TranscriptItem {
+                native_only: false,
                 id: item_id(conv, idx),
                 at: self.item_time(conv, idx),
                 kind: match &stress {

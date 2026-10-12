@@ -366,7 +366,9 @@ impl ExtensionHost for CallHost {
                 limit: limit.clamp(1, HISTORY_MAX_PAGE),
             },
             |reply| match reply {
-                Reply::Page { entries, has_older } => Some(HistoryPage { entries, has_older }),
+                Reply::Page {
+                    entries, has_older, ..
+                } => Some(HistoryPage { entries, has_older }),
                 _ => None,
             },
         )
