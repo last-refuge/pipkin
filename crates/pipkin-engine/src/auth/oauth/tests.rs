@@ -510,6 +510,10 @@ async fn openrouter_exchanges_the_code_for_a_key_before_the_page() {
 async fn kimi_device_flow_header_auth_and_refresh_retries() {
     let polls = Arc::new(AtomicUsize::new(0));
     let refreshes = Arc::new(AtomicUsize::new(0));
+    // Keep authorization pending until the client actually observes the code. The
+    // accelerated test clock can otherwise finish login between snapshot polls.
+    let approved = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let approval = approved.clone();
     let (p, r) = (polls.clone(), refreshes.clone());
     let server = MockServer::start(move |req: &Recorded, _| match req.path.as_str() {
         "/api/oauth/device_authorization" => MockResponse::json(200, &json!({
@@ -526,7 +530,7 @@ async fn kimi_device_flow_header_auth_and_refresh_retries() {
                 };
             }
             match p.fetch_add(1, Ordering::SeqCst) {
-                0 => MockResponse::json(400, &json!({"error": "authorization_pending"})),
+                n if n == 0 || !approval.load(Ordering::SeqCst) => MockResponse::json(400, &json!({"error": "authorization_pending"})),
                 _ => MockResponse::json(200, &json!({"access_token": "k-at", "refresh_token": "k-rt", "expires_in": 3600})),
             }
         }
@@ -541,7 +545,9 @@ async fn kimi_device_flow_header_auth_and_refresh_retries() {
         s.url.as_deref(),
         Some("https://kimi.example/device?code=K-1")
     );
+    approved.store(true, Ordering::SeqCst);
     done(&auth, 1).await;
+    assert!(polls.load(Ordering::SeqCst) >= 2);
     let m = model(&auth, "kimi-coding");
     let res = auth.resolve(&m, &http()).await.unwrap();
     assert_eq!(res.credential, Credential::None);

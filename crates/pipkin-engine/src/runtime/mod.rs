@@ -138,20 +138,18 @@ impl Shared {
         settings: &Settings,
     ) -> serde_json::Map<String, serde_json::Value> {
         let names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
-        let key = format!(
-            "{}\u{0}{}\u{0}{}",
-            row.cwd,
-            names.join(","),
-            settings.skills.join(",")
-        );
+        let key = format!("{}\u{0}{}", row.cwd, names.join(","));
         let mut cache = sess.prompt.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((k, p)) = cache.as_ref()
             && *k == key
         {
             return p.clone();
         }
-        let (prompt, warnings) =
-            glue::system_sections(&row.cwd, &self.config.config_dir, &names, &settings.skills);
+        let (prompt, warnings) = sess
+            .prompt_resources
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .system_sections(&row.cwd, &self.config.config_dir, &names, &settings.skills);
         for warning in warnings {
             log::warn!("session {}: {warning}", row.id);
         }

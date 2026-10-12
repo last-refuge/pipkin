@@ -21,6 +21,8 @@ const EXTENSION_GRACE: Duration = Duration::from_secs(2);
 pub(super) struct Sessions {
     pub live: HashMap<String, Managed>,
     retiring: HashMap<String, Arc<CancellationToken>>,
+    /// Weak ownership keeps cached instructions alive only while a root or child is live.
+    prompt_resources: HashMap<String, std::sync::Weak<std::sync::Mutex<super::glue::Resources>>>,
 }
 
 pub(super) struct Managed {
@@ -47,6 +49,19 @@ impl Shared {
         let shared = self.me.clone();
         let session = id.to_owned();
         let predecessor = sessions.retiring.get(id).cloned();
+        sessions
+            .prompt_resources
+            .retain(|_, cache| cache.strong_count() > 0);
+        let root = row.root.as_deref().unwrap_or(id);
+        let resources = sessions
+            .prompt_resources
+            .entry(root.to_owned())
+            .or_default();
+        let prompt_resources = resources.upgrade().unwrap_or_else(|| {
+            let cache = Arc::default();
+            *resources = Arc::downgrade(&cache);
+            cache
+        });
         let rt = Arc::new_cyclic(|weak: &std::sync::Weak<SessionRt>| {
             let weak = weak.clone();
             let questions = crate::extensions::questions::QuestionHost::scoped(Some(Arc::new(
@@ -68,6 +83,7 @@ impl Shared {
                 },
             )));
             let mut rt = SessionRt::new(id, questions);
+            rt.prompt_resources = prompt_resources;
             rt.predecessor = predecessor;
             rt.extension_profile = extension_profile;
             rt
@@ -194,6 +210,18 @@ impl Shared {
                 let done = Arc::new(CancellationToken::new());
                 sessions.retiring.insert(id, done.clone());
                 retired.push((entry.rt, done));
+            }
+            if !retired.is_empty() {
+                // A retiring host can still own its snapshot while tearing down. Once
+                // the last live group member is removed, a reopened root starts fresh.
+                let live_resources: HashSet<_> = sessions
+                    .live
+                    .values()
+                    .map(|entry| Arc::as_ptr(&entry.rt.prompt_resources))
+                    .collect();
+                sessions
+                    .prompt_resources
+                    .retain(|_, cache| live_resources.contains(&cache.as_ptr()));
             }
         }
         for (sess, done) in retired {

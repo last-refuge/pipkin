@@ -11,7 +11,43 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — public catalog refresh and offline recovery
+## Current follow-up — prompt-resource lifetimes and provider-path audit
+
+Following **`e92c4f1`**, fixed a reproduced instruction-cache mismatch: toggling offered
+tools could reread AGENTS.md mid-session, and a newly created subagent could see different
+project instructions/skill metadata from its parent. Native now shares a frozen resource
+snapshot per cwd within a live root/child group, while independent roots remain separate.
+Tool contributions still update. The last member's retirement releases the cache; reopening
+or restarting loads edited resources. Tests verify allocation release as well as behavior.
+
+Measured evidence includes an actual subagent tool run, tool toggles, independent roots,
+restart, root retirement while a child remains live, and full-group retirement/reload.
+Seven executed pinned-reference cases compare resource-cache lifetimes across cwd/tool/
+root changes. See [resource/provider audit](pipkin-rust-engine-evidence/prompt-resource-provider-audit.md).
+
+The source audit also traced image-generation/classifier APIs to classic codemode, and
+SDK attribution/installation telemetry to classic/interactive entry points. Those paths
+are not installed by Pipkin's shipped durable coding registry or either overlay. Their
+five PA rows move to NP for the shipped path; ordinary chat image input, catalog metadata,
+configured headers and authentication/billing paths remain required and unchanged.
+PRM-AGENTS-CACHE moves PA → NC with measured evidence. D-06 and D-08 are updated to reflect
+the implemented catalog and resource-lifetime behavior.
+
+Required checks: **1488 passed, 0 failed, 53 ignored**, clean Clippy and formatting.
+Logs: `/tmp/pipkin-prompt-audit-verified-{workspace,clippy,fmt}.log`.
+An initial workspace run exposed a race in the accelerated Kimi OAuth mock: it authorized
+before the test observed its device code. The mock now waits for that observation before
+authorizing; pending polling, header authentication and three-attempt token refresh checks
+remain. The earlier failure and test-development corrections are recorded in the evidence.
+
+Recomputed inventory: **504 rows, 488 non-OS; NC 411, NE 26, NP 37, PA 13, BL 0,
+LB 1, OS 16; 434 measured, 7 observed, 8 unverified, 55 not started; 0 qualified**.
+Native remains opt-in. Remaining audit work includes provider identity, OAuth, session
+removal/thinking cycling and prompt identity/docs. Sustained reliability/performance,
+installed workflows, release packaging/platform qualification and final Pi retirement
+remain required; these row dispositions are not release acceptance.
+
+## Prior follow-up — public catalog refresh and offline recovery
 
 Following **`a98904f`**, native `RefreshModels` now restores and revalidates public
 provider catalogs. It preserves cache freshness/ETags, applies only newer metadata,

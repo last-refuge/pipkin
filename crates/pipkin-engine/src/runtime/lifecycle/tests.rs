@@ -53,6 +53,78 @@ impl ApiAdapter for Closing {
 }
 
 #[test]
+fn prompt_resources_follow_the_live_root_group_and_are_freed_after_retirement() {
+    let fx = Fixture::new();
+    let instructions = fx.project.join("AGENTS.md");
+    std::fs::write(&instructions, "Original lifetime instruction.").unwrap();
+    let provider = Scripted::new(|req, _| {
+        if req.tools.iter().any(|tool| tool.name == "subagent")
+            && matches!(req.messages.iter().rev().find(|m| !matches!(m, Message::System(_))), Some(m @ Message::User { .. }) if m.text() == "delegate")
+        {
+            R::Tools(
+                None,
+                vec![("subagent".into(), serde_json::json!({"task":"inspect"}))],
+            )
+        } else {
+            R::Text("done".into())
+        }
+    });
+    let mut e = fx.start(&provider);
+    let root = e.create(&fx.project, "root");
+    e.prompt(&root, "delegate", "delegate").unwrap();
+    assert_eq!(e.settled("delegate"), RunOutcome::Completed);
+    let child_id = e.handle.shared.store.tasks(&root, 1).unwrap().0[0]
+        .child_session
+        .clone();
+    let child = e.handle.shared.session(&child_id).unwrap();
+    let resource_lifetime = Arc::downgrade(&child.prompt_resources);
+    std::fs::write(&instructions, "New lifetime instruction.").unwrap();
+
+    // Retiring the root alone must not change what its still-live child sees.
+    wait("root retires while child retains the group", || {
+        reap(&e.handle.shared);
+        !live(&e.handle.shared, &root)
+    });
+    assert!(live(&e.handle.shared, &child_id));
+    let reopened = e.handle.shared.session(&root).unwrap();
+    assert!(Arc::ptr_eq(
+        &reopened.prompt_resources,
+        &child.prompt_resources
+    ));
+    drop(reopened);
+    e.prompt(&root, "warm", "continue").unwrap();
+    assert_eq!(e.settled("warm"), RunOutcome::Completed);
+    let requests = provider.requests();
+    let warm = requests.last().unwrap().resolve_systems(false);
+    assert!(warm.system.contains("Original lifetime instruction."));
+    assert!(!warm.system.contains("New lifetime instruction."));
+
+    drop(child);
+    wait("entire root group retires", || {
+        reap(&e.handle.shared);
+        !live(&e.handle.shared, &root) && !live(&e.handle.shared, &child_id)
+    });
+    assert!(
+        e.handle
+            .shared
+            .sessions
+            .lock()
+            .unwrap()
+            .prompt_resources
+            .is_empty()
+    );
+    e.prompt(&root, "cold", "new lifetime").unwrap();
+    assert_eq!(e.settled("cold"), RunOutcome::Completed);
+    let requests = provider.requests();
+    let cold = requests.last().unwrap().resolve_systems(false);
+    assert!(cold.system.contains("New lifetime instruction."));
+    assert!(!cold.system.contains("Original lifetime instruction."));
+    wait("retired resource allocations are released", || {
+        resource_lifetime.upgrade().is_none()
+    });
+}
+
+#[test]
 fn attachments_are_client_owned_and_retirement_closes_the_provider_affinity_id() {
     let fx = Fixture::new();
     let provider = Scripted::echo("done");

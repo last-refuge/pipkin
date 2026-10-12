@@ -1,0 +1,120 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "packages/coding-agent/src/experimental/durable/prompt.ts": "3a5d6ca0dfc38f7f7cf44168fe6fb6585fd00e09f93cd5519b802b3b44ee601e"
+  },
+  "scope": "Original createPiPrompt resource-cache function; controlled resource loaders and section renderer, no provider/network/real filesystem reference loads",
+  "cases": [
+    {
+      "group": "root",
+      "cwd": "a",
+      "version": 1,
+      "tools": [
+        "read",
+        "write"
+      ],
+      "expected": {
+        "tools": [
+          "read",
+          "write"
+        ],
+        "project_context": "instruction-1",
+        "skills": "skill-1"
+      }
+    },
+    {
+      "group": "root",
+      "cwd": "a",
+      "version": 2,
+      "tools": [
+        "bash"
+      ],
+      "expected": {
+        "tools": [
+          "bash"
+        ],
+        "project_context": "instruction-1",
+        "skills": "skill-1"
+      }
+    },
+    {
+      "group": "root",
+      "cwd": "a",
+      "version": 2,
+      "tools": [
+        "read",
+        "write"
+      ],
+      "expected": {
+        "tools": [
+          "read",
+          "write"
+        ],
+        "project_context": "instruction-1",
+        "skills": "skill-1"
+      }
+    },
+    {
+      "group": "root",
+      "cwd": "b",
+      "version": 2,
+      "tools": [
+        "read"
+      ],
+      "expected": {
+        "tools": [
+          "read"
+        ],
+        "project_context": "instruction-2",
+        "skills": "skill-2"
+      }
+    },
+    {
+      "group": "independent",
+      "cwd": "a",
+      "version": 2,
+      "tools": [
+        "read"
+      ],
+      "expected": {
+        "tools": [
+          "read"
+        ],
+        "project_context": "instruction-2",
+        "skills": "skill-2"
+      }
+    },
+    {
+      "group": "independent",
+      "cwd": "a",
+      "version": 3,
+      "tools": [
+        "read",
+        "bash"
+      ],
+      "expected": {
+        "tools": [
+          "read",
+          "bash"
+        ],
+        "project_context": "instruction-2",
+        "skills": "skill-2"
+      }
+    },
+    {
+      "group": "restarted",
+      "cwd": "a",
+      "version": 3,
+      "tools": [
+        "read"
+      ],
+      "expected": {
+        "tools": [
+          "read"
+        ],
+        "project_context": "instruction-3",
+        "skills": "skill-3"
+      }
+    }
+  ]
+}

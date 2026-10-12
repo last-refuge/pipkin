@@ -740,6 +740,90 @@ fn the_system_prompt_carries_project_instructions_and_stays_byte_stable() {
 }
 
 #[test]
+fn prompt_resources_stay_frozen_across_tool_changes_and_subagents() {
+    let fx = Fixture::new();
+    let instructions = fx.project.join("AGENTS.md");
+    let skill_dir = fx.project.join(".pi/skills/example");
+    std::fs::create_dir_all(&skill_dir).unwrap();
+    let skill = skill_dir.join("SKILL.md");
+    std::fs::write(&instructions, "Original project instruction.").unwrap();
+    std::fs::write(
+        &skill,
+        "---\nname: example\ndescription: Original skill description.\n---\nUse me.\n",
+    )
+    .unwrap();
+    let provider = Scripted::new(|req, _| {
+        if req.tools.iter().any(|t| t.name == "subagent")
+            && matches!(req.messages.iter().rev().find(|m| !matches!(m, Message::System(_))), Some(m @ Message::User { .. }) if m.text() == "delegate")
+        {
+            R::Tools(
+                None,
+                vec![("subagent".into(), json!({"task":"check instructions"}))],
+            )
+        } else {
+            R::Text("ok".into())
+        }
+    });
+    let mut e = fx.start(&provider);
+    let root = e.create(&fx.project, "first-root");
+    e.prompt(&root, "first", "one").unwrap();
+    assert_eq!(e.settled("first"), RunOutcome::Completed);
+    std::fs::write(&instructions, "Updated project instruction.").unwrap();
+    std::fs::write(
+        &skill,
+        "---\nname: example\ndescription: Updated skill description.\n---\nUse me.\n",
+    )
+    .unwrap();
+    for (enabled, key, text) in [(false, "disabled", "two"), (true, "delegated", "delegate")] {
+        e.call(Call::SetSubagentsEnabled {
+            session: root.clone(),
+            enabled,
+        })
+        .unwrap();
+        e.prompt(&root, key, text).unwrap();
+        assert_eq!(e.settled(key), RunOutcome::Completed);
+    }
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        5,
+        "initial, disabled, delegate, child and parent reply"
+    );
+    for request in &requests {
+        let resolved = request.resolve_systems(false);
+        assert!(resolved.system.contains("Original project instruction."));
+        assert!(resolved.system.contains("Original skill description."));
+        assert!(!resolved.system.contains("Updated project instruction."));
+        assert!(!resolved.system.contains("Updated skill description."));
+    }
+    assert!(!requests[1].tools.iter().any(|t| t.name == "subagent"));
+    assert!(requests[2].tools.iter().any(|t| t.name == "subagent"));
+    assert!(!requests[3].tools.iter().any(|t| t.name == "subagent"));
+
+    // A separate root in the same directory owns a separate resource snapshot.
+    let other = e.create(&fx.project, "second-root");
+    e.prompt(&other, "independent", "new conversation").unwrap();
+    assert_eq!(e.settled("independent"), RunOutcome::Completed);
+    let requests = provider.requests();
+    let latest = requests.last().unwrap().resolve_systems(false);
+    assert!(latest.system.contains("Updated project instruction."));
+    assert!(latest.system.contains("Updated skill description."));
+    assert!(!latest.system.contains("Original project instruction."));
+
+    e.handle.shutdown(Duration::from_secs(1));
+    drop(e);
+    let resumed = Scripted::echo("resumed");
+    let mut e = fx.start(&resumed);
+    e.prompt(&root, "restart", "continue").unwrap();
+    assert_eq!(e.settled("restart"), RunOutcome::Completed);
+    let requests = resumed.requests();
+    let latest = requests[0].resolve_systems(false);
+    assert!(latest.system.contains("Updated project instruction."));
+    assert!(latest.system.contains("Updated skill description."));
+    assert!(!latest.system.contains("Original project instruction."));
+}
+
+#[test]
 fn real_tools_run_their_effects_are_recorded_and_the_complete_output_is_retained() {
     let fx = Fixture::new();
     let provider = Scripted::new(|_, n| match n {

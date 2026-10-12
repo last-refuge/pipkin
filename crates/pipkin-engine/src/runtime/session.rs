@@ -48,6 +48,8 @@ pub struct SessionRt {
     pub(super) changed: tokio::sync::Notify,
     /// The system prompt last sent, so it stays byte-stable between turns (prompt caching).
     pub prompt: Mutex<Option<(String, Map<String, serde_json::Value>)>>,
+    /// Shared with the root and its children, never with independent roots in the same cwd.
+    pub(super) prompt_resources: Arc<Mutex<super::glue::Resources>>,
     /// Questions, status lines and notices from this session's extensions (volatile).
     pub questions: crate::extensions::questions::QuestionHost,
     /// Live foreground compactions, including manual work with no coding run.
@@ -77,6 +79,7 @@ impl SessionRt {
             settled: broadcast::channel(64).0,
             changed: tokio::sync::Notify::new(),
             prompt: Mutex::new(None),
+            prompt_resources: Arc::default(),
         }
     }
 

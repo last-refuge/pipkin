@@ -66,6 +66,10 @@ registrations were inspected too.
 
 ## Confirmed required work: remote model catalogs
 
+Historical finding, since implemented in `e92c4f1`; see
+[catalog refresh evidence](remote-catalog.md). The following records what the audit found
+before that implementation.
+
 PCFG-11 and ENV-OFFLINE remain PA. Native `RefreshModels` currently rebuilds local
 settings/auth/models configuration. Pinned `core/model-runtime.ts:223-239` wraps every
 built-in except Radius in `withRemoteCatalog`, using `models-store.json` and treating
