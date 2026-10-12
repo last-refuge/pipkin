@@ -157,6 +157,7 @@ async fn run_adapter(
 ) -> Message {
     adapter
         .stream(StreamCtx {
+            net: None,
             req,
             http: &crate::provider::http::client(),
             events: None,

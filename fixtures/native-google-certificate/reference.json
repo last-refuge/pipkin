@@ -1,0 +1,706 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "version": "10.6.2",
+  "integrity": "sha512-e27Z6EThmVNNvtYASwQxose/G57rkRuaRbQyxM2bvYLLX/GqWZ5chWq2EBoUchJbCc57eC9ArzO5wMsEmWftCw==",
+  "hashes": {
+    "certificatesubjecttokensupplier": "e29f8fb8464dc88f91eff319df7661f215b50be955c9e50588c0605b5f261553",
+    "identitypoolclient": "4a0f123357c45e1b5186afc432b7f2128ffe49cebefca9434b00f9d502d282b0",
+    "baseexternalclient": "f1082f6d5c3a35ee95614bfb8a7f79c2782c4964652b75e46719586b308dcba9",
+    "impersonated": "61fa238327d1197f7fc22f733f7a342280190bf084da6b002b56587263e4a1ce",
+    "genaiNode": "a5775355f9271057cd1e089dd2bce71c5996a88d49da9cd0ed6f183e5905cdb8"
+  },
+  "scope": "Executed GoogleAuth certificate ADC and original STS/IAM transports against a local server requiring mutual TLS; synthetic keys only",
+  "cases": [
+    {
+      "name": "leaf",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}"
+      },
+      "outcome": {
+        "token": "certificate-token"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/token",
+          "authorization": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "[\"MIIBtzCCAV2gAwIBAgIBAjAKBggqhkjOPQQDAjAvMS0wKwYDVQQDDCRQaXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwIBcNMjYxMDEyMDc1NDQyWhgPMjEyNjA5MTgwNzU0NDJaMCIxIDAeBgNVBAMMF1BpcGtpbiBzeW50aGV0aWMgY2xpZW50MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEun/paC1QfnA4EGsUvlvwKVdNt5b8v0w8a4TsIa/zJP+9+00Bx6AK1CvfPZ84/wJAK6yyKnO9w3zxpz37XtArAKN1MHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwIwHQYDVR0OBBYEFLNKaxMWKlpJv44+4ltXK0NnvvR/MB8GA1UdIwQYMBaAFK7V0cHZPeuf3VBsm/R2Ob3v2phHMAoGCCqGSM49BAMCA0gAMEUCIQDZytArF+N/c4eSuUgTElnYl8Kg22J3Cph+t2M09ZQSRgIgcvUFtw0TyAp5pGTaYcSbc+IJF9GkUHjpw7un8t5dSUg=\"]",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:mtls"
+          },
+          "certificate": "75:1C:41:A7:FD:F1:AD:A0:1B:7F:54:39:17:23:5F:15:41:80:8F:9E:5B:12:20:93:0D:F6:21:92:FE:87:38:74"
+        }
+      ]
+    },
+    {
+      "name": "trust-prepend",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json",
+            "trust_chain_path": "$TEMP/chain.pem"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}",
+        "chain.pem": "-----BEGIN CERTIFICATE-----\nMIIBxDCCAWugAwIBAgIUVytShrnt8G4mNQwo/NRrmw2vI/AwCgYIKoZIzj0EAwIw\nLzEtMCsGA1UEAwwkUGlwa2luIHN5bnRoZXRpYyBjZXJ0aWZpY2F0ZSB0ZXN0IENB\nMCAXDTI2MTAxMjA3NTQ0MloYDzIxMjYwOTE4MDc1NDQyWjAvMS0wKwYDVQQDDCRQ\naXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwWTATBgcqhkjOPQIB\nBggqhkjOPQMBBwNCAAR3ubUNa4PJBNCKzB0O7WNQi529rwpOFODN2/us/pLFplPe\nyR4oOStfYWb2ldUTcFZMrQAbeE93cHb38CCnDWt5o2MwYTAdBgNVHQ4EFgQUrtXR\nwdk965/dUGyb9HY5ve/amEcwHwYDVR0jBBgwFoAUrtXRwdk965/dUGyb9HY5ve/a\nmEcwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwCgYIKoZIzj0EAwID\nRwAwRAIgbqtxmh5P9g0S6zbAhkk1kTx/WooKuo8DzP6v7IjoJE8CIDZApx/TaIt7\nj6Vro9NhWKxJoLFqVSDm6KxLp0StwaOd\n-----END CERTIFICATE-----\n"
+      },
+      "outcome": {
+        "token": "certificate-token"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/token",
+          "authorization": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "[\"MIIBtzCCAV2gAwIBAgIBAjAKBggqhkjOPQQDAjAvMS0wKwYDVQQDDCRQaXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwIBcNMjYxMDEyMDc1NDQyWhgPMjEyNjA5MTgwNzU0NDJaMCIxIDAeBgNVBAMMF1BpcGtpbiBzeW50aGV0aWMgY2xpZW50MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEun/paC1QfnA4EGsUvlvwKVdNt5b8v0w8a4TsIa/zJP+9+00Bx6AK1CvfPZ84/wJAK6yyKnO9w3zxpz37XtArAKN1MHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwIwHQYDVR0OBBYEFLNKaxMWKlpJv44+4ltXK0NnvvR/MB8GA1UdIwQYMBaAFK7V0cHZPeuf3VBsm/R2Ob3v2phHMAoGCCqGSM49BAMCA0gAMEUCIQDZytArF+N/c4eSuUgTElnYl8Kg22J3Cph+t2M09ZQSRgIgcvUFtw0TyAp5pGTaYcSbc+IJF9GkUHjpw7un8t5dSUg=\",\"MIIBxDCCAWugAwIBAgIUVytShrnt8G4mNQwo/NRrmw2vI/AwCgYIKoZIzj0EAwIwLzEtMCsGA1UEAwwkUGlwa2luIHN5bnRoZXRpYyBjZXJ0aWZpY2F0ZSB0ZXN0IENBMCAXDTI2MTAxMjA3NTQ0MloYDzIxMjYwOTE4MDc1NDQyWjAvMS0wKwYDVQQDDCRQaXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAR3ubUNa4PJBNCKzB0O7WNQi529rwpOFODN2/us/pLFplPeyR4oOStfYWb2ldUTcFZMrQAbeE93cHb38CCnDWt5o2MwYTAdBgNVHQ4EFgQUrtXRwdk965/dUGyb9HY5ve/amEcwHwYDVR0jBBgwFoAUrtXRwdk965/dUGyb9HY5ve/amEcwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwCgYIKoZIzj0EAwIDRwAwRAIgbqtxmh5P9g0S6zbAhkk1kTx/WooKuo8DzP6v7IjoJE8CIDZApx/TaIt7j6Vro9NhWKxJoLFqVSDm6KxLp0StwaOd\"]",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:mtls"
+          },
+          "certificate": "75:1C:41:A7:FD:F1:AD:A0:1B:7F:54:39:17:23:5F:15:41:80:8F:9E:5B:12:20:93:0D:F6:21:92:FE:87:38:74"
+        }
+      ]
+    },
+    {
+      "name": "trust-leaf-first",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json",
+            "trust_chain_path": "$TEMP/chain.pem"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}",
+        "chain.pem": "-----BEGIN CERTIFICATE-----\nMIIBtzCCAV2gAwIBAgIBAjAKBggqhkjOPQQDAjAvMS0wKwYDVQQDDCRQaXBraW4g\nc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwIBcNMjYxMDEyMDc1NDQyWhgP\nMjEyNjA5MTgwNzU0NDJaMCIxIDAeBgNVBAMMF1BpcGtpbiBzeW50aGV0aWMgY2xp\nZW50MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEun/paC1QfnA4EGsUvlvwKVdN\nt5b8v0w8a4TsIa/zJP+9+00Bx6AK1CvfPZ84/wJAK6yyKnO9w3zxpz37XtArAKN1\nMHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYB\nBQUHAwIwHQYDVR0OBBYEFLNKaxMWKlpJv44+4ltXK0NnvvR/MB8GA1UdIwQYMBaA\nFK7V0cHZPeuf3VBsm/R2Ob3v2phHMAoGCCqGSM49BAMCA0gAMEUCIQDZytArF+N/\nc4eSuUgTElnYl8Kg22J3Cph+t2M09ZQSRgIgcvUFtw0TyAp5pGTaYcSbc+IJF9Gk\nUHjpw7un8t5dSUg=\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBxDCCAWugAwIBAgIUVytShrnt8G4mNQwo/NRrmw2vI/AwCgYIKoZIzj0EAwIw\nLzEtMCsGA1UEAwwkUGlwa2luIHN5bnRoZXRpYyBjZXJ0aWZpY2F0ZSB0ZXN0IENB\nMCAXDTI2MTAxMjA3NTQ0MloYDzIxMjYwOTE4MDc1NDQyWjAvMS0wKwYDVQQDDCRQ\naXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwWTATBgcqhkjOPQIB\nBggqhkjOPQMBBwNCAAR3ubUNa4PJBNCKzB0O7WNQi529rwpOFODN2/us/pLFplPe\nyR4oOStfYWb2ldUTcFZMrQAbeE93cHb38CCnDWt5o2MwYTAdBgNVHQ4EFgQUrtXR\nwdk965/dUGyb9HY5ve/amEcwHwYDVR0jBBgwFoAUrtXRwdk965/dUGyb9HY5ve/a\nmEcwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwCgYIKoZIzj0EAwID\nRwAwRAIgbqtxmh5P9g0S6zbAhkk1kTx/WooKuo8DzP6v7IjoJE8CIDZApx/TaIt7\nj6Vro9NhWKxJoLFqVSDm6KxLp0StwaOd\n-----END CERTIFICATE-----\n"
+      },
+      "outcome": {
+        "token": "certificate-token"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/token",
+          "authorization": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "[\"MIIBtzCCAV2gAwIBAgIBAjAKBggqhkjOPQQDAjAvMS0wKwYDVQQDDCRQaXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwIBcNMjYxMDEyMDc1NDQyWhgPMjEyNjA5MTgwNzU0NDJaMCIxIDAeBgNVBAMMF1BpcGtpbiBzeW50aGV0aWMgY2xpZW50MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEun/paC1QfnA4EGsUvlvwKVdNt5b8v0w8a4TsIa/zJP+9+00Bx6AK1CvfPZ84/wJAK6yyKnO9w3zxpz37XtArAKN1MHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwIwHQYDVR0OBBYEFLNKaxMWKlpJv44+4ltXK0NnvvR/MB8GA1UdIwQYMBaAFK7V0cHZPeuf3VBsm/R2Ob3v2phHMAoGCCqGSM49BAMCA0gAMEUCIQDZytArF+N/c4eSuUgTElnYl8Kg22J3Cph+t2M09ZQSRgIgcvUFtw0TyAp5pGTaYcSbc+IJF9GkUHjpw7un8t5dSUg=\",\"MIIBxDCCAWugAwIBAgIUVytShrnt8G4mNQwo/NRrmw2vI/AwCgYIKoZIzj0EAwIwLzEtMCsGA1UEAwwkUGlwa2luIHN5bnRoZXRpYyBjZXJ0aWZpY2F0ZSB0ZXN0IENBMCAXDTI2MTAxMjA3NTQ0MloYDzIxMjYwOTE4MDc1NDQyWjAvMS0wKwYDVQQDDCRQaXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAR3ubUNa4PJBNCKzB0O7WNQi529rwpOFODN2/us/pLFplPeyR4oOStfYWb2ldUTcFZMrQAbeE93cHb38CCnDWt5o2MwYTAdBgNVHQ4EFgQUrtXRwdk965/dUGyb9HY5ve/amEcwHwYDVR0jBBgwFoAUrtXRwdk965/dUGyb9HY5ve/amEcwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwCgYIKoZIzj0EAwIDRwAwRAIgbqtxmh5P9g0S6zbAhkk1kTx/WooKuo8DzP6v7IjoJE8CIDZApx/TaIt7j6Vro9NhWKxJoLFqVSDm6KxLp0StwaOd\"]",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:mtls"
+          },
+          "certificate": "75:1C:41:A7:FD:F1:AD:A0:1B:7F:54:39:17:23:5F:15:41:80:8F:9E:5B:12:20:93:0D:F6:21:92:FE:87:38:74"
+        }
+      ]
+    },
+    {
+      "name": "trust-leaf-later",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json",
+            "trust_chain_path": "$TEMP/chain.pem"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}",
+        "chain.pem": "-----BEGIN CERTIFICATE-----\nMIIBxDCCAWugAwIBAgIUVytShrnt8G4mNQwo/NRrmw2vI/AwCgYIKoZIzj0EAwIw\nLzEtMCsGA1UEAwwkUGlwa2luIHN5bnRoZXRpYyBjZXJ0aWZpY2F0ZSB0ZXN0IENB\nMCAXDTI2MTAxMjA3NTQ0MloYDzIxMjYwOTE4MDc1NDQyWjAvMS0wKwYDVQQDDCRQ\naXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwWTATBgcqhkjOPQIB\nBggqhkjOPQMBBwNCAAR3ubUNa4PJBNCKzB0O7WNQi529rwpOFODN2/us/pLFplPe\nyR4oOStfYWb2ldUTcFZMrQAbeE93cHb38CCnDWt5o2MwYTAdBgNVHQ4EFgQUrtXR\nwdk965/dUGyb9HY5ve/amEcwHwYDVR0jBBgwFoAUrtXRwdk965/dUGyb9HY5ve/a\nmEcwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwCgYIKoZIzj0EAwID\nRwAwRAIgbqtxmh5P9g0S6zbAhkk1kTx/WooKuo8DzP6v7IjoJE8CIDZApx/TaIt7\nj6Vro9NhWKxJoLFqVSDm6KxLp0StwaOd\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBtzCCAV2gAwIBAgIBAjAKBggqhkjOPQQDAjAvMS0wKwYDVQQDDCRQaXBraW4g\nc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwIBcNMjYxMDEyMDc1NDQyWhgP\nMjEyNjA5MTgwNzU0NDJaMCIxIDAeBgNVBAMMF1BpcGtpbiBzeW50aGV0aWMgY2xp\nZW50MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEun/paC1QfnA4EGsUvlvwKVdN\nt5b8v0w8a4TsIa/zJP+9+00Bx6AK1CvfPZ84/wJAK6yyKnO9w3zxpz37XtArAKN1\nMHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYB\nBQUHAwIwHQYDVR0OBBYEFLNKaxMWKlpJv44+4ltXK0NnvvR/MB8GA1UdIwQYMBaA\nFK7V0cHZPeuf3VBsm/R2Ob3v2phHMAoGCCqGSM49BAMCA0gAMEUCIQDZytArF+N/\nc4eSuUgTElnYl8Kg22J3Cph+t2M09ZQSRgIgcvUFtw0TyAp5pGTaYcSbc+IJF9Gk\nUHjpw7un8t5dSUg=\n-----END CERTIFICATE-----\n"
+      },
+      "outcome": {
+        "error": true,
+        "errorType": "InvalidConfigurationError"
+      },
+      "requests": []
+    },
+    {
+      "name": "trust-empty",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json",
+            "trust_chain_path": "$TEMP/chain.pem"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}",
+        "chain.pem": "no certificate blocks"
+      },
+      "outcome": {
+        "token": "certificate-token"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/token",
+          "authorization": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "[\"MIIBtzCCAV2gAwIBAgIBAjAKBggqhkjOPQQDAjAvMS0wKwYDVQQDDCRQaXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwIBcNMjYxMDEyMDc1NDQyWhgPMjEyNjA5MTgwNzU0NDJaMCIxIDAeBgNVBAMMF1BpcGtpbiBzeW50aGV0aWMgY2xpZW50MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEun/paC1QfnA4EGsUvlvwKVdNt5b8v0w8a4TsIa/zJP+9+00Bx6AK1CvfPZ84/wJAK6yyKnO9w3zxpz37XtArAKN1MHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwIwHQYDVR0OBBYEFLNKaxMWKlpJv44+4ltXK0NnvvR/MB8GA1UdIwQYMBaAFK7V0cHZPeuf3VBsm/R2Ob3v2phHMAoGCCqGSM49BAMCA0gAMEUCIQDZytArF+N/c4eSuUgTElnYl8Kg22J3Cph+t2M09ZQSRgIgcvUFtw0TyAp5pGTaYcSbc+IJF9GkUHjpw7un8t5dSUg=\"]",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:mtls"
+          },
+          "certificate": "75:1C:41:A7:FD:F1:AD:A0:1B:7F:54:39:17:23:5F:15:41:80:8F:9E:5B:12:20:93:0D:F6:21:92:FE:87:38:74"
+        }
+      ]
+    },
+    {
+      "name": "trust-invalid",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json",
+            "trust_chain_path": "$TEMP/chain.pem"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}",
+        "chain.pem": "-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----\n"
+      },
+      "outcome": {
+        "error": true,
+        "errorType": "InvalidConfigurationError"
+      },
+      "requests": []
+    },
+    {
+      "name": "env",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "use_default_certificate_config": true
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata",
+        "GOOGLE_API_CERTIFICATE_CONFIG": "$TEMP/config.json"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}"
+      },
+      "outcome": {
+        "token": "certificate-token"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/token",
+          "authorization": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "[\"MIIBtzCCAV2gAwIBAgIBAjAKBggqhkjOPQQDAjAvMS0wKwYDVQQDDCRQaXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwIBcNMjYxMDEyMDc1NDQyWhgPMjEyNjA5MTgwNzU0NDJaMCIxIDAeBgNVBAMMF1BpcGtpbiBzeW50aGV0aWMgY2xpZW50MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEun/paC1QfnA4EGsUvlvwKVdNt5b8v0w8a4TsIa/zJP+9+00Bx6AK1CvfPZ84/wJAK6yyKnO9w3zxpz37XtArAKN1MHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwIwHQYDVR0OBBYEFLNKaxMWKlpJv44+4ltXK0NnvvR/MB8GA1UdIwQYMBaAFK7V0cHZPeuf3VBsm/R2Ob3v2phHMAoGCCqGSM49BAMCA0gAMEUCIQDZytArF+N/c4eSuUgTElnYl8Kg22J3Cph+t2M09ZQSRgIgcvUFtw0TyAp5pGTaYcSbc+IJF9GkUHjpw7un8t5dSUg=\"]",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:mtls"
+          },
+          "certificate": "75:1C:41:A7:FD:F1:AD:A0:1B:7F:54:39:17:23:5F:15:41:80:8F:9E:5B:12:20:93:0D:F6:21:92:FE:87:38:74"
+        }
+      ]
+    },
+    {
+      "name": "cloudsdk",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "use_default_certificate_config": true
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata",
+        "CLOUDSDK_CONFIG": "$TEMP/sdk"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}",
+        "sdk/certificate_config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}"
+      },
+      "outcome": {
+        "token": "certificate-token"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/token",
+          "authorization": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "[\"MIIBtzCCAV2gAwIBAgIBAjAKBggqhkjOPQQDAjAvMS0wKwYDVQQDDCRQaXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwIBcNMjYxMDEyMDc1NDQyWhgPMjEyNjA5MTgwNzU0NDJaMCIxIDAeBgNVBAMMF1BpcGtpbiBzeW50aGV0aWMgY2xpZW50MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEun/paC1QfnA4EGsUvlvwKVdNt5b8v0w8a4TsIa/zJP+9+00Bx6AK1CvfPZ84/wJAK6yyKnO9w3zxpz37XtArAKN1MHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwIwHQYDVR0OBBYEFLNKaxMWKlpJv44+4ltXK0NnvvR/MB8GA1UdIwQYMBaAFK7V0cHZPeuf3VBsm/R2Ob3v2phHMAoGCCqGSM49BAMCA0gAMEUCIQDZytArF+N/c4eSuUgTElnYl8Kg22J3Cph+t2M09ZQSRgIgcvUFtw0TyAp5pGTaYcSbc+IJF9GkUHjpw7un8t5dSUg=\"]",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:mtls"
+          },
+          "certificate": "75:1C:41:A7:FD:F1:AD:A0:1B:7F:54:39:17:23:5F:15:41:80:8F:9E:5B:12:20:93:0D:F6:21:92:FE:87:38:74"
+        }
+      ]
+    },
+    {
+      "name": "home",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "use_default_certificate_config": true
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}",
+        "home/.config/gcloud/certificate_config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}"
+      },
+      "outcome": {
+        "token": "certificate-token"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/token",
+          "authorization": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "[\"MIIBtzCCAV2gAwIBAgIBAjAKBggqhkjOPQQDAjAvMS0wKwYDVQQDDCRQaXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwIBcNMjYxMDEyMDc1NDQyWhgPMjEyNjA5MTgwNzU0NDJaMCIxIDAeBgNVBAMMF1BpcGtpbiBzeW50aGV0aWMgY2xpZW50MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEun/paC1QfnA4EGsUvlvwKVdNt5b8v0w8a4TsIa/zJP+9+00Bx6AK1CvfPZ84/wJAK6yyKnO9w3zxpz37XtArAKN1MHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwIwHQYDVR0OBBYEFLNKaxMWKlpJv44+4ltXK0NnvvR/MB8GA1UdIwQYMBaAFK7V0cHZPeuf3VBsm/R2Ob3v2phHMAoGCCqGSM49BAMCA0gAMEUCIQDZytArF+N/c4eSuUgTElnYl8Kg22J3Cph+t2M09ZQSRgIgcvUFtw0TyAp5pGTaYcSbc+IJF9GkUHjpw7un8t5dSUg=\"]",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:mtls"
+          },
+          "certificate": "75:1C:41:A7:FD:F1:AD:A0:1B:7F:54:39:17:23:5F:15:41:80:8F:9E:5B:12:20:93:0D:F6:21:92:FE:87:38:74"
+        }
+      ]
+    },
+    {
+      "name": "invalid-explicit",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/missing"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata",
+        "GOOGLE_API_CERTIFICATE_CONFIG": "$TEMP/config.json"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}"
+      },
+      "outcome": {
+        "error": true,
+        "errorType": "CertificateSourceUnavailableError"
+      },
+      "requests": []
+    },
+    {
+      "name": "invalid-env",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "use_default_certificate_config": true
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata",
+        "GOOGLE_API_CERTIFICATE_CONFIG": "$TEMP/missing"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}",
+        "home/.config/gcloud/certificate_config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}"
+      },
+      "outcome": {
+        "error": true,
+        "errorType": "CertificateSourceUnavailableError"
+      },
+      "requests": []
+    },
+    {
+      "name": "both",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json",
+            "use_default_certificate_config": true
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}"
+      },
+      "outcome": {
+        "error": true,
+        "errorType": "InvalidConfigurationError"
+      },
+      "requests": []
+    },
+    {
+      "name": "malformed-config",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "secret malformed JSON"
+      },
+      "outcome": {
+        "error": true,
+        "errorType": "InvalidConfigurationError"
+      },
+      "requests": []
+    },
+    {
+      "name": "missing-key",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\"}}}"
+      },
+      "outcome": {
+        "error": true,
+        "errorType": "InvalidConfigurationError"
+      },
+      "requests": []
+    },
+    {
+      "name": "invalid-cert",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$TEMP/bad\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}",
+        "bad": "secret malformed identity"
+      },
+      "outcome": {
+        "error": true,
+        "errorType": "CertificateSourceUnavailableError"
+      },
+      "requests": []
+    },
+    {
+      "name": "invalid-key",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$TEMP/bad\"}}}",
+        "bad": "secret malformed identity"
+      },
+      "outcome": {
+        "error": true,
+        "errorType": "CertificateSourceUnavailableError"
+      },
+      "requests": []
+    },
+    {
+      "name": "mismatched-key",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/rotated-key.pem\"}}}"
+      },
+      "outcome": {
+        "error": true,
+        "errorType": "GaxiosError"
+      },
+      "requests": []
+    },
+    {
+      "name": "impersonation",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+        "token_url": "$TLS/token",
+        "credential_source": {
+          "certificate": {
+            "certificate_config_location": "$TEMP/config.json"
+          }
+        },
+        "quota_project_id": "billing",
+        "service_account_impersonation_url": "$TLS/v1/projects/-/serviceAccounts/target@example:generateAccessToken"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}"
+      },
+      "outcome": {
+        "token": "impersonated-token"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/token",
+          "authorization": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "[\"MIIBtzCCAV2gAwIBAgIBAjAKBggqhkjOPQQDAjAvMS0wKwYDVQQDDCRQaXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwIBcNMjYxMDEyMDc1NDQyWhgPMjEyNjA5MTgwNzU0NDJaMCIxIDAeBgNVBAMMF1BpcGtpbiBzeW50aGV0aWMgY2xpZW50MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEun/paC1QfnA4EGsUvlvwKVdNt5b8v0w8a4TsIa/zJP+9+00Bx6AK1CvfPZ84/wJAK6yyKnO9w3zxpz37XtArAKN1MHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwIwHQYDVR0OBBYEFLNKaxMWKlpJv44+4ltXK0NnvvR/MB8GA1UdIwQYMBaAFK7V0cHZPeuf3VBsm/R2Ob3v2phHMAoGCCqGSM49BAMCA0gAMEUCIQDZytArF+N/c4eSuUgTElnYl8Kg22J3Cph+t2M09ZQSRgIgcvUFtw0TyAp5pGTaYcSbc+IJF9GkUHjpw7un8t5dSUg=\"]",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:mtls"
+          },
+          "certificate": "75:1C:41:A7:FD:F1:AD:A0:1B:7F:54:39:17:23:5F:15:41:80:8F:9E:5B:12:20:93:0D:F6:21:92:FE:87:38:74"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/projects/-/serviceAccounts/target@example:generateAccessToken",
+          "authorization": "Bearer certificate-token",
+          "body": {
+            "scope": [
+              "https://www.googleapis.com/auth/cloud-platform"
+            ],
+            "lifetime": "3600s"
+          },
+          "certificate": "75:1C:41:A7:FD:F1:AD:A0:1B:7F:54:39:17:23:5F:15:41:80:8F:9E:5B:12:20:93:0D:F6:21:92:FE:87:38:74"
+        }
+      ]
+    },
+    {
+      "name": "nested-impersonation",
+      "document": {
+        "type": "impersonated_service_account",
+        "source_credentials": {
+          "type": "external_account",
+          "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+          "subject_token_type": "urn:ietf:params:oauth:token-type:mtls",
+          "token_url": "$TLS/token",
+          "credential_source": {
+            "certificate": {
+              "certificate_config_location": "$TEMP/config.json"
+            }
+          },
+          "quota_project_id": "billing"
+        },
+        "service_account_impersonation_url": "$TLS/v1/projects/-/serviceAccounts/target@example:generateAccessToken",
+        "endpoint": "$TLS",
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "HOME": "$TEMP/home",
+        "APPDATA": "$TEMP/appdata"
+      },
+      "files": {
+        "config.json": "{\"cert_configs\":{\"workload\":{\"cert_path\":\"$FIXTURE/client.pem\",\"key_path\":\"$FIXTURE/client-key.pem\"}}}"
+      },
+      "outcome": {
+        "token": "impersonated-token"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/token",
+          "authorization": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "[\"MIIBtzCCAV2gAwIBAgIBAjAKBggqhkjOPQQDAjAvMS0wKwYDVQQDDCRQaXBraW4gc3ludGhldGljIGNlcnRpZmljYXRlIHRlc3QgQ0EwIBcNMjYxMDEyMDc1NDQyWhgPMjEyNjA5MTgwNzU0NDJaMCIxIDAeBgNVBAMMF1BpcGtpbiBzeW50aGV0aWMgY2xpZW50MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEun/paC1QfnA4EGsUvlvwKVdNt5b8v0w8a4TsIa/zJP+9+00Bx6AK1CvfPZ84/wJAK6yyKnO9w3zxpz37XtArAKN1MHMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwIwHQYDVR0OBBYEFLNKaxMWKlpJv44+4ltXK0NnvvR/MB8GA1UdIwQYMBaAFK7V0cHZPeuf3VBsm/R2Ob3v2phHMAoGCCqGSM49BAMCA0gAMEUCIQDZytArF+N/c4eSuUgTElnYl8Kg22J3Cph+t2M09ZQSRgIgcvUFtw0TyAp5pGTaYcSbc+IJF9GkUHjpw7un8t5dSUg=\"]",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:mtls"
+          },
+          "certificate": "75:1C:41:A7:FD:F1:AD:A0:1B:7F:54:39:17:23:5F:15:41:80:8F:9E:5B:12:20:93:0D:F6:21:92:FE:87:38:74"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/projects/-/serviceAccounts/target@example:generateAccessToken",
+          "authorization": "Bearer certificate-token",
+          "body": {
+            "delegates": [],
+            "scope": [
+              "https://www.googleapis.com/auth/cloud-platform"
+            ],
+            "lifetime": "3600s"
+          },
+          "certificate": "75:1C:41:A7:FD:F1:AD:A0:1B:7F:54:39:17:23:5F:15:41:80:8F:9E:5B:12:20:93:0D:F6:21:92:FE:87:38:74"
+        }
+      ]
+    }
+  ]
+}

@@ -93,6 +93,7 @@ async fn run_with(
     let (tx, mut rx) = mpsc::unbounded_channel();
     let msg = adapter
         .stream(StreamCtx {
+            net: None,
             req,
             http: &http,
             events: Some(tx.into()),
@@ -450,6 +451,7 @@ async fn cancellation_mid_stream_is_aborted_and_keeps_partial_content() {
     let cancel = CancellationToken::new();
     let trigger = cancel.clone();
     let stream = adapter.stream(StreamCtx {
+        net: None,
         req: &req,
         http: &http,
         events: Some(tx.into()),
@@ -1195,6 +1197,7 @@ async fn websocket_cancellation_is_aborted() {
     let cancel = CancellationToken::new();
     let trigger = cancel.clone();
     let stream = adapter.stream(StreamCtx {
+        net: None,
         req: &req,
         http: &http,
         events: Some(tx.into()),

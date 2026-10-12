@@ -1674,6 +1674,7 @@ pub(crate) mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let message = adapter
             .stream(StreamCtx {
+                net: None,
                 req: &req,
                 http: &client,
                 events: Some(tx.into()),
@@ -1706,6 +1707,7 @@ pub(crate) mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let cancel = CancellationToken::new();
         let ctx = StreamCtx {
+            net: None,
             req: &req,
             http: &client,
             events: Some(tx.into()),

@@ -72,6 +72,10 @@ impl Shared {
     /// (`httpProxy`, `httpIdleTimeoutMs`); rebuild the client (and the sign-in client) when
     /// they changed. Called before each model request and on `RefreshModels`.
     pub fn refresh_net(&self) -> reqwest::Client {
+        self.refresh_net_snapshot().1
+    }
+
+    pub fn refresh_net_snapshot(&self) -> (NetSettings, reqwest::Client) {
         let global = Settings::load(&self.config.config_dir, None).0;
         let wanted = NetSettings::new(&self.config.env, &global);
         let mut net = self.net.lock().unwrap_or_else(|e| e.into_inner());
@@ -80,7 +84,7 @@ impl Shared {
             self.auth.set_http(client.clone());
             *net = (wanted, client);
         }
-        net.1.clone()
+        net.clone()
     }
 
     /// The proxy configuration currently in effect.

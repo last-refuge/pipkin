@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 
 #[path = "google_aws.rs"]
 mod aws;
+#[path = "google_certificate.rs"]
+mod certificate;
 #[path = "google_executable.rs"]
 mod executable;
 use std::time::Duration;
@@ -22,6 +24,13 @@ pub(super) fn execution_context(
     }
     if doc.is_some_and(is_aws) {
         return (aws::environment(req), BUDGET);
+    }
+    if doc.is_some_and(|d| {
+        !is_aws(d)
+            && !is_executable(d)
+            && !option(option(d, "credential_source"), "certificate").is_null()
+    }) {
+        return (certificate::environment(req), BUDGET);
     }
     if doc.is_some_and(is_executable) {
         executable::execution_context(req, document)
@@ -117,9 +126,11 @@ pub(super) fn validate(doc: &Value) -> Result<(), String> {
         return executable::validate(&doc["credential_source"]["executable"]);
     }
     if !option(source, "certificate").is_null() {
-        return Err(
-            "Google external certificate credential sources are not yet implemented".into(),
-        );
+        if string(source, "file").is_some() || string(source, "url").is_some() {
+            return Err("Google certificate source cannot also specify a file or URL".into());
+        }
+        format(source)?;
+        return certificate::validate(option(source, "certificate"));
     }
     if string(source, "file").is_some() == string(source, "url").is_some() {
         return Err("Google credential_source needs exactly one file or URL".into());
@@ -246,6 +257,7 @@ pub(super) async fn exchange(
     doc: &Value,
     state: &mut State,
     environment: &BTreeMap<String, String>,
+    net: &http::NetSettings,
 ) -> Result<Token, String> {
     if doc["type"] == "external_account_authorized_user" {
         let key = crate::provider::api::aws_auth::sha256_hex(doc.to_string().as_bytes());
@@ -271,10 +283,20 @@ pub(super) async fn exchange(
         return Ok(token);
     }
     let source = option(doc, "credential_source");
+    let certificate =
+        if !is_aws(doc) && !is_executable(doc) && !option(source, "certificate").is_null() {
+            Some(certificate::prepare(option(source, "certificate"), environment, net).await?)
+        } else {
+            None
+        };
+    state.auth_http = certificate.as_ref().map(|c| c.http.clone());
+    let http = certificate.as_ref().map(|c| &c.http).unwrap_or(http);
     let subject = if is_aws(doc) {
         aws::subject(http, doc, state, environment).await?
     } else if is_executable(doc) {
         executable::subject(doc, environment).await?
+    } else if let Some(certificate) = &certificate {
+        certificate.subject.clone()
     } else {
         subject(http, source).await?
     };

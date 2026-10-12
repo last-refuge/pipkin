@@ -29,29 +29,45 @@ struct State {
     refresh_tokens: HashMap<String, String>,
     // The Google AWS client discovers the region once per configured identity.
     aws_regions: HashMap<String, String>,
+    // Used by an immediate impersonating client for sourceClient.request(), not by genai.
+    auth_http: Option<reqwest::Client>,
 }
 type Token = (String, Option<Duration>);
 type Slot = Arc<tokio::sync::Mutex<State>>;
+#[derive(Default)]
+struct Cache {
+    entries: HashMap<String, (Slot, u64)>,
+    accessed: u64,
+}
+impl Cache {
+    fn slot(&mut self, key: String) -> Result<Slot, String> {
+        self.accessed = self.accessed.saturating_add(1);
+        if let Some((slot, used)) = self.entries.get_mut(&key) {
+            *used = self.accessed;
+            return Ok(slot.clone());
+        }
+        if self.entries.len() >= 64 {
+            let idle = self
+                .entries
+                .iter()
+                .filter(|(_, (slot, _))| Arc::strong_count(slot) == 1)
+                .min_by_key(|(_, (_, used))| *used)
+                .map(|(key, _)| key.clone())
+                .ok_or("Too many concurrent Google credential identities")?;
+            self.entries.remove(&idle);
+        }
+        let slot = Arc::new(tokio::sync::Mutex::new(State::default()));
+        self.entries.insert(key, (slot.clone(), self.accessed));
+        Ok(slot)
+    }
+}
 fn slot(key: String) -> Result<Slot, String> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Slot>>> = OnceLock::new();
-    let mut all = CACHE
+    static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+    CACHE
         .get_or_init(Mutex::default)
         .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if let Some(slot) = all.get(&key) {
-        return Ok(slot.clone());
-    }
-    if all.len() >= 64 {
-        let idle = all
-            .iter()
-            .find(|(_, v)| Arc::strong_count(v) == 1)
-            .map(|(k, _)| k.clone())
-            .ok_or("Too many concurrent Google credential identities")?;
-        all.remove(&idle);
-    }
-    let slot = Arc::new(tokio::sync::Mutex::new(State::default()));
-    all.insert(key, slot.clone());
-    Ok(slot)
+        .unwrap_or_else(|e| e.into_inner())
+        .slot(key)
 }
 fn field(v: &Value, k: &str) -> Result<String, String> {
     super::field(v, k).ok_or_else(|| format!("Google credentials/response missing {k}"))
@@ -174,6 +190,7 @@ fn exchange<'a>(
     depth: usize,
     state: &'a mut State,
     environment: &'a std::collections::BTreeMap<String, String>,
+    net: &'a http::NetSettings,
 ) -> BoxFuture<'a, Result<Token, String>> {
     Box::pin(async move {
         if depth > 8 {
@@ -183,7 +200,7 @@ fn exchange<'a>(
             doc["type"].as_str(),
             Some("external_account" | "external_account_authorized_user")
         ) {
-            return external::exchange(http, doc, state, environment).await;
+            return external::exchange(http, doc, state, environment, net).await;
         }
         if doc["type"] != "impersonated_service_account" {
             let parsed = super::parse_credentials(&doc.to_string())?;
@@ -193,7 +210,9 @@ fn exchange<'a>(
         }
         let source = &doc["source_credentials"];
         let (source_token, _) =
-            exchange(http, source, token_url, depth + 1, state, environment).await?;
+            exchange(http, source, token_url, depth + 1, state, environment, net).await?;
+        let source_http = state.auth_http.take();
+        let http = source_http.as_ref().unwrap_or(http);
         let principal = principal(doc)?;
         let base = super::field(doc, "endpoint")
             .unwrap_or_else(|| format!("https://iamcredentials.{}", universe(source)));
@@ -369,10 +388,19 @@ pub(crate) async fn resolve(
         .unwrap_or(GOOGLE_TOKEN_URL)
         .to_owned();
     let (environment, budget) = external::execution_context(ctx.req, document.as_ref());
+    let net = ctx.net.cloned().unwrap_or_default();
     let key = crate::provider::api::aws_auth::sha256_hex(
-        json!([path, document, metadata, quota, token_url, environment])
-            .to_string()
-            .as_bytes(),
+        json!([
+            path,
+            document,
+            metadata,
+            quota,
+            token_url,
+            environment,
+            format!("{net:?}")
+        ])
+        .to_string()
+        .as_bytes(),
     );
     let slot = slot(key)?;
     let http = ctx.http.clone();
@@ -387,7 +415,9 @@ pub(crate) async fn resolve(
             }
             let started = Instant::now();
             let (token, lifetime) = match document {
-                Some(doc) => exchange(&http, &doc, &token_url, 0, &mut state, &environment).await?,
+                Some(doc) => {
+                    exchange(&http, &doc, &token_url, 0, &mut state, &environment, &net).await?
+                }
                 None => {
                     let (t, d) = self::metadata(&http, metadata.as_deref().unwrap()).await?;
                     (t, Some(d))

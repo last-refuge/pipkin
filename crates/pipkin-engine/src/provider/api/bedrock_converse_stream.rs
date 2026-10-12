@@ -1320,6 +1320,7 @@ mod tests {
         let http = http::client();
         let msg = adapter_for_tests()
             .stream(StreamCtx {
+                net: None,
                 req,
                 http: &http,
                 events: Some(tx.into()),

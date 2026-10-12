@@ -35,6 +35,9 @@ pub struct NetSettings {
     /// Reference `httpIdleTimeoutMs` as the dispatcher's header/body idle timeout: no bytes
     /// for this long on a connection fails the read. `None` disables it.
     pub idle: Option<Duration>,
+    /// Local test CAs, never an insecure TLS mode.
+    #[cfg(test)]
+    pub test_roots: Vec<Vec<u8>>,
 }
 
 impl NetSettings {
@@ -44,6 +47,8 @@ impl NetSettings {
         NetSettings {
             proxy: ProxyConfig::from_env(env, global.http_proxy.as_deref()),
             idle: global.http_idle_timeout(),
+            #[cfg(test)]
+            test_roots: vec![],
         }
     }
 }
@@ -56,6 +61,22 @@ const UNUSABLE_PROXY: &str = "http://unusable-proxy.invalid:9";
 /// The engine client: explicit proxy selection (reqwest's ambient lookup is off) and the idle
 /// timeout as a per-read timeout.
 pub fn client_with(net: &NetSettings) -> reqwest::Client {
+    builder(net)
+        .build()
+        .expect("the HTTP client configuration is valid")
+}
+
+pub(crate) fn client_with_identity(
+    net: &NetSettings,
+    identity: reqwest::Identity,
+) -> Result<reqwest::Client, String> {
+    builder(net)
+        .identity(identity)
+        .build()
+        .map_err(|_| "Cannot build Google certificate TLS client".into())
+}
+
+fn builder(net: &NetSettings) -> reqwest::ClientBuilder {
     let mut builder = reqwest::Client::builder()
         .user_agent(concat!("pipkin/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(30))
@@ -76,9 +97,12 @@ pub fn client_with(net: &NetSettings) -> reqwest::Client {
     if let Some(idle) = net.idle {
         builder = builder.read_timeout(idle);
     }
+    #[cfg(test)]
+    for root in &net.test_roots {
+        builder = builder
+            .add_root_certificate(reqwest::Certificate::from_der(root).expect("valid test CA"));
+    }
     builder
-        .build()
-        .expect("the HTTP client configuration is valid")
 }
 
 /// `"<status>: <body>"` (or the transport message when there is no response).
@@ -271,6 +295,7 @@ mod tests {
         NetSettings {
             proxy: ProxyConfig::from_env(&env, None),
             idle,
+            test_roots: vec![],
         }
     }
 

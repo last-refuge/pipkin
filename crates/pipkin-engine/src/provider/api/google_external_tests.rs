@@ -52,6 +52,7 @@ async fn token(
     let http = crate::provider::http::client();
     super::super::resolve(
         &StreamCtx {
+            net: None,
             req,
             http: &http,
             events: None,

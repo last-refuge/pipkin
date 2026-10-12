@@ -23,6 +23,7 @@ async fn token(req: &ProviderRequest, cancel: CancellationToken) -> Result<Acces
     let http = crate::provider::http::client();
     resolve(
         &StreamCtx {
+            net: None,
             req,
             http: &http,
             events: None,
@@ -314,4 +315,30 @@ async fn metadata_requires_flavor_and_a_bounded_complete_response() {
         .unwrap_err();
         assert!(!err.contains("access_token"));
     }
+}
+
+#[test]
+fn identity_cache_evicts_least_recent_idle_entry_and_never_an_active_owner() {
+    let mut cache = super::Cache::default();
+    for n in 0..64 {
+        drop(cache.slot(n.to_string()).unwrap());
+    }
+    let original = cache.entries["0"].0.clone();
+    drop(cache.slot("0".into()).unwrap());
+    drop(original);
+    drop(cache.slot("new".into()).unwrap());
+    assert!(cache.entries.contains_key("0"));
+    assert!(!cache.entries.contains_key("1"));
+    let active: Vec<_> = cache
+        .entries
+        .values()
+        .map(|(slot, _)| slot.clone())
+        .collect();
+    assert!(cache.slot("overflow".into()).is_err());
+    assert_eq!(cache.entries.len(), 64);
+    drop(active);
+    drop(cache.slot("overflow".into()).unwrap());
+    assert_eq!(cache.entries.len(), 64);
+    assert!(cache.entries.contains_key("0"));
+    assert!(!cache.entries.contains_key("2"));
 }

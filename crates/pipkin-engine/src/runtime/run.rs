@@ -50,6 +50,7 @@ pub(super) struct Prepared {
     pub entries: Vec<Entry>,
     /// The engine HTTP client as of this request (rebuilt when network settings change).
     pub http: reqwest::Client,
+    pub net: crate::provider::http::NetSettings,
 }
 
 enum Step {
@@ -350,6 +351,7 @@ impl Shared {
             adapter,
             model,
             http,
+            net,
             ..
         } = self.prepare(sess).await?;
         let _permit = tokio::select! {
@@ -364,6 +366,7 @@ impl Shared {
             cancel.clone(),
         );
         let fut = adapter.stream(StreamCtx {
+            net: Some(&net),
             req: &req,
             http: &http,
             events: Some(progress.sink()),
@@ -465,8 +468,8 @@ impl Shared {
             }));
         };
         // Network settings may have changed since the last request.
-        let http = self.refresh_net();
-        let proxy = self.proxy_config();
+        let (net, http) = self.refresh_net_snapshot();
+        let proxy = net.proxy.clone();
         if let Err(detail) = unusable_proxy(&proxy, &model.base_url) {
             return Err(Some(RunOutcome::ModelError { detail }));
         }
@@ -613,6 +616,7 @@ impl Shared {
             settings,
             entries,
             http,
+            net,
         })
     }
 

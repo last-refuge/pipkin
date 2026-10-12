@@ -50,6 +50,7 @@ async fn token(req: &ProviderRequest, cancel: CancellationToken) -> Result<Strin
     let http = crate::provider::http::client();
     crate::provider::api::google_auth::resolve(
         &StreamCtx {
+            net: None,
             req,
             http: &http,
             events: None,

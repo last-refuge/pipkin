@@ -299,7 +299,7 @@ impl Shared {
                         _ = token.cancelled() => continue,
                         result = self.summary_request(request) => result,
                     };
-                    let (req, adapter, http) = match transport {
+                    let (req, adapter, http, net) = match transport {
                         Ok(t) => t,
                         Err(error) => {
                             self.checkpoint(
@@ -316,7 +316,7 @@ impl Shared {
                         biased;
                         _ = self.stopping.cancelled() => return Err("Engine shutting down".into()),
                         _ = token.cancelled() => continue,
-                        message = adapter.stream(StreamCtx { req: &req, http: &http, events: None, cancel: token.clone() }) => message,
+                        message = adapter.stream(StreamCtx { net: Some(&net), req: &req, http: &http, events: None, cancel: token.clone() }) => message,
                     };
                     if self.stopping.is_cancelled() {
                         return Err("Engine shutting down".into());

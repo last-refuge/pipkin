@@ -481,6 +481,7 @@ mod tests {
         let http = http::client();
         let msg = PiMessages
             .stream(StreamCtx {
+                net: None,
                 req,
                 http: &http,
                 events: Some(tx.into()),

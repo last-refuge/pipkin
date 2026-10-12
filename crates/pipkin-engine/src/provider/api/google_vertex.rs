@@ -263,6 +263,7 @@ mod tests {
     async fn run_req(req: &ProviderRequest) -> Message {
         let http = crate::provider::http::client();
         let ctx = StreamCtx {
+            net: None,
             req,
             http: &http,
             events: None,

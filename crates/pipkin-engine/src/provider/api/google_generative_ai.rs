@@ -96,6 +96,7 @@ mod tests {
         let http = crate::provider::http::client();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let ctx = StreamCtx {
+            net: None,
             req,
             http: &http,
             events: Some(tx.into()),
@@ -418,6 +419,7 @@ mod tests {
         let http = crate::provider::http::client();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let ctx = StreamCtx {
+            net: None,
             req: &req,
             http: &http,
             events: Some(tx.into()),

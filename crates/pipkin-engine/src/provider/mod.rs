@@ -542,6 +542,8 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub struct StreamCtx<'a> {
     pub req: &'a ProviderRequest,
     pub http: &'a reqwest::Client,
+    /// Settings used to build this client; retained by identity-specific TLS transports.
+    pub net: Option<&'a http::NetSettings>,
     pub events: Option<StreamSink>,
     pub cancel: CancellationToken,
 }

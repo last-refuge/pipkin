@@ -28,6 +28,8 @@ engine and is available without a Pi installation or network access.
   responses and helper-managed output caches are supported, with 5–120 second timeouts.
   AWS federation ADC uses AWS environment credentials or the metadata endpoints configured
   in that ADC file, including IMDSv2. This Google path does not read AWS CLI profiles.
+  Certificate ADC supports explicit or default `certificate_config.json`, leaf/trust chains,
+  and mutual TLS for credential exchanges while model requests use the resulting bearer token.
 - The engine configuration directory holds `auth.json`, `models.json` and `settings.json`.
   The desktop's `--engine-config-dir` and `--engine-data-dir` select engine configuration
   and history; `--data-dir` selects desktop drafts/cache. Do not expose stored credentials.

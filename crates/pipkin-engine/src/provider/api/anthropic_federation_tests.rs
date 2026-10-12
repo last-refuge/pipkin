@@ -35,6 +35,7 @@ async fn run(
 ) -> Message {
     adapter
         .stream(StreamCtx {
+            net: None,
             req,
             http: &crate::provider::http::client(),
             events: None,
@@ -480,6 +481,7 @@ async fn federation_wire_and_cache_match_the_executed_pinned_sdk() {
         let cache = Cache::default();
         let http = crate::provider::http::client();
         let ctx = StreamCtx {
+            net: None,
             req: &req,
             http: &http,
             events: None,
@@ -514,6 +516,7 @@ async fn federation_wire_and_cache_match_the_executed_pinned_sdk() {
     let cache = Cache::default();
     let http = crate::provider::http::client();
     let ctx = StreamCtx {
+        net: None,
         req: &req,
         http: &http,
         events: None,

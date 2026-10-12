@@ -8,7 +8,15 @@ impl Shared {
     pub(super) async fn summary_request(
         &self,
         saved: &SummaryRequest,
-    ) -> Result<(ProviderRequest, Arc<dyn ApiAdapter>, reqwest::Client), String> {
+    ) -> Result<
+        (
+            ProviderRequest,
+            Arc<dyn ApiAdapter>,
+            reqwest::Client,
+            crate::provider::http::NetSettings,
+        ),
+        String,
+    > {
         let model = self
             .auth
             .catalog()
@@ -19,8 +27,8 @@ impl Shared {
             .adapters
             .get(&model.api)
             .ok_or_else(|| format!("No adapter for API {}", model.api))?;
-        let http = self.refresh_net();
-        let proxy = self.proxy_config();
+        let (net, http) = self.refresh_net_snapshot();
+        let proxy = net.proxy.clone();
         super::super::run::unusable_proxy(&proxy, &model.base_url)?;
         let auth = self
             .auth
@@ -58,6 +66,6 @@ impl Shared {
                 req.env.insert(key, value);
             }
         }
-        Ok((req, adapter, http))
+        Ok((req, adapter, http, net))
     }
 }

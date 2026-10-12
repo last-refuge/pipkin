@@ -11,7 +11,42 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — Google AWS federation
+## Current follow-up — Google certificate federation and transport preservation
+
+2026-10-12, following **`d1809e7`**. Native certificate ADC now loads explicit/env/default
+certificate config, validates leaf/trust chains and performs credential exchanges with mutual
+TLS. Nineteen executed SDK cases use an actual local server requiring client authentication.
+Native comparisons retain STS/IAM bodies and peer fingerprints, including source-client
+impersonation. Model streams receive bearer headers without the auth certificate, matching
+the audited genai boundary. See [certificate evidence](pipkin-rust-engine-evidence/google-certificate.md).
+
+Ordinary turns and compaction now carry the HTTP client and network settings as one snapshot.
+Certificate clients retain its proxy/idle settings; network changes also isolate Google token
+cache state. Six certificate tests cover rotation, cancellation, bounds, untrusted servers,
+CONNECT proxy routing, idle-timeout recovery and two real local TLS Vertex streams.
+
+An initial fixture compile used the wrong Env::isolated argument type. After correcting it,
+the Google suite passed 49 tests but failed an existing Vertex cache-reuse assertion. The
+expanded suite exposed arbitrary idle eviction from the bounded Google identity cache.
+Least-recently-used idle eviction now preserves recency and active owners, with a seventh
+regression test. The corrected focused suite passed **51 tests**.
+
+Required checks: **1598 passed, 0 failed, 53 ignored**, clean Clippy and formatting.
+Logs: `/tmp/pipkin-google-certificate-tests.log` (compile failure),
+`/tmp/pipkin-google-certificate-tests2.log` (cache failure),
+`/tmp/pipkin-google-certificate-tests3.log`, `/tmp/pipkin-google-certificate-workspace.log`,
+`/tmp/pipkin-google-certificate-clippy3.log`, `/tmp/pipkin-google-certificate-fmt.log`.
+Protocol 11 / schema 9 unchanged. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**.
+
+Known Google ADC source implementation gaps are closed with local evidence. Next: broader
+credential retry/cache/configuration review (including server trust settings), remaining
+proxy/settings/migration flags, sustained workloads and clean release/CI/platform qualification.
+Native remains opt-in. Live enterprise/cloud acceptance and native-default release acceptance
+remain unverified. Owner plan/worktree changes remain untouched.
+
+## Previous follow-up — Google AWS federation
 
 2026-10-12, following **`d0e949b`**. Native Vertex ADC now supports environment or metadata
 AWS federation, including IMDSv2 session headers, cached region discovery and rotating roles.
