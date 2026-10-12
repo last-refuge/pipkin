@@ -11,7 +11,34 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — durable partial tool output and Stop recovery
+## Current follow-up — prompt, WebSocket connection and launcher checks
+
+Following **`af059d5`**, five new tests close the three remaining explicitly unverified row
+claims. A real stalled WebSocket handshake exercises configured timeout, SSE fallback and
+cancellation with timeout disabled; native settings edits reach provider requests. A native
+write-tool change drives core launcher effects with parsed editor/terminal flags and actual
+scratch recorder processes. Built-in prompt rendering keeps frozen instructions/skills
+after source loss; new roots skip bad files and retain fallback/built-in sections.
+
+PRM-THROWING-SECTION moves NC → NE after auditing the supported fixed prompt registration.
+Pipkin has pure rendering from typed snapshots, not arbitrary throwing section callbacks;
+extension callbacks remain out of scope. This is a native-equivalence decision with resource
+failure tests, not a claim of Rust panic recovery. See
+[prompt/timeout/launcher evidence](pipkin-rust-engine-evidence/prompt-timeout-launch-checks.md).
+
+Required checks: **1534 passed, 0 failed, 53 ignored**; Clippy, formatting and diff checks clean.
+Logs: `/tmp/pipkin-final-row-checks-workspace.log`, `/tmp/pipkin-final-row-checks-clippy.log`,
+`/tmp/pipkin-final-row-checks-fmt.log`. Protocol 11 / schema 9 and production code unchanged.
+
+Inventory: **504 rows, 488 non-OS; NC 412, NE 38, NP 37, PA 0, BL 0, LB 1, OS 16;
+444 measured, 7 observed, 0 unverified, 53 not started; 0 fully qualified**.
+The zero unverified count does not close partial measured-row gaps or qualify release.
+Next: reconcile those remaining gaps against the shipped baseline, fix required differences,
+complete sustained/installed/migration/packaging/platform checks, then switch defaults and
+remove Pi/Node only after the required gates pass. Native remains opt-in; unrelated owner
+plan/worktree changes remain untouched.
+
+## Previous follow-up — durable partial tool output and Stop recovery
 
 Following **`6253ebb`**, tool progress now commits its bounded window and truncation counts
 before publication. Interrupted and durable-Stop recovery retains that output in history,

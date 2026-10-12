@@ -1033,6 +1033,150 @@ async fn websocket_idle_timeout_after_start_is_an_error() {
     assert!(errors::is_retryable(&msg));
 }
 
+/// Accept the WebSocket connection but never send handshake headers. Ordinary HTTP
+/// requests pass through to a real SSE fixture on another local port.
+struct StalledUpgrade {
+    url: String,
+    upgrades: Arc<AtomicUsize>,
+    closed: Arc<AtomicUsize>,
+    fallback: MockServer,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for StalledUpgrade {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+impl StalledUpgrade {
+    async fn start() -> Self {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let fallback = MockServer::start(|_, _| {
+            MockResponse::sse(vec![sse_text(&message_events(
+                "resp_timeout",
+                "m",
+                "via sse",
+            ))])
+        })
+        .await;
+        let target = fallback.url.strip_prefix("http://").unwrap().to_owned();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let upgrades = Arc::new(AtomicUsize::new(0));
+        let closed = Arc::new(AtomicUsize::new(0));
+        let (seen, ended) = (upgrades.clone(), closed.clone());
+        let task = tokio::spawn(async move {
+            let mut connections = tokio::task::JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        let (mut socket, _) = accepted.unwrap();
+                        let (target, seen, ended) = (target.clone(), seen.clone(), ended.clone());
+                        connections.spawn(async move {
+                            let mut prefix = [0; 4];
+                            socket.read_exact(&mut prefix).await.unwrap();
+                            if &prefix == b"GET " {
+                                seen.fetch_add(1, Ordering::SeqCst);
+                                let mut buffer = [0; 4096];
+                                while socket.read(&mut buffer).await.is_ok_and(|n| n > 0) {}
+                                ended.fetch_add(1, Ordering::SeqCst);
+                            } else {
+                                let mut upstream = tokio::net::TcpStream::connect(target).await.unwrap();
+                                upstream.write_all(&prefix).await.unwrap();
+                                let _ = tokio::io::copy_bidirectional(&mut socket, &mut upstream).await;
+                            }
+                        });
+                    }
+                    joined = connections.join_next(), if !connections.is_empty() => {
+                        joined.unwrap().unwrap();
+                    }
+                }
+            }
+        });
+        Self {
+            url,
+            upgrades,
+            closed,
+            fallback,
+            task,
+        }
+    }
+}
+
+#[tokio::test]
+async fn websocket_connect_timeout_bounds_stalled_handshake_and_persists_sse_fallback() {
+    let server = StalledUpgrade::start().await;
+    let adapter = OpenAICodexResponses::new();
+    let mut req = ws_request(&server.url, vec![user("hi")]);
+    req.options
+        .insert("websocketConnectTimeoutMs".into(), json!(200));
+    req.timeout = Duration::from_secs(5);
+    let started = tokio::time::Instant::now();
+    let first = tokio::time::timeout(Duration::from_secs(3), run(&adapter, &req))
+        .await
+        .unwrap();
+    assert!(started.elapsed() >= Duration::from_millis(200));
+    assert_eq!(stop_and_error(&first), (StopReason::Stop, None));
+    assert_eq!(first.text(), "via sse");
+    let diagnostic = &extra(&first)["diagnostics"][0];
+    assert_eq!(
+        diagnostic["error"]["message"],
+        "WebSocket connect timeout after 200ms"
+    );
+    assert_eq!(
+        diagnostic["details"]["phase"],
+        "before_message_stream_start"
+    );
+    assert_eq!(diagnostic["details"]["fallbackTransport"], "sse");
+    let second = run(&adapter, &req).await;
+    assert_eq!(second.text(), "via sse");
+    assert!(extra(&second).get("diagnostics").is_none());
+    assert_eq!(server.upgrades.load(Ordering::SeqCst), 1);
+    assert_eq!(server.closed.load(Ordering::SeqCst), 1);
+    assert_eq!(server.fallback.requests().len(), 2);
+}
+
+#[tokio::test]
+async fn websocket_disabled_connect_timeout_still_cancels_a_stalled_handshake() {
+    let server = StalledUpgrade::start().await;
+    let adapter = OpenAICodexResponses::new();
+    let mut req = ws_request(&server.url, vec![user("hi")]);
+    req.options
+        .insert("websocketConnectTimeoutMs".into(), json!(0));
+    // The stream-idle timeout must not become a connect timeout when connect is disabled.
+    req.timeout = Duration::from_millis(100);
+    let cancel = CancellationToken::new();
+    let future = run_with(&adapter, &req, cancel.clone());
+    tokio::pin!(future);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(350), &mut future)
+            .await
+            .is_err()
+    );
+    assert_eq!(server.upgrades.load(Ordering::SeqCst), 1);
+    assert!(server.fallback.requests().is_empty());
+    cancel.cancel();
+    let (message, deltas) = tokio::time::timeout(Duration::from_secs(2), future)
+        .await
+        .unwrap();
+    assert_eq!(stop_and_error(&message), (StopReason::Aborted, None));
+    assert!(deltas.is_empty());
+    assert_eq!(
+        adapter
+            .websocket_debug_stats("ws-sess")
+            .map_or(0, |stats| stats.websocket_failures),
+        0
+    );
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.closed.load(Ordering::SeqCst) != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 async fn websocket_cancellation_is_aborted() {
     let mock = WsMock::start(|_, _, _| {

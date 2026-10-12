@@ -824,6 +824,82 @@ fn prompt_resources_stay_frozen_across_tool_changes_and_subagents() {
 }
 
 #[test]
+fn builtin_prompt_sections_survive_resource_loss_and_bad_new_resources() {
+    let fx = Fixture::new();
+    let instructions = fx.project.join("AGENTS.md");
+    let skill_dir = fx.project.join(".pi/skills/example");
+    std::fs::create_dir_all(&skill_dir).unwrap();
+    let skill = skill_dir.join("SKILL.md");
+    std::fs::write(
+        &instructions,
+        "Keep the previously loaded project instructions.",
+    )
+    .unwrap();
+    std::fs::write(
+        &skill,
+        "---\nname: example\ndescription: Keep the previously loaded skill.\n---\nSkill body.\n",
+    )
+    .unwrap();
+    let provider = Scripted::echo("ok");
+    let mut e = fx.start(&provider);
+    let session = e.create(&fx.project, "existing-root");
+    e.prompt(&session, "first", "go").unwrap();
+    assert_eq!(e.settled("first"), RunOutcome::Completed);
+
+    // Existing resources become unreadable as files; the next candidate is available
+    // to a new resource lifetime. The live session must keep its original sections.
+    std::fs::remove_file(&instructions).unwrap();
+    std::fs::create_dir(&instructions).unwrap();
+    std::fs::write(
+        fx.project.join("CLAUDE.md"),
+        "Fallback instructions for a new root.",
+    )
+    .unwrap();
+    std::fs::remove_file(&skill).unwrap();
+    std::fs::create_dir(&skill).unwrap();
+    e.call(Call::SetSubagentsEnabled {
+        session: session.clone(),
+        enabled: false,
+    })
+    .unwrap();
+    e.prompt(&session, "second", "continue").unwrap();
+    assert_eq!(e.settled("second"), RunOutcome::Completed);
+    for request in provider.requests() {
+        let resolved = request.resolve_systems(false);
+        assert!(
+            resolved
+                .system
+                .contains("Keep the previously loaded project instructions.")
+        );
+        assert!(
+            resolved
+                .system
+                .contains("Keep the previously loaded skill.")
+        );
+        assert!(
+            !resolved
+                .system
+                .contains("Fallback instructions for a new root.")
+        );
+    }
+    let other = e.create(&fx.project, "fresh-root");
+    e.prompt(&other, "third", "start").unwrap();
+    assert_eq!(e.settled("third"), RunOutcome::Completed);
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 3);
+    let resolved = requests[2].resolve_systems(false);
+    assert!(
+        resolved
+            .system
+            .contains("Fallback instructions for a new root.")
+    );
+    assert!(!resolved.system.contains("Keep the previously loaded"));
+    assert!(resolved.system.contains("operating inside Pipkin"));
+    assert!(resolved.system.contains("<tools>"));
+    assert!(resolved.system.contains("<cwd>"));
+}
+
+#[test]
 fn real_tools_run_their_effects_are_recorded_and_the_complete_output_is_retained() {
     let fx = Fixture::new();
     let provider = Scripted::new(|_, n| match n {

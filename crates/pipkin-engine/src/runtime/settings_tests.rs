@@ -20,6 +20,24 @@ fn write_settings(fx: &Fixture, json: &serde_json::Value) {
 }
 
 #[test]
+fn websocket_connect_timeout_setting_reaches_requests_including_zero_and_live_edits() {
+    let fx = Fixture::new();
+    let provider = Scripted::echo("ok");
+    let mut e = fx.start(&provider);
+    let session = e.create(&fx.project, "ws-timeout");
+    for (index, millis) in [200, 0, 1250].into_iter().enumerate() {
+        write_settings(&fx, &json!({"websocketConnectTimeoutMs": millis}));
+        let key = format!("timeout-{index}");
+        e.prompt(&session, &key, "go").unwrap();
+        assert_eq!(e.settled(&key), RunOutcome::Completed);
+        assert_eq!(
+            provider.requests()[index].options["websocketConnectTimeoutMs"],
+            json!(millis)
+        );
+    }
+}
+
+#[test]
 #[cfg(unix)]
 fn custom_shell_setting_reaches_real_tools_and_changes_between_turns() {
     use std::os::unix::fs::PermissionsExt;

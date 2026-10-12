@@ -303,6 +303,7 @@ struct Harness {
     ack_tx: mpsc::Sender<(ConversationId, RequestId, Result<(), String>)>,
     notices: Vec<String>,
     copied: Vec<String>,
+    launches: Vec<pipkin_core::Launch>,
     imports: Arc<Mutex<VecDeque<ImportResult>>>,
 }
 
@@ -377,6 +378,7 @@ impl Harness {
             ack_tx,
             notices: vec![],
             copied: vec![],
+            launches: vec![],
             imports: Arc::default(),
         };
         let mut out = h.restore.apply(&mut h.state);
@@ -450,7 +452,8 @@ impl Harness {
                     }
                 }
                 Effect::CopyText(text) => self.copied.push(text),
-                Effect::SaveText { .. } | Effect::Launch(_) => {}
+                Effect::SaveText { .. } => {}
+                Effect::Launch(launch) => self.launches.push(launch),
                 Effect::JournalIntent {
                     conversation,
                     request,
@@ -1498,6 +1501,113 @@ fn init_project(project: &Path) {
     std::fs::write(project.join("README.md"), "# Fixture project\n").unwrap();
     git(project, &["add", "-A"]);
     git(project, &["commit", "-q", "-m", "init"]);
+}
+
+#[test]
+#[cfg(unix)]
+fn native_editor_and_terminal_flags_launch_from_a_real_tool_change() {
+    use crate::controller::{EngineKind, Options};
+    use crate::launch::{self, LaunchConfig};
+    use std::os::unix::fs::PermissionsExt;
+
+    const FILE: &str = "notes with spaces;literal.txt";
+    let fx = Fixture::start(|_, n| {
+        if n == 0 {
+            Reply::Tools(
+                None,
+                vec![(
+                    "write".into(),
+                    json!({"path": FILE, "content": "native edit\n"}),
+                )],
+            )
+        } else {
+            Reply::Text("Done.".into())
+        }
+    });
+    init_project(&fx.project);
+    let mut h = Harness::start(&fx, &fx.root.join("app.sqlite3"));
+    h.open_new_conversation(&fx.project);
+    h.send("write the notes");
+    h.until("native change is available", |s| {
+        is_idle(s)
+            && s.current()
+                .unwrap()
+                .changes
+                .iter()
+                .any(|change| change.path == FILE)
+    });
+    let change = h
+        .state
+        .current()
+        .unwrap()
+        .changes
+        .iter()
+        .position(|change| change.path == FILE)
+        .unwrap();
+    let terminal = fx.root.join("record-terminal");
+    std::fs::write(&terminal, "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > terminal-record\nshift\nif [ \"$1\" = -e ]; then shift; exec \"$@\"; fi\n").unwrap();
+    std::fs::set_permissions(&terminal, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let cwd = std::fs::canonicalize(&fx.project)
+        .unwrap()
+        .display()
+        .to_string();
+    let file = std::fs::canonicalize(fx.project.join(FILE))
+        .unwrap()
+        .display()
+        .to_string();
+    let wait_record = |name: &str, expected: &str| {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            let actual = std::fs::read_to_string(fx.project.join(name)).unwrap_or_default();
+            if actual == expected {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{name}: expected {expected:?}, got {actual:?}"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    };
+    for (name, flag, uses_terminal) in [
+        ("record-editor", "--reuse-window", false),
+        ("nvim", "--clean", true),
+    ] {
+        let editor = fx.root.join(name);
+        std::fs::write(
+            &editor,
+            "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > editor-record\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let options = Options::parse([
+            "--engine".into(),
+            "native".into(),
+            "--editor".into(),
+            format!("{} {flag}", editor.display()),
+            "--terminal".into(),
+            format!("{} --configured", terminal.display()),
+        ])
+        .unwrap();
+        assert_eq!(options.engine, EngineKind::Native);
+        let config = LaunchConfig::from_env(options.editor, options.terminal);
+        h.dispatch(Command::OpenTerminal);
+        launch::run(&h.launches.pop().expect("terminal effect"), &config).unwrap();
+        wait_record("terminal-record", &format!("{cwd}\n--configured\n"));
+        h.dispatch(Command::OpenInEditor(change));
+        launch::run(&h.launches.pop().expect("editor effect"), &config).unwrap();
+        wait_record("editor-record", &format!("{cwd}\n{flag}\n{file}\n"));
+        if uses_terminal {
+            wait_record(
+                "terminal-record",
+                &format!(
+                    "{cwd}\n--configured\n-e\n{}\n{flag}\n{file}\n",
+                    editor.display()
+                ),
+            );
+        }
+    }
+    h.stop();
 }
 
 /// E2E-02. Changes are scoped to the files the session edited, so the edit is the session's

@@ -122,6 +122,16 @@ Owner: **Opus** = main implementation; **Codex** = reserved final integration.
 
 ## Current status summary (2026-10-11)
 
+WebSocket connection timeout and disabled-timeout cancellation now have real stalled-handshake
+tests plus runtime settings forwarding. Native editor/terminal flags drive real launch effects
+and recorder processes after a built-in write-tool change. Fixed built-in prompt sections retain
+their frozen resources when source files become unreadable; the throwing-callback row is NE
+for this supported registration, with arbitrary extension callbacks out of scope. Required
+checks: **1534 passed, 0 failed, 53 ignored**, clean Clippy/formatting. All three remaining
+explicitly unverified rows now have measured evidence. Partial measured-row gaps, reference
+qualification, sustained/installed workflows and release gates remain open. See
+[prompt/timeout/launcher evidence](pipkin-rust-engine-evidence/prompt-timeout-launch-checks.md).
+
 Tool progress now checkpoints bounded output before publication. Interrupted and stopped
 recovery preserves that output and truncation counts, settles tool state atomically, and
 reaps orphaned tool processes. Early reopening no longer clears a storage failure while
@@ -257,8 +267,8 @@ of all 504 capabilities.
 
 | Disposition (target) | Rows |
 | --- | --- |
-| `NC` native implementation of the same contract | 413 |
-| `NE` native equivalent | 37 |
+| `NC` native implementation of the same contract | 412 |
+| `NE` native equivalent | 38 |
 | `NP` not present in the baseline (evidence in row) | 37 |
 | `PA` pending audit | 0 |
 | `BL` blocked | 0 |
@@ -280,10 +290,10 @@ the row evidence for history; no package execution is claimed.
 
 | Evidence | Rows |
 | --- | --- |
-| measured | 441 |
+| measured | 444 |
 | observed | 7 |
 | failed | 0 |
-| unverified (code exists, no test) | 3 |
+| unverified (code exists, no test) | 0 |
 | not started (implementation absent or excluded; see row evidence) | 53 |
 
 | Section | Rows | NC | NE | NP | PA | BL | LB | RC | OS | measured | observed | failed | unverified | not started |
@@ -298,15 +308,15 @@ the row evidence for history; no package execution is claimed.
 | 8 Durable / queue / Stop (P05–P08) | 43 | 41 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 42 | 0 | 0 | 0 | 1 |
 | 9 Subagents (P09/P10) | 17 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 17 | 0 | 0 | 0 | 0 |
 | 10 Attachments / models / usage (P11) | 9 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 9 | 0 | 0 | 0 | 0 |
-| 11 Prompt / resources (P12) | 23 | 17 | 2 | 4 | 0 | 0 | 0 | 0 | 0 | 18 | 0 | 0 | 1 | 4 |
+| 11 Prompt / resources (P12) | 23 | 16 | 3 | 4 | 0 | 0 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 4 |
 | 12 Context / compaction (P13) | 15 | 13 | 0 | 1 | 0 | 0 | 0 | 0 | 1 | 14 | 0 | 0 | 0 | 1 |
 | 13 Extensions / questions (P14/P15) | 24 | 9 | 2 | 5 | 0 | 0 | 0 | 0 | 8 | 15 | 0 | 0 | 0 | 9 |
 | 14 Tool output (P16) | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 5 | 0 | 0 | 0 | 0 |
-| 15 Settings / env | 34 | 30 | 1 | 3 | 0 | 0 | 0 | 0 | 0 | 30 | 0 | 0 | 1 | 3 |
-| 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 53 | 1 | 0 | 1 | 5 |
+| 15 Settings / env | 34 | 30 | 1 | 3 | 0 | 0 | 0 | 0 | 0 | 31 | 0 | 0 | 0 | 3 |
+| 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 54 | 1 | 0 | 0 | 5 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
 | 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 6 | 0 | 0 | 6 |
-| **Total** | 504 | 413 | 37 | 37 | 0 | 0 | 1 | 0 | 16 | 441 | 7 | 0 | 3 | 53 |
+| **Total** | 504 | 412 | 38 | 37 | 0 | 0 | 1 | 0 | 16 | 444 | 7 | 0 | 0 | 53 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
 whenever rows change. Release gates: native beta needs every mandatory row implemented; native
@@ -754,7 +764,7 @@ is the differential target; Chord replicated-state op streams are not reproduced
 | PRM-CWD | system-prompt.ts:170 | `<cwd>` with forward slashes | prm::cwd_backslashes_render_as_slashes | Opus · E/context/prompt.rs | session cwd | Same | Linux, macOS | NC | measured: prm::cwd_backslashes_render_as_slashes; no differential |
 | PRM-NODATE | A-prompt §2.1 | No date/time injected (cache-stable prompt) | rt::the_system_prompt_carries_project_instructions_and_stays_byte_stable | Opus · E/runtime/glue.rs | n/a | Identical prompt across turns | all | NC | measured: rt::the_system_prompt_carries_project_instructions_and_stays_byte_stable; no differential |
 | PRM-PATCH | D/harness/prompt.ts:66-142 | `pi.system` positional entries: full baseline after head marker (omitting older system entries), minimal patches, remove-all/re-add-all on order change; tool add/remove on last entry | sys::planner_and_collapse_match_executed_pinned_reference_cases; rt::positional_system_baseline_survives_restart_and_only_changed_sections_are_appended | Opus · E/context | `pi.system` entries imported; baseline/omit edits preserved | Same mid-conversation system updates | APIs with mid-convo system | NC | measured (part): ordered durable patches, compaction rebasing, imported system replay, provider system/tool anchors; 10 pure cases executed against the pinned reference; full provider/extension/installed qualification pending ([evidence](pipkin-rust-engine-evidence/positional-system.md)) |
-| PRM-THROWING-SECTION | D/harness/prompt.ts:25-48 | A throwing section keeps previously shown text | none | Opus · E/context | n/a | Same | — | NC | unverified: native sections are pure functions with no failing provider; no test |
+| PRM-THROWING-SECTION | D/harness/prompt.ts:25-48; ca/experimental/durable/prompt.ts | A throwing section keeps previously shown text | rt::builtin_prompt_sections_survive_resource_loss_and_bad_new_resources | Codex · E/context/runtime | n/a | Native fixed sections retain frozen resources; no arbitrary renderer | built-in prompt | NE | measured: runtime retains previously loaded instructions/skills after source files become directories and tools change; a fresh root skips bad candidates and uses fallback instructions. Registration audit: fixed pure rendering from typed snapshots, no fallible callback provider. Arbitrary Pi extension callbacks are out of scope; no claim of panic recovery or full executed prompt differential. See prompt-timeout-launch-checks evidence |
 | PRM-AGENTS-NAMES | ca/core/resource-loader.ts:185 | Per directory first of `AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD`; non-files skipped; BOM stripped | res::context_file_candidates_that_are_directories_are_skipped_and_bom_is_stripped | Opus · E/context/resources | n/a | Same files chosen | case-sensitive FS (Linux), macOS | NC | measured: res::context_file_candidates_that_are_directories_are_skipped_and_bom_is_stripped, res::context_files_are_global_first_then_root_most_to_cwd_one_per_dir; no differential (ported `resource-loader.test.ts`) |
 | PRM-AGENTS-GLOBAL | resource-loader.ts:242-246 | Global file from agentDir emitted first | res::context_files_are_global_first_then_root_most_to_cwd_one_per_dir; res::a_config_dir_that_is_also_an_ancestor_is_loaded_once_first | Opus · E/context/resources; E/config config_dir | explicit import of `~/.pi/agent/AGENTS.md` | Same order | — | NC | measured: res::context_files_are_global_first_then_root_most_to_cwd_one_per_dir, res::a_config_dir_that_is_also_an_ancestor_is_loaded_once_first; no differential |
 | PRM-AGENTS-WALK | resource-loader.ts:253-265 | Ancestor walk to filesystem root (no git/HOME stop), outermost first, dedupe by path | res::ordinary_repo_root_does_not_stop_the_walk; res::a_symlinked_cwd_walks_the_link_path_not_the_target | Opus · E/context/resources | n/a | Same list | — | NC | measured: res::ordinary_repo_root_does_not_stop_the_walk, res::a_symlinked_cwd_walks_the_link_path_not_the_target; no differential |
@@ -872,7 +882,7 @@ place, natively too).
 | SET-DEVICEID | settings-manager.ts:1176-1181 | `deviceId` (global only) for OpenAI ChatGPT sign-in | oauth::sign_in_with_chatgpt_registers_a_client_and_refreshes_with_it | Opus · E/config | import | Same | — | NC | measured (part): see ONB-DEVICEID |
 | SET-HTTPPROXY | main.ts:594,871 (global only) | `httpProxy` sets HTTP(S)_PROXY if unset | prx::settings_http_proxy_fills_unset_variables_only; rts::settings_http_proxy_is_applied_without_a_restart_and_unsupported_proxies_fail_clearly | Opus · E/config `http_proxy`, E/provider/proxy.rs | import | Same | — | NC | measured: prx::settings_http_proxy_fills_unset_variables_only (fills `HTTP_PROXY`/`HTTPS_PROXY` when unset, outranks `ALL_PROXY`, lowercase variables still win), rts::settings_http_proxy_is_applied_without_a_restart_and_unsupported_proxies_fail_clearly (global value applied at the next request; a project `.pi/settings.json` value is ignored); see ADP-PROXY; no differential |
 | SET-TRANSPORT | settings `transport` | `auto`, `sse` or `websocket` (Codex) | cdx::websocket_* (adapter option) | Opus · E/config | import | Same | openai-codex | NC | measured (adapter option): cdx::websocket_reuses_the_connection_and_sends_only_the_input_delta, cdx::websocket_plain_transport_never_uses_previous_response_ids; settings `transport` is forwarded by run.rs; pass-through not tested |
-| SET-WS-TIMEOUT | settings `websocketConnectTimeoutMs` | Codex WebSocket connect timeout | none | Opus · E/config | import | Same | openai-codex | NC | unverified: `websocketConnectTimeoutMs` is forwarded by run.rs to the Codex adapter; no test of the timeout |
+| SET-WS-TIMEOUT | settings `websocketConnectTimeoutMs` | Codex WebSocket connect timeout | cdx::websocket_connect_timeout_bounds_stalled_handshake_and_persists_sse_fallback; cdx::websocket_disabled_connect_timeout_still_cancels_a_stalled_handshake; rts::websocket_connect_timeout_setting_reaches_requests_including_zero_and_live_edits | Codex · E/config/provider/runtime | import | Same | openai-codex | NC | measured: real TCP handshake stall expires at configured 200 ms with timeout diagnostic and persistent SSE fallback; zero disables connect timeout independently of stream-idle timeout, while cancellation closes the socket without fallback/failure. Runtime settings edits reach requests. No live provider or full Pi differential; see prompt-timeout-launch-checks evidence |
 | SET-THINKING-BUDGETS | settings `thinkingBudgets.*` | Budget overrides for budget-thinking APIs | brk::golden_body_with_tools_images_cache_and_replay; gsh::thinking_budget_adjustment_matches_simple_options | Opus · E/config | import | Same budgets in body | anthropic, google, bedrock, completions | NC | measured (adapter option): brk::golden_body_with_tools_images_cache_and_replay (`thinkingBudgets`), gsh::thinking_budget_adjustment_matches_simple_options; settings pass-through (run.rs) not tested |
 | SET-TELEMETRY | ca/core/telemetry.ts; sdk.ts:331; modes/interactive/interactive-mode.ts:1337-1356 | `enableInstallTelemetry` / `PI_TELEMETRY` gates classic attribution and interactive install reporting | source reachability audit; see ADP-ATTRIBUTION | Codex · E/config | source settings preserved | Neither SDK transform nor interactive reporter runs in the shipped durable worker | — | NP (classic/interactive only) | not started (NP): no native tracking added; provider-configured and auth headers unchanged; see [provider audit](pipkin-rust-engine-evidence/prompt-resource-provider-audit.md) |
 | SET-SHELLPATH | settings `shellPath` | Custom shell for bash (A-tools §1.4 says not set on the Pipkin path) | tbs::executes_in_cwd_with_env_overrides_and_a_custom_shell | Opus · E/config `shell_path` | import | Confirm whether durable path honors it | — | NE | measured: tool-unit coverage plus rts::custom_shell_setting_reaches_real_tools_and_changes_between_turns. Pinned durable harness constructs NodeExecutionEnv with cwd only; native additionally honors live shellPath changes. No all-shell/platform qualification (history-reachability-audit.md) |
@@ -965,7 +975,7 @@ that cover them or say what is not ported. The Pi reference tests were not run f
 | FLAG-PI-EXTENSION | App/controller.rs:139-143,301 | `--pi-extension <path>` → `pi server -e` | E2E-34 | see EXT-FACET-SESSION | profile recorded | — | — | OS | not started (BL / LB); the native counterpart is `--engine-extension builtin:questions` or `--engine-extension <executable>` (EXT-NATIVE); excluded from release gates by owner on 2026-10-11 (previous disposition: BL / LB); retained evidence does not claim Pi package compatibility |
 | FLAG-DATA-DIR | docs/support.md | `--data-dir`/`PIPKIN_DATA` isolate desktop data (not engine profile) | ctl::the_native_namespace_names_the_engine_data_directory | Opus · App + EngineConfig.data_dir | n/a | Native: `--data-dir` isolates engine state too (improvement, plan §6) | — | NC | measured: ctl::the_native_namespace_names_the_engine_data_directory, ctl::relative_paths_become_absolute_because_the_engine_starts_elsewhere; observed: walk (throwaway `--data-dir` isolated engine-config and data) |
 | FLAG-PROJECT | App/controller.rs | `--project` initial project | existing | desktop | n/a | Same | — | NE | observed: walk §1 (`--engine native --project <dir>`) |
-| FLAG-EDITOR-TERMINAL | App/controller.rs | `--editor`, `--terminal` | existing | desktop | n/a | Same | — | NE | unverified: desktop flags unchanged; not exercised with `--engine native` |
+| FLAG-EDITOR-TERMINAL | App/controller.rs | `--editor`, `--terminal` | ne2e::native_editor_and_terminal_flags_launch_from_a_real_tool_change | Codex · desktop | n/a | Same | native adapter/core + real recorder processes | NE | measured: flags parsed with --engine native, built-in write creates a Changes entry, core OpenTerminal/OpenInEditor effects run through production launcher; graphical and terminal editor options, project cwd and literal path with spaces/semicolon verified. Headless integration; no guarded GUI acceptance claim. See prompt-timeout-launch-checks evidence |
 | FLAG-DEMO-SPEED | App/controller.rs | `--demo <scenario>`, `--speed` | existing | desktop | n/a | Same | — | NE | measured (part): ctl::the_engine_is_pi_unless_native_is_chosen_explicitly asserts native + demo is refused; Pi/demo speed behavior is unchanged; this is parser coverage, not a native GUI speed test |
 | FLAG-VERSION | App/install.rs | `--version` (Pi protocol 8; desktop schema 8 at current revision) | inst::the_native_version_line_keeps_the_default_prefix_and_names_the_engine; ndiag::the_default_version_line_is_unchanged_and_the_native_one_extends_it | Opus · App | n/a | Reports native protocol/schema too | — | NC | measured: inst::the_native_version_line_keeps_the_default_prefix_and_names_the_engine, ndiag::the_default_version_line_is_unchanged_and_the_native_one_extends_it (engine protocol 3, schema 2) |
 | MULTI-CLIENT | A-svc §4.4; e2e E2E-17 | Several clients attached; per-connection auth; first responder wins questions | ep::endpoint_clients_share_work_and_disconnect_without_owning_shutdown; ep::two_socket_clients_share_questions_and_only_the_first_answer_wins; ne2e::external_desktops_share_runs_and_reconnect_without_owning_the_server | Codex · E/endpoint + App/adapters/native | n/a | Same multi-client outcomes | — | NC | measured: real Unix socket clients, same-UID peer authentication, first question responder wins, per-client auth attempts retained, shared runs/Stop and reconnect; no Pi differential, cross-user process test or live GUI qualification |
