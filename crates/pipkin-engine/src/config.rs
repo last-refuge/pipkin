@@ -140,24 +140,16 @@ impl EngineConfig {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", default)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CompactionSettings {
     pub enabled: bool,
     pub reserve_tokens: u64,
     pub keep_recent_tokens: u64,
     pub background_tokens: u64,
-    /// Per-model token settings keyed by exact `provider/modelId` (reference
-    /// `CompactionModelOverride`, `settings-manager.ts:23-33`).
-    pub model_overrides: BTreeMap<String, CompactionOverride>,
-}
-
-/// `compaction.modelOverrides["provider/id"]`.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", default)]
-pub struct CompactionOverride {
-    pub reserve_tokens: Option<u64>,
-    pub keep_recent_tokens: Option<u64>,
+    /// Keep overrides unvalidated until that exact model is selected, as in the reference.
+    pub model_overrides: BTreeMap<String, Value>,
+    /// Invalid ordinary token settings fail on use without discarding unrelated settings.
+    pub(crate) validation_errors: BTreeMap<String, String>,
 }
 
 impl Default for CompactionSettings {
@@ -168,25 +160,116 @@ impl Default for CompactionSettings {
             keep_recent_tokens: 20_000,
             background_tokens: 32_768,
             model_overrides: BTreeMap::new(),
+            validation_errors: BTreeMap::new(),
         }
     }
 }
 
-impl CompactionSettings {
-    /// The effective settings for one model: its override, then the ordinary setting, then the
-    /// default, per token field (reference `getCompactionTokenSetting`,
-    /// `settings-manager.ts:928-960`). Keys match exactly (`provider/modelId`).
-    pub fn for_model(&self, key: &str) -> CompactionSettings {
-        let mut out = self.clone();
-        if let Some(o) = self.model_overrides.get(key) {
-            if let Some(v) = o.reserve_tokens {
-                out.reserve_tokens = v;
-            }
-            if let Some(v) = o.keep_recent_tokens {
-                out.keep_recent_tokens = v;
+// JSON numbers are JavaScript numbers in the reference, including integral float notation.
+fn compaction_tokens(value: &Value, path: &str) -> Result<u64, String> {
+    if let Some(number) = value.as_f64()
+        && (0.0..=9_007_199_254_740_991.0).contains(&number)
+        && number.fract() == 0.0
+    {
+        return Ok(number as u64);
+    }
+    Err(format!(
+        "Invalid {path} setting: {}. Expected a non-negative safe integer.",
+        setting_text(value)
+    ))
+}
+
+/// JavaScript String(value), used only for configuration diagnostics.
+fn setting_text(value: &Value) -> String {
+    match value {
+        Value::Null => "null".into(),
+        Value::Bool(v) => v.to_string(),
+        Value::Number(v) => crate::tools::text::js_number(v.as_f64().expect("JSON number")),
+        Value::String(v) => v.clone(),
+        Value::Array(values) => values
+            .iter()
+            .map(|v| {
+                if v.is_null() {
+                    String::new()
+                } else {
+                    setting_text(v)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Value::Object(_) => "[object Object]".into(),
+    }
+}
+
+impl<'de> Deserialize<'de> for CompactionSettings {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = Value::deserialize(deserializer)?;
+        let mut out = Self::default();
+        if let Some(value) = raw.get("enabled").filter(|v| !v.is_null()) {
+            // The reference returns enabled ?? true; consumers use JS truthiness.
+            out.enabled = match value {
+                Value::Bool(v) => *v,
+                Value::Number(v) => v.as_f64() != Some(0.0),
+                Value::String(v) => !v.is_empty(),
+                _ => true,
+            };
+        }
+        for (name, dest) in [
+            ("reserveTokens", &mut out.reserve_tokens),
+            ("keepRecentTokens", &mut out.keep_recent_tokens),
+            ("backgroundTokens", &mut out.background_tokens),
+        ] {
+            if let Some(value) = raw.get(name) {
+                match compaction_tokens(value, &format!("compaction.{name}")) {
+                    Ok(tokens) => *dest = tokens,
+                    Err(error) => {
+                        out.validation_errors.insert(name.into(), error);
+                    }
+                }
             }
         }
-        out
+        if let Some(overrides) = raw.get("modelOverrides").and_then(Value::as_object) {
+            out.model_overrides = overrides
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+        }
+        Ok(out)
+    }
+}
+
+impl CompactionSettings {
+    /// Validate ordinary settings first, then the selected model's override, per field.
+    /// Unselected invalid overrides do not affect this model or other settings.
+    pub fn for_model(&self, key: &str) -> Result<CompactionSettings, String> {
+        let mut out = self.clone();
+        let entry = self.model_overrides.get(key);
+        for (field, dest) in [
+            ("reserveTokens", &mut out.reserve_tokens),
+            ("keepRecentTokens", &mut out.keep_recent_tokens),
+        ] {
+            if let Some(error) = self.validation_errors.get(field) {
+                return Err(error.clone());
+            }
+            if let Some(entry) = entry {
+                if !entry.is_object() {
+                    return Err(format!(
+                        "Invalid compaction.modelOverrides[\"{key}\"] setting: {}. Expected an object.",
+                        setting_text(entry)
+                    ));
+                }
+                if let Some(value) = entry.get(field) {
+                    *dest = compaction_tokens(
+                        value,
+                        &format!("compaction.modelOverrides[\"{key}\"].{field}"),
+                    )?;
+                }
+            }
+        }
+        if let Some(error) = self.validation_errors.get("backgroundTokens") {
+            return Err(error.clone());
+        }
+        Ok(out)
     }
 }
 
@@ -247,11 +330,15 @@ pub struct Settings {
     pub default_provider: Option<String>,
     pub default_model: Option<String>,
     pub default_thinking_level: Option<String>,
+    #[serde(deserialize_with = "null_default")]
     pub steering_mode: QueueDelivery,
+    #[serde(deserialize_with = "null_default")]
     pub follow_up_mode: QueueDelivery,
     pub compaction: CompactionSettings,
+    #[serde(deserialize_with = "retry_settings")]
     pub retry: RetrySettings,
     /// Extra skill paths (resolved against the session cwd).
+    #[serde(deserialize_with = "null_default")]
     pub skills: Vec<String>,
     pub http_proxy: Option<String>,
     /// Milliseconds; `0` disables the idle timeout.
@@ -260,6 +347,36 @@ pub struct Settings {
     pub enabled_models: Option<Vec<String>>,
     #[serde(flatten)]
     pub other: Map<String, Value>,
+}
+
+// Explicit project nulls replace the global value. Getters using `??` then take their
+// field default; compaction token fields deliberately keep null so validation can reject it.
+fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let value = Value::deserialize(deserializer)?;
+    if value.is_null() {
+        return Ok(T::default());
+    }
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
+}
+
+fn retry_settings<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<RetrySettings, D::Error> {
+    let mut value = Value::deserialize(deserializer)?;
+    if value.is_null() {
+        return Ok(RetrySettings::default());
+    }
+    if let Some(fields) = value.as_object_mut() {
+        fields.retain(|_, v| !v.is_null());
+        if let Some(provider) = fields.get_mut("provider").and_then(Value::as_object_mut) {
+            provider.retain(|_, v| !v.is_null());
+        }
+    }
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
 }
 
 impl Default for Settings {
@@ -285,7 +402,8 @@ impl Default for Settings {
 impl Settings {
     /// Global settings merged with the project's `.pi/settings.json` (objects merge
     /// recursively; arrays and scalars from the project replace). A missing or invalid file is
-    /// ignored with a warning; settings never block a session.
+    /// ignored with a warning. Valid JSON with invalid compaction tokens is retained and
+    /// rejected when that model's compaction policy is resolved.
     pub fn load(config_dir: &Path, cwd: Option<&Path>) -> (Settings, Vec<String>) {
         let mut warnings = Vec::new();
         // Each file is migrated on its own before the merge, as the reference loads them.
@@ -456,9 +574,7 @@ pub fn deep_merge(base: &mut Value, over: Value) {
                         deep_merge(existing, v)
                     }
                     _ => {
-                        if !v.is_null() {
-                            b.insert(k, v);
-                        }
+                        b.insert(k, v);
                     }
                 }
             }
@@ -640,17 +756,83 @@ mod tests {
                 "p/big": {"reserveTokens": 50000, "keepRecentTokens": 70000},
                 "p/half": {"keepRecentTokens": 3}}}}"#,
         );
-        let big = s.compaction.for_model("p/big");
+        let big = s.compaction.for_model("p/big").unwrap();
         assert_eq!(
             (big.reserve_tokens, big.keep_recent_tokens),
             (50_000, 70_000)
         );
-        let half = s.compaction.for_model("p/half");
+        let half = s.compaction.for_model("p/half").unwrap();
         assert_eq!((half.reserve_tokens, half.keep_recent_tokens), (1000, 3));
-        let other = s.compaction.for_model("P/BIG");
+        let other = s.compaction.for_model("P/BIG").unwrap();
         assert_eq!(
             (other.reserve_tokens, other.keep_recent_tokens),
             (1000, 20_000)
+        );
+    }
+
+    #[test]
+    fn compaction_settings_match_executed_reference_and_keep_unrelated_settings() {
+        let reference: Value = serde_json::from_str(include_str!(
+            "../../../fixtures/native-compaction-settings/reference.json"
+        ))
+        .unwrap();
+        for case in reference["cases"].as_array().unwrap() {
+            let dir = tempfile::tempdir().unwrap();
+            let project = dir.path().join("project");
+            std::fs::create_dir_all(project.join(".pi")).unwrap();
+            std::fs::write(dir.path().join("settings.json"), case["global"].to_string()).unwrap();
+            std::fs::write(
+                project.join(".pi/settings.json"),
+                case["project"].to_string(),
+            )
+            .unwrap();
+            let (settings, warnings) = Settings::load(dir.path(), Some(&project));
+            assert!(warnings.is_empty(), "{}: {warnings:?}", case["name"]);
+            assert_eq!(
+                settings.default_provider.as_deref(),
+                case["defaultProvider"].as_str()
+            );
+            assert_eq!(
+                settings.default_model.as_deref(),
+                case["defaultModel"].as_str()
+            );
+            assert_eq!(
+                serde_json::json!({"enabled":settings.retry.enabled,"maxRetries":settings.retry.max_retries,"baseDelayMs":settings.retry.base_delay_ms,"maxAgentDelayMs":settings.retry.max_agent_delay_ms}),
+                case["retry"],
+                "{}",
+                case["name"]
+            );
+            let result = settings.compaction.for_model(case["key"].as_str().unwrap());
+            if let Some(error) = case["error"].as_str() {
+                assert_eq!(result.unwrap_err(), error, "{}", case["name"]);
+            } else {
+                let effective = result.unwrap();
+                assert_eq!(
+                    serde_json::json!({"enabled":effective.enabled,"reserveTokens":effective.reserve_tokens,"keepRecentTokens":effective.keep_recent_tokens}),
+                    case["effective"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+        // Null clears inherited optional fields and resets nullish-default getters only.
+        let mut merged = serde_json::json!({"defaultProvider":"old","steeringMode":"all","followUpMode":"all","skills":["old"],"retry":{"maxRetries":8,"provider":{"timeoutMs":10,"maxRetryDelayMs":20}}});
+        deep_merge(
+            &mut merged,
+            serde_json::json!({"defaultProvider":null,"steeringMode":null,"followUpMode":null,"skills":null,"retry":{"maxRetries":null,"provider":{"timeoutMs":null,"maxRetryDelayMs":null}}}),
+        );
+        let settings: Settings = serde_json::from_value(merged).unwrap();
+        assert_eq!(settings.default_provider, None);
+        assert_eq!(settings.steering_mode, QueueDelivery::OneAtATime);
+        assert_eq!(settings.follow_up_mode, QueueDelivery::OneAtATime);
+        assert!(settings.skills.is_empty());
+        assert_eq!(settings.retry, RetrySettings::default());
+        // Integral floating-point spelling is accepted even though serde's as_u64 rejects it.
+        let settings: Settings =
+            serde_json::from_str(r#"{"compaction":{"reserveTokens":1.0}}"#).unwrap();
+        assert_eq!(
+            settings.compaction.for_model("p/x").unwrap().reserve_tokens,
+            1
         );
     }
 

@@ -1,0 +1,1152 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "node": "v26.8.1",
+  "sourceSha256": "535c679f41f769d9129ffec5521508241162c9dfe0a9c7782157b193eb0e5664",
+  "textSha256": "bb323f9607c499115b532021f4f0163c6df04d834aee9c32c3c77b273bd2d7c6",
+  "retrySha256": "9fd3268543035cb93ae3a572b4b16ba2ba76a5d76a2ae691e45968d3442c3d71",
+  "scope": "Actual in-memory SettingsManager merge/getters; import paths rewritten, unused I/O/network dependencies throw if called; enabled normalized to consumer truthiness",
+  "cases": [
+    {
+      "name": "defaults",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {}
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "project-clears-retry",
+      "project": {
+        "retry": null
+      },
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {},
+        "retry": {
+          "maxRetries": 8,
+          "baseDelayMs": 7
+        }
+      },
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "project-clears-retry-field",
+      "project": {
+        "retry": {
+          "maxRetries": null
+        }
+      },
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {},
+        "retry": {
+          "enabled": false,
+          "maxRetries": 8,
+          "baseDelayMs": 7
+        }
+      },
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": false,
+        "maxRetries": 3,
+        "baseDelayMs": 7,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "global-null-retry-fields",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {},
+        "retry": {
+          "enabled": null,
+          "maxRetries": null,
+          "baseDelayMs": null,
+          "maxAgentDelayMs": null
+        }
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "null-policy",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": null
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "array-policy",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": []
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "string-policy",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": "unused"
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-keep-invalid",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "keepRecentTokens": -1
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.keepRecentTokens setting: -1. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "both-ordinary-invalid",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": -1,
+          "keepRecentTokens": -2
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: -1. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "project-null-entry",
+      "project": {
+        "compaction": {
+          "modelOverrides": {
+            "p/x": null
+          }
+        }
+      },
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": 5
+            }
+          }
+        }
+      },
+      "error": "Invalid compaction.modelOverrides[\"p/x\"] setting: null. Expected an object.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": 100,
+          "keepRecentTokens": 5,
+          "enabled": false
+        }
+      },
+      "project": {},
+      "effective": {
+        "enabled": false,
+        "reserveTokens": 100,
+        "keepRecentTokens": 5
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "integral-float",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": 1,
+          "keepRecentTokens": 0
+        }
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 1,
+        "keepRecentTokens": 0
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "safe-boundary",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": 9007199254740991
+        }
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 9007199254740991,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "partial-override",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": 100,
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": 3
+            }
+          }
+        }
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 100,
+        "keepRecentTokens": 3
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "case-sensitive",
+      "key": "P/X",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": null
+          }
+        }
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "unrelated-invalid",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "other/model": {
+              "reserveTokens": -1
+            }
+          }
+        }
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-validated-before-override",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": -1,
+          "modelOverrides": {
+            "p/x": {
+              "reserveTokens": 100
+            }
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: -1. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "project-repairs-global",
+      "project": {
+        "compaction": {
+          "reserveTokens": 100
+        }
+      },
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": -1,
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": 5
+            }
+          }
+        }
+      },
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 100,
+        "keepRecentTokens": 5
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "project-invalid-override",
+      "project": {
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": -2
+            }
+          }
+        }
+      },
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": 100
+        }
+      },
+      "error": "Invalid compaction.modelOverrides[\"p/x\"].keepRecentTokens setting: -2. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "enabled-null",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "enabled": null
+        }
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "enabled-zero",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "enabled": 0
+        }
+      },
+      "project": {},
+      "effective": {
+        "enabled": false,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "enabled-string",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "enabled": "false"
+        }
+      },
+      "project": {},
+      "effective": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-negative",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": -1
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: -1. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "override-negative",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": -1
+            }
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"].keepRecentTokens setting: -1. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-fraction",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": 1.5
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: 1.5. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "override-fraction",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": 1.5
+            }
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"].keepRecentTokens setting: 1.5. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-numeric-string",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": "10"
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: 10. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "override-numeric-string",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": "10"
+            }
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"].keepRecentTokens setting: 10. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-null",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": null
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: null. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "override-null",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": null
+            }
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"].keepRecentTokens setting: null. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-boolean",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": false
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: false. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "override-boolean",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": false
+            }
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"].keepRecentTokens setting: false. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-object",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": {}
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: [object Object]. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "override-object",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": {}
+            }
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"].keepRecentTokens setting: [object Object]. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-array",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": [
+            null,
+            3
+          ]
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: ,3. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "override-array",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": [
+                null,
+                3
+              ]
+            }
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"].keepRecentTokens setting: ,3. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-unsafe",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": 9007199254740992
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: 9007199254740992. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "override-unsafe",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": 9007199254740992
+            }
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"].keepRecentTokens setting: 9007199254740992. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-scientific-large",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": 1e+21
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: 1e+21. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "override-scientific-large",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": 1e+21
+            }
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"].keepRecentTokens setting: 1e+21. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "ordinary-scientific-small",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "reserveTokens": 1e-7
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.reserveTokens setting: 1e-7. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "override-scientific-small",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": {
+              "keepRecentTokens": 1e-7
+            }
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"].keepRecentTokens setting: 1e-7. Expected a non-negative safe integer.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "invalid-entry-null",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": null
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"] setting: null. Expected an object.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "invalid-entry-",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": []
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"] setting: . Expected an object.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "invalid-entry-3",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": 3
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"] setting: 3. Expected an object.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    },
+    {
+      "name": "invalid-entry-bad",
+      "key": "p/x",
+      "global": {
+        "defaultProvider": "kept-provider",
+        "defaultModel": "kept-model",
+        "compaction": {
+          "modelOverrides": {
+            "p/x": "bad"
+          }
+        }
+      },
+      "project": {},
+      "error": "Invalid compaction.modelOverrides[\"p/x\"] setting: bad. Expected an object.",
+      "retry": {
+        "enabled": true,
+        "maxRetries": 3,
+        "baseDelayMs": 2000,
+        "maxAgentDelayMs": 60000
+      },
+      "defaultProvider": "kept-provider",
+      "defaultModel": "kept-model"
+    }
+  ]
+}

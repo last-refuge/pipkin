@@ -467,6 +467,15 @@ impl Shared {
                 detail: format!("No adapter for API {} (model {key})", model.api),
             }));
         };
+        let mut settings = Settings::load(
+            &self.config.config_dir,
+            Some(std::path::Path::new(&row.cwd)),
+        )
+        .0;
+        settings.compaction = settings
+            .compaction
+            .for_model(&model.key())
+            .map_err(|detail| Some(RunOutcome::ModelError { detail }))?;
         // Network settings may have changed since the last request.
         let (net, http) = self.refresh_net_snapshot();
         let proxy = net.proxy.clone();
@@ -481,12 +490,6 @@ impl Shared {
                 }));
             }
         };
-        let mut settings = Settings::load(
-            &self.config.config_dir,
-            Some(std::path::Path::new(&row.cwd)),
-        )
-        .0;
-        settings.compaction = settings.compaction.for_model(&model.key());
         let mut entries = match tokio::task::block_in_place(|| self.store.context_entries(&sess.id))
         {
             Ok(e) => e,

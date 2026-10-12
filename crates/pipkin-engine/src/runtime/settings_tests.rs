@@ -494,6 +494,86 @@ fn compaction_model_overrides_apply_to_the_session_model() {
     assert!(err.message.starts_with("Nothing to compact"), "{err:?}");
 }
 
+#[test]
+fn invalid_compaction_policy_fails_before_generation_and_live_project_repair_recovers() {
+    let fx = Fixture::new();
+    let provider = Scripted::new(|req, _| {
+        if is_summary(req) {
+            R::Text("## Goal\nsummary".into())
+        } else {
+            R::Text("reply".into())
+        }
+    });
+    write_settings(
+        &fx,
+        &json!({"steeringMode":"all","compaction":{"enabled":false,"reserveTokens":100,"keepRecentTokens":5}}),
+    );
+    let mut e = fx.start(&provider);
+    let session = e.create(&fx.project, "compaction validation");
+    for i in 0..3 {
+        let request = format!("before-{i}");
+        e.prompt(&session, &request, "A turn with words to summarize later.")
+            .unwrap();
+        assert_eq!(e.settled(&request), RunOutcome::Completed);
+    }
+    let original = json!({"steeringMode":"all","compaction":{"enabled":false,"reserveTokens":100,"keepRecentTokens":5,
+        "modelOverrides":{"scripted/scripted":{"keepRecentTokens":-3},"other/model":null}}});
+    write_settings(&fx, &original);
+    let calls = provider.requests().len();
+    e.prompt(
+        &session,
+        "invalid",
+        "Do not generate with invalid settings.",
+    )
+    .unwrap();
+    let expected = "Invalid compaction.modelOverrides[\"scripted/scripted\"].keepRecentTokens setting: -3. Expected a non-negative safe integer.";
+    assert_eq!(
+        e.settled("invalid"),
+        RunOutcome::ModelError {
+            detail: expected.into()
+        }
+    );
+    assert_eq!(provider.requests().len(), calls);
+    let error = e
+        .call(Call::Compact {
+            session: session.clone(),
+            instructions: None,
+        })
+        .unwrap_err();
+    assert!(error.message.contains(expected), "{}", error.message);
+    assert_eq!(provider.requests().len(), calls);
+    let project_settings = fx.project.join(".pi/settings.json");
+    std::fs::create_dir_all(project_settings.parent().unwrap()).unwrap();
+    std::fs::write(
+        &project_settings,
+        json!({"compaction":{"modelOverrides":{"scripted/scripted":{"keepRecentTokens":5}}}})
+            .to_string(),
+    )
+    .unwrap();
+    e.prompt(&session, "repaired", "Continue after repairing settings.")
+        .unwrap();
+    assert_eq!(e.settled("repaired"), RunOutcome::Completed);
+    e.call(Call::Compact {
+        session,
+        instructions: None,
+    })
+    .unwrap();
+    let summary = provider.requests().into_iter().find(is_summary).unwrap();
+    assert_eq!(summary.max_tokens, Some(80));
+    let (loaded, warnings) =
+        crate::config::Settings::load(&fx.dir.path().join("config"), Some(&fx.project));
+    assert!(warnings.is_empty());
+    assert_eq!(loaded.steering_mode, crate::config::QueueDelivery::All);
+    assert!(!loaded.compaction.enabled);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(
+            &std::fs::read(fx.dir.path().join("config/settings.json")).unwrap()
+        )
+        .unwrap(),
+        original
+    );
+}
+
 fn local_models(base: &str) -> serde_json::Value {
     json!({"providers": {"local": {
     "baseUrl": base, "api": "openai-completions", "apiKey": "k",

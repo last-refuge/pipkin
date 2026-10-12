@@ -11,7 +11,38 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — explicit Pi import source in native mode
+## Current follow-up — compaction validation and project null replacement
+
+2026-10-12, following **`cf5043a`**. Malformed compaction token settings no longer discard
+the whole native settings file. Ordinary settings and the selected model's override are
+validated on use in reference order; other models' invalid overrides and unrelated settings
+remain intact. Policy resolution happens before credential/provider requests. Live project
+corrections restore generation and manual compaction without restarting the engine.
+
+A new capture executes the pinned SettingsManager's actual in-memory storage, migration,
+merge and getters with isolated unused dependencies. **46 cases** compare effective policies,
+exact errors and preserved provider/model/retry settings. A runtime test verifies failed
+coding/manual compaction without provider calls, live project repair and the original summary
+budget. Existing crash/recovery compaction checks remain in the focused suite.
+
+The first expanded workspace run found a real project-merge bug: null overrides were ignored.
+Native now retains explicit null replacements and applies each nullish-default getter's own
+default; invalid compaction token/entry nulls remain errors. Three additional captures cover
+retry null/default behavior. Both focused runs passed **49 tests**; the first used 37 capture
+cases and the corrected final run uses all 46. The failed first workspace run and initial
+Clippy range-check warning are preserved in the evidence. Final required checks passed **1626 tests, 0 failed, 53 ignored**, with clean Clippy and
+formatting. Logs: `/tmp/pipkin-compaction-settings-workspace2.log`,
+`/tmp/pipkin-compaction-settings-clippy2.log`, `/tmp/pipkin-compaction-settings-fmt2.log`.
+See [validation evidence](pipkin-rust-engine-evidence/compaction-settings-validation.md).
+
+Protocol 11 / schema 9 unchanged. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**. Native remains opt-in. Invalid HTTP timeout behavior,
+other settings/model-scope gaps, credential SDK retries, trust configuration scope, rollback
+history labels, sustained workloads and release/CI/platform qualification remain open.
+Owner plan/worktree changes are preserved.
+
+## Previous follow-up — explicit Pi import source in native mode
 
 2026-10-12, following **`6b148ee`**. `--engine native --pi-agent-dir DIR` now selects the
 source for discovery and confirmed conversation/config/credential imports, including an
