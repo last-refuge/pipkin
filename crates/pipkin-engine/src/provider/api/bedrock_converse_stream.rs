@@ -1322,7 +1322,7 @@ mod tests {
             .stream(StreamCtx {
                 req,
                 http: &http,
-                events: Some(tx),
+                events: Some(tx.into()),
                 cancel,
             })
             .await;

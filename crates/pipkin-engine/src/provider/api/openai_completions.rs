@@ -1676,7 +1676,7 @@ pub(crate) mod tests {
             .stream(StreamCtx {
                 req: &req,
                 http: &client,
-                events: Some(tx),
+                events: Some(tx.into()),
                 cancel: CancellationToken::new(),
             })
             .await;
@@ -1708,7 +1708,7 @@ pub(crate) mod tests {
         let ctx = StreamCtx {
             req: &req,
             http: &client,
-            events: Some(tx),
+            events: Some(tx.into()),
             cancel: cancel.clone(),
         };
         let watcher = async {

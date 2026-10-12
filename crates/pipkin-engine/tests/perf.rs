@@ -1439,7 +1439,7 @@ fn stream_latency() {
     let _ = e.shutdown();
     let mut out = header("stream-latency");
     out["note"] = json!(
-        "engine flush policy at this revision: commit pending deltas when 16 KiB are pending or 50 ms after the previous flush (runtime/run.rs FLUSH_BYTES/FLUSH_INTERVAL); every commit is a WAL transaction with synchronous=FULL"
+        "engine flush policy at this revision: synchronous commit backpressure at 16 KiB or 128 deltas, otherwise 40 ms from the oldest pending delta (runtime/run/progress.rs); every commit is a WAL transaction with synchronous=FULL"
     );
     out["cadences"] = json!(results);
     finish(out, "stream-latency");

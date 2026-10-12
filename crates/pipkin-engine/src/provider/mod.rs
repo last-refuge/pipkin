@@ -243,6 +243,29 @@ pub enum StreamEvent {
     Delta(Delta),
 }
 
+/// Engine-owned progress receiver. Delivery is synchronous: the runtime can apply bounded
+/// batching and commit backpressure without an unbounded producer/consumer queue. Callbacks
+/// must not await the adapter's own future or block on a consumer in the same task.
+#[derive(Clone)]
+pub struct StreamSink(Arc<dyn Fn(StreamEvent) + Send + Sync>);
+impl StreamSink {
+    pub fn new(receive: impl Fn(StreamEvent) + Send + Sync + 'static) -> Self {
+        Self(Arc::new(receive))
+    }
+    pub fn send(&self, event: StreamEvent) {
+        (self.0)(event);
+    }
+}
+// Adapter fixture collectors deliberately retain all deltas for assertions. The production
+// runtime installs its bounded commit sink instead of this opt-in channel compatibility path.
+impl From<mpsc::UnboundedSender<StreamEvent>> for StreamSink {
+    fn from(tx: mpsc::UnboundedSender<StreamEvent>) -> Self {
+        Self::new(move |event| {
+            let _ = tx.send(event);
+        })
+    }
+}
+
 /// Builds the assistant message as an adapter streams, and forwards deltas.
 ///
 /// Block indexes are assigned in arrival order. Tool-call arguments are accumulated as raw JSON
@@ -252,13 +275,13 @@ pub struct Emitter {
     content: Vec<Block>,
     tool_json: HashMap<usize, String>,
     usage: Usage,
-    tx: Option<mpsc::UnboundedSender<StreamEvent>>,
+    tx: Option<StreamSink>,
     response_id: Option<String>,
     extra: Map<String, Value>,
 }
 
 impl Emitter {
-    pub fn new(tx: Option<mpsc::UnboundedSender<StreamEvent>>) -> Emitter {
+    pub fn new(tx: Option<StreamSink>) -> Emitter {
         Emitter {
             content: Vec::new(),
             tool_json: HashMap::new(),
@@ -271,7 +294,7 @@ impl Emitter {
 
     fn send(&self, delta: Delta) {
         if let Some(tx) = &self.tx {
-            let _ = tx.send(StreamEvent::Delta(delta));
+            tx.send(StreamEvent::Delta(delta));
         }
     }
 
@@ -519,7 +542,7 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub struct StreamCtx<'a> {
     pub req: &'a ProviderRequest,
     pub http: &'a reqwest::Client,
-    pub events: Option<mpsc::UnboundedSender<StreamEvent>>,
+    pub events: Option<StreamSink>,
     pub cancel: CancellationToken,
 }
 

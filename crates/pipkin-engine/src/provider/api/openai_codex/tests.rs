@@ -95,7 +95,7 @@ async fn run_with(
         .stream(StreamCtx {
             req,
             http: &http,
-            events: Some(tx),
+            events: Some(tx.into()),
             cancel,
         })
         .await;
@@ -452,7 +452,7 @@ async fn cancellation_mid_stream_is_aborted_and_keeps_partial_content() {
     let stream = adapter.stream(StreamCtx {
         req: &req,
         http: &http,
-        events: Some(tx),
+        events: Some(tx.into()),
         cancel,
     });
     let watcher = async move {
@@ -1053,7 +1053,7 @@ async fn websocket_cancellation_is_aborted() {
     let stream = adapter.stream(StreamCtx {
         req: &req,
         http: &http,
-        events: Some(tx),
+        events: Some(tx.into()),
         cancel,
     });
     let watcher = async move {

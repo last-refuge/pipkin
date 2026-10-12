@@ -86,10 +86,17 @@ The desktop core already routes every backend event through `(conversation, gene
     encoded bytes remain shared until the last subscriber releases them. Reply encoding is
     per request. Frontend and provider-internal queue budgets remain separate work.
 
-12. **Still open:** full external-attachment qualification and end-to-end frontend
-    presentation budgeting. The shared GPUI/core event bus
-    and provider-internal stream channels are outside this transport change; this ADR does
-    not claim every queue in the application is now bounded.
+12. **Provider progress:** the generation loop uses an engine-owned synchronous sink rather
+    than an unbounded channel. Commit backpressure limits pending batches to 16 KiB of UTF-8
+    payload / 128 deltas; a timer flushes 40 ms from the oldest pending delta. Large text is
+    split without loss. One indivisible oversized tool identity commits immediately rather
+    than remaining queued. This does not bound the retained full assistant or all transient
+    input-unit allocations. Completion closes the sink and stale callbacks hold only a weak
+    reference. See [provider progress evidence](../pipkin-rust-engine-evidence/provider-progress.md).
+13. **Still open:** full external-attachment qualification, end-to-end frontend byte budgeting,
+    parser/input-unit limits and performance qualification. The GPUI/core event bus already
+    has a count bound; byte pressure and control behavior still need work. This ADR does not
+    claim every queue or allocation in the application is now bounded.
 
 ## Consequences
 

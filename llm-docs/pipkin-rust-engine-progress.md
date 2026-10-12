@@ -11,7 +11,27 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — shared event delivery
+## Current follow-up — bounded provider progress
+
+Shared event delivery is committed as **`e87809f`**. The provider generation loop no longer
+uses an unbounded stream-event channel. An engine-owned sink commits bounded batches directly,
+with 40 ms flushing for small/silent streams and cancellation on checkpoint failure. Text is
+split losslessly; indivisible oversized tool identities commit immediately. Late callbacks
+cannot mutate completed entries or retain the engine. See
+[provider progress evidence](pipkin-rust-engine-evidence/provider-progress.md).
+
+Focused burst/Unicode, count/byte backlog, stale callback, failure, silent-stream and synchronous
+producer Stop regressions pass. Required checks: **1395 passed, 0 failed, 53 ignored**;
+Clippy and formatting clean (`/tmp/pipkin-progress-final-{workspace,clippy,fmt}.log`). The two
+release streaming benchmarks passed: no missing markers, all cadence p95 values below 50 ms,
+and all 24 scaling cases produce the expected output lengths. CPU/frame growth is approximately linear;
+64-byte chunks show extra write amplification, recorded as a remaining performance concern.
+Raw evidence: `fixtures/native-bench/2026-10-11-provider-progress/`.
+The frontend bus byte/control-pressure work remains next; this change does not cap the full
+assistant message or every parser allocation. Ledger counts remain **503 rows; 423 measured,
+7 observed, 0 currently failed, 10 unverified, 63 not started; 0 qualified**. Native remains opt-in.
+
+## Previous follow-up — shared event delivery
 
 External attachment is committed as **`cb98d0a`**. The next change shares one immutable typed
 and encoded event payload across subscriber queues. Private pipes and external sockets write
@@ -361,7 +381,7 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
    and remaining unsupported-history conversion (replacement edits/forks) remain open.
 2. **Transport and compatibility:** durable invalidation replay and bounded engine/reader delivery
    now have passing recovery/pressure evidence. External Unix attachment and serialize-once event fan-out are implemented;
-   frontend/provider-internal queue budgeting remain. TypeScript facets, sticky profiles,
+   provider progress backlog is bounded; frontend byte/control-pressure budgeting remains. TypeScript facets, sticky profiles,
    remote services and reload still depend on Pi.
 3. **Performance:** E2E-37's headless 100 MiB budget now passes on Linux/glibc; an indefinitely flat
    heap, desktop/long-tool/streaming soaks and other allocators/platforms remain unverified.

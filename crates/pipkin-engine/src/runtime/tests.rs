@@ -1486,3 +1486,175 @@ async fn constrained_grammar_tool_executes_and_replays_after_restart() {
     }
     }).await.unwrap();
 }
+
+#[test]
+fn provider_bursts_checkpoint_before_yield_and_silent_streams_flush_then_stop() {
+    use crate::provider::{ApiAdapter, BoxFuture, StreamCtx};
+    struct Burst {
+        text: String,
+        sent: std::sync::mpsc::Sender<()>,
+    }
+    impl ApiAdapter for Burst {
+        fn api(&self) -> &'static str {
+            "scripted"
+        }
+        fn stream<'a>(&'a self, ctx: StreamCtx<'a>) -> BoxFuture<'a, Message> {
+            Box::pin(async move {
+                let mut e = ctx.emitter();
+                // Intentionally no await/yield while producing the entire burst.
+                e.append_text(&self.text);
+                self.sent.send(()).unwrap();
+                ctx.cancel.cancelled().await;
+                ctx.failed(e, "cancelled")
+            })
+        }
+    }
+    for (text, burst) in [
+        ("one quiet delta".to_owned(), false),
+        ("burst 🦀 ".repeat(20_000), true),
+    ] {
+        let fx = Fixture::new();
+        let (sent, rx) = std::sync::mpsc::channel();
+        let handle = EngineHandle::start_with(
+            fx.config(),
+            registry_with(Arc::new(Burst {
+                text: text.clone(),
+                sent,
+            })),
+            crate::tools::builtin_tools(),
+        )
+        .unwrap();
+        let conn = handle.connect("progress-test");
+        let mut e = Engine {
+            handle,
+            conn,
+            next: 0,
+            events: vec![],
+        };
+        let s = e.create(&fx.project, "c");
+        e.prompt(&s, "r", "respond").unwrap();
+        rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        if burst {
+            let partials = e.handle.shared().store.partial_entries(&s).unwrap();
+            assert!(
+                !partials.is_empty(),
+                "must commit within the synchronous producer burst"
+            );
+        }
+        e.until(
+            "quiet provider progress committed without another delta",
+            |events| {
+                events.iter().any(|ev| {
+                    matches!(
+                        ev,
+                        Event::Session {
+                            change: SessionChange::EntryDelta { .. },
+                            ..
+                        }
+                    )
+                })
+            },
+        );
+        let at = Instant::now();
+        e.call(Call::Stop { session: s.clone() }).unwrap();
+        assert_eq!(e.settled("r"), RunOutcome::Aborted);
+        assert!(at.elapsed() < Duration::from_secs(2));
+        assert!(
+            texts(&e.snapshot(&s))
+                .iter()
+                .any(|(role, actual, _)| role == "assistant" && actual == &text)
+        );
+    }
+}
+
+#[test]
+fn stop_interrupts_a_provider_that_keeps_emitting_without_yielding() {
+    use crate::provider::{ApiAdapter, BoxFuture, StreamCtx};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Burst {
+        sent: std::sync::mpsc::Sender<()>,
+        count: Arc<AtomicUsize>,
+    }
+    impl ApiAdapter for Burst {
+        fn api(&self) -> &'static str {
+            "scripted"
+        }
+        fn stream<'a>(&'a self, ctx: StreamCtx<'a>) -> BoxFuture<'a, Message> {
+            Box::pin(async move {
+                let mut emitter = ctx.emitter();
+                let piece = "x".repeat(16 * 1024);
+                loop {
+                    emitter.append_text(&piece);
+                    let n = self.count.fetch_add(1, Ordering::SeqCst) + 1;
+                    if n == 1 {
+                        self.sent.send(()).unwrap();
+                    }
+                    if ctx.cancel.is_cancelled() {
+                        break;
+                    }
+                    // A safety deadline for a failed regression; there is deliberately no
+                    // async yield or await to make room for the progress consumer.
+                    assert!(n < 4096, "Stop did not reach the synchronous producer");
+                }
+                ctx.failed(emitter, "cancelled")
+            })
+        }
+    }
+    let fx = Fixture::new();
+    let (sent, rx) = std::sync::mpsc::channel();
+    let count = Arc::new(AtomicUsize::new(0));
+    let handle = EngineHandle::start_with(
+        fx.config(),
+        registry_with(Arc::new(Burst {
+            sent,
+            count: count.clone(),
+        })),
+        crate::tools::builtin_tools(),
+    )
+    .unwrap();
+    let conn = handle.connect("burst-stop");
+    let mut e = Engine {
+        handle,
+        conn,
+        next: 0,
+        events: vec![],
+    };
+    let s = e.create(&fx.project, "c");
+    e.prompt(&s, "r", "respond").unwrap();
+    rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    let at = Instant::now();
+    e.call(Call::Stop { session: s.clone() }).unwrap();
+    // Resolve durably; saturated live presentation may legitimately require a snapshot.
+    loop {
+        let lookup = e
+            .call(Call::Lookup {
+                session: s.clone(),
+                request: "r".into(),
+            })
+            .unwrap();
+        if matches!(
+            lookup,
+            Reply::Lookup(LookupResult::Known {
+                open: false,
+                outcome: Some(RunOutcome::Aborted),
+                ..
+            })
+        ) {
+            break;
+        }
+        assert!(
+            at.elapsed() < Duration::from_secs(2),
+            "Stop must settle despite a synchronous burst"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(at.elapsed() < Duration::from_secs(2));
+    let expected_len = count.load(Ordering::SeqCst) * 16 * 1024;
+    assert!(
+        texts(&e.snapshot(&s))
+            .iter()
+            .any(|(role, text, _)| role == "assistant"
+                && text.len() == expected_len
+                && text.bytes().all(|b| b == b'x'))
+    );
+}

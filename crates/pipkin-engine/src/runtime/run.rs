@@ -16,7 +16,9 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+mod progress;
 
 use pipkin_engine_protocol::*;
 use serde_json::{Map, Value};
@@ -26,7 +28,7 @@ use super::Shared;
 use super::session::{Active, SessionRt, user_entry};
 use crate::config::{QueueDelivery, Settings};
 use crate::provider::{
-    CacheRetention, ProviderRequest, StreamCtx, StreamEvent, ThinkingLevel, ToolSpec, errors,
+    CacheRetention, ProviderRequest, StreamCtx, ThinkingLevel, ToolSpec, errors,
 };
 use crate::store::{RequestRow, Store, ToolState};
 use crate::tools::{self, Tool, ToolCtx};
@@ -328,46 +330,29 @@ impl Shared {
             p = self.generations.clone().acquire_owned() => p.ok(),
             _ = cancel.cancelled() => return Ok(None),
         };
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
+        let progress = progress::Progress::new(
+            self.clone(),
+            sess.clone(),
+            run,
+            model.clone(),
+            cancel.clone(),
+        );
         let fut = adapter.stream(StreamCtx {
             req: &req,
             http: &http,
-            events: Some(tx),
+            events: Some(progress.sink()),
             cancel: cancel.clone(),
         });
         tokio::pin!(fut);
-        let mut partial: Option<u64> = None;
-        let mut pending: Vec<Delta> = Vec::new();
-        let mut pending_bytes = 0usize;
-        // When the oldest uncommitted delta arrived: the flush deadline runs from it.
-        let mut oldest: Option<Instant> = None;
         let message = loop {
-            let wait = oldest.map_or(FLUSH_INTERVAL, |t| {
-                FLUSH_INTERVAL.saturating_sub(t.elapsed())
-            });
+            let wait = progress.wait_time();
             tokio::select! {
                 m = &mut fut => break m,
-                Some(StreamEvent::Delta(d)) = rx.recv() => {
-                    pending_bytes += match &d {
-                        Delta::Text { text, .. } | Delta::Thinking { text, .. } => text.len(),
-                        Delta::ToolCall { .. } => 64,
-                    };
-                    pending.push(d);
-                    oldest.get_or_insert_with(Instant::now);
-                    if pending_bytes >= FLUSH_BYTES && self.flush(sess, run, &model, &mut partial, &mut pending).is_err() {
-                        cancel.cancel();
-                    }
-                    if pending.is_empty() { pending_bytes = 0; oldest = None; }
-                }
-                _ = tokio::time::sleep(wait), if !pending.is_empty() => {
-                    if self.flush(sess, run, &model, &mut partial, &mut pending).is_err() {
-                        cancel.cancel();
-                    }
-                    pending_bytes = 0;
-                    oldest = None;
-                }
+                _ = progress.changed.notified() => {},
+                _ = tokio::time::sleep(wait.unwrap_or(FLUSH_INTERVAL)), if wait.is_some() => progress.flush(),
             }
         };
+        let partial = progress.finish();
         if sess.failure().is_some() {
             return Err(None);
         }

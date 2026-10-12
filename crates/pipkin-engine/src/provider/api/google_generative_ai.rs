@@ -98,7 +98,7 @@ mod tests {
         let ctx = StreamCtx {
             req,
             http: &http,
-            events: Some(tx),
+            events: Some(tx.into()),
             cancel,
         };
         let msg = adapter().stream(ctx).await;
@@ -420,7 +420,7 @@ mod tests {
         let ctx = StreamCtx {
             req: &req,
             http: &http,
-            events: Some(tx),
+            events: Some(tx.into()),
             cancel: cancel.clone(),
         };
         let task = async {
