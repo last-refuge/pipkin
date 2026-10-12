@@ -976,3 +976,245 @@ mod tests {
         assert!(!is_change_evidence(&msg(9, Message::user_text("x", 0))));
     }
 }
+
+// ------------------------------------------------------------------ MCP servers
+
+/// The engine's server view as the desktop shows it. Secrets never arrive: the engine
+/// redacts literals and never sends tokens.
+pub fn mcp_snapshot(view: &pipkin_engine_protocol::McpServersView) -> pipkin_core::McpSnapshot {
+    use pipkin_core::{
+        McpAuth, McpAuthStatus, McpKind, McpPrompt, McpScope, McpServer, McpServerState, McpTool,
+    };
+    use pipkin_engine_protocol::AuthStatus;
+    let servers = view
+        .servers
+        .iter()
+        .map(|s| McpServer {
+            name: s.name.clone(),
+            scope: if s.scope == "project" {
+                McpScope::Project
+            } else {
+                McpScope::User
+            },
+            kind: if s.kind == "http" {
+                McpKind::Http
+            } else {
+                McpKind::Stdio
+            },
+            enabled: s.enabled,
+            state: match s.state.as_str() {
+                "connecting" => McpServerState::Connecting,
+                "ready" => McpServerState::Ready,
+                "authRequired" => McpServerState::AuthRequired,
+                "failed" => McpServerState::Failed,
+                _ => McpServerState::Stopped,
+            },
+            error: s.error.clone(),
+            tools: s.tools,
+            catalog: s
+                .catalog
+                .iter()
+                .map(|t| McpTool {
+                    name: t.name.clone(),
+                    description: t.description.clone(),
+                    enabled: t.enabled,
+                })
+                .collect(),
+            disabled_tools: s.disabled_tools.clone(),
+            command: s.command.clone(),
+            env: s.env.clone(),
+            keep_alive: s.keep_alive,
+            idle_seconds: s.idle_seconds,
+            in_flight: s.in_flight,
+            auth: McpAuth {
+                supported: s.auth.supported,
+                signed_in: s.auth.signed_in,
+                required: s.auth.required,
+                status: match s.auth.status {
+                    AuthStatus::Idle => McpAuthStatus::Idle,
+                    AuthStatus::Connecting => McpAuthStatus::Connecting,
+                    AuthStatus::Waiting => McpAuthStatus::Waiting,
+                    AuthStatus::Prompt => McpAuthStatus::Prompt,
+                    AuthStatus::Done => McpAuthStatus::Done,
+                    AuthStatus::Failed => McpAuthStatus::Failed,
+                },
+                message: s.auth.message.clone(),
+                url: s.auth.url.clone(),
+                prompt: s.auth.prompt.as_ref().map(|p| McpPrompt {
+                    id: p.id.clone(),
+                    kind: p.kind.clone(),
+                    message: p.message.clone(),
+                    placeholder: p.placeholder.clone(),
+                }),
+            },
+        })
+        .collect();
+    pipkin_core::McpSnapshot {
+        servers,
+        warnings: view.warnings.clone(),
+        project_available: view.project_available,
+    }
+}
+
+pub fn mcp_test(view: &pipkin_engine_protocol::McpTestView) -> pipkin_core::McpTestResult {
+    pipkin_core::McpTestResult {
+        name: view.name.clone(),
+        ok: view.ok,
+        message: view.message.clone(),
+        tools: view.tools.clone(),
+    }
+}
+
+pub fn mcp_import(
+    text: &str,
+    view: &pipkin_engine_protocol::McpImportView,
+) -> pipkin_core::McpImportPreview {
+    pipkin_core::McpImportPreview {
+        text: text.to_owned(),
+        entries: view
+            .entries
+            .iter()
+            .map(|e| pipkin_core::McpImportEntry {
+                name: e.name.clone(),
+                kind: e.kind.clone(),
+                summary: e
+                    .spec
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
+                    .or_else(|| {
+                        let command = e.spec.get("command")?.as_str()?;
+                        let args: Vec<&str> = e
+                            .spec
+                            .get("args")
+                            .and_then(|a| a.as_array())
+                            .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                            .unwrap_or_default();
+                        Some(
+                            std::iter::once(command)
+                                .chain(args)
+                                .collect::<Vec<_>>()
+                                .join(" "),
+                        )
+                    })
+                    .unwrap_or_default(),
+                warnings: e.warnings.clone(),
+                exists: e.exists,
+                valid: e.valid,
+                selected: e.valid,
+            })
+            .collect(),
+        warnings: view.warnings.clone(),
+    }
+}
+
+pub fn mcp_scope(scope: pipkin_core::McpScope) -> pipkin_engine_protocol::McpScope {
+    match scope {
+        pipkin_core::McpScope::User => pipkin_engine_protocol::McpScope::User,
+        pipkin_core::McpScope::Project => pipkin_engine_protocol::McpScope::Project,
+    }
+}
+
+/// A command line into its words: whitespace-separated, with double or single quotes
+/// grouping words (no escapes).
+pub fn split_command_line(line: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut in_word = false;
+    for ch in line.chars() {
+        match quote {
+            Some(q) if ch == q => quote = None,
+            Some(_) => current.push(ch),
+            None if ch == '"' || ch == '\'' => {
+                quote = Some(ch);
+                in_word = true;
+            }
+            None if ch.is_whitespace() => {
+                if in_word {
+                    words.push(std::mem::take(&mut current));
+                    in_word = false;
+                }
+            }
+            None => {
+                current.push(ch);
+                in_word = true;
+            }
+        }
+    }
+    if in_word {
+        words.push(current);
+    }
+    words
+}
+
+/// The add form's input as the engine's settings entry.
+pub fn mcp_spec(input: &pipkin_core::McpServerInput) -> serde_json::Value {
+    let mut spec = serde_json::Map::new();
+    let values: serde_json::Map<String, serde_json::Value> = input
+        .values
+        .iter()
+        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+        .collect();
+    match input.kind {
+        pipkin_core::McpKind::Stdio => {
+            let words = split_command_line(input.target.trim());
+            spec.insert(
+                "command".into(),
+                serde_json::Value::String(words.first().cloned().unwrap_or_default()),
+            );
+            if words.len() > 1 {
+                spec.insert("args".into(), serde_json::Value::from(words[1..].to_vec()));
+            }
+            if !values.is_empty() {
+                spec.insert("env".into(), serde_json::Value::Object(values));
+            }
+        }
+        pipkin_core::McpKind::Http => {
+            spec.insert(
+                "url".into(),
+                serde_json::Value::String(input.target.trim().to_owned()),
+            );
+            if !values.is_empty() {
+                spec.insert("headers".into(), serde_json::Value::Object(values));
+            }
+        }
+    }
+    serde_json::Value::Object(spec)
+}
+
+#[cfg(test)]
+mod mcp_tests {
+    use super::*;
+
+    #[test]
+    fn command_lines_split_and_inputs_become_specs() {
+        assert_eq!(
+            split_command_line(r#"npx -y "my server" 'a b'  c"#),
+            ["npx", "-y", "my server", "a b", "c"]
+        );
+        assert_eq!(split_command_line("  "), Vec::<String>::new());
+        let input = pipkin_core::McpServerInput {
+            scope: pipkin_core::McpScope::User,
+            name: "fs".into(),
+            kind: pipkin_core::McpKind::Stdio,
+            target: "npx -y srv".into(),
+            values: vec![("T".into(), "$TOK".into())],
+        };
+        assert_eq!(
+            mcp_spec(&input),
+            serde_json::json!({"command": "npx", "args": ["-y", "srv"], "env": {"T": "$TOK"}})
+        );
+        let http = pipkin_core::McpServerInput {
+            kind: pipkin_core::McpKind::Http,
+            target: " https://h/mcp ".into(),
+            values: vec![],
+            ..input
+        };
+        assert_eq!(mcp_spec(&http), serde_json::json!({"url": "https://h/mcp"}));
+        assert_eq!(
+            pipkin_core::McpServerInput::parse_values("A=1\n\nbad\n B = $X "),
+            vec![("A".into(), "1".into()), ("B".into(), "$X".into())]
+        );
+    }
+}

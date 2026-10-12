@@ -1,4 +1,5 @@
 use crate::ids::*;
+use crate::mcp::{McpScope, McpServerInput};
 use crate::model::*;
 use crate::onboarding::{SignInAnswer, SignInProvider};
 
@@ -147,6 +148,38 @@ pub enum Command {
     ConfirmRelease,
     /// Keep the conversation with the built-in engine.
     CancelRelease,
+
+    /// Read the MCP servers again (the Connections page opened).
+    McpRefresh,
+    /// Add or replace a server from the add form (user or the open project's settings).
+    McpAddServer(McpServerInput),
+    McpRemoveServer(String),
+    /// Connect afresh and list the tools.
+    McpTestServer(String),
+    McpReconnectServer(String),
+    McpSetToolEnabled {
+        server: String,
+        tool: String,
+        enabled: bool,
+    },
+    McpSignIn(String),
+    McpAnswerSignIn {
+        server: String,
+        prompt: String,
+        response: SignInAnswer,
+    },
+    McpCancelSignIn(String),
+    /// Forget the saved tokens.
+    McpSignOut(String),
+    /// Convert pasted `mcpServers` configuration without writing anything.
+    McpPreviewImport(String),
+    McpToggleImportEntry(String),
+    /// Write the chosen entries of the current preview.
+    McpApplyImport(McpScope),
+    McpDismissImport,
+    /// Show or hide a server's tools.
+    McpToggleTools(String),
+    McpDismissNotice,
 }
 
 /// What the application can do right now. UI controls and the command palette share this.
@@ -331,6 +364,61 @@ pub enum BackendRequest {
         conversation: ConversationId,
         generation: u64,
         level: String,
+    },
+
+    /// MCP management. `conversation` is the open one, whose project may hold its own
+    /// entries; `None` reads and writes user settings only.
+    McpRefresh {
+        conversation: Option<ConversationId>,
+    },
+    McpUpsert {
+        conversation: Option<ConversationId>,
+        input: McpServerInput,
+    },
+    McpRemove {
+        conversation: Option<ConversationId>,
+        scope: McpScope,
+        name: String,
+    },
+    McpTest {
+        conversation: Option<ConversationId>,
+        name: String,
+    },
+    McpReconnect {
+        conversation: Option<ConversationId>,
+        name: String,
+    },
+    McpSetDisabledTools {
+        conversation: Option<ConversationId>,
+        scope: McpScope,
+        name: String,
+        disabled: Vec<String>,
+    },
+    McpAuthStart {
+        conversation: Option<ConversationId>,
+        name: String,
+    },
+    McpAuthAnswer {
+        name: String,
+        prompt: String,
+        response: SignInAnswer,
+    },
+    McpAuthCancel {
+        name: String,
+    },
+    McpAuthRevoke {
+        conversation: Option<ConversationId>,
+        name: String,
+    },
+    McpImportPreview {
+        conversation: Option<ConversationId>,
+        text: String,
+    },
+    McpImportApply {
+        conversation: Option<ConversationId>,
+        scope: McpScope,
+        text: String,
+        names: Vec<String>,
     },
 }
 
@@ -663,6 +751,13 @@ pub struct Outcome {
 }
 
 impl Outcome {
+    pub fn note(note: Note) -> Outcome {
+        Outcome {
+            effects: Vec::new(),
+            notes: vec![note],
+        }
+    }
+
     pub fn merge(&mut self, other: Outcome) {
         self.effects.extend(other.effects);
         self.notes.extend(other.notes);

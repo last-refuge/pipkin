@@ -1149,6 +1149,18 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                     LifecycleEvent::StorageIssue(message) => {
                         m.mutate(|state| state.set_storage_issue(message), cx)
                     }
+                    LifecycleEvent::Mcp(snapshot) => {
+                        m.mutate(|state| state.apply_mcp(snapshot), cx)
+                    }
+                    LifecycleEvent::McpTest(result) => {
+                        m.mutate(|state| state.mcp_test_result(result), cx)
+                    }
+                    LifecycleEvent::McpImport(preview) => {
+                        m.mutate(|state| state.mcp_import_previewed(preview), cx)
+                    }
+                    LifecycleEvent::McpFailed(message) => {
+                        m.mutate(|state| state.mcp_failed(message), cx)
+                    }
                 });
                 if alive.is_err() {
                     break;

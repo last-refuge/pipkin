@@ -143,3 +143,8 @@ still need the same applicability review before a release, and the Apache-2.0 cr
 `NOTICE` files (if any) must be carried. No HTTP transport feature is enabled, so no second
 `reqwest` is present.
 
+MCP-2 (same date) enables the SDK's `transport-streamable-http-client` feature, which adds
+`sse-stream` 0.2.6 (MIT OR Apache-2.0) and the already-present `http-body` /
+`http-body-util` (MIT); no `reqwest` 0.13 and no `oauth2` crate enter the graph, since the
+HTTP transport and the OAuth flow run on the engine's own client and primitives.
+

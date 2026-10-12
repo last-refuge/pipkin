@@ -490,10 +490,18 @@ impl Settings {
         })
     }
 
-    fn save_global(config_dir: &Path, edit: impl FnOnce(&mut Value)) -> std::io::Result<()> {
-        let path = config_dir.join("settings.json");
+    pub(crate) fn save_global(
+        config_dir: &Path,
+        edit: impl FnOnce(&mut Value),
+    ) -> std::io::Result<()> {
+        Settings::save_at(&config_dir.join("settings.json"), edit)
+    }
+
+    /// Edit one settings file in place (atomic rename), creating it when absent.
+    pub(crate) fn save_at(path: &Path, edit: impl FnOnce(&mut Value)) -> std::io::Result<()> {
+        let config_dir = path.parent().unwrap_or(Path::new("."));
         let mut warnings = vec![];
-        let mut value = read_json(&path, &mut warnings);
+        let mut value = read_json(path, &mut warnings);
         if !value.is_object() {
             value = Value::Object(Map::new());
         }

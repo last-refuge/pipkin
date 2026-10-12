@@ -30,7 +30,7 @@ mod anthropic;
 pub mod callback;
 pub mod device;
 mod github_copilot;
-mod http;
+pub mod http;
 mod kimi_coding;
 mod meta;
 mod openai_chatgpt;

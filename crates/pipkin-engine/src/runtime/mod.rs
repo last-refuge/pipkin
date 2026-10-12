@@ -294,14 +294,11 @@ impl EngineHandle {
         let net = NetSettings::new(&config.env, &Settings::load(&config.config_dir, None).0);
         let http = crate::provider::http::client_with(&net);
         auth.set_http(http.clone());
-        let mcp = {
-            let env = config.env.clone();
-            Arc::new(crate::mcp::McpService::new(
-                config.config_dir.clone(),
-                config.data_dir.clone(),
-                Arc::new(move |key| env.get(key)),
-            ))
-        };
+        let mcp = crate::mcp::McpService::new(
+            config.config_dir.clone(),
+            config.data_dir.clone(),
+            config.env.clone(),
+        );
         let shared = Arc::new_cyclic(|me| Shared {
             me: me.clone(),
             mcp,
@@ -360,7 +357,7 @@ impl EngineHandle {
         }
         lifecycle::start_reaper(&shared);
         compaction::start_recovery(&shared);
-        mcp::start_reaper(&shared);
+        mcp::attach(&shared);
         Ok(EngineHandle {
             runtime: Mutex::new(Some(runtime)),
             shared,
@@ -647,6 +644,7 @@ async fn dispatch_with_cancel(
                     "web".into(),
                     "goals".into(),
                     "mcp".into(),
+                    "mcpManagement".into(),
                     "compaction".into(),
                     "toolOutput".into(),
                 ],
@@ -839,7 +837,102 @@ async fn dispatch_with_cancel(
             include_archived,
         } => Ok(Reply::Plan(shared.plan_view(&session, include_archived)?)),
         Call::WebSources { session } => Ok(Reply::WebSources(shared.web_sources_view(&session)?)),
-        Call::McpServers { session } => Ok(Reply::McpServers(shared.mcp_servers_view(&session)?)),
+        Call::McpServers { session } => Ok(Reply::McpServers(
+            shared.mcp_servers_view(session.as_deref())?,
+        )),
+        Call::McpUpsertServer {
+            session,
+            scope,
+            name,
+            spec,
+        } => {
+            shared.mcp_upsert(session.as_deref(), scope, &name, spec)?;
+            Ok(Reply::McpServers(
+                shared.mcp_servers_view(session.as_deref())?,
+            ))
+        }
+        Call::McpRemoveServer {
+            session,
+            scope,
+            name,
+        } => {
+            shared.mcp_remove(session.as_deref(), scope, &name)?;
+            Ok(Reply::McpServers(
+                shared.mcp_servers_view(session.as_deref())?,
+            ))
+        }
+        Call::McpSetDisabledTools {
+            session,
+            scope,
+            name,
+            disabled,
+        } => {
+            shared.mcp_set_disabled(session.as_deref(), scope, &name, disabled)?;
+            Ok(Reply::McpServers(
+                shared.mcp_servers_view(session.as_deref())?,
+            ))
+        }
+        Call::McpTestServer { session, name } => {
+            shared.refresh_net_async().await?;
+            Ok(Reply::McpTest(
+                shared.mcp_test(session.as_deref(), &name).await,
+            ))
+        }
+        Call::McpReconnectServer { session, name } => {
+            shared.refresh_net_async().await?;
+            shared.mcp_reconnect(session.as_deref(), &name).await?;
+            Ok(Reply::McpServers(
+                shared.mcp_servers_view(session.as_deref())?,
+            ))
+        }
+        Call::McpAuthStart { session, name } => {
+            if let Some(error) = shared.refresh_net_async().await?.validation_error {
+                return Err(ProtoError::new(ErrorCode::Invalid, error));
+            }
+            shared.mcp_auth_start(session.as_deref(), &name)?;
+            Ok(Reply::McpServers(
+                shared.mcp_servers_view(session.as_deref())?,
+            ))
+        }
+        Call::McpAuthAnswer {
+            name,
+            prompt,
+            response,
+        } => {
+            shared
+                .mcp
+                .auth_answer(&name, &prompt, response.0)
+                .map_err(|m| ProtoError::new(ErrorCode::NotFound, m))?;
+            Ok(Reply::Ok)
+        }
+        Call::McpAuthCancel { name } => {
+            shared.mcp.auth_cancel(&name);
+            Ok(Reply::Ok)
+        }
+        Call::McpAuthRevoke { session, name } => {
+            shared
+                .mcp
+                .auth_revoke(&name)
+                .await
+                .map_err(|m| ProtoError::new(ErrorCode::Storage, m))?;
+            Ok(Reply::McpServers(
+                shared.mcp_servers_view(session.as_deref())?,
+            ))
+        }
+        Call::McpImportPreview { session, text } => Ok(Reply::McpImport(
+            shared.mcp_import_preview(session.as_deref(), &text),
+        )),
+        Call::McpImportApply {
+            session,
+            scope,
+            text,
+            names,
+        } => {
+            shared.mcp_import_apply(session.as_deref(), scope, &text, &names)?;
+            Ok(Reply::McpServers(
+                shared.mcp_servers_view(session.as_deref())?,
+            ))
+        }
         Call::SetGoal { session, objective } => {
             Ok(Reply::Goal(shared.set_goal(&session, &objective).await?))
         }
@@ -1189,6 +1282,8 @@ mod goal2_tests;
 mod goal3_tests;
 #[cfg(test)]
 mod goal_tests;
+#[cfg(test)]
+mod mcp2_tests;
 #[cfg(test)]
 mod mcp_tests;
 #[cfg(test)]

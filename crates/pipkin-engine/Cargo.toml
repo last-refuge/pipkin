@@ -38,7 +38,8 @@ icu_locale_core = "2.3"
 regress = { version = "0.12", features = ["utf16"] }
 # MCP client (plan: MCP-1). Pinned; client features only. The HTTP transport is wired through
 # the generic client trait over the engine's own reqwest, never the SDK's reqwest 0.13.
-rmcp = { version = "=3.5.1", default-features = false, features = ["client", "transport-child-process"] }
+rmcp = { version = "=3.5.1", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client"] }
+sse-stream = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

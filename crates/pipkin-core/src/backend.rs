@@ -19,6 +19,12 @@ pub enum LifecycleEvent {
     Notice(String),
     /// Saved state could not be read or written as usual (a failed background write, say).
     StorageIssue(String),
+    /// The MCP servers and their state (engine-owned; secrets never included).
+    Mcp(crate::mcp::McpSnapshot),
+    McpTest(crate::mcp::McpTestResult),
+    McpImport(crate::mcp::McpImportPreview),
+    /// A management action was refused; shown on the page, not as an app notice.
+    McpFailed(String),
 }
 
 pub type LifecycleSink = Box<dyn Fn(LifecycleEvent) + Send + Sync>;

@@ -14,7 +14,13 @@
 //! Tool annotations are carried as hints and never treated as proof of idempotency.
 
 pub mod config;
+pub mod http;
+pub mod import;
+pub mod oauth;
 pub mod service;
 
 pub use config::{McpConfig, McpServerConfig};
-pub use service::{CallOutcome, McpError, McpService, ServerHandle, ServerSnapshot, ToolInfo};
+pub use service::{
+    AuthProgress, CallOutcome, McpError, McpService, PromptView, ServerHandle, ServerSnapshot,
+    TestOutcome, ToolInfo,
+};

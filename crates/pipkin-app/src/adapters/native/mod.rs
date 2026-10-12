@@ -863,6 +863,41 @@ impl Live {
         }
     }
 
+    /// The engine session behind a conversation, for project-scoped settings.
+    fn mcp_session(&self, conversation: Option<ConversationId>) -> Option<String> {
+        conversation
+            .and_then(|c| self.session_of(c).map(|s| s.id.clone()))
+            .or_else(|| self.current.as_ref().map(|c| c.session.clone()))
+    }
+
+    /// MCP state changed in the engine (or a management call answered): publish the servers
+    /// for the open project.
+    fn publish_mcp(&mut self, worker: &mut Worker) {
+        let session = self.mcp_session(None);
+        match self.call(Call::McpServers { session }) {
+            Ok(Reply::McpServers(view)) => {
+                (worker.sink)(LifecycleEvent::Mcp(mapping::mcp_snapshot(&view)))
+            }
+            Ok(_) => {}
+            Err(CallError::Refused(e)) if e.code == ErrorCode::Unsupported => {}
+            Err(error) => log::warn!("mcp servers could not be read: {}", error_kind(&error)),
+        }
+    }
+
+    /// A management call whose reply is the servers view (or a refusal shown on the page).
+    fn mcp_call(&mut self, worker: &mut Worker, call: Call) {
+        match self.call(call) {
+            Ok(Reply::McpServers(view)) => {
+                (worker.sink)(LifecycleEvent::Mcp(mapping::mcp_snapshot(&view)))
+            }
+            Ok(_) => self.publish_mcp(worker),
+            Err(CallError::Refused(e)) => (worker.sink)(LifecycleEvent::McpFailed(e.message)),
+            Err(error) => (worker.sink)(LifecycleEvent::McpFailed(format!(
+                "The engine did not answer: {error}"
+            ))),
+        }
+    }
+
     fn publish_auth(
         &mut self,
         worker: &mut Worker,
@@ -949,6 +984,7 @@ impl Live {
                 (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
             }
             Event::AuthChanged(snapshot) => self.publish_auth(worker, &snapshot),
+            Event::McpChanged => self.publish_mcp(worker),
             Event::Notice { message } => worker.notice(message),
             Event::Session {
                 session,
@@ -1666,6 +1702,131 @@ impl Live {
                 generation,
                 entry,
             } => self.cancel_queued(worker, conversation, generation, entry),
+            BackendRequest::McpRefresh { conversation } => {
+                let session = self.mcp_session(conversation);
+                self.mcp_call(worker, Call::McpServers { session });
+            }
+            BackendRequest::McpUpsert {
+                conversation,
+                input,
+            } => {
+                let session = self.mcp_session(conversation);
+                let call = Call::McpUpsertServer {
+                    session,
+                    scope: mapping::mcp_scope(input.scope),
+                    name: input.name.trim().to_owned(),
+                    spec: mapping::mcp_spec(&input),
+                };
+                self.mcp_call(worker, call);
+            }
+            BackendRequest::McpRemove {
+                conversation,
+                scope,
+                name,
+            } => {
+                let session = self.mcp_session(conversation);
+                self.mcp_call(
+                    worker,
+                    Call::McpRemoveServer {
+                        session,
+                        scope: mapping::mcp_scope(scope),
+                        name,
+                    },
+                );
+            }
+            BackendRequest::McpTest { conversation, name } => {
+                let session = self.mcp_session(conversation);
+                match self.call(Call::McpTestServer { session, name }) {
+                    Ok(Reply::McpTest(view)) => {
+                        (worker.sink)(LifecycleEvent::McpTest(mapping::mcp_test(&view)));
+                        self.publish_mcp(worker);
+                    }
+                    Ok(_) => self.publish_mcp(worker),
+                    Err(error) => (worker.sink)(LifecycleEvent::McpFailed(format!(
+                        "Could not test the server: {error}"
+                    ))),
+                }
+            }
+            BackendRequest::McpReconnect { conversation, name } => {
+                let session = self.mcp_session(conversation);
+                self.mcp_call(worker, Call::McpReconnectServer { session, name });
+            }
+            BackendRequest::McpSetDisabledTools {
+                conversation,
+                scope,
+                name,
+                disabled,
+            } => {
+                let session = self.mcp_session(conversation);
+                self.mcp_call(
+                    worker,
+                    Call::McpSetDisabledTools {
+                        session,
+                        scope: mapping::mcp_scope(scope),
+                        name,
+                        disabled,
+                    },
+                );
+            }
+            BackendRequest::McpAuthStart { conversation, name } => {
+                let session = self.mcp_session(conversation);
+                self.mcp_call(worker, Call::McpAuthStart { session, name });
+            }
+            BackendRequest::McpAuthAnswer {
+                name,
+                prompt,
+                response,
+            } => {
+                if let Err(error) = self.call(Call::McpAuthAnswer {
+                    name,
+                    prompt,
+                    response: Secret(response.expose().to_owned()),
+                }) {
+                    log::warn!("mcp sign-in answer refused: {}", error_kind(&error));
+                    (worker.sink)(LifecycleEvent::McpFailed(
+                        "The sign-in prompt expired. Start the sign-in again.".into(),
+                    ));
+                }
+            }
+            BackendRequest::McpAuthCancel { name } => {
+                let _ = self.call(Call::McpAuthCancel { name });
+            }
+            BackendRequest::McpAuthRevoke { conversation, name } => {
+                let session = self.mcp_session(conversation);
+                self.mcp_call(worker, Call::McpAuthRevoke { session, name });
+            }
+            BackendRequest::McpImportPreview { conversation, text } => {
+                let session = self.mcp_session(conversation);
+                match self.call(Call::McpImportPreview {
+                    session,
+                    text: text.clone(),
+                }) {
+                    Ok(Reply::McpImport(view)) => {
+                        (worker.sink)(LifecycleEvent::McpImport(mapping::mcp_import(&text, &view)))
+                    }
+                    Ok(_) => {}
+                    Err(error) => (worker.sink)(LifecycleEvent::McpFailed(format!(
+                        "Could not read the configuration: {error}"
+                    ))),
+                }
+            }
+            BackendRequest::McpImportApply {
+                conversation,
+                scope,
+                text,
+                names,
+            } => {
+                let session = self.mcp_session(conversation);
+                self.mcp_call(
+                    worker,
+                    Call::McpImportApply {
+                        session,
+                        scope: mapping::mcp_scope(scope),
+                        text,
+                        names,
+                    },
+                );
+            }
             BackendRequest::RefreshModels { .. } => {
                 if let Err(error) = self.call(Call::RefreshModels) {
                     worker.notice(format!("Could not refresh the models: {error}"));

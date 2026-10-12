@@ -142,6 +142,14 @@ pub struct Workspace {
     pub(super) nav_search: Entity<ComposerEditor>,
     pub(super) overlay_input: Entity<ComposerEditor>,
     pub(super) setup_input: Entity<ComposerEditor>,
+    /// The MCP servers settings section's inputs and form choices.
+    pub(super) mcp_name: Entity<ComposerEditor>,
+    pub(super) mcp_target: Entity<ComposerEditor>,
+    pub(super) mcp_values: Entity<ComposerEditor>,
+    pub(super) mcp_import: Entity<ComposerEditor>,
+    pub(super) mcp_answer: Entity<ComposerEditor>,
+    pub(super) mcp_kind: pipkin_core::McpKind,
+    pub(super) mcp_scope: pipkin_core::McpScope,
     pub(super) setup_challenge: Option<String>,
     pub(super) setup_project_edit: bool,
     pub(super) last_entry: onboarding::EntrySurface,
@@ -212,6 +220,33 @@ impl Workspace {
             e.set_label("Sign-in response", cx);
             e.set_placeholder("Paste your code or redirect here");
         });
+        let mcp_name = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        mcp_name.update(cx, |e, cx| {
+            e.set_label("Server name", cx);
+            e.set_placeholder("Server name (letters, digits, - _ .)");
+        });
+        let mcp_target = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        mcp_target.update(cx, |e, cx| {
+            e.set_label("Command or URL", cx);
+            e.set_placeholder("npx -y @modelcontextprotocol/server-filesystem /path");
+        });
+        let mcp_values = cx.new(|cx| ComposerEditor::new(window, cx));
+        mcp_values.update(cx, |e, cx| {
+            e.set_label("Environment or headers", cx);
+            e.set_placeholder(
+                "NAME=value, one per line (environment for commands, headers for URLs)",
+            );
+        });
+        let mcp_import = cx.new(|cx| ComposerEditor::new(window, cx));
+        mcp_import.update(cx, |e, cx| {
+            e.set_label("Configuration to import", cx);
+            e.set_placeholder("{ \"mcpServers\": { ... } }");
+        });
+        let mcp_answer = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        mcp_answer.update(cx, |e, cx| {
+            e.set_label("MCP sign-in response", cx);
+            e.set_placeholder("Paste the code or redirect URL here");
+        });
         nav_search.update(cx, |e, cx| {
             e.set_placeholder("Search conversations");
             e.set_label("Search conversations", cx);
@@ -229,6 +264,11 @@ impl Workspace {
                 this.submit_sign_in_answer(cx);
             }
         }));
+        subs.push(cx.subscribe_in(&mcp_answer, window, |this, _, ev, _, cx| {
+            if matches!(ev, ComposerEvent::Submit) {
+                this.submit_mcp_answer(cx);
+            }
+        }));
         subs.push(
             cx.observe_window_bounds(window, |this, window, cx| this.on_window_bounds(window, cx)),
         );
@@ -244,6 +284,13 @@ impl Workspace {
             nav_search,
             overlay_input,
             setup_input,
+            mcp_name,
+            mcp_target,
+            mcp_values,
+            mcp_import,
+            mcp_answer,
+            mcp_kind: pipkin_core::McpKind::Stdio,
+            mcp_scope: pipkin_core::McpScope::User,
             setup_challenge: None,
             setup_project_edit: false,
             last_entry: initial_entry,

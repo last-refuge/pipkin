@@ -525,6 +525,10 @@ impl Harness {
                     self.state.set_notice(message)
                 }
                 LifecycleEvent::StorageIssue(message) => self.state.set_storage_issue(message),
+                LifecycleEvent::Mcp(snapshot) => self.state.apply_mcp(snapshot),
+                LifecycleEvent::McpTest(result) => self.state.mcp_test_result(result),
+                LifecycleEvent::McpImport(preview) => self.state.mcp_import_previewed(preview),
+                LifecycleEvent::McpFailed(message) => self.state.mcp_failed(message),
             };
             self.exec(outcome);
         }
@@ -3112,5 +3116,151 @@ fn an_engine_owned_goal_runs_to_completion_without_the_desktop_runner() {
     h.until("archived", |s| {
         s.current().is_some_and(|c| c.goal.is_none())
     });
+    h.stop();
+}
+
+// -------------------------------------------------------------------------------- MCP servers
+
+/// The engine's stdio fixture server, built once with the same cargo (see the engine's
+/// `runtime/mcp_tests.rs`).
+fn mcp_fixture_bin() -> String {
+    static BIN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    BIN.get_or_init(|| {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../pipkin-engine/Cargo.toml")
+            .canonicalize()
+            .unwrap();
+        let out = std::process::Command::new(env!("CARGO"))
+            .args([
+                "build",
+                "--example",
+                "mcp_fixture",
+                "--message-format=json",
+                "--manifest-path",
+            ])
+            .arg(&manifest)
+            .stderr(std::process::Stdio::inherit())
+            .output()
+            .expect("cargo runs");
+        assert!(out.status.success(), "building the fixture server failed");
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .find_map(|msg| {
+                (msg["reason"] == "compiler-artifact" && msg["target"]["name"] == "mcp_fixture")
+                    .then(|| msg["executable"].as_str().map(str::to_owned))
+                    .flatten()
+            })
+            .expect("cargo reported the fixture executable")
+    })
+    .clone()
+}
+
+/// The MCP servers settings section against the built-in engine: add, test, switch a tool
+/// off, import with a preview, and remove, with the engine's state reaching the page and
+/// no literal value ever shown.
+#[test]
+fn the_mcp_servers_page_manages_servers_through_the_engine() {
+    use pipkin_core::{McpKind, McpScope, McpServerInput, McpServerState};
+    let fx = Fixture::start(|_, _| Reply::Text("ok".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.dispatch(Command::McpRefresh);
+    h.until("the page knows the engine manages servers", |s| {
+        s.mcp.available
+    });
+    assert!(h.state.mcp.servers.is_empty());
+    assert!(h.state.mcp.project_available);
+    // Add a server with a literal value; the page shows the reference form only.
+    h.dispatch(Command::McpAddServer(McpServerInput {
+        scope: McpScope::User,
+        name: "fx".into(),
+        kind: McpKind::Stdio,
+        target: mcp_fixture_bin(),
+        values: McpServerInput::parse_values("MCP_FIXTURE_ENV=GREETING\nGREETING=plain-secret"),
+    }));
+    h.until("the server is listed", |s| s.mcp.server("fx").is_some());
+    let fx_server = h.state.mcp.server("fx").unwrap().clone();
+    assert_eq!(fx_server.scope, McpScope::User);
+    assert_eq!(fx_server.state, McpServerState::Stopped);
+    assert_eq!(fx_server.env, ["MCP_FIXTURE_ENV=…", "GREETING=…"]);
+    assert!(!format!("{:?}", h.state.mcp).contains("plain-secret"));
+    assert_eq!(h.state.mcp.busy, None);
+    // Test connects and lists tools; the catalog then shows on the page.
+    h.dispatch(Command::McpTestServer("fx".into()));
+    h.until("the test answered", |s| s.mcp.test.is_some());
+    let test = h.state.mcp.test.clone().unwrap();
+    assert!(test.ok, "{}", test.message);
+    assert!(test.tools.contains(&"echo".to_owned()));
+    h.until("the catalog is shown", |s| {
+        s.mcp
+            .server("fx")
+            .is_some_and(|f| f.catalog.iter().any(|t| t.name == "echo" && t.enabled))
+    });
+    assert_eq!(
+        h.state.mcp.server("fx").unwrap().state,
+        McpServerState::Ready
+    );
+    // Switching a tool off is written to settings and reflected without a restart.
+    h.dispatch(Command::McpSetToolEnabled {
+        server: "fx".into(),
+        tool: "echo".into(),
+        enabled: false,
+    });
+    h.until("echo is off", |s| {
+        s.mcp
+            .server("fx")
+            .is_some_and(|f| f.catalog.iter().any(|t| t.name == "echo" && !t.enabled))
+    });
+    assert_eq!(h.state.mcp.server("fx").unwrap().disabled_tools, ["echo"]);
+    assert_eq!(
+        h.state.mcp.server("fx").unwrap().state,
+        McpServerState::Ready
+    );
+    // A refused action lands on the page, not as an app notice.
+    h.dispatch(Command::McpAddServer(McpServerInput {
+        scope: McpScope::User,
+        name: "bad".into(),
+        kind: McpKind::Http,
+        target: "https://".into(),
+        values: vec![],
+    }));
+    h.until("the refusal is shown", |s| s.mcp.notice.is_some());
+    assert!(h.state.notice.is_none());
+    h.dispatch(Command::McpDismissNotice);
+    assert!(h.state.mcp.notice.is_none());
+    // Import with a preview into the project, then remove both.
+    let text = json!({"mcpServers": {"imported": {"command": mcp_fixture_bin(), "env": {"X": "${X_VALUE}"}}}}).to_string();
+    h.dispatch(Command::McpPreviewImport(text));
+    h.until("the preview arrived", |s| s.mcp.import.is_some());
+    let preview = h.state.mcp.import.clone().unwrap();
+    assert_eq!(preview.entries.len(), 1);
+    assert!(preview.entries[0].valid && preview.entries[0].selected && !preview.entries[0].exists);
+    h.dispatch(Command::McpApplyImport(McpScope::Project));
+    h.until("the imported server is listed", |s| {
+        s.mcp.server("imported").is_some()
+    });
+    assert_eq!(
+        h.state.mcp.server("imported").unwrap().scope,
+        McpScope::Project
+    );
+    assert_eq!(h.state.mcp.server("imported").unwrap().env, ["X=$X_VALUE"]);
+    let project_settings: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(fx.project.join(".pi/settings.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(project_settings["mcp"]["servers"]["imported"]["command"].is_string());
+    h.dispatch(Command::McpRemoveServer("imported".into()));
+    h.until("the imported server is gone", |s| {
+        s.mcp.server("imported").is_none()
+    });
+    h.dispatch(Command::McpRemoveServer("fx".into()));
+    h.until("fx is gone", |s| s.mcp.servers.is_empty());
+    let user_settings: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(fx.root.join("engine-config/settings.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(user_settings["mcp"]["servers"].get("fx").is_none());
     h.stop();
 }

@@ -17,16 +17,23 @@ pub(super) enum SettingsSection {
     Appearance,
     Session,
     Connections,
+    Servers,
 }
 
 impl SettingsSection {
-    const ALL: [Self; 3] = [Self::Appearance, Self::Session, Self::Connections];
+    const ALL: [Self; 4] = [
+        Self::Appearance,
+        Self::Session,
+        Self::Connections,
+        Self::Servers,
+    ];
 
     fn title(self) -> &'static str {
         match self {
             Self::Appearance => "Appearance",
             Self::Session => "Session",
             Self::Connections => "Connections",
+            Self::Servers => "MCP servers",
         }
     }
 
@@ -35,6 +42,7 @@ impl SettingsSection {
             Self::Appearance => "Make the workspace comfortable to read and use.",
             Self::Session => "Choose what Pi may do in this session.",
             Self::Connections => "Manage the accounts Pipkin uses for models.",
+            Self::Servers => "Connect tool servers the model can search and call.",
         }
     }
 
@@ -43,6 +51,7 @@ impl SettingsSection {
             Self::Appearance => "sun",
             Self::Session => "zap",
             Self::Connections => "wrench",
+            Self::Servers => "terminal",
         }
     }
 }
@@ -144,15 +153,13 @@ impl Workspace {
             ))
             .on_click(move |_, _, cx| {
                 this.update(cx, |w, cx| {
-                    w.settings_section = section;
-                    cx.notify();
+                    w.show_settings_section(section, cx);
                 });
             })
             .on_key_down(move |event, _, cx| {
                 if matches!(event.keystroke.key.as_str(), "enter" | "space") {
                     keyboard_this.update(cx, |w, cx| {
-                        w.settings_section = section;
-                        cx.notify();
+                        w.show_settings_section(section, cx);
                     });
                     cx.stop_propagation();
                 }
@@ -172,6 +179,19 @@ impl Workspace {
                     .text_color(if active { c.text } else { c.text_muted })
                     .child(section.title()),
             )
+    }
+
+    /// Selecting the servers section reads the engine's servers afresh.
+    pub(super) fn show_settings_section(
+        &mut self,
+        section: SettingsSection,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings_section = section;
+        if section == SettingsSection::Servers {
+            self.dispatch(Command::McpRefresh, cx);
+        }
+        cx.notify();
     }
 
     fn settings_page(&self, compact: bool, cx: &Context<Self>) -> gpui::AnyElement {
@@ -350,6 +370,7 @@ impl Workspace {
                         .child("Managing connections opens account setup. Return to the workspace when you’re done."))
                     .into_any_element()
             }
+            SettingsSection::Servers => self.render_mcp_section(cx),
         };
         div()
             .id("settings-content")
@@ -540,6 +561,9 @@ mod tests {
             .into_iter()
             .map(SettingsSection::title)
             .collect();
-        assert_eq!(labels, ["Appearance", "Session", "Connections"]);
+        assert_eq!(
+            labels,
+            ["Appearance", "Session", "Connections", "MCP servers"]
+        );
     }
 }

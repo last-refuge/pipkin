@@ -235,7 +235,7 @@ impl ToolHost for Host {
         >,
     > {
         Box::pin(async move {
-            self.shared.mcp_refresh(&self.parent);
+            self.shared.mcp_refresh(Some(&self.parent));
             Ok(self.shared.mcp.search(query, server).await)
         })
     }
@@ -245,7 +245,7 @@ impl ToolHost for Host {
         qualified: &'a str,
     ) -> BoxFuture<'a, Result<Result<crate::mcp::ToolInfo, crate::mcp::McpError>, String>> {
         Box::pin(async move {
-            self.shared.mcp_refresh(&self.parent);
+            self.shared.mcp_refresh(Some(&self.parent));
             Ok(self.shared.mcp.describe(qualified).await)
         })
     }
@@ -258,7 +258,7 @@ impl ToolHost for Host {
         cancel: CancellationToken,
     ) -> BoxFuture<'a, Result<Result<crate::mcp::CallOutcome, crate::mcp::McpError>, String>> {
         Box::pin(async move {
-            self.shared.mcp_refresh(&self.parent);
+            self.shared.mcp_refresh(Some(&self.parent));
             Ok(self.shared.mcp.call(qualified, arguments, cancel).await)
         })
     }

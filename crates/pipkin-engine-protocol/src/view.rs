@@ -662,9 +662,9 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 19);
+        assert_eq!(crate::PROTOCOL_VERSION, 20);
         let servers = Call::McpServers {
-            session: "s1".into(),
+            session: Some("s1".into()),
         };
         assert_eq!(
             serde_json::to_value(&servers).unwrap()["call"],
@@ -1022,21 +1022,36 @@ pub struct PlanRejected {
 
 // --------------------------------------------------------------------------- web sources
 
+/// Which settings file an MCP edit goes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum McpScope {
+    User,
+    Project,
+}
+
 /// One configured MCP server as a client sees it. `command` is the executable and its
-/// arguments; `env` lists variable names with their reference (`$NAME`, `secret:key`) or
-/// `…` for an inline literal, never a resolved value.
+/// arguments, or the URL; `env` lists variable or header names with their reference
+/// (`$NAME`, `secret:key`) or `…` for an inline literal, never a resolved value.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerView {
     pub name: String,
     /// `user` or `project`.
     pub scope: String,
+    /// `stdio` or `http`.
+    pub kind: String,
     pub enabled: bool,
-    /// `stopped`, `connecting`, `ready` or `failed`.
+    /// `stopped`, `connecting`, `ready`, `authRequired` or `failed`.
     pub state: String,
     pub error: Option<String>,
     /// Number of tools in the cached catalog, when it has been read.
     pub tools: Option<usize>,
+    /// The cached catalog (names and first lines), with enablement.
+    #[serde(default)]
+    pub catalog: Vec<McpToolView>,
+    #[serde(default)]
+    pub disabled_tools: Vec<String>,
     /// Hash of the launch-relevant configuration.
     pub revision: String,
     pub command: String,
@@ -1044,6 +1059,46 @@ pub struct McpServerView {
     pub keep_alive: bool,
     pub idle_seconds: u64,
     pub in_flight: usize,
+    pub auth: McpAuthView,
+    /// The settings entry with literals redacted; what an edit starts from.
+    #[serde(default)]
+    pub spec: serde_json::Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolView {
+    pub name: String,
+    pub description: String,
+    pub enabled: bool,
+}
+
+/// Sign-in state of an HTTP server. The URL is volatile presentation state.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpAuthView {
+    /// HTTP servers can sign in; stdio servers cannot.
+    pub supported: bool,
+    /// Saved tokens exist (metadata only).
+    pub signed_in: bool,
+    /// The server refused the last connection for lack of a token.
+    pub required: bool,
+    pub status: AuthStatus,
+    pub message: String,
+    pub url: Option<String>,
+    pub prompt: Option<McpPromptView>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpPromptView {
+    pub id: String,
+    /// `text`, `secret`, `select` or `manual_code`.
+    pub kind: String,
+    pub message: String,
+    pub placeholder: Option<String>,
+    #[serde(default)]
+    pub options: Vec<(String, String)>,
 }
 
 /// The configured servers plus configuration warnings (invalid entries left out).
@@ -1053,6 +1108,45 @@ pub struct McpServersView {
     pub servers: Vec<McpServerView>,
     pub warnings: Vec<String>,
     pub call_timeout_seconds: u64,
+    /// The session's project can hold its own entries (a session was given).
+    #[serde(default)]
+    pub project_available: bool,
+}
+
+/// The outcome of connecting afresh.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpTestView {
+    pub name: String,
+    pub ok: bool,
+    pub message: String,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    pub server_name: Option<String>,
+    pub server_version: Option<String>,
+    pub protocol_version: Option<String>,
+    pub latency_ms: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpImportEntryView {
+    pub name: String,
+    pub kind: String,
+    /// The converted entry with literals redacted.
+    pub spec: serde_json::Value,
+    pub warnings: Vec<String>,
+    /// A server of this name is already configured (applying replaces it).
+    pub exists: bool,
+    /// The entry is valid and can be applied.
+    pub valid: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpImportView {
+    pub entries: Vec<McpImportEntryView>,
+    pub warnings: Vec<String>,
 }
 
 /// A retained web source: a search result or a fetched page. Content is read through the

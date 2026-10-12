@@ -600,7 +600,20 @@ impl Worker {
             // The demo keeps the desktop goal runner; it never reports an engine-owned goal.
             | BackendRequest::SetGoal { .. }
             | BackendRequest::GoalControl { .. }
-            | BackendRequest::MigrateGoal { .. } => {}
+            | BackendRequest::MigrateGoal { .. }
+            // The demo manages no MCP servers; the page says so instead of simulating one.
+            | BackendRequest::McpRefresh { .. }
+            | BackendRequest::McpUpsert { .. }
+            | BackendRequest::McpRemove { .. }
+            | BackendRequest::McpTest { .. }
+            | BackendRequest::McpReconnect { .. }
+            | BackendRequest::McpSetDisabledTools { .. }
+            | BackendRequest::McpAuthStart { .. }
+            | BackendRequest::McpAuthAnswer { .. }
+            | BackendRequest::McpAuthCancel { .. }
+            | BackendRequest::McpAuthRevoke { .. }
+            | BackendRequest::McpImportPreview { .. }
+            | BackendRequest::McpImportApply { .. } => {}
             BackendRequest::Steer {
                 conversation,
                 generation,

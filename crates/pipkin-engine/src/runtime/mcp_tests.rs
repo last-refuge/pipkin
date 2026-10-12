@@ -17,7 +17,7 @@ use crate::provider::scripted::{Reply as R, Scripted};
 
 /// The fixture server binary, built once per test binary with the same cargo (`cargo test`
 /// only type-checks examples), located from cargo's own report rather than a guessed path.
-fn fixture_bin() -> String {
+pub(super) fn fixture_bin() -> String {
     static BIN: OnceLock<String> = OnceLock::new();
     BIN.get_or_init(|| {
         let out = std::process::Command::new(env!("CARGO"))
@@ -46,12 +46,12 @@ fn fixture_bin() -> String {
     .clone()
 }
 
-fn write_settings(fx: &Fixture, body: serde_json::Value) {
+pub(super) fn write_settings(fx: &Fixture, body: serde_json::Value) {
     std::fs::create_dir_all(fx.dir.path().join("config")).unwrap();
     std::fs::write(fx.dir.path().join("config/settings.json"), body.to_string()).unwrap();
 }
 
-fn server(extra: serde_json::Value) -> serde_json::Value {
+pub(super) fn server(extra: serde_json::Value) -> serde_json::Value {
     let mut body = json!({"command": fixture_bin()});
     if let (Some(b), Some(e)) = (body.as_object_mut(), extra.as_object()) {
         b.extend(e.clone());
@@ -77,7 +77,7 @@ fn last_tool_result(req: &ProviderRequest) -> Option<String> {
 }
 
 /// After a user message `tool args-json`, call that tool; then echo its result.
-fn calling_from_prompt() -> impl Fn(&ProviderRequest, usize) -> R + Send + Sync {
+pub(super) fn calling_from_prompt() -> impl Fn(&ProviderRequest, usize) -> R + Send + Sync {
     move |req, _| {
         if last_is_user(req) {
             let text = req
@@ -127,7 +127,12 @@ fn tool_results(snap: &SessionSnapshot) -> Vec<(String, bool, String, Option<ser
         .collect()
 }
 
-fn run(e: &mut Engine, s: &str, key: &str, prompt: &str) -> (bool, String, serde_json::Value) {
+pub(super) fn run(
+    e: &mut Engine,
+    s: &str,
+    key: &str,
+    prompt: &str,
+) -> (bool, String, serde_json::Value) {
     e.prompt(s, key, prompt).unwrap();
     assert_eq!(e.settled(key), RunOutcome::Completed);
     let snap = e.snapshot(s);
@@ -135,8 +140,10 @@ fn run(e: &mut Engine, s: &str, key: &str, prompt: &str) -> (bool, String, serde
     (is_error, text, details.unwrap()["mcp"].clone())
 }
 
-fn servers(e: &mut Engine, s: &str) -> McpServersView {
-    match e.call(Call::McpServers { session: s.into() }) {
+pub(super) fn servers(e: &mut Engine, s: &str) -> McpServersView {
+    match e.call(Call::McpServers {
+        session: Some(s.into()),
+    }) {
         Ok(Reply::McpServers(v)) => v,
         other => panic!("{other:?}"),
     }

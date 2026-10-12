@@ -278,9 +278,79 @@ pub enum Call {
         session: SessionId,
     },
     /// The MCP servers configured for the session's project (user settings merged with the
-    /// project's) and their current state. Secret values never appear.
+    /// project's; user settings alone without a session) and their state. Secret values
+    /// never appear.
     McpServers {
-        session: SessionId,
+        #[serde(default)]
+        session: Option<SessionId>,
+    },
+    /// Add or replace a server entry in the user or the session's project settings. `spec`
+    /// is the settings entry; a value of `…` keeps the stored literal.
+    McpUpsertServer {
+        #[serde(default)]
+        session: Option<SessionId>,
+        scope: McpScope,
+        name: String,
+        spec: serde_json::Value,
+    },
+    McpRemoveServer {
+        #[serde(default)]
+        session: Option<SessionId>,
+        scope: McpScope,
+        name: String,
+    },
+    /// Tools switched off for a server (never offered or callable).
+    McpSetDisabledTools {
+        #[serde(default)]
+        session: Option<SessionId>,
+        scope: McpScope,
+        name: String,
+        disabled: Vec<String>,
+    },
+    /// Connect afresh and list the tools.
+    McpTestServer {
+        #[serde(default)]
+        session: Option<SessionId>,
+        name: String,
+    },
+    McpReconnectServer {
+        #[serde(default)]
+        session: Option<SessionId>,
+        name: String,
+    },
+    /// Begin an OAuth sign-in for an HTTP server; progress arrives through `McpChanged`.
+    McpAuthStart {
+        #[serde(default)]
+        session: Option<SessionId>,
+        name: String,
+    },
+    McpAuthAnswer {
+        name: String,
+        prompt: String,
+        response: Secret,
+    },
+    McpAuthCancel {
+        name: String,
+    },
+    /// Forget the saved tokens.
+    McpAuthRevoke {
+        #[serde(default)]
+        session: Option<SessionId>,
+        name: String,
+    },
+    /// Convert pasted `mcpServers` configuration without writing anything.
+    McpImportPreview {
+        #[serde(default)]
+        session: Option<SessionId>,
+        text: String,
+    },
+    /// Write the named entries of a previewed import.
+    McpImportApply {
+        #[serde(default)]
+        session: Option<SessionId>,
+        scope: McpScope,
+        text: String,
+        names: Vec<String>,
     },
     /// Set (or replace) the session's goal; the engine schedules its turns.
     SetGoal {
@@ -473,6 +543,8 @@ pub enum Reply {
     PlanUpdated(PlanReceipt),
     WebSources(Vec<WebSourceView>),
     McpServers(McpServersView),
+    McpTest(McpTestView),
+    McpImport(McpImportView),
     Goal(Option<GoalView>),
     Goals(Vec<GoalView>),
     Auth(AuthSnapshot),
@@ -570,6 +642,8 @@ pub enum Event {
     ModelsChanged,
     /// Sign-in state for this client changed. Volatile; never in the durable outbox.
     AuthChanged(AuthSnapshot),
+    /// MCP server state (connection, sign-in, catalog) changed; read `McpServers` again.
+    McpChanged,
     Notice {
         message: String,
     },

@@ -1,19 +1,36 @@
-//! The MCP service: supervised server processes, cached catalogs, bounded calls.
+//! The MCP service: supervised servers (stdio processes and Streamable HTTP endpoints),
+//! cached catalogs, bounded calls, per-server OAuth sign-in and the management operations
+//! behind the native Connections page.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
+use pipkin_engine_protocol::AuthStatus;
 use rmcp::model::{CallToolRequestParams, ClientConfig, ContentBlock, Implementation};
 use rmcp::service::RunningService;
 use rmcp::transport::child_process::TokioChildProcess;
+use rmcp::transport::streamable_http_client::{
+    StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
+};
 use rmcp::{ClientHandler, RoleClient, ServiceExt};
 use serde_json::{Map, Value};
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
-use super::config::{McpConfig, McpServerConfig, read_secrets, resolve_env};
+use super::config::{
+    McpConfig, McpServerConfig, Transport, read_secrets, resolve_one, resolve_refs,
+};
+use super::http::{EngineHttp, auth_required};
+use super::oauth::{McpFlow, discover, register};
+use crate::auth::oauth::{
+    AuthEvent, CANCELLED, Endpoints, FlowCtx, Interaction, InteractionSink, OAuthFlow, Prompt,
+};
+use crate::auth::store::{CredentialStore, FileStore, OAuthCredential, StoredCredential};
+use crate::config::Env;
+use crate::provider::BoxFuture;
 
 /// Backoff after a failed start before another attempt.
 pub const START_BACKOFF: Duration = Duration::from_secs(30);
@@ -25,6 +42,9 @@ pub const MAX_SEARCH_RESULTS: usize = 50;
 pub const MAX_DESCRIPTION_CHARS: usize = 2_000;
 /// Largest input schema kept (serialized bytes).
 pub const MAX_SCHEMA_BYTES: usize = 64 * 1024;
+/// Tokens are refreshed when they expire within this margin.
+const TOKEN_MARGIN_MS: i64 = 60 * 1000;
+const REFRESH_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolInfo {
@@ -44,20 +64,47 @@ impl ToolInfo {
     }
 }
 
+/// A sign-in prompt as a client sees it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PromptView {
+    pub id: String,
+    /// `text`, `secret`, `select` or `manual_code`.
+    pub kind: String,
+    pub message: String,
+    pub placeholder: Option<String>,
+    pub options: Vec<(String, String)>,
+}
+
+/// Progress of a server's sign-in. The URL is volatile presentation state, never logged.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AuthProgress {
+    pub status: AuthStatus,
+    pub message: String,
+    pub url: Option<String>,
+    pub prompt: Option<PromptView>,
+}
+
 /// What a client sees of a server.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ServerSnapshot {
-    pub name: String,
-    pub scope: String,
-    pub enabled: bool,
-    /// `stopped`, `connecting`, `ready`, `failed`.
+    pub config: McpServerConfig,
+    /// `stopped`, `connecting`, `ready`, `authRequired`, `failed`.
     pub state: String,
     pub error: Option<String>,
-    pub tools: Option<usize>,
-    pub revision: String,
-    pub keep_alive: bool,
-    pub idle_seconds: u64,
+    pub catalog: Option<Vec<ToolInfo>>,
     pub in_flight: usize,
+    pub auth: AuthProgress,
+    /// Saved tokens exist for this server (metadata only).
+    pub signed_in: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TestOutcome {
+    pub tools: Vec<String>,
+    pub server_name: Option<String>,
+    pub server_version: Option<String>,
+    pub protocol_version: Option<String>,
+    pub latency_ms: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,7 +116,14 @@ pub enum McpError {
         server: String,
         reason: String,
     },
+    AuthRequired {
+        server: String,
+    },
     UnknownTool {
+        server: String,
+        tool: String,
+    },
+    ToolDisabled {
         server: String,
         tool: String,
     },
@@ -93,7 +147,9 @@ impl McpError {
             McpError::UnknownServer(_) => "unknown_server",
             McpError::Disabled(_) => "disabled",
             McpError::StartFailed { .. } => "start_failed",
+            McpError::AuthRequired { .. } => "auth_required",
             McpError::UnknownTool { .. } => "unknown_tool",
+            McpError::ToolDisabled { .. } => "tool_disabled",
             McpError::InvalidArguments(_) => "invalid_arguments",
             McpError::Timeout { .. } => "timeout",
             McpError::Cancelled => "cancelled",
@@ -111,8 +167,15 @@ impl std::fmt::Display for McpError {
             McpError::StartFailed { server, reason } => {
                 write!(f, "MCP server {server} could not start: {reason}")
             }
+            McpError::AuthRequired { server } => write!(
+                f,
+                "MCP server {server} needs you to sign in first (Settings → MCP servers)"
+            ),
             McpError::UnknownTool { server, tool } => {
                 write!(f, "MCP server {server} has no tool {tool:?}")
+            }
+            McpError::ToolDisabled { server, tool } => {
+                write!(f, "tool {server}/{tool} is switched off in settings")
             }
             McpError::InvalidArguments(m) => f.write_str(m),
             McpError::Timeout { server, tool, secs } => write!(
@@ -157,9 +220,6 @@ impl ClientHandler for Handler {
     }
 }
 
-/// How the service reads the engine's environment (never the process environment directly).
-pub type EnvLookup = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
-
 type Client = RunningService<RoleClient, Handler>;
 
 /// A running server taken out of the service, to be stopped off any lock.
@@ -181,10 +241,19 @@ enum State {
         client: Arc<Client>,
         dirty: Arc<AtomicBool>,
     },
+    /// The server answered 401; the person must sign in.
+    AuthRequired {
+        www_authenticate: Option<String>,
+    },
     Failed {
         reason: String,
         until: Instant,
     },
+}
+
+struct Attempt {
+    cancel: CancellationToken,
+    pending: Option<(String, oneshot::Sender<String>)>,
 }
 
 struct Entry {
@@ -193,61 +262,130 @@ struct Entry {
     catalog: Option<Vec<ToolInfo>>,
     last_used: Instant,
     in_flight: usize,
+    auth: AuthProgress,
+    attempt: Option<Attempt>,
+    signed_in: bool,
 }
 
+pub type ChangeListener = Arc<dyn Fn() + Send + Sync>;
+pub type HttpSource = Arc<dyn Fn() -> reqwest::Client + Send + Sync>;
+
 pub struct McpService {
+    me: Weak<McpService>,
     config_dir: PathBuf,
-    env: EnvLookup,
+    env: Env,
     config: Mutex<McpConfig>,
     servers: Mutex<HashMap<String, Entry>>,
     /// Serializes starts per server so two first calls cannot spawn two processes.
     starting: tokio::sync::Mutex<()>,
     /// Catalogs persisted across engine runs, by `name:revision`.
     cache_path: PathBuf,
+    credentials: Arc<dyn CredentialStore>,
+    http: Mutex<Option<HttpSource>>,
+    listener: Mutex<Option<ChangeListener>>,
 }
 
 impl McpService {
-    pub fn new(config_dir: PathBuf, data_dir: PathBuf, env: EnvLookup) -> McpService {
-        McpService {
+    pub fn new(config_dir: PathBuf, data_dir: PathBuf, env: Env) -> Arc<McpService> {
+        Arc::new_cyclic(|me| McpService {
+            me: me.clone(),
+            credentials: Arc::new(FileStore::new(config_dir.join("mcp-auth.json"))),
             config_dir,
             env,
             config: Mutex::new(McpConfig::default()),
             servers: Mutex::new(HashMap::new()),
             starting: tokio::sync::Mutex::new(()),
             cache_path: data_dir.join("mcp-catalog.json"),
+            http: Mutex::new(None),
+            listener: Mutex::new(None),
+        })
+    }
+
+    /// Where HTTP transports and sign-in get their client (the engine's, with its policy).
+    pub fn set_http(&self, source: HttpSource) {
+        *self.http.lock().unwrap_or_else(|e| e.into_inner()) = Some(source);
+    }
+
+    /// Called after any state a client may show changes.
+    pub fn set_listener(&self, listener: ChangeListener) {
+        *self.listener.lock().unwrap_or_else(|e| e.into_inner()) = Some(listener);
+    }
+
+    fn changed(&self) {
+        let listener = self
+            .listener
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if let Some(l) = listener {
+            l();
         }
     }
 
+    fn http(&self) -> reqwest::Client {
+        let source = self.http.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        source.map(|s| s()).unwrap_or_default()
+    }
+
+    fn has_credential(&self, name: &str) -> bool {
+        matches!(
+            self.credentials.read(name),
+            Ok(Some(StoredCredential::OAuth(_)))
+        )
+    }
+
     /// Apply (merged) settings. Servers whose revision changed, or that disappeared, are
-    /// stopped; their catalogs are forgotten.
+    /// stopped; their catalogs are forgotten. Tool enablement follows without a restart.
     pub fn apply_config(&self, config: McpConfig) -> Vec<ServerHandle> {
         let mut to_stop = Vec::new();
-        let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
-        let names: Vec<String> = servers.keys().cloned().collect();
-        for name in names {
-            let keep = config
-                .server(&name)
-                .is_some_and(|c| c.revision == servers[&name].config.revision);
-            if !keep
-                && let Some(entry) = servers.remove(&name)
-                && let State::Ready { client, .. } = entry.state
-            {
-                to_stop.push(ServerHandle(client));
+        let mut changed = false;
+        {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            let names: Vec<String> = servers.keys().cloned().collect();
+            for name in names {
+                let keep = config
+                    .server(&name)
+                    .is_some_and(|c| c.revision == servers[&name].config.revision);
+                if !keep {
+                    changed = true;
+                    if let Some(entry) = servers.remove(&name) {
+                        if let Some(attempt) = entry.attempt {
+                            attempt.cancel.cancel();
+                        }
+                        if let State::Ready { client, .. } = entry.state {
+                            to_stop.push(ServerHandle(client));
+                        }
+                    }
+                }
             }
-        }
-        for server in &config.servers {
-            servers.entry(server.name.clone()).or_insert_with(|| Entry {
-                config: server.clone(),
-                state: State::Stopped,
-                catalog: self.cached_catalog(server),
-                last_used: Instant::now(),
-                in_flight: 0,
-            });
-            if let Some(entry) = servers.get_mut(&server.name) {
-                entry.config = server.clone();
+            for server in &config.servers {
+                if !servers.contains_key(&server.name) {
+                    changed = true;
+                    servers.insert(
+                        server.name.clone(),
+                        Entry {
+                            config: server.clone(),
+                            state: State::Stopped,
+                            catalog: self.cached_catalog(server),
+                            last_used: Instant::now(),
+                            in_flight: 0,
+                            auth: AuthProgress::default(),
+                            attempt: None,
+                            signed_in: self.has_credential(&server.name),
+                        },
+                    );
+                } else if let Some(entry) = servers.get_mut(&server.name) {
+                    if entry.config != *server {
+                        changed = true;
+                    }
+                    entry.config = server.clone();
+                }
             }
         }
         *self.config.lock().unwrap_or_else(|e| e.into_inner()) = config;
+        if changed {
+            self.changed();
+        }
         to_stop
     }
 
@@ -267,23 +405,21 @@ impl McpService {
                     State::Stopped => ("stopped", None),
                     State::Connecting => ("connecting", None),
                     State::Ready { .. } => ("ready", None),
+                    State::AuthRequired { .. } => ("authRequired", None),
                     State::Failed { reason, .. } => ("failed", Some(reason.clone())),
                 };
                 ServerSnapshot {
-                    name: e.config.name.clone(),
-                    scope: e.config.scope.clone(),
-                    enabled: e.config.enabled,
+                    config: e.config.clone(),
                     state: state.into(),
                     error,
-                    tools: e.catalog.as_ref().map(Vec::len),
-                    revision: e.config.revision.clone(),
-                    keep_alive: e.config.keep_alive,
-                    idle_seconds: e.config.idle_seconds,
+                    catalog: e.catalog.clone(),
                     in_flight: e.in_flight,
+                    auth: e.auth.clone(),
+                    signed_in: e.signed_in,
                 }
             })
             .collect();
-        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out.sort_by(|a, b| a.config.name.cmp(&b.config.name));
         out
     }
 
@@ -355,6 +491,56 @@ impl McpService {
         Ok(server)
     }
 
+    /// A bearer token for an HTTP server from its saved credential, refreshed when it is
+    /// about to expire. `None` when nothing is saved.
+    async fn bearer_for(&self, server: &McpServerConfig) -> Result<Option<String>, String> {
+        let name = server.name.clone();
+        let store = self.credentials.clone();
+        let read = tokio::task::spawn_blocking(move || store.read(&name))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| format!("saved credentials could not be read: {e}"))?;
+        let Some(StoredCredential::OAuth(credential)) = read else {
+            return Ok(None);
+        };
+        if credential.expires - crate::util::now_ms() > TOKEN_MARGIN_MS {
+            return Ok(Some(format!("Bearer {}", credential.access)));
+        }
+        let Some(flow) = McpFlow::from_credential(&server.name, &credential) else {
+            return Err("the saved sign-in is incomplete; sign in again".into());
+        };
+        let ctx = self.flow_ctx();
+        let refreshed = tokio::time::timeout(REFRESH_TIMEOUT, flow.refresh(&ctx, &credential))
+            .await
+            .map_err(|_| "the token refresh timed out; sign in again".to_owned())?
+            .map_err(|e| format!("{e}; sign in again"))?;
+        self.save_credential(&server.name, refreshed.clone())
+            .await?;
+        Ok(Some(format!("Bearer {}", refreshed.access)))
+    }
+
+    async fn save_credential(&self, name: &str, credential: OAuthCredential) -> Result<(), String> {
+        let store = self.credentials.clone();
+        let name = name.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let mut txn = store.begin()?;
+            txn.set(&name, StoredCredential::OAuth(credential));
+            txn.commit()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("the sign-in could not be saved: {e}"))
+    }
+
+    fn flow_ctx(&self) -> FlowCtx {
+        FlowCtx {
+            http: self.http(),
+            endpoints: Endpoints::from_env(&self.env),
+            device_id: None,
+            copilot_model_ids: Vec::new(),
+        }
+    }
+
     /// The ready client for `name`, starting the server when needed.
     async fn ensure_started(&self, name: &str) -> Result<Arc<Client>, McpError> {
         let server = self.server_config(name)?;
@@ -371,6 +557,11 @@ impl McpService {
                         return Err(McpError::StartFailed {
                             server: name.to_owned(),
                             reason: format!("{reason} (retrying after a backoff)"),
+                        });
+                    }
+                    State::AuthRequired { .. } => {
+                        return Err(McpError::AuthRequired {
+                            server: name.to_owned(),
                         });
                     }
                     _ => {}
@@ -390,72 +581,125 @@ impl McpService {
             }
         }
         self.set_state(name, State::Connecting);
-        let secrets = read_secrets(&self.config_dir);
-        let env = match resolve_env(&server, &|k| (self.env)(k), &secrets) {
-            Ok(env) => env,
-            Err(reason) => {
-                self.fail(name, reason.clone());
-                return Err(McpError::StartFailed {
-                    server: name.to_owned(),
-                    reason,
-                });
-            }
-        };
         let start_timeout = Duration::from_secs(self.config().start_timeout_secs);
-        let mut command = tokio::process::Command::new(&server.command);
-        command.args(&server.args);
-        command.env_clear();
-        // A minimal, explicit environment: PATH and HOME from the engine, then the server's.
-        for inherited in ["PATH", "HOME", "LANG", "TMPDIR", "SHELL", "USER"] {
-            if let Some(v) = (self.env)(inherited) {
-                command.env(inherited, v);
-            }
-        }
-        for (k, v) in env {
-            command.env(k, v);
-        }
-        if let Some(cwd) = &server.cwd {
-            command.current_dir(cwd);
-        }
         let dirty = Arc::new(AtomicBool::new(false));
         let handler = Handler {
             dirty: dirty.clone(),
         };
-        let transport = match TokioChildProcess::builder(command)
-            .stderr(std::process::Stdio::null())
-            .spawn()
-        {
-            Ok((transport, _)) => transport,
-            Err(e) => {
-                let reason = format!("cannot spawn {}: {e}", server.command);
-                self.fail(name, reason.clone());
-                return Err(McpError::StartFailed {
-                    server: name.to_owned(),
-                    reason,
-                });
+        let served = match &server.transport {
+            Transport::Stdio {
+                command: exe,
+                args,
+                cwd,
+                env,
+            } => {
+                let secrets = read_secrets(&self.config_dir);
+                let env = match resolve_refs(name, "env", env, &|k| self.env.get(k), &secrets) {
+                    Ok(env) => env,
+                    Err(reason) => return Err(self.fail(name, reason)),
+                };
+                let mut command = tokio::process::Command::new(exe);
+                command.args(args);
+                command.env_clear();
+                // A minimal, explicit environment: PATH and HOME from the engine, then the
+                // server's.
+                for inherited in ["PATH", "HOME", "LANG", "TMPDIR", "SHELL", "USER"] {
+                    if let Some(v) = self.env.get(inherited) {
+                        command.env(inherited, v);
+                    }
+                }
+                for (k, v) in env {
+                    command.env(k, v);
+                }
+                if let Some(cwd) = cwd {
+                    command.current_dir(cwd);
+                }
+                let transport = match TokioChildProcess::builder(command)
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                {
+                    Ok((transport, _)) => transport,
+                    Err(e) => return Err(self.fail(name, format!("cannot spawn {exe}: {e}"))),
+                };
+                tokio::time::timeout(start_timeout, handler.serve(transport))
+                    .await
+                    .map(|r| r.map_err(|e| (auth_required(&e), e.to_string())))
+            }
+            Transport::Http { url, headers } => {
+                let secrets = read_secrets(&self.config_dir);
+                let headers =
+                    match resolve_refs(name, "headers", headers, &|k| self.env.get(k), &secrets) {
+                        Ok(h) => h,
+                        Err(reason) => return Err(self.fail(name, reason)),
+                    };
+                let mut custom = HashMap::new();
+                for (k, v) in headers {
+                    match (
+                        reqwest::header::HeaderName::from_bytes(k.as_bytes()),
+                        reqwest::header::HeaderValue::from_str(&v),
+                    ) {
+                        (Ok(name), Ok(value)) => {
+                            custom.insert(name, value);
+                        }
+                        _ => return Err(self.fail(name, format!("header {k} is not valid"))),
+                    }
+                }
+                let bearer = match self.bearer_for(&server).await {
+                    Ok(b) => b,
+                    Err(reason) => {
+                        self.set_state(
+                            name,
+                            State::AuthRequired {
+                                www_authenticate: None,
+                            },
+                        );
+                        self.set_auth(name, |a| {
+                            a.status = AuthStatus::Failed;
+                            a.message = reason;
+                        });
+                        return Err(McpError::AuthRequired {
+                            server: name.to_owned(),
+                        });
+                    }
+                };
+                let mut config = StreamableHttpClientTransportConfig::with_uri(url.clone());
+                config.auth_header = bearer;
+                config.custom_headers = custom;
+                let transport = StreamableHttpClientTransport::with_client(
+                    EngineHttp {
+                        client: self.http(),
+                    },
+                    config,
+                );
+                tokio::time::timeout(start_timeout, handler.serve(transport))
+                    .await
+                    .map(|r| r.map_err(|e| (auth_required(&e), e.to_string())))
             }
         };
-        let served = tokio::time::timeout(start_timeout, handler.serve(transport)).await;
         let client = match served {
             Ok(Ok(client)) => Arc::new(client),
-            Ok(Err(e)) => {
-                let reason = format!("initialization failed: {e}");
-                self.fail(name, reason.clone());
-                return Err(McpError::StartFailed {
+            Ok(Err((Some(www_authenticate), _))) => {
+                self.set_state(
+                    name,
+                    State::AuthRequired {
+                        www_authenticate: Some(www_authenticate),
+                    },
+                );
+                return Err(McpError::AuthRequired {
                     server: name.to_owned(),
-                    reason,
                 });
             }
+            Ok(Err((None, e))) => {
+                return Err(self.fail(name, format!("initialization failed: {e}")));
+            }
             Err(_) => {
-                let reason = format!(
-                    "did not finish initializing within {} s",
-                    start_timeout.as_secs()
-                );
-                self.fail(name, reason.clone());
-                return Err(McpError::StartFailed {
-                    server: name.to_owned(),
-                    reason,
-                });
+                return Err(self.fail(
+                    name,
+                    format!(
+                        "did not finish initializing within {} s",
+                        start_timeout.as_secs()
+                    ),
+                ));
             }
         };
         self.set_state(
@@ -469,26 +713,44 @@ impl McpService {
     }
 
     fn set_state(&self, name: &str, state: State) {
-        let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(entry) = servers.get_mut(name) {
-            entry.state = state;
-            entry.last_used = Instant::now();
+        {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(entry) = servers.get_mut(name) {
+                entry.state = state;
+                entry.last_used = Instant::now();
+            }
         }
+        self.changed();
     }
 
-    fn fail(&self, name: &str, reason: String) {
+    fn set_auth(&self, name: &str, edit: impl FnOnce(&mut AuthProgress)) {
+        {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(entry) = servers.get_mut(name) {
+                edit(&mut entry.auth);
+                entry.signed_in = self.has_credential(name);
+            }
+        }
+        self.changed();
+    }
+
+    fn fail(&self, name: &str, reason: String) -> McpError {
         log::warn!("mcp server {name}: {reason}");
         self.set_state(
             name,
             State::Failed {
-                reason,
+                reason: reason.clone(),
                 until: Instant::now() + START_BACKOFF,
             },
         );
+        McpError::StartFailed {
+            server: name.to_owned(),
+            reason,
+        }
     }
 
     /// The server's tools: cached unless the server reported a change or has never been
-    /// listed under this revision.
+    /// listed under this revision. Disabled tools are included (callers filter).
     pub async fn catalog(&self, name: &str) -> Result<Vec<ToolInfo>, McpError> {
         let (cached, dirty) = {
             let servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
@@ -506,10 +768,19 @@ impl McpService {
         }
         let server = self.server_config(name)?;
         let client = self.ensure_started(name).await?;
+        self.list_into_catalog(&server, &client).await
+    }
+
+    async fn list_into_catalog(
+        &self,
+        server: &McpServerConfig,
+        client: &Client,
+    ) -> Result<Vec<ToolInfo>, McpError> {
+        let name = server.name.as_str();
         let listed = client
             .list_all_tools()
             .await
-            .map_err(|e| self.transport_error(name, e.to_string()))?;
+            .map_err(|e| self.transport_error(name, &e))?;
         let mut tools: Vec<ToolInfo> = listed
             .into_iter()
             .take(MAX_TOOLS_PER_SERVER)
@@ -537,15 +808,18 @@ impl McpService {
         tools.sort_by(|a, b| a.name.cmp(&b.name));
         // Duplicate names within one server are a server bug; keep the first.
         tools.dedup_by(|a, b| a.name == b.name);
-        self.persist_catalog(&server, &tools);
-        let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(entry) = servers.get_mut(name) {
-            entry.catalog = Some(tools.clone());
+        self.persist_catalog(server, &tools);
+        {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(entry) = servers.get_mut(name) {
+                entry.catalog = Some(tools.clone());
+            }
         }
+        self.changed();
         Ok(tools)
     }
 
-    fn transport_error(&self, name: &str, reason: String) -> McpError {
+    fn transport_error(&self, name: &str, error: &rmcp::service::ServiceError) -> McpError {
         // A broken transport means the process is gone or unusable: stop tracking it.
         let dropped = {
             let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
@@ -560,20 +834,29 @@ impl McpService {
             })
         };
         if let Some(client) = dropped {
-            tokio::spawn(async move {
-                if let Ok(client) = Arc::try_unwrap(client) {
-                    let _ = client.cancel().await;
-                }
-            });
+            tokio::spawn(async move { ServerHandle(client).stop().await });
         }
+        if let Some(www_authenticate) = auth_required(error) {
+            self.set_state(
+                name,
+                State::AuthRequired {
+                    www_authenticate: Some(www_authenticate),
+                },
+            );
+            return McpError::AuthRequired {
+                server: name.to_owned(),
+            };
+        }
+        self.changed();
         McpError::Transport {
             server: name.to_owned(),
-            reason,
+            reason: error.to_string(),
         }
     }
 
     /// Search tool names and descriptions across enabled servers (or one server), starting
     /// servers that have no cached catalog yet. Start failures are reported per server.
+    /// Disabled tools are left out.
     pub async fn search(
         &self,
         query: &str,
@@ -601,9 +884,16 @@ impl McpService {
         let mut found = Vec::new();
         let mut problems = Vec::new();
         for name in names {
+            let enabled = config
+                .server(&name)
+                .map(|s| s.disabled_tools.clone())
+                .unwrap_or_default();
             match self.catalog(&name).await {
                 Ok(tools) => {
                     for t in tools {
+                        if enabled.contains(&t.name) {
+                            continue;
+                        }
                         if needle.is_empty()
                             || t.name.to_lowercase().contains(&needle)
                             || t.description.to_lowercase().contains(&needle)
@@ -619,14 +909,23 @@ impl McpService {
         Ok((found, problems))
     }
 
-    /// One tool by `server/name`.
+    /// One tool by `server/name`; a disabled tool is refused.
     pub async fn describe(&self, qualified: &str) -> Result<ToolInfo, McpError> {
         let (server, tool) = split_qualified(qualified)?;
+        let config = self.server_config(&server)?;
         let tools = self.catalog(&server).await?;
-        tools
-            .into_iter()
-            .find(|t| t.name == tool)
-            .ok_or(McpError::UnknownTool { server, tool })
+        let info =
+            tools
+                .into_iter()
+                .find(|t| t.name == tool)
+                .ok_or_else(|| McpError::UnknownTool {
+                    server: server.clone(),
+                    tool: tool.clone(),
+                })?;
+        if !config.tool_enabled(&tool) {
+            return Err(McpError::ToolDisabled { server, tool });
+        }
+        Ok(info)
     }
 
     /// Call a tool: arguments validated against the cached schema first, then one request
@@ -660,7 +959,7 @@ impl McpService {
             _ = cancel.cancelled() => Err(McpError::Cancelled),
             r = tokio::time::timeout(Duration::from_secs(timeout_secs), call) => match r {
                 Ok(Ok(result)) => Ok(result),
-                Ok(Err(e)) => Err(self.transport_error(&tool.server, e.to_string())),
+                Ok(Err(e)) => Err(self.transport_error(&tool.server, &e)),
                 Err(_) => Err(McpError::Timeout { server: tool.server.clone(), tool: tool.name.clone(), secs: timeout_secs }),
             },
         };
@@ -700,33 +999,50 @@ impl McpService {
     /// Stop servers idle beyond their `idleSeconds` with nothing in flight (unless kept
     /// alive). Returns the clients to cancel, which the caller awaits off any lock.
     pub fn reap_idle(&self, now: Instant) -> Vec<(String, ServerHandle)> {
-        let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
         let mut reaped = Vec::new();
-        for (name, entry) in servers.iter_mut() {
-            if entry.config.keep_alive || entry.in_flight > 0 {
-                continue;
-            }
-            let idle = now.saturating_duration_since(entry.last_used)
-                >= Duration::from_secs(entry.config.idle_seconds);
-            if idle && matches!(entry.state, State::Ready { .. }) {
-                let old = std::mem::replace(&mut entry.state, State::Stopped);
-                if let State::Ready { client, .. } = old {
-                    reaped.push((name.clone(), ServerHandle(client)));
+        {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            for (name, entry) in servers.iter_mut() {
+                if entry.config.keep_alive || entry.in_flight > 0 {
+                    continue;
+                }
+                let idle = now.saturating_duration_since(entry.last_used)
+                    >= Duration::from_secs(entry.config.idle_seconds);
+                if idle && matches!(entry.state, State::Ready { .. }) {
+                    let old = std::mem::replace(&mut entry.state, State::Stopped);
+                    if let State::Ready { client, .. } = old {
+                        reaped.push((name.clone(), ServerHandle(client)));
+                    }
                 }
             }
+        }
+        if !reaped.is_empty() {
+            self.changed();
         }
         reaped
     }
 
-    /// Stop one server now (settings page, reconnect).
-    pub fn stop(&self, name: &str) -> Option<ServerHandle> {
-        let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
-        let entry = servers.get_mut(name)?;
-        let old = std::mem::replace(&mut entry.state, State::Stopped);
-        match old {
-            State::Ready { client, .. } => Some(ServerHandle(client)),
-            _ => None,
-        }
+    /// Stop one server now. A failed or auth-required state is kept unless `reset`.
+    pub fn stop(&self, name: &str, reset: bool) -> Option<ServerHandle> {
+        let handle = {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            let entry = servers.get_mut(name)?;
+            let keep = !reset
+                && matches!(
+                    entry.state,
+                    State::Failed { .. } | State::AuthRequired { .. }
+                );
+            if keep {
+                return None;
+            }
+            let old = std::mem::replace(&mut entry.state, State::Stopped);
+            match old {
+                State::Ready { client, .. } => Some(ServerHandle(client)),
+                _ => None,
+            }
+        };
+        self.changed();
+        handle
     }
 
     /// Every running client, for shutdown.
@@ -735,6 +1051,9 @@ impl McpService {
         servers
             .values_mut()
             .filter_map(|entry| {
+                if let Some(attempt) = entry.attempt.take() {
+                    attempt.cancel.cancel();
+                }
                 let old = std::mem::replace(&mut entry.state, State::Stopped);
                 match old {
                     State::Ready { client, .. } => Some(ServerHandle(client)),
@@ -742,6 +1061,385 @@ impl McpService {
                 }
             })
             .collect()
+    }
+
+    /// Connect afresh and list the tools: the Connections page's "Test". A failed or
+    /// auth-required state is cleared first so the result reflects now.
+    pub async fn test(&self, name: &str) -> Result<TestOutcome, McpError> {
+        if let Some(handle) = self.stop(name, true) {
+            handle.stop().await;
+        }
+        let server = self.server_config(name)?;
+        let started = Instant::now();
+        let client = self.ensure_started(name).await?;
+        let tools = self.list_into_catalog(&server, &client).await?;
+        let info = client.peer_info();
+        let implementation = info.as_ref().and_then(|i| i.server_info.clone());
+        Ok(TestOutcome {
+            tools: tools.into_iter().map(|t| t.name).collect(),
+            server_name: implementation.as_ref().map(|i| i.name.clone()),
+            server_version: implementation.as_ref().map(|i| i.version.clone()),
+            protocol_version: info.as_ref().map(|i| i.protocol_version.to_string()),
+            latency_ms: started.elapsed().as_millis() as u64,
+        })
+    }
+
+    /// Stop and start again, clearing backoff.
+    pub async fn reconnect(&self, name: &str) -> Result<(), McpError> {
+        if let Some(handle) = self.stop(name, true) {
+            handle.stop().await;
+        }
+        self.ensure_started(name).await.map(|_| ())
+    }
+
+    // ------------------------------------------------------------------ sign-in
+
+    pub fn auth_cancel(&self, name: &str) {
+        let attempt = {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            servers.get_mut(name).and_then(|e| e.attempt.take())
+        };
+        if let Some(a) = attempt {
+            a.cancel.cancel();
+            self.set_auth(name, |p| {
+                p.status = AuthStatus::Failed;
+                p.message = "Sign-in cancelled".into();
+                p.url = None;
+                p.prompt = None;
+            });
+        }
+    }
+
+    /// Answer the sign-in's open prompt (a pasted code or redirect URL).
+    pub fn auth_answer(&self, name: &str, prompt_id: &str, response: String) -> Result<(), String> {
+        let sender = {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            let entry = servers.get_mut(name).ok_or("no such server")?;
+            let attempt = entry.attempt.as_mut().ok_or("no sign-in is in progress")?;
+            match attempt.pending.take() {
+                Some((id, tx)) if id == prompt_id => tx,
+                Some(other) => {
+                    attempt.pending = Some(other);
+                    return Err("that prompt is no longer open".into());
+                }
+                None => return Err("that prompt is no longer open".into()),
+            }
+        };
+        sender
+            .send(response)
+            .map_err(|_| "that prompt is no longer open".to_owned())?;
+        self.set_auth(name, |p| {
+            p.status = AuthStatus::Waiting;
+            p.prompt = None;
+            p.message = "Finishing sign-in…".into();
+        });
+        Ok(())
+    }
+
+    /// Forget the saved tokens and stop the server; the next use needs a new sign-in.
+    pub async fn auth_revoke(&self, name: &str) -> Result<(), String> {
+        self.auth_cancel(name);
+        if let Some(handle) = self.stop(name, true) {
+            handle.stop().await;
+        }
+        let store = self.credentials.clone();
+        let n = name.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let mut txn = store.begin()?;
+            txn.remove(&n);
+            txn.commit()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("the saved sign-in could not be removed: {e}"))?;
+        self.set_auth(name, |p| *p = AuthProgress::default());
+        Ok(())
+    }
+
+    /// Start a sign-in for an HTTP server. Progress is read from snapshots; the result is
+    /// a saved credential and a server ready to start on next use.
+    pub fn auth_start(&self, name: &str) -> Result<(), McpError> {
+        let server = self.server_config(name)?;
+        let Transport::Http { url, headers } = server.transport.clone() else {
+            return Err(McpError::InvalidArguments(format!(
+                "{name} runs over stdio and has no sign-in"
+            )));
+        };
+        self.auth_cancel(name);
+        let cancel = CancellationToken::new();
+        let www_authenticate = {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            let entry = servers
+                .get_mut(name)
+                .ok_or_else(|| McpError::UnknownServer(name.to_owned()))?;
+            entry.attempt = Some(Attempt {
+                cancel: cancel.clone(),
+                pending: None,
+            });
+            match &entry.state {
+                State::AuthRequired { www_authenticate } => www_authenticate.clone(),
+                _ => None,
+            }
+        };
+        let stop = self.stop(name, true);
+        self.set_auth(name, |p| {
+            *p = AuthProgress {
+                status: AuthStatus::Connecting,
+                message: "Finding the authorization server…".into(),
+                url: None,
+                prompt: None,
+            }
+        });
+        let Some(me) = self.me.upgrade() else {
+            return Err(McpError::Cancelled);
+        };
+        let name = name.to_owned();
+        tokio::spawn(async move {
+            if let Some(handle) = stop {
+                handle.stop().await;
+            }
+            let result = me
+                .run_sign_in(
+                    &name,
+                    &server,
+                    &url,
+                    &headers,
+                    www_authenticate,
+                    cancel.clone(),
+                )
+                .await;
+            {
+                let mut servers = me.servers.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(entry) = servers.get_mut(&name) {
+                    entry.attempt = None;
+                }
+            }
+            match result {
+                Ok(()) if !cancel.is_cancelled() => {
+                    me.set_state(&name, State::Stopped);
+                    me.set_auth(&name, |p| {
+                        *p = AuthProgress {
+                            status: AuthStatus::Done,
+                            message: "Signed in".into(),
+                            url: None,
+                            prompt: None,
+                        }
+                    });
+                }
+                Ok(()) => {}
+                // A cancellation already set its own message.
+                Err(_) if cancel.is_cancelled() => {}
+                Err(reason) => {
+                    // The reason is user-facing and never carries tokens.
+                    log::info!("mcp sign-in for {name} did not complete");
+                    me.set_auth(&name, |p| {
+                        p.status = AuthStatus::Failed;
+                        p.message = reason;
+                        p.url = None;
+                        p.prompt = None;
+                    });
+                }
+            }
+        });
+        Ok(())
+    }
+
+    async fn run_sign_in(
+        self: &Arc<Self>,
+        name: &str,
+        server: &McpServerConfig,
+        url: &str,
+        headers: &[(String, super::config::EnvValue)],
+        www_authenticate: Option<String>,
+        cancel: CancellationToken,
+    ) -> Result<(), String> {
+        let http = self.http();
+        let secrets = read_secrets(&self.config_dir);
+        let www_authenticate = match www_authenticate {
+            Some(h) => Some(h),
+            None => {
+                // Ask the server what it wants.
+                let resolved =
+                    resolve_refs(name, "headers", headers, &|k| self.env.get(k), &secrets)?;
+                probe_challenge(&http, url, &resolved, &cancel).await
+            }
+        };
+        let discovered = discover(&http, url, www_authenticate.as_deref(), Some(&cancel)).await?;
+        if cancel.is_cancelled() {
+            return Err(CANCELLED.into());
+        }
+        // The client: configured, or registered for this redirect URI.
+        let endpoints = Endpoints::from_env(&self.env);
+        let port = free_port(&endpoints.callback_host)?;
+        let redirect_uri = format!(
+            "http://{}:{port}/mcp/callback/{}",
+            endpoints.callback_host,
+            crate::util::uuid_v4()
+        );
+        let (client_id, client_secret) = match &server.oauth.client_id {
+            Some(id) => (
+                resolve_one(name, "oauth.clientId", id, &|k| self.env.get(k), &secrets)?,
+                server
+                    .oauth
+                    .client_secret
+                    .as_ref()
+                    .map(|s| {
+                        resolve_one(
+                            name,
+                            "oauth.clientSecret",
+                            s,
+                            &|k| self.env.get(k),
+                            &secrets,
+                        )
+                    })
+                    .transpose()?,
+            ),
+            None => {
+                let endpoint = discovered.registration_endpoint.clone().ok_or_else(|| {
+                    "the authorization server does not register clients; set oauth.clientId in settings"
+                        .to_owned()
+                })?;
+                self.set_auth(name, |p| {
+                    p.message = "Registering this app with the authorization server…".into()
+                });
+                register(&http, &endpoint, &redirect_uri, Some(&cancel)).await?
+            }
+        };
+        let flow = McpFlow {
+            server: name.to_owned(),
+            discovered,
+            client_id,
+            client_secret,
+            scopes: server.oauth.scopes.clone(),
+            redirect_uri: Some(redirect_uri),
+        };
+        let ctx = FlowCtx {
+            http,
+            endpoints,
+            device_id: None,
+            copilot_model_ids: Vec::new(),
+        };
+        let io = Interaction::new(
+            Arc::new(AttemptSink {
+                service: Arc::downgrade(self),
+                server: name.to_owned(),
+            }),
+            cancel.clone(),
+        );
+        self.set_auth(name, |p| {
+            p.status = AuthStatus::Waiting;
+            p.message = "Waiting for the browser…".into();
+        });
+        let credential = tokio::select! {
+            r = flow.login(&ctx, &io) => r,
+            _ = cancel.cancelled() => Err(CANCELLED.into()),
+        }?;
+        drop(io);
+        self.save_credential(name, credential).await
+    }
+}
+
+/// A free loopback port for the registered redirect URI (bound, read, released).
+fn free_port(host: &str) -> Result<u16, String> {
+    let listener = std::net::TcpListener::bind((host, 0))
+        .map_err(|e| format!("cannot listen for the sign-in callback: {e}"))?;
+    listener
+        .local_addr()
+        .map(|a| a.port())
+        .map_err(|e| e.to_string())
+}
+
+/// POST an `initialize` without a token and return the challenge if the server wants one.
+async fn probe_challenge(
+    http: &reqwest::Client,
+    url: &str,
+    headers: &[(String, String)],
+    cancel: &CancellationToken,
+) -> Option<String> {
+    let body = serde_json::json!({
+        "jsonrpc": "2.0", "id": 0, "method": "initialize",
+        "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "pipkin", "version": env!("CARGO_PKG_VERSION")}}
+    });
+    let mut req = http
+        .post(url)
+        .header("accept", "application/json, text/event-stream")
+        .json(&body)
+        .timeout(Duration::from_secs(15));
+    for (k, v) in headers {
+        req = req.header(k, v);
+    }
+    let resp = tokio::select! {
+        r = req.send() => r.ok()?,
+        _ = cancel.cancelled() => return None,
+    };
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Some(
+            resp.headers()
+                .get(reqwest::header::WWW_AUTHENTICATE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_owned(),
+        );
+    }
+    None
+}
+
+/// Routes a sign-in's prompts and progress into the server's snapshot.
+struct AttemptSink {
+    service: Weak<McpService>,
+    server: String,
+}
+
+impl InteractionSink for AttemptSink {
+    fn prompt(&self, prompt: Prompt) -> BoxFuture<'static, Result<String, String>> {
+        let (tx, rx) = oneshot::channel();
+        let id = crate::util::uuid_v4();
+        if let Some(service) = self.service.upgrade() {
+            {
+                let mut servers = service.servers.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(attempt) = servers
+                    .get_mut(&self.server)
+                    .and_then(|e| e.attempt.as_mut())
+                {
+                    attempt.pending = Some((id.clone(), tx));
+                }
+            }
+            service.set_auth(&self.server, |p| {
+                p.status = AuthStatus::Prompt;
+                p.prompt = Some(PromptView {
+                    id,
+                    kind: prompt.kind.as_str().to_owned(),
+                    message: prompt.message.clone(),
+                    placeholder: prompt.placeholder.clone(),
+                    options: prompt.options.clone(),
+                });
+            });
+        }
+        Box::pin(async move { rx.await.map_err(|_| CANCELLED.to_owned()) })
+    }
+
+    fn notify(&self, event: AuthEvent) {
+        let Some(service) = self.service.upgrade() else {
+            return;
+        };
+        service.set_auth(&self.server, |p| match event {
+            AuthEvent::AuthUrl { url, instructions } => {
+                p.status = AuthStatus::Waiting;
+                p.url = Some(url);
+                if let Some(i) = instructions {
+                    p.message = i;
+                }
+            }
+            AuthEvent::DeviceCode {
+                user_code,
+                verification_uri,
+            } => {
+                p.status = AuthStatus::Waiting;
+                p.url = Some(verification_uri);
+                p.message = format!("Enter the code {user_code}");
+            }
+            AuthEvent::Info(m) | AuthEvent::Progress(m) => p.message = m,
+        });
     }
 }
 

@@ -218,6 +218,8 @@ pub struct AppState {
     pub import_available: bool,
     /// The explicit Pi import in progress, if any.
     pub import: crate::import::ImportFlow,
+    /// MCP servers as the engine reports them, plus in-progress edits.
+    pub mcp: crate::mcp::McpState,
     /// Conversations another engine owns (restored from the desktop database): readable here,
     /// never written. See [`crate::ownership`].
     pub(crate) owners:
@@ -285,6 +287,7 @@ impl AppState {
             can_create: false,
             import_available: false,
             import: crate::import::ImportFlow::default(),
+            mcp: Default::default(),
             owners: Default::default(),
             release: Default::default(),
             notice: None,
@@ -723,6 +726,22 @@ impl AppState {
             | Command::ReuseSignIn(_)
             | Command::AnswerSignIn { .. }
             | Command::CancelSignIn { .. } => {}
+            Command::McpRefresh
+            | Command::McpAddServer(_)
+            | Command::McpRemoveServer(_)
+            | Command::McpTestServer(_)
+            | Command::McpReconnectServer(_)
+            | Command::McpSetToolEnabled { .. }
+            | Command::McpSignIn(_)
+            | Command::McpAnswerSignIn { .. }
+            | Command::McpCancelSignIn(_)
+            | Command::McpSignOut(_)
+            | Command::McpPreviewImport(_)
+            | Command::McpToggleImportEntry(_)
+            | Command::McpApplyImport(_)
+            | Command::McpDismissImport
+            | Command::McpToggleTools(_)
+            | Command::McpDismissNotice => return self.dispatch_mcp(cmd),
             // A conversation another engine owns is read here, never changed: nothing that would
             // change it is sent (see `crate::ownership`). Stopping a run in flight stays possible.
             Command::Submit
@@ -3303,4 +3322,221 @@ fn floor_boundary(s: &str, mut i: usize) -> usize {
         i -= 1;
     }
     i
+}
+
+// ------------------------------------------------------------------ MCP servers
+
+impl AppState {
+    fn mcp_ready(&self) -> bool {
+        self.mode == Mode::Real && self.connection.is_ready()
+    }
+
+    /// Management commands go to the engine only when it is connected; local view changes
+    /// (expanding a server's tools, dismissing a message) always apply.
+    fn dispatch_mcp(&mut self, cmd: Command) -> Outcome {
+        use crate::mcp::*;
+        let mut out = Outcome::default();
+        let conversation = self.selected;
+        let send = |out: &mut Outcome, request: BackendRequest| {
+            out.effects.push(Effect::Backend(request));
+            out.notes.push(Note::Other);
+        };
+        match cmd {
+            Command::McpToggleTools(name) => {
+                self.mcp.expanded = if self.mcp.expanded.as_deref() == Some(name.as_str()) {
+                    None
+                } else {
+                    Some(name)
+                };
+                out.notes.push(Note::Other);
+            }
+            Command::McpDismissNotice => {
+                self.mcp.notice = None;
+                self.mcp.test = None;
+                out.notes.push(Note::Other);
+            }
+            Command::McpDismissImport => {
+                self.mcp.import = None;
+                out.notes.push(Note::Other);
+            }
+            Command::McpToggleImportEntry(name) => {
+                if let Some(preview) = &mut self.mcp.import
+                    && let Some(entry) = preview.entries.iter_mut().find(|e| e.name == name)
+                    && entry.valid
+                {
+                    entry.selected = !entry.selected;
+                    out.notes.push(Note::Other);
+                }
+            }
+            _ if !self.mcp_ready() => {}
+            Command::McpRefresh => send(&mut out, BackendRequest::McpRefresh { conversation }),
+            Command::McpAddServer(input) => {
+                if let Some(problem) = input.problem() {
+                    self.mcp.notice = Some(problem);
+                    out.notes.push(Note::Other);
+                } else if input.scope == McpScope::Project && !self.mcp.project_available {
+                    self.mcp.notice =
+                        Some("Open a conversation in the project to add a project server.".into());
+                    out.notes.push(Note::Other);
+                } else {
+                    self.mcp.notice = None;
+                    self.mcp.busy = Some(format!("Saving {}…", input.name.trim()));
+                    send(
+                        &mut out,
+                        BackendRequest::McpUpsert {
+                            conversation,
+                            input,
+                        },
+                    );
+                }
+            }
+            Command::McpRemoveServer(name) => {
+                if let Some(server) = self.mcp.server(&name) {
+                    let scope = server.scope;
+                    self.mcp.busy = Some(format!("Removing {name}…"));
+                    send(
+                        &mut out,
+                        BackendRequest::McpRemove {
+                            conversation,
+                            scope,
+                            name,
+                        },
+                    );
+                }
+            }
+            Command::McpTestServer(name) => {
+                self.mcp.test = None;
+                self.mcp.busy = Some(format!("Testing {name}…"));
+                send(&mut out, BackendRequest::McpTest { conversation, name });
+            }
+            Command::McpReconnectServer(name) => {
+                self.mcp.busy = Some(format!("Reconnecting {name}…"));
+                send(
+                    &mut out,
+                    BackendRequest::McpReconnect { conversation, name },
+                );
+            }
+            Command::McpSetToolEnabled {
+                server,
+                tool,
+                enabled,
+            } => {
+                if let Some(s) = self.mcp.server(&server) {
+                    let scope = s.scope;
+                    let mut disabled: Vec<String> = s
+                        .disabled_tools
+                        .iter()
+                        .filter(|t| **t != tool)
+                        .cloned()
+                        .collect();
+                    if !enabled {
+                        disabled.push(tool);
+                    }
+                    send(
+                        &mut out,
+                        BackendRequest::McpSetDisabledTools {
+                            conversation,
+                            scope,
+                            name: server,
+                            disabled,
+                        },
+                    );
+                }
+            }
+            Command::McpSignIn(name) => {
+                self.mcp.notice = None;
+                send(
+                    &mut out,
+                    BackendRequest::McpAuthStart { conversation, name },
+                );
+            }
+            Command::McpAnswerSignIn {
+                server,
+                prompt,
+                response,
+            } => send(
+                &mut out,
+                BackendRequest::McpAuthAnswer {
+                    name: server,
+                    prompt,
+                    response,
+                },
+            ),
+            Command::McpCancelSignIn(name) => {
+                send(&mut out, BackendRequest::McpAuthCancel { name })
+            }
+            Command::McpSignOut(name) => {
+                self.mcp.busy = Some(format!("Signing out of {name}…"));
+                send(
+                    &mut out,
+                    BackendRequest::McpAuthRevoke { conversation, name },
+                );
+            }
+            Command::McpPreviewImport(text) => {
+                if text.trim().is_empty() {
+                    self.mcp.notice = Some("Paste a configuration to import.".into());
+                    out.notes.push(Note::Other);
+                } else {
+                    self.mcp.notice = None;
+                    self.mcp.busy = Some("Reading the configuration…".into());
+                    send(
+                        &mut out,
+                        BackendRequest::McpImportPreview { conversation, text },
+                    );
+                }
+            }
+            Command::McpApplyImport(scope) => {
+                let Some(preview) = &self.mcp.import else {
+                    return out;
+                };
+                let names = preview.chosen();
+                if names.is_empty() {
+                    self.mcp.notice = Some("Choose at least one server to import.".into());
+                    out.notes.push(Note::Other);
+                } else if scope == McpScope::Project && !self.mcp.project_available {
+                    self.mcp.notice =
+                        Some("Open a conversation in the project to import into it.".into());
+                    out.notes.push(Note::Other);
+                } else {
+                    let text = preview.text.clone();
+                    self.mcp.notice = None;
+                    self.mcp.busy = Some("Importing…".into());
+                    send(
+                        &mut out,
+                        BackendRequest::McpImportApply {
+                            conversation,
+                            scope,
+                            text,
+                            names,
+                        },
+                    );
+                }
+            }
+            _ => {}
+        }
+        out
+    }
+
+    pub fn apply_mcp(&mut self, snapshot: crate::mcp::McpSnapshot) -> Outcome {
+        self.mcp.apply(snapshot);
+        Outcome::note(Note::Other)
+    }
+
+    pub fn mcp_test_result(&mut self, result: crate::mcp::McpTestResult) -> Outcome {
+        self.mcp.busy = None;
+        self.mcp.test = Some(result);
+        Outcome::note(Note::Other)
+    }
+
+    pub fn mcp_import_previewed(&mut self, preview: crate::mcp::McpImportPreview) -> Outcome {
+        self.mcp.busy = None;
+        self.mcp.import = Some(preview);
+        Outcome::note(Note::Other)
+    }
+
+    pub fn mcp_failed(&mut self, message: String) -> Outcome {
+        self.mcp.busy = None;
+        self.mcp.notice = Some(message);
+        Outcome::note(Note::Other)
+    }
 }

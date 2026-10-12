@@ -1,5 +1,33 @@
 # Scorecard
 
+## MCP management, HTTP transport and OAuth, MCP-2 (2026-10-12)
+
+HTTP servers connect through the engine's own HTTP client, OAuth sign-in runs on the
+engine's loopback/PKCE primitives with per-server token storage and refresh, and the new
+Settings → MCP servers section adds, tests, reconnects, removes and signs in to servers,
+switches tools off and imports pasted `mcpServers` configuration with a preview
+([mcp.md](mcp.md)); protocol 20, capability `mcpManagement`.
+
+- **Measured (automated).** Engine tests against an HTTP MCP fixture with a scripted
+  authorization server: a 401 becomes "sign-in needed" and the search reports it per
+  server; discovery through the challenge's resource metadata, dynamic client registration
+  with a loopback redirect, PKCE and `resource` on the authorization request, exchange
+  through the callback, the token reaching the server and never a view or event, revoke
+  forgetting it, cancel settling without a credential, stdio servers refusing sign-in;
+  tokens refreshing before expiry with the old one never reused, and a refused refresh
+  asking for sign-in again without sending a stale token; add/edit (redacted literals kept
+  on edit) /remove in user and project scope with invalid specs refused before writing,
+  test reporting name/version/tools or the failure, reconnect clearing backoff, tool
+  switches applying without a restart and refusing calls; previewed import writing only
+  the chosen entries; `McpChanged` events. Core tests cover the page's state machine;
+  adapter tests cover command-line splitting and spec conversion; an app end-to-end test
+  drives the page's commands through the native adapter against the stdio fixture. The
+  repository gate passed.
+- **Observed.** Nothing native.
+- **Unverified.** Any third-party server or authorization server; the section in a window
+  (layout, keyboard operation, project switching); OS credential storage (not built). Not a
+  release qualification.
+
 ## MCP servers and tools, MCP-1 (2026-10-12)
 
 Configured MCP servers (stdio) are supervised by one engine-wide service with lazy starts,
