@@ -33,6 +33,9 @@ revision=$(git rev-parse --verify HEAD 2>/dev/null || echo unknown)
 if [ "$revision" != unknown ] && [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
   revision=$revision-dirty
 fi
+# The offline inventory resolves the workspace graph, including target dev dependencies
+# a release-only build may not download on a fresh machine. Respect CARGO_NET_OFFLINE.
+cargo fetch --locked --target "$target"
 PIPKIN_REVISION=$revision cargo build -p pipkin-app --release --locked
 
 rm -rf "$stage"

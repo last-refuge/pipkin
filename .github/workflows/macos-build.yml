@@ -34,6 +34,17 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Restore native Rust build cache
+        id: native-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
       - name: Prepare native dependencies and pinned toolchain
         run: |
           mkdir -p "$TMPDIR" qualification-logs
@@ -62,6 +73,15 @@ jobs:
           cargo test -p pipkin-app --locked --test engine_worker --test native_diagnose 2>&1 | tee qualification-logs/native-worker.log
           cargo test -p pipkin-app --locked adapters::native:: 2>&1 | tee qualification-logs/native-adapter.log
           test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
+      - name: Save native Rust build cache even after failed qualification
+        if: always() && steps.native-cache.outputs.cache-primary-key != '' && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - name: Retain experimental native evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

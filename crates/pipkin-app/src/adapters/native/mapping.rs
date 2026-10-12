@@ -15,7 +15,7 @@ use pipkin_engine_protocol::{
     ModelsView, Origin, QuestionKind, RunOutcome, SessionSummary, SubagentsView, UiView,
 };
 
-use crate::adapters::pi::session::{self as pi_session, Session as PiSession};
+use crate::adapters::session::{self as pi_session, Session as PiSession};
 
 /// The project of a session whose working directory is not usable.
 pub const SESSIONS_PROJECT: ProjectId = pi_session::SESSIONS_PROJECT;

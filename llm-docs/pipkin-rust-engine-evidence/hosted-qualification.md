@@ -5,8 +5,10 @@ The initial candidate is `ca8c89b`; completed local evidence through `0c8c3f5` i
 The user granted the missing GitHub workflow scope after the initial rejected push.
 
 - Linux run [38259320193](https://github.com/last-refuge/pipkin/actions/runs/38259320193):
-  native engine tests passed; native package/install and full qualification were still running
-  when this record was written.
+  native engine tests and release compilation passed. Offline notice collection failed on
+  missing bit-set 0.8.0 from the fresh cache; installed checks were not reached. The package
+  script now fetches the locked target dependency graph before building. Local package/install
+  migration, coding and restart checks pass; hosted rerun is required.
 - Experimental macOS run [38259324745](https://github.com/last-refuge/pipkin/actions/runs/38259324745):
   native engine compiled; library checks reported 840 passed, nine failed, two ignored.
   Five failures shared the socket handshake path. Two exposed case-insensitive config
@@ -32,3 +34,9 @@ scope; reuse existing successful evidence and pursue concrete release blockers. 
 soaks or expanding experimental-platform acceptance. Push each completed batch. Broader
 application 1.0 signing/publication/manual-platform work is separate from this conversion;
 no release publication is claimed here.
+
+Cutover preparation after `9a8d0eb`: required local checks pass **1,659 tests, zero failed,
+54 ignored**, clean Clippy/all-targets and formatting. Read/edit reference corpora are now
+ordinary tests. Shared native/Pi desktop helpers are decoupled without behavior changes.
+Both native jobs retain build caches even after failures; Linux gains the native-only manual
+option too. The successful local package is still opt-in and not a final native-only release.

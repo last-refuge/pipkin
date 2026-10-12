@@ -11,7 +11,30 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — concrete hosted failures and direct cutover path
+## Current follow-up — remote backup and cutover preparation
+
+2026-10-12, following **`9a8d0eb`**. All completed migration commits are remotely backed
+up on `origin/codex/native-engine-qualification`; this batch is pushed immediately too.
+Shared attachment, session and workspace helpers now live outside the Pi adapter, preserving
+native behavior while preparing runtime removal. Frozen executed reference corpora add
+1,500 edit and 1,000 read comparisons to ordinary Rust tests without Node.
+
+Required checks pass: **1,659 passed, zero failed, 54 ignored**, clean Clippy/all-targets
+and formatting. Native package/install checks pass, including migration, coding tools,
+restart and traps rejecting Node/npm/npx/Pi. This remains an opt-in candidate, not the
+final default switch. Linux hosted compilation passed but offline notice collection missed
+a fresh-cache dependency; locked target prefetch fixes this locally. Native-only reruns
+and retained build caches shorten subsequent qualification. Corrected macOS run is pending.
+[Hosted evidence](pipkin-rust-engine-evidence/hosted-qualification.md).
+
+[Notice delta](pipkin-rust-engine-evidence/notice-conversion-delta.md) distinguishes 31
+inherited review flags from two new workspace-crate notices whose inherited MIT license
+is verified. Existing review flags and port notices remain; no blanket publication clearance.
+Ledger: **446 measured, 10 observed, 2 failed, 0 unverified, 46 not started**; no new
+full-qualification stamp. Remaining work is the bounded parity reconciliation, actual native
+default/Pi removal, and final installed verification. Preserve unrelated owner drafts.
+
+## Prior follow-up — concrete hosted failures and direct cutover path
 
 2026-10-12, following **`0c8c3f5`**. All committed migration work is pushed to
 `origin/codex/native-engine-qualification`; push each completed batch from here.

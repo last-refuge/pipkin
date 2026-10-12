@@ -42,8 +42,8 @@ use self::client::{CallError, Client, Inbound, SeqCheck, Sequencer};
 pub use self::import::{ImportDone, ImportResult, unavailable as import_unavailable};
 use self::mirror::{Mirror, Touched};
 use self::supervisor::{HostSpec, Supervisor};
-use crate::adapters::pi::attach;
-use crate::adapters::pi::workspace::{self, Workspace};
+use crate::adapters::attach;
+use crate::adapters::workspace::{self, Workspace};
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(15);
 /// The transcript is remapped at most this often while a reply streams (about 20 per second).

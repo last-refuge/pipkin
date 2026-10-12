@@ -1,0 +1,18 @@
+{
+  "referenceRevision": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "node": "v26.8.1",
+  "cases": {
+    "edit": {
+      "count": 1500,
+      "jsonSha256": "458b5f5c43ef1a4d9bb33b6e3ff43a6bc15e409ee6706676838003664cfb375c",
+      "compressedSha256": "7ca5ca5d030dd6bc5849c7005a74eab5962045b5359114ef6f14b5bb656b8d4b",
+      "captureSha256": "14704584db771e68ce3f641bad1429236720b19d9f8deaf2bc431c6cc77c9c4e"
+    },
+    "read": {
+      "count": 1000,
+      "jsonSha256": "f82ebf4144373f70e39a769ee75ab8e921501755a1faebd151db24398b61d609",
+      "compressedSha256": "21026c27d5285aa08d1a5626ddb1a20a026ba578ea12fe3101b77848868bf09e",
+      "captureSha256": "5f72a17c59ccea8425a0b8eff6c2cb6332a997acde621e88f131c2d8d109c993"
+    }
+  }
+}

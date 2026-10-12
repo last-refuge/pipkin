@@ -25,14 +25,14 @@
 //! [`OwnershipCheck`]). Besides the core's own refusal, this adapter refuses at its boundary
 //! anything that would change such a conversation, with a definite answer and nothing sent.
 
-pub mod attach;
+pub use super::attach;
 mod auth;
 pub mod engine;
-pub mod session;
+pub use super::session;
 mod session_changes;
 mod subagents;
 pub mod transcript;
-pub mod workspace;
+pub use super::workspace;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

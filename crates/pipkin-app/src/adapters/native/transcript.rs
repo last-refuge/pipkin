@@ -18,7 +18,7 @@ use pipkin_engine_protocol::{
     Block, Entry, EntryKind, InputMode, Message, QueueEntryView, StopReason, UsageView,
 };
 
-use crate::adapters::pi::attach::split_message;
+use crate::adapters::attach::split_message;
 
 /// Slots reserved per entry for the items one entry may produce (as in the Pi mapping).
 const SLOTS_PER_ENTRY: u64 = 1024;

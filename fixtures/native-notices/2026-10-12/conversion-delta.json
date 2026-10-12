@@ -1,0 +1,410 @@
+{
+  "baselineRevision": "75f5c35f028bd2f85052ac990a20e982f35573ab",
+  "inventorySha256": "cc05955c23f7409d0a15eb22f3baa7eea0a912b2b319b237aa7548b3bf0d11cf",
+  "rootLicenseSha256": "e97b3be886c4aa6622285654b79f4981b41a7bb3804e16c2572ef80c45f33ffd",
+  "reviewFlags": [
+    {
+      "name": "accesskit",
+      "version": "0.24.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      ]
+    },
+    {
+      "name": "accesskit_atspi_common",
+      "version": "0.19.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      ]
+    },
+    {
+      "name": "accesskit_consumer",
+      "version": "0.38.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      ]
+    },
+    {
+      "name": "accesskit_unix",
+      "version": "0.22.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      ]
+    },
+    {
+      "name": "defmt-parser",
+      "version": "1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90",
+        "2710a622a896bba67356913d4d0492cab5465f61b2ecce6d880aeb483834fb50"
+      ]
+    },
+    {
+      "name": "gpu-descriptor",
+      "version": "0.3.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "f72143f7e9d9fb8bd336b139fa22f825a299591c29f2f7338c5566347b137613"
+      ]
+    },
+    {
+      "name": "gpu-descriptor-types",
+      "version": "0.2.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "f72143f7e9d9fb8bd336b139fa22f825a299591c29f2f7338c5566347b137613"
+      ]
+    },
+    {
+      "name": "harfrust",
+      "version": "0.5.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "3a7c3f0b887abb7c638faf022d29257418458614c6724b120ceeffb279f9c7d2"
+      ]
+    },
+    {
+      "name": "hexf-parse",
+      "version": "0.2.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "CC0-1.0",
+      "noticeCount": 0,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": []
+    },
+    {
+      "name": "lyon",
+      "version": "1.0.19",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "216486f29671a4262efe32af6d84a75bef398127f8c5f369b5c8305983887a06",
+        "80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e"
+      ]
+    },
+    {
+      "name": "lyon_algorithms",
+      "version": "1.0.21",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "216486f29671a4262efe32af6d84a75bef398127f8c5f369b5c8305983887a06",
+        "80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e"
+      ]
+    },
+    {
+      "name": "lyon_geom",
+      "version": "1.0.19",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "216486f29671a4262efe32af6d84a75bef398127f8c5f369b5c8305983887a06",
+        "80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e"
+      ]
+    },
+    {
+      "name": "lyon_path",
+      "version": "1.0.19",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "216486f29671a4262efe32af6d84a75bef398127f8c5f369b5c8305983887a06",
+        "80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e"
+      ]
+    },
+    {
+      "name": "lyon_tessellation",
+      "version": "1.0.22",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "216486f29671a4262efe32af6d84a75bef398127f8c5f369b5c8305983887a06",
+        "80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e"
+      ]
+    },
+    {
+      "name": "pathfinder_geometry",
+      "version": "0.5.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT/Apache-2.0",
+      "noticeCount": 0,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": []
+    },
+    {
+      "name": "pathfinder_simd",
+      "version": "0.5.6",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "0621878e61f0d0fda054bcbe02df75192c28bde1ecc8289cbd86aeba2dd72720"
+      ]
+    },
+    {
+      "name": "pi-client",
+      "version": "0.0.1",
+      "source": "Pipkin workspace",
+      "declaredLicense": "MIT",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "e97b3be886c4aa6622285654b79f4981b41a7bb3804e16c2572ef80c45f33ffd"
+      ]
+    },
+    {
+      "name": "pipkin-app",
+      "version": "0.0.1",
+      "source": "Pipkin workspace",
+      "declaredLicense": "MIT",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "e97b3be886c4aa6622285654b79f4981b41a7bb3804e16c2572ef80c45f33ffd"
+      ]
+    },
+    {
+      "name": "pipkin-core",
+      "version": "0.0.1",
+      "source": "Pipkin workspace",
+      "declaredLicense": "MIT",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "e97b3be886c4aa6622285654b79f4981b41a7bb3804e16c2572ef80c45f33ffd"
+      ]
+    },
+    {
+      "name": "pipkin-engine",
+      "version": "0.0.1",
+      "source": "Pipkin workspace",
+      "declaredLicense": "MIT",
+      "noticeCount": 1,
+      "baselineDependency": false,
+      "disposition": "workspace MIT inheritance verified against root LICENSE and crate manifest",
+      "noticeHashes": [
+        "e97b3be886c4aa6622285654b79f4981b41a7bb3804e16c2572ef80c45f33ffd"
+      ]
+    },
+    {
+      "name": "pipkin-engine-protocol",
+      "version": "0.0.1",
+      "source": "Pipkin workspace",
+      "declaredLicense": "MIT",
+      "noticeCount": 1,
+      "baselineDependency": false,
+      "disposition": "workspace MIT inheritance verified against root LICENSE and crate manifest",
+      "noticeHashes": [
+        "e97b3be886c4aa6622285654b79f4981b41a7bb3804e16c2572ef80c45f33ffd"
+      ]
+    },
+    {
+      "name": "pipkin-ui",
+      "version": "0.0.1",
+      "source": "Pipkin workspace",
+      "declaredLicense": "MIT",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "e97b3be886c4aa6622285654b79f4981b41a7bb3804e16c2572ef80c45f33ffd"
+      ]
+    },
+    {
+      "name": "profiling",
+      "version": "1.0.18",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "10d30a673cd5e9349bdc02aeb48f14b3386d27d0da32df8f0a555d4aa16aa551",
+        "c8167fdeeed46d3f244d3f85c5bf998ce889343691c32be2c61a8bc4b5c08333"
+      ]
+    },
+    {
+      "name": "profiling-procmacros",
+      "version": "1.0.18",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "10d30a673cd5e9349bdc02aeb48f14b3386d27d0da32df8f0a555d4aa16aa551",
+        "c8167fdeeed46d3f244d3f85c5bf998ce889343691c32be2c61a8bc4b5c08333"
+      ]
+    },
+    {
+      "name": "pulp-wasm-simd-flag",
+      "version": "0.1.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "d64f878c89bd5f1e5ada7e4aad57690b122727cf5229b7b87ea1980c188da1d9"
+      ]
+    },
+    {
+      "name": "seahash",
+      "version": "4.1.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT",
+      "noticeCount": 0,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": []
+    },
+    {
+      "name": "simd_helpers",
+      "version": "0.1.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT",
+      "noticeCount": 0,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": []
+    },
+    {
+      "name": "spirv",
+      "version": "0.4.0+sdk-1.4.341.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "Apache-2.0",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      ]
+    },
+    {
+      "name": "svg_fmt",
+      "version": "0.4.5",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT/Apache-2.0",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "7e98bed7f100747aaae7d82ab94fbe6b76fd6b84b09a3aaa413bff8196d0fbb1"
+      ]
+    },
+    {
+      "name": "taffy",
+      "version": "0.13.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "f97daf1a0124413dccf399a4e6626b4b74acd05282f80b6d64ac82225650b77a"
+      ]
+    },
+    {
+      "name": "xim-ctext",
+      "version": "0.3.0",
+      "source": "git+https://github.com/zed-industries/xim-rs.git?rev=16f35a2c881b815a2b6cdfd6687988e84f8447d8#16f35a2c881b815a2b6cdfd6687988e84f8447d8",
+      "declaredLicense": "MIT",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "efa1224931b98468f5005f77285457f8d2eab0a77a15941aa10abbab1ae9a74e"
+      ]
+    },
+    {
+      "name": "xim-parser",
+      "version": "0.2.1",
+      "source": "git+https://github.com/zed-industries/xim-rs.git?rev=16f35a2c881b815a2b6cdfd6687988e84f8447d8#16f35a2c881b815a2b6cdfd6687988e84f8447d8",
+      "declaredLicense": "MIT",
+      "noticeCount": 1,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "efa1224931b98468f5005f77285457f8d2eab0a77a15941aa10abbab1ae9a74e"
+      ]
+    },
+    {
+      "name": "zune-inflate",
+      "version": "0.2.54",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "declaredLicense": "MIT OR Apache-2.0 OR Zlib",
+      "noticeCount": 2,
+      "baselineDependency": true,
+      "disposition": "unchanged baseline finding; retained in inventory",
+      "noticeHashes": [
+        "e870d7fd7819a9f0453c62798cb52ae95d148a8c91dc2de1d983f997143c72de",
+        "7fa429541e55b1509909e058f2d21a37467e4958ec713b357f6e0cf9dc4ee352"
+      ]
+    }
+  ],
+  "scope": "Dependency identity and notice preservation for engine conversion; not legal clearance or full application 1.0 approval"
+}
