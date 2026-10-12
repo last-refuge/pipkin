@@ -12,6 +12,7 @@
 # PERF_LONG_SOAK_TURNS (1500), PERF_SCALING_REPS (3), PIPKIN_BENCH_SCRATCH (scratch profiles;
 # default target/tmp, on the same disk as the build: keep it off tmpfs, the store fsyncs).
 #
+# PERF_MIXED_TURNS (720) and PERF_MIXED_RESTART_EVERY (240) tune the mixed workload.
 # No network, no credentials: the provider is a local scripted HTTP stub inside the test
 # process, reached through a models.json custom provider.
 set -euo pipefail
@@ -23,7 +24,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 OUT="${OUT:-fixtures/native-bench/$(date +%F)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
-TESTS="${TESTS:-readiness soak_200 soak_1500 soak_diagnostic stream_latency stream_scaling history stop_latency}"
+TESTS="${TESTS:-readiness soak_200 soak_1500 soak_diagnostic stream_latency stream_scaling history stop_latency mixed::mixed_soak}"
 TARGET="${CARGO_TARGET_DIR:-$ROOT/target}"
 LOG="$OUT/run.log"
 : >"$LOG"

@@ -1,0 +1,21 @@
+{
+  "binaries": [
+    {
+      "binary": "pipkin-engine",
+      "present": true,
+      "unstrippedBytes": 110325928,
+      "unstrippedSha256": "4cdc34831e3402d05de9c2065b7fa360d99caf239215cd1b7a2797c9064481c4",
+      "strippedBytes": 18588976,
+      "strippedGzip9Bytes": 7428433,
+      "strippedXz6Bytes": 5389544,
+      "strippedZstd19Bytes": 5819869,
+      "dynamicLibraries": [
+        "/lib64/ld-linux-x86-64.so.2",
+        "libc.so.6",
+        "libgcc_s.so.1",
+        "libm.so.6",
+        "linux-vdso.so.1"
+      ]
+    }
+  ]
+}

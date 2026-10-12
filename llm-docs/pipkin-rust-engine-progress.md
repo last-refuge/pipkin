@@ -11,7 +11,38 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — final-response ownership and large-output memory
+## Current follow-up — sustained mixed stream/tool/session/restart workload
+
+2026-10-12, following **`ca5dd74`**, protocol 12 / schema 9 unchanged. Added a ninth opt-in
+release benchmark to the standard runner: eight attached sessions, two concurrent turns,
+720 real bash effects producing 1 MiB each, 64 KiB streamed replies, growing retained context,
+and clean restarts at 240/480/720 turns. Both full runs passed. The final run verifies all
+720 saved reply lengths/markers, unique tool effects, full spill files, saved links and
+byte-exact SQLite tool outputs, with no drops, unsettled runs or finalized stream chunks.
+Replaying settled admissions after restart triggers no extra provider calls.
+
+Final run: **30,444 KiB idle / 99,612 KiB peak VmHWM**, 28,360 KiB after final reopen,
+13 idle fds throughout, no settled tool descendants. Last-half RSS slopes per 240-turn epoch
+are +5.440/+3.598/+3.024 KiB/turn; neither indefinite stability nor zero leaks is claimed.
+Duration 275.368 s, two-turn batch p95 784.407 ms including scripted stream delays.
+SQLite growth is explained by 754,984,690 retained tool bytes plus 48,466,674 entry JSON
+bytes; only 29 free pages, 4,096 bounded outbox rows and zero finalized chunks. Full spill
+files separately retain the same tool bytes. The final run adds storage attribution and
+byte-exact durable-output checks to the first run; both raw artifact sets are preserved.
+
+See [mixed-workload evidence](pipkin-rust-engine-evidence/mixed-workload.md) for reproduction,
+source/binary identity, initial fixture failure, measurements and boundaries.
+Required final workspace checks: **1634 passed, 0 failed, 54 ignored**, clean Clippy/all-targets
+and formatting; shell syntax and diff whitespace checks pass. The new ninth benchmark
+accounts for the extra ignored test and was explicitly executed at full size twice.
+Inventory remains **504 rows, 488 non-OS; NC 412, NE 38, NP 37, PA 0, BL 0, LB 1,
+OS 16; 444 measured, 7 observed, 1 unverified, 52 not started; 0 fully qualified**.
+Native remains opt-in. This supplies the missing defined mixed stream/tool/multi-session
+measurement; longer uninterrupted/desktop workloads, residual memory attribution, remaining
+core/reference comparisons, installed/rollback, CI/platform and native-default/Pi-removal
+qualification remain open. Unrelated owner changes preserved.
+
+## Previous follow-up — final-response ownership and large-output memory
 
 2026-10-12, following **`368fdca`**, protocol 12 / schema 9 unchanged. Generation finalization
 now moves the response into durable commit/publication instead of cloning it twice and returning

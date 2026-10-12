@@ -33,6 +33,9 @@ use pipkin_engine_protocol::frame;
 use pipkin_engine_protocol::*;
 use serde_json::{Value, json};
 
+#[path = "perf/mixed.rs"]
+mod mixed;
+
 // ---------------------------------------------------------------------------------------------
 // Shared plumbing
 // ---------------------------------------------------------------------------------------------

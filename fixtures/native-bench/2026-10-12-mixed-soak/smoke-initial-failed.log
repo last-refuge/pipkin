@@ -1,0 +1,27 @@
+   Compiling pipkin-engine v0.0.1 (/home/jason/coding/pipkin/crates/pipkin-engine)
+    Finished `release` profile [optimized + debuginfo] target(s) in 6.78s
+     Running tests/perf.rs (target/release/deps/perf-2b0c118f5de90675)
+
+running 1 test
+test mixed::mixed_soak ...
+thread '<unnamed>' (3293812) panicked at crates/pipkin-engine/tests/perf/mixed.rs:76:14:
+called `Option::unwrap()` on a `None` value
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread '<unnamed>' (3293811) panicked at crates/pipkin-engine/tests/perf/mixed.rs:76:14:
+called `Option::unwrap()` on a `None` value
+
+thread 'mixed::mixed_soak' (3293794) panicked at crates/pipkin-engine/tests/perf/mixed.rs:178:21:
+assertion `left == right` failed: mixed turn 1
+  left: ModelError { detail: "error sending request for url (http://127.0.0.1:35781/v1/chat/completions): client error (SendRequest): connection closed before message completed" }
+ right: Completed
+FAILED
+
+failures:
+
+failures:
+    mixed::mixed_soak
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `-p pipkin-engine --test perf`

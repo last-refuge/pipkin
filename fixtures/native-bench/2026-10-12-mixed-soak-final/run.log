@@ -1,0 +1,62 @@
+== building release engine
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.16s
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.14s
+  Executable tests/perf.rs (target/release/deps/perf-2b0c118f5de90675)
+== machine: { "cpu": "Intel(R) Core(TM) Ultra X7 358H", "logicalCpus": 16, "memTotalKiB": 65326544, "kernel": "7.2.5-3-omarchy", "governor": "powersave", "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)", "gitRevision": "ca5dd7410fdf5a0cbdcb25c68048c27e5d050b8f", "gitDirty": true, "loadavg": "3.59 2.80 2.49 1/3162 3322963", "scratch": "/home/jason/coding/pipkin/target/tmp", "scratchFilesystem": "btrfs", "releaseProfile": "workspace [profile.release]: opt-level 3, debug = line-tables-only"}
+== test mixed::mixed_soak (loadavg 3.59 2.80 2.49)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.13s
+     Running tests/perf.rs (target/release/deps/perf-2b0c118f5de90675)
+
+running 1 test
+test mixed::mixed_soak ... mixed-soak {"turns":16,"epoch":0,"mem":{"rssKiB":26580,"hwmKiB":36044,"rssAnonKiB":11492,"rssFileKiB":15088,"pssKiB":23967,"pssAnonKiB":11492,"threads":9,"fds":13,"children":0,"cpuSecs":0.55}}
+mixed-soak {"turns":32,"epoch":0,"mem":{"rssKiB":26968,"hwmKiB":36392,"rssAnonKiB":11880,"rssFileKiB":15088,"pssKiB":24355,"pssAnonKiB":11880,"threads":9,"fds":13,"children":0,"cpuSecs":1.11}}
+mixed-soak {"turns":48,"epoch":0,"mem":{"rssKiB":27188,"hwmKiB":36672,"rssAnonKiB":12100,"rssFileKiB":15088,"pssKiB":24575,"pssAnonKiB":12100,"threads":9,"fds":13,"children":0,"cpuSecs":1.68}}
+mixed-soak {"turns":64,"epoch":0,"mem":{"rssKiB":27368,"hwmKiB":37396,"rssAnonKiB":12280,"rssFileKiB":15088,"pssKiB":24755,"pssAnonKiB":12280,"threads":9,"fds":13,"children":0,"cpuSecs":2.28}}
+mixed-soak {"turns":80,"epoch":0,"mem":{"rssKiB":27584,"hwmKiB":39232,"rssAnonKiB":12496,"rssFileKiB":15088,"pssKiB":24971,"pssAnonKiB":12496,"threads":9,"fds":13,"children":0,"cpuSecs":2.9}}
+mixed-soak {"turns":96,"epoch":0,"mem":{"rssKiB":27724,"hwmKiB":39564,"rssAnonKiB":12636,"rssFileKiB":15088,"pssKiB":25111,"pssAnonKiB":12636,"threads":9,"fds":13,"children":0,"cpuSecs":3.55}}
+mixed-soak {"turns":112,"epoch":0,"mem":{"rssKiB":27836,"hwmKiB":40000,"rssAnonKiB":12748,"rssFileKiB":15088,"pssKiB":25223,"pssAnonKiB":12748,"threads":9,"fds":13,"children":0,"cpuSecs":4.2}}
+mixed-soak {"turns":128,"epoch":0,"mem":{"rssKiB":28080,"hwmKiB":40960,"rssAnonKiB":12992,"rssFileKiB":15088,"pssKiB":25467,"pssAnonKiB":12992,"threads":10,"fds":13,"children":0,"cpuSecs":4.91}}
+mixed-soak {"turns":144,"epoch":0,"mem":{"rssKiB":28240,"hwmKiB":41824,"rssAnonKiB":13152,"rssFileKiB":15088,"pssKiB":25627,"pssAnonKiB":13152,"threads":10,"fds":13,"children":0,"cpuSecs":5.62}}
+mixed-soak {"turns":160,"epoch":0,"mem":{"rssKiB":28340,"hwmKiB":41864,"rssAnonKiB":13252,"rssFileKiB":15088,"pssKiB":25727,"pssAnonKiB":13252,"threads":10,"fds":13,"children":0,"cpuSecs":6.36}}
+mixed-soak {"turns":176,"epoch":0,"mem":{"rssKiB":28408,"hwmKiB":43236,"rssAnonKiB":13320,"rssFileKiB":15088,"pssKiB":25795,"pssAnonKiB":13320,"threads":10,"fds":13,"children":0,"cpuSecs":7.14}}
+mixed-soak {"turns":192,"epoch":0,"mem":{"rssKiB":28488,"hwmKiB":44700,"rssAnonKiB":13400,"rssFileKiB":15088,"pssKiB":25875,"pssAnonKiB":13400,"threads":10,"fds":13,"children":0,"cpuSecs":7.93}}
+mixed-soak {"turns":208,"epoch":0,"mem":{"rssKiB":28552,"hwmKiB":46896,"rssAnonKiB":13464,"rssFileKiB":15088,"pssKiB":25939,"pssAnonKiB":13464,"threads":10,"fds":13,"children":0,"cpuSecs":8.72}}
+mixed-soak {"turns":224,"epoch":0,"mem":{"rssKiB":28652,"hwmKiB":47648,"rssAnonKiB":13564,"rssFileKiB":15088,"pssKiB":26039,"pssAnonKiB":13564,"threads":10,"fds":13,"children":0,"cpuSecs":9.54}}
+mixed-soak {"turns":240,"epoch":0,"mem":{"rssKiB":28728,"hwmKiB":49592,"rssAnonKiB":13640,"rssFileKiB":15088,"pssKiB":26115,"pssAnonKiB":13640,"threads":10,"fds":13,"children":0,"cpuSecs":10.41}}
+mixed-soak {"turns":256,"epoch":1,"mem":{"rssKiB":27828,"hwmKiB":49784,"rssAnonKiB":12616,"rssFileKiB":15212,"pssKiB":25221,"pssAnonKiB":12616,"threads":9,"fds":13,"children":0,"cpuSecs":0.96}}
+mixed-soak {"turns":272,"epoch":1,"mem":{"rssKiB":28392,"hwmKiB":52892,"rssAnonKiB":13180,"rssFileKiB":15212,"pssKiB":25785,"pssAnonKiB":13180,"threads":10,"fds":13,"children":0,"cpuSecs":1.84}}
+mixed-soak {"turns":288,"epoch":1,"mem":{"rssKiB":28600,"hwmKiB":52892,"rssAnonKiB":13388,"rssFileKiB":15212,"pssKiB":25993,"pssAnonKiB":13388,"threads":10,"fds":13,"children":0,"cpuSecs":2.78}}
+mixed-soak {"turns":304,"epoch":1,"mem":{"rssKiB":28756,"hwmKiB":54496,"rssAnonKiB":13544,"rssFileKiB":15212,"pssKiB":26149,"pssAnonKiB":13544,"threads":10,"fds":13,"children":0,"cpuSecs":3.75}}
+mixed-soak {"turns":320,"epoch":1,"mem":{"rssKiB":28788,"hwmKiB":57632,"rssAnonKiB":13576,"rssFileKiB":15212,"pssKiB":26181,"pssAnonKiB":13576,"threads":10,"fds":13,"children":0,"cpuSecs":4.72}}
+mixed-soak {"turns":336,"epoch":1,"mem":{"rssKiB":28872,"hwmKiB":59476,"rssAnonKiB":13660,"rssFileKiB":15212,"pssKiB":26264,"pssAnonKiB":13660,"threads":10,"fds":13,"children":0,"cpuSecs":5.73}}
+mixed-soak {"turns":352,"epoch":1,"mem":{"rssKiB":28968,"hwmKiB":60180,"rssAnonKiB":13756,"rssFileKiB":15212,"pssKiB":26361,"pssAnonKiB":13756,"threads":10,"fds":13,"children":0,"cpuSecs":6.75}}
+mixed-soak {"turns":368,"epoch":1,"mem":{"rssKiB":29040,"hwmKiB":61820,"rssAnonKiB":13828,"rssFileKiB":15212,"pssKiB":26432,"pssAnonKiB":13828,"threads":10,"fds":13,"children":0,"cpuSecs":7.78}}
+mixed-soak {"turns":384,"epoch":1,"mem":{"rssKiB":29096,"hwmKiB":64004,"rssAnonKiB":13884,"rssFileKiB":15212,"pssKiB":26489,"pssAnonKiB":13884,"threads":10,"fds":13,"children":0,"cpuSecs":8.85}}
+mixed-soak {"turns":400,"epoch":1,"mem":{"rssKiB":29152,"hwmKiB":66468,"rssAnonKiB":13940,"rssFileKiB":15212,"pssKiB":26545,"pssAnonKiB":13940,"threads":10,"fds":13,"children":0,"cpuSecs":9.95}}
+mixed-soak {"turns":416,"epoch":1,"mem":{"rssKiB":29216,"hwmKiB":67932,"rssAnonKiB":14004,"rssFileKiB":15212,"pssKiB":26609,"pssAnonKiB":14004,"threads":10,"fds":13,"children":0,"cpuSecs":11.09}}
+mixed-soak {"turns":432,"epoch":1,"mem":{"rssKiB":29264,"hwmKiB":68752,"rssAnonKiB":14052,"rssFileKiB":15212,"pssKiB":26657,"pssAnonKiB":14052,"threads":10,"fds":13,"children":0,"cpuSecs":12.19}}
+mixed-soak {"turns":448,"epoch":1,"mem":{"rssKiB":29336,"hwmKiB":71460,"rssAnonKiB":14124,"rssFileKiB":15212,"pssKiB":26728,"pssAnonKiB":14124,"threads":10,"fds":13,"children":0,"cpuSecs":13.36}}
+mixed-soak {"turns":464,"epoch":1,"mem":{"rssKiB":29372,"hwmKiB":71576,"rssAnonKiB":14160,"rssFileKiB":15212,"pssKiB":26765,"pssAnonKiB":14160,"threads":10,"fds":13,"children":0,"cpuSecs":14.52}}
+mixed-soak {"turns":480,"epoch":1,"mem":{"rssKiB":29448,"hwmKiB":73568,"rssAnonKiB":14236,"rssFileKiB":15212,"pssKiB":26841,"pssAnonKiB":14236,"threads":10,"fds":13,"children":0,"cpuSecs":15.69}}
+mixed-soak {"turns":496,"epoch":2,"mem":{"rssKiB":28524,"hwmKiB":74256,"rssAnonKiB":13376,"rssFileKiB":15148,"pssKiB":25917,"pssAnonKiB":13376,"threads":9,"fds":13,"children":0,"cpuSecs":1.28}}
+mixed-soak {"turns":512,"epoch":2,"mem":{"rssKiB":29400,"hwmKiB":76128,"rssAnonKiB":14252,"rssFileKiB":15148,"pssKiB":26792,"pssAnonKiB":14252,"threads":11,"fds":13,"children":0,"cpuSecs":2.47}}
+mixed-soak {"turns":528,"epoch":2,"mem":{"rssKiB":29632,"hwmKiB":78864,"rssAnonKiB":14484,"rssFileKiB":15148,"pssKiB":27025,"pssAnonKiB":14484,"threads":11,"fds":13,"children":0,"cpuSecs":3.74}}
+mixed-soak {"turns":544,"epoch":2,"mem":{"rssKiB":29688,"hwmKiB":79832,"rssAnonKiB":14540,"rssFileKiB":15148,"pssKiB":27081,"pssAnonKiB":14540,"threads":11,"fds":13,"children":0,"cpuSecs":5.01}}
+mixed-soak {"turns":560,"epoch":2,"mem":{"rssKiB":29768,"hwmKiB":79832,"rssAnonKiB":14620,"rssFileKiB":15148,"pssKiB":27161,"pssAnonKiB":14620,"threads":11,"fds":13,"children":0,"cpuSecs":6.33}}
+mixed-soak {"turns":576,"epoch":2,"mem":{"rssKiB":29880,"hwmKiB":83708,"rssAnonKiB":14732,"rssFileKiB":15148,"pssKiB":27271,"pssAnonKiB":14732,"threads":11,"fds":13,"children":0,"cpuSecs":7.58}}
+mixed-soak {"turns":592,"epoch":2,"mem":{"rssKiB":29948,"hwmKiB":85544,"rssAnonKiB":14800,"rssFileKiB":15148,"pssKiB":27339,"pssAnonKiB":14800,"threads":11,"fds":13,"children":0,"cpuSecs":8.91}}
+mixed-soak {"turns":608,"epoch":2,"mem":{"rssKiB":30096,"hwmKiB":87324,"rssAnonKiB":14948,"rssFileKiB":15148,"pssKiB":27488,"pssAnonKiB":14948,"threads":11,"fds":13,"children":0,"cpuSecs":10.25}}
+mixed-soak {"turns":624,"epoch":2,"mem":{"rssKiB":30156,"hwmKiB":88920,"rssAnonKiB":15008,"rssFileKiB":15148,"pssKiB":27548,"pssAnonKiB":15008,"threads":11,"fds":13,"children":0,"cpuSecs":11.62}}
+mixed-soak {"turns":640,"epoch":2,"mem":{"rssKiB":30208,"hwmKiB":89892,"rssAnonKiB":15060,"rssFileKiB":15148,"pssKiB":27600,"pssAnonKiB":15060,"threads":11,"fds":13,"children":0,"cpuSecs":13.01}}
+mixed-soak {"turns":656,"epoch":2,"mem":{"rssKiB":30256,"hwmKiB":93024,"rssAnonKiB":15108,"rssFileKiB":15148,"pssKiB":27648,"pssAnonKiB":15108,"threads":11,"fds":13,"children":0,"cpuSecs":14.42}}
+mixed-soak {"turns":672,"epoch":2,"mem":{"rssKiB":30340,"hwmKiB":94984,"rssAnonKiB":15192,"rssFileKiB":15148,"pssKiB":27733,"pssAnonKiB":15192,"threads":11,"fds":13,"children":0,"cpuSecs":15.84}}
+mixed-soak {"turns":688,"epoch":2,"mem":{"rssKiB":30276,"hwmKiB":98576,"rssAnonKiB":15128,"rssFileKiB":15148,"pssKiB":27669,"pssAnonKiB":15128,"threads":11,"fds":13,"children":0,"cpuSecs":17.32}}
+mixed-soak {"turns":704,"epoch":2,"mem":{"rssKiB":30424,"hwmKiB":98576,"rssAnonKiB":15276,"rssFileKiB":15148,"pssKiB":27817,"pssAnonKiB":15276,"threads":11,"fds":13,"children":0,"cpuSecs":18.82}}
+mixed-soak {"turns":720,"epoch":2,"mem":{"rssKiB":30444,"hwmKiB":99612,"rssAnonKiB":15296,"rssFileKiB":15148,"pssKiB":27837,"pssAnonKiB":15296,"threads":11,"fds":13,"children":0,"cpuSecs":20.34}}
+wrote /home/jason/coding/pipkin/fixtures/native-bench/2026-10-12-mixed-soak-final/mixed-soak.json
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 275.50s
+
+== binary sizes
+== done: /home/jason/coding/pipkin/fixtures/native-bench/2026-10-12-mixed-soak-final
