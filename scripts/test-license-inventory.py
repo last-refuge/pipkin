@@ -37,6 +37,10 @@ with tempfile.TemporaryDirectory() as temporary:
     rust = root / 'rust'
     rust.mkdir()
     (rust / 'LICENSE.txt').write_text('fixture MPL notice')
+    # Published yaml-rust2 uses these names instead of LICENSE-MIT/LICENSE-APACHE.
+    (rust / 'MIT-LICENSE').write_text('fixture MIT notice with original copyright')
+    (rust / 'Apache-LICENSE').write_text('fixture full Apache notice')
+    (rust / 'NOT-A-LICENSE').write_text('not a notice')
     (rust / 'src').mkdir()
     (rust / 'src/lib.rs').write_text('// fixture source')
     metadata = {'packages': [{'id': 'app', 'name': 'pipkin-app', 'version': '1', 'license': 'MPL-2.0',
@@ -53,6 +57,10 @@ with tempfile.TemporaryDirectory() as temporary:
     assert any(r['reviewRequired'] for r in report['packages'])
     assert temporary not in (output / 'inventory.json').read_text()
     assert list((output / 'notices').rglob('*.txt'))
+    rust_record = next(r for r in report['packages'] if r['ecosystem'] == 'rust')
+    copied = {(output / n['file']).read_text() for n in rust_record['notices']}
+    assert copied == {'fixture MPL notice', 'fixture MIT notice with original copyright',
+                      'fixture full Apache notice'}, copied
     (output / 'stale.txt').write_text('old generated artifact')
     with patch.object(sys, 'argv', [str(script), str(stage)]), patch('subprocess.check_output', return_value=json.dumps(metadata).encode()):
         runpy.run_path(str(script), run_name='__main__')

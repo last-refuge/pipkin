@@ -31,7 +31,8 @@ def notice_files(directory):
     for base, dirs, files in os.walk(directory):
         dirs[:] = [d for d in dirs if d not in ('node_modules', '.git', 'target')]
         for name in files:
-            if re.match(r'^(license|licence|copying|copyright|notice)([._-].*)?$', name, re.I):
+            # Some published crates (e.g. yaml-rust2) put the offered license first.
+            if re.match(r'^(?:(?:mit|apache)[._-])?(license|licence|copying|copyright|notice)([._-].*)?$', name, re.I):
                 path = Path(base) / name
                 if path.is_file():
                     result.append(path)

@@ -11,7 +11,24 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — actual installed Pi rollback and matched package sizes
+## Current follow-up — published MIT/Apache notice filenames
+
+2026-10-12, following **`3fa2d98`**. Fixed a packaging inventory bug: yaml-rust2 0.13.0
+already contains `MIT-LICENSE` and `Apache-LICENSE`, but discovery missed those names.
+The new fixture failed before the fix and now passes, retaining full contents and excluding
+an unrelated filename. Regenerating the real locked Linux inventory verifies both copied
+notices byte for byte: **614 Rust entries, 33 review flags, five missing-notice entries**
+(previously 34 flags/six missing). No downloaded or fabricated notice text was substituted.
+
+See [notice evidence](pipkin-rust-engine-evidence/notice-filenames.md). Required workspace
+checks remain **1,638 passed, 0 failed, 55 ignored**, clean Clippy and formatting; final
+installed Pi suite **37 passed**, explicit cross-engine test **1 passed**. Inventory fixtures,
+actual generation and syntax/diff checks pass. Previously measured archives are unchanged.
+Ledger disposition/evidence counts are unchanged, **0 fully qualified**; native stays opt-in.
+Five missing notices, other provenance/applicability review, remaining behavioral/performance,
+desktop/CI and default/Pi removal gates remain open. Unrelated owner changes preserved.
+
+## Prior follow-up — actual installed Pi rollback and matched package sizes
 
 2026-10-12, following **`d112c77`**, protocol 12 / schema 9 unchanged. Built the real
 pinned production Pi package and a native package with an identical application binary.

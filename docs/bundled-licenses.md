@@ -118,3 +118,15 @@ python3 scripts/test-runtime-inventory.py
 Python 3 is a build/qualification dependency, not a new installed-app runtime dependency. The fixture test checks
 notice retention, workspace-link handling, exclusion of embedded fixture manifests, MPL source provision and
 omission of private host paths. No provider credentials or inference requests are involved.
+
+## Native notice discovery correction (2026-10-12)
+
+The native inventory previously missed yaml-rust2 0.13.0's published `MIT-LICENSE` and
+`Apache-LICENSE` because notice discovery only recognized filenames starting with the notice
+type. Both files now enter the generated package notices unchanged. A fixture reproduces the
+old omission, and the actual locked crate's two copied files were checked byte for byte.
+
+The current native graph has 614 Rust entries, 33 review flags and five entries without a
+copied notice. This corrects discovery for one crate; it does not resolve other notice
+applicability or runtime/asset provenance findings. Previously measured archives retain their
+original inventories. See [filename evidence](../llm-docs/pipkin-rust-engine-evidence/notice-filenames.md).
