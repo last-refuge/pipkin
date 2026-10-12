@@ -96,6 +96,9 @@ compiled engine is a Pi-side follow-up. The original installed-size measurement 
 - **Rollback**: reinstall the previous package (`pacman -U` from the cache). A database written by a newer Pipkin
   is refused untouched with the message "schema N is newer than this build supports"; restore the backup made at
   that upgrade (the `.bak` for the older schema) to go back. Drafts typed after the upgrade are not in that backup.
+  The generic installer's `--rollback` rechecks the retained app/runtime checksums and an offline scratch-profile
+  handshake before changing the selected version. Failure leaves the current selection and launcher intact.
+  This checks the package; it does not prove compatibility with your existing profile's schema.
 - **Damage**: a corrupt database is set aside and the newest intact backup restored, with a notice.
 
 ## Diagnostics
@@ -182,7 +185,7 @@ recognises the marker, skips the Node checks, verifies the binary hash and runs
   puts everything under `DIR` (`DIR/engine`, `DIR/engine-config`) for disposable tests.
 - **Rollback:** reinstall or `./install.sh --rollback` to a Pi package. Native data is left in place and is not
   migrated back: history written by the native engine is native-only and Pi does not read it.
-- **Not available yet:** Claude subscription sign-in is not available in native mode.
+- **Claude subscription:** browser and copy-code sign-in are available under Settings → Connections.
 
 ```
 pipkin --version --engine native             # adds engine version, protocol and schema to the version line

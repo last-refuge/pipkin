@@ -98,6 +98,42 @@ link_all() {
   command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q "$prefix/share/icons/hicolor" 2>/dev/null || true
 }
 
+probe_version() {
+  local root=$1 native=$2
+  scratch=$(mktemp -d /tmp/pi-XXXXXX)
+  mkdir -p "$scratch/home"
+  local probe_args=(--diagnose --probe)
+  [[ "$native" = 0 ]] || probe_args+=(--engine native)
+  if ! env -i HOME="$scratch/home" XDG_DATA_HOME="$scratch/home/.local/share" \
+    TMPDIR="$scratch" PATH=/usr/bin:/bin PI_OFFLINE=1 \
+    "$root/usr/bin/pipkin" "${probe_args[@]}" >"$scratch/probe.log" 2>&1; then
+    die 'The installed engine failed its offline handshake. The current version is unchanged; inspect local libraries and try again.'
+  fi
+  grep -q 'engine probe: OK' "$scratch/probe.log" || die 'The installed engine did not answer its offline handshake. The current version is unchanged.'
+}
+
+verify_rollback_target() {
+  local root=$1 expected info=$1/usr/share/doc/pipkin/build-info.json native=0
+  [[ ! -L "$root" && -x "$root/usr/bin/pipkin" && -f "$info" &&
+     -f "$root/usr/share/applications/pipkin.desktop" ]] || die 'The rollback package is incomplete. The current version is unchanged.'
+  expected=$(sed -n 's/.*"binarySha256": "\([0-9a-f]\{64\}\)".*/\1/p' "$info" | head -1)
+  [[ ${#expected} = 64 && $(sha256sum "$root/usr/bin/pipkin" | awk '{print $1}') = "$expected" ]] ||
+    die 'Rollback executable checksum mismatch. The current version is unchanged.'
+  if [[ -f "$root/usr/lib/pipkin/native-engine.json" ]]; then
+    native=1
+    [[ ! -e "$root/usr/lib/pipkin/engine" && ! -e "$root/usr/lib/pipkin/runtime" ]] ||
+      die 'The native rollback package also carries a Pi engine or Node runtime. The current version is unchanged.'
+  else
+    local runtime=$root/usr/lib/pipkin/runtime engine=$root/usr/lib/pipkin/engine
+    [[ -x "$runtime/bin/node" && -f "$runtime/runtime.json" && -f "$engine/engine.json" &&
+       -f "$engine/pi-test.sh" && -d "$engine/node_modules" ]] || die 'The paired rollback engine is incomplete. The current version is unchanged.'
+    expected=$(sed -n 's/.*"binarySha256": "\([0-9a-f]\{64\}\)".*/\1/p' "$runtime/runtime.json" | head -1)
+    [[ ${#expected} = 64 && $(sha256sum "$runtime/bin/node" | awk '{print $1}') = "$expected" ]] ||
+      die 'Rollback Node checksum mismatch. The current version is unchanged.'
+  fi
+  probe_version "$root" "$native"
+}
+
 case "$action" in
   install)
     printf '\n%bPIPKIN  /  INSTALL%b\n\n' "$blue" "$reset"
@@ -169,16 +205,7 @@ case "$action" in
     progress OK "Copied version to $prefix"
 
     # A throwaway offline profile; this neither touches Pi credentials nor makes model requests.
-    scratch=$(mktemp -d /tmp/pi-XXXXXX)
-    mkdir -p "$scratch/home"
-    probe_args=(--diagnose --probe)
-    [[ "$native" = 0 ]] || probe_args+=(--engine native)
-    if ! env -i HOME="$scratch/home" XDG_DATA_HOME="$scratch/home/.local/share" \
-      TMPDIR="$scratch" PATH=/usr/bin:/bin PI_OFFLINE=1 \
-      "$candidate/usr/bin/pipkin" "${probe_args[@]}" >"$scratch/probe.log" 2>&1; then
-      die 'The installed engine failed its offline handshake. The previous version is unchanged; inspect local libraries and try again.'
-    fi
-    grep -q 'engine probe: OK' "$scratch/probe.log" || die 'The installed engine did not answer its offline handshake.'
+    probe_version "$candidate" "$native"
     progress OK 'Installed app and engine passed an offline handshake'
 
     link_all "$name"
@@ -206,6 +233,7 @@ case "$action" in
     cur=$(current_name); prev=''
     for v in $(installed); do [[ "$v" = "$cur" ]] || { prev=$v; break; }; done
     [[ -n "$prev" ]] || die 'No previous installed version to roll back to.'
+    verify_rollback_target "$versions/$prev"
     link_all "$prev"
     touch "$versions/$prev"
     echo "Rolled back to $prev (was $cur). App data was not rolled back."

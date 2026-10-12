@@ -65,6 +65,39 @@ check "the native probe ran with --engine native" "grep -q 'passed an offline ha
 check "native desktop entry keeps --engine native" "grep -Fqx 'Exec=\"$prefix/bin/pipkin\" --engine native' '$desktop'"
 check "native version is current, Pi version retained" \
   "run '$native/install.sh' --prefix '$prefix' --list | grep -q -- '-native-.*(current)' && run '$native/install.sh' --prefix '$prefix' --list | grep -q '$pi_version'"
+native_version=$(run "$native/install.sh" --prefix "$prefix" --list | awk '/current/ {print $2}')
+prior="$prefix/lib/pipkin/versions/$pi_version"
+cp "$prior/usr/bin/pipkin" "$root/prior-binary"
+printf '\n# tampered rollback target\n' >> "$prior/usr/bin/pipkin"
+if run "$native/install.sh" --prefix "$prefix" --rollback > "$root/rollback-tampered.log" 2>&1; then
+  echo 'FAIL rollback activated a tampered prior binary'; fail=1
+else
+  check "rejected rollback leaves native current" \
+    "run '$native/install.sh' --prefix '$prefix' --list | grep -q '$native_version (current)'"
+fi
+cp "$root/prior-binary" "$prior/usr/bin/pipkin"
+# Restore native if the pre-fix installer activated the bad prior version, so the rest still runs.
+run "$native/install.sh" --prefix "$prefix" > /dev/null
+cp "$prior/usr/lib/pipkin/runtime/bin/node" "$root/prior-node"
+printf '\n# tampered runtime\n' >> "$prior/usr/lib/pipkin/runtime/bin/node"
+if run "$native/install.sh" --prefix "$prefix" --rollback > "$root/rollback-node.log" 2>&1; then
+  echo 'FAIL rollback activated a tampered Node runtime'; fail=1
+else
+  check "rollback validates the retained Node runtime" "grep -q 'Node checksum mismatch' '$root/rollback-node.log'"
+fi
+cp "$root/prior-node" "$prior/usr/lib/pipkin/runtime/bin/node"
+cp "$prior/usr/share/doc/pipkin/build-info.json" "$root/prior-info"
+sed "s/echo 'engine probe: OK pi'/exit 91/" "$root/prior-binary" > "$prior/usr/bin/pipkin"
+printf '{\n  "app": { "binarySha256": "%s" }\n}\n' "$(sha "$prior/usr/bin/pipkin")" > "$prior/usr/share/doc/pipkin/build-info.json"
+if run "$native/install.sh" --prefix "$prefix" --rollback > "$root/rollback-probe.log" 2>&1; then
+  echo 'FAIL rollback activated a target whose probe fails'; fail=1
+else
+  check "rollback requires the retained engine to answer" "grep -q 'failed its offline handshake' '$root/rollback-probe.log'"
+  check "failed rollback probe preserves binary selection and native launcher" \
+    "run '$native/install.sh' --prefix '$prefix' --list | grep -q '$native_version (current)' && grep -Fqx 'Exec=\"$prefix/bin/pipkin\" --engine native' '$desktop'"
+fi
+cp "$root/prior-binary" "$prior/usr/bin/pipkin"
+cp "$root/prior-info" "$prior/usr/share/doc/pipkin/build-info.json"
 run "$native/install.sh" --prefix "$prefix" --rollback > /dev/null
 check "rollback returns to the Pi version" "run '$native/install.sh' --prefix '$prefix' --list | grep -q '$pi_version (current)'"
 check "rollback restores the Pi desktop entry" "grep -Fqx 'Exec=\"$prefix/bin/pipkin\"' '$desktop'"

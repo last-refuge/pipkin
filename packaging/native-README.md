@@ -11,9 +11,10 @@ platform.
 - Native engine data lives in its own directories (`~/.local/share/pipkin/engine` and `~/.config/pipkin/engine`,
   or under an explicit `--data-dir`), separate from Pi's `~/.pi`. History written by the native engine is
   native-only: Pi does not read it.
-- Claude subscription sign-in is not available with the native engine yet.
+- Claude subscription sign-in is available under Settings → Connections, including browser and copy-code login.
 - Roll back by reinstalling a Pi package (`./install.sh --rollback` when it is the previous installed version);
-  native data is left in place and is not migrated back.
+  native data is left in place and is not migrated back. The installer checks the retained binary and runs
+  an offline engine probe before activating it; a damaged or unresponsive target leaves the current version selected.
 
 `pipkin --diagnose --engine native` reports the engine identity and directories; add `--probe` to start a
 throwaway worker in a scratch profile (no credentials, no network) and check that it answers. Detailed

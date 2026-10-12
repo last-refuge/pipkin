@@ -134,6 +134,14 @@ if you need to restore sign-in. Reopening that archive with a compatible native 
 to the native history. The saved desktop transcript is a bounded reading cache, not a complete archive.
 Rolling back does not undo changes made to project files.
 
+Make the archive private (for example, set `umask 077` before creating it), and preserve directory/file
+permissions when restoring a trusted archive (`tar --extract --preserve-permissions`). Keep the current
+directories aside until the restored profile opens successfully. Restore to the same locations: saved
+projects, imported-source references and some artifact links use absolute paths. Project files and Pi
+source directories need their own backups. Temporary bash spill paths can expire independently; the
+native database retains complete tool output up to the displayed retention limit, available through the
+tool-output copy/save action. Archiving the engine does not preserve arbitrary files under `/tmp`.
+
 To roll back, run with `--engine pi` (and release any conversation you want Pi to continue); to discard
 the native copies, remove `<data dir>/engine/` (and `~/.config/pipkin/engine/` for its settings and credentials)
 after making sure nothing there is needed. Removing the engine directory does not remove the ownership records:

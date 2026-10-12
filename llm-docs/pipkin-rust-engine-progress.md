@@ -11,7 +11,32 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — native model patterns and locale ordering
+## Current follow-up — installed native upgrade, rollback and archive restore
+
+2026-10-12, following **`cf32a31`**, protocol 12 / schema 9 unchanged. A new regression
+confirmed that rollback activated a tampered retained binary. The installer now verifies
+the rollback app/runtime checksums and an offline engine handshake before switching the
+current version or launcher. All 16 installer fixture checks pass, including damaged
+app/runtime and failed-probe rejection. No user installation was changed.
+
+Two retained real native packages (protocols 11/12, both schema 9) pass imported coding,
+upgrade, guarded rollback, continuation, and complete closed native data/config archive
+restoration. Every restored file hash and permission matches; full 1 MiB tool output survives
+removal of temporary spill files, and settled-request replay causes no additional effects.
+The older installed package also refuses an artificially newer schema without changing
+its database bytes. Current native package build/install/uninstall checks pass with
+Pi/Node invocation traps. Installed Claude sign-in help is corrected.
+
+Required checks: **1,638 passed, 0 failed, 54 ignored**, clean Clippy/all-targets and
+formatting; shell/Python syntax and diff checks pass. See
+[installed qualification evidence](pipkin-rust-engine-evidence/installed-upgrade-restore.md)
+and `fixtures/native-installed/2026-10-12-upgrade.json` for exact artifact identities,
+commands, initial failures and boundaries. Inventory counts remain unchanged, **0 fully
+qualified**; native stays opt-in. Actual installed Pi rollback, full desktop-profile restore,
+visual acceptance, other reference/provider and release gates, default switch and Pi/Node
+removal remain open. Unrelated owner changes preserved.
+
+## Prior follow-up — native model patterns and locale ordering
 
 2026-10-12, following **`52b60c7`**, protocol 12 / schema 9 unchanged. Replaced the
 model scope's globset/byte-order approximations with a native pattern matcher and ICU

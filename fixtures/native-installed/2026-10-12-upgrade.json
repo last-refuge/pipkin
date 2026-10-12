@@ -1,0 +1,101 @@
+{
+  "artifacts": [
+    {
+      "role": "previous",
+      "archiveSha256": "7eabb9dcbe0f9f74da4cf7459d079cc70fcdd4ca45a8a38b873376b0e43d4f58",
+      "marker": {
+        "formatVersion": 1,
+        "engine": "native",
+        "selector": "--engine native",
+        "appVersion": "0.0.1",
+        "engineVersion": "0.0.1",
+        "engineProtocol": 11,
+        "engineSchema": 9,
+        "desktopSchema": 8
+      },
+      "app": {
+        "version": "0.0.1",
+        "revision": "c508954171e93392022f0718d51422d88ff0aee6",
+        "dirty": "true",
+        "binarySha256": "a17da1a81638dc4fc2a50607bc11df1b2e7aff4ae1cb4eae5c761a9bf6e5b82c"
+      }
+    },
+    {
+      "role": "current",
+      "archiveSha256": "479861d173352ab31afdfea8445d520a889224372a684fc524c5b99e521efc15",
+      "marker": {
+        "formatVersion": 1,
+        "engine": "native",
+        "selector": "--engine native",
+        "appVersion": "0.0.1",
+        "engineVersion": "0.0.1",
+        "engineProtocol": 12,
+        "engineSchema": 9,
+        "desktopSchema": 8
+      },
+      "app": {
+        "version": "0.0.1",
+        "revision": "cf32a31472a4f08d29fc14538b917835a3dfed19",
+        "dirty": "true",
+        "binarySha256": "2af370ba6a8a28499692276f91977f7394cca094617bb83a8dd94745228fbaff"
+      }
+    }
+  ],
+  "installerSha256": "41dfe1beaf20a7ba3a724445f6731ae1d377cc3e35c13433b2258a54dbcca908",
+  "result": "passed",
+  "events": [
+    {
+      "action": [
+        "previous"
+      ],
+      "exitCode": 0,
+      "stdout": "\nPIPKIN  /  INSTALL\n\n[OK] [###---------------]  16%  Linux, Git and native libraries\n[OK] [######------------]  33%  Built-in native engine: no Node runtime needed; no system changes\n[OK] [#########---------]  50%  Pipkin and built-in native engine verified\n[OK] [############------]  66%  Copied version to /tmp/pipkin-native-upgrade-9jvvg1u8/prefix with spaces\n[OK] [###############---]  83%  Installed app and engine passed an offline handshake\n[OK] [##################] 100%  Desktop shortcut ready; existing app data preserved\n[NOTE] No graphical display is active in this shell; open Pipkin from a desktop session.\n\nOpen Pipkin from your app menu or run /tmp/pipkin-native-upgrade-9jvvg1u8/prefix with spaces/bin/pipkin.\nSign in, choose a project and select a model in the Pipkin GUI.\nNo account credentials were requested or sent during installation.\n",
+      "stderr": ""
+    },
+    {
+      "action": [
+        "current"
+      ],
+      "exitCode": 0,
+      "stdout": "\nPIPKIN  /  INSTALL\n\n[OK] [###---------------]  16%  Linux, Git and native libraries\n[OK] [######------------]  33%  Built-in native engine: no Node runtime needed; no system changes\n[OK] [#########---------]  50%  Pipkin and built-in native engine verified\n[OK] [############------]  66%  Copied version to /tmp/pipkin-native-upgrade-9jvvg1u8/prefix with spaces\n[OK] [###############---]  83%  Installed app and engine passed an offline handshake\n[OK] [##################] 100%  Desktop shortcut ready; existing app data preserved\n[NOTE] No graphical display is active in this shell; open Pipkin from a desktop session.\n\nOpen Pipkin from your app menu or run /tmp/pipkin-native-upgrade-9jvvg1u8/prefix with spaces/bin/pipkin.\nSign in, choose a project and select a model in the Pipkin GUI.\nNo account credentials were requested or sent during installation.\n",
+      "stderr": ""
+    },
+    {
+      "action": [
+        "current",
+        "--rollback"
+      ],
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "[FAIL] Rollback executable checksum mismatch. The current version is unchanged.\n"
+    },
+    {
+      "action": [
+        "current",
+        "--rollback"
+      ],
+      "exitCode": 0,
+      "stdout": "Rolled back to 0.0.1-native-a17da1a81638 (was 0.0.1-native-2af370ba6a8a). App data was not rolled back.\n",
+      "stderr": ""
+    },
+    {
+      "action": [
+        "current",
+        "--rollback"
+      ],
+      "exitCode": 0,
+      "stdout": "Rolled back to 0.0.1-native-2af370ba6a8a (was 0.0.1-native-a17da1a81638). App data was not rolled back.\n",
+      "stderr": ""
+    },
+    {
+      "action": [
+        "current",
+        "--uninstall"
+      ],
+      "exitCode": 0,
+      "stdout": "Removed Pipkin from /tmp/pipkin-native-upgrade-9jvvg1u8/prefix with spaces. Your app data remains in ~/.local/share/pipkin.\n",
+      "stderr": ""
+    }
+  ],
+  "scope": "real native package upgrade/rollback with equal engine schemas, migration/coding/retained output/replay/archive restore; no GUI, Pi rollback, live auth or schema downgrade"
+}
