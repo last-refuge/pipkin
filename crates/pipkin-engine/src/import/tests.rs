@@ -1344,6 +1344,7 @@ fn credentials_and_config_are_listed_without_values() {
     )
     .unwrap();
     std::fs::write(agent.root.join("models.json"), "{}").unwrap();
+    std::fs::write(agent.root.join("models-store.json"), "{}").unwrap();
     std::fs::write(agent.root.join("AGENTS.md"), "# rules").unwrap();
     std::fs::create_dir_all(agent.root.join("skills/review")).unwrap();
     std::fs::write(agent.root.join("skills/review/SKILL.md"), "x").unwrap();
@@ -1366,7 +1367,10 @@ fn credentials_and_config_are_listed_without_values() {
         ]
     );
     let names: Vec<&str> = report.config.iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(names, vec!["models.json", "AGENTS.md", "skills"]);
+    assert_eq!(
+        names,
+        vec!["models.json", "models-store.json", "AGENTS.md", "skills"]
+    );
 
     let entries = credential_entries(&agent.root).unwrap();
     assert_eq!(entries.len(), 3);
@@ -1379,6 +1383,7 @@ fn credentials_and_config_are_listed_without_values() {
         rel,
         vec![
             PathBuf::from("models.json"),
+            PathBuf::from("models-store.json"),
             PathBuf::from("AGENTS.md"),
             PathBuf::from("skills/review/SKILL.md")
         ]

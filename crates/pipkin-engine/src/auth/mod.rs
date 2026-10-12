@@ -25,6 +25,7 @@ pub mod config_value;
 pub mod models_json;
 pub mod oauth;
 pub mod providers;
+mod remote_catalog;
 mod signin;
 pub mod store;
 
@@ -87,7 +88,7 @@ impl Catalog {
         let (provider, id) = key.split_once('/')?;
         self.models
             .iter()
-            .find(|m| m.provider == provider && m.id == id)
+            .find(|m| m.is_chat() && m.provider == provider && m.id == id)
     }
 }
 
@@ -110,6 +111,8 @@ pub(crate) struct Inner {
     /// Sign-in traffic; replaced when the engine's network settings change.
     http: RwLock<reqwest::Client>,
     catalog: RwLock<Arc<Catalog>>,
+    remote: remote_catalog::Cache,
+    reload_lock: Mutex<()>,
     models: RwLock<Arc<ModelsConfig>>,
     copilot_ids: Vec<String>,
     refresh_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -120,6 +123,7 @@ pub(crate) struct Inner {
 
 impl Drop for Auth {
     fn drop(&mut self) {
+        self.inner.remote.cancel();
         self.inner.cancel_all_attempts();
     }
 }
@@ -178,6 +182,8 @@ impl Auth {
                 store,
                 http: RwLock::new(http),
                 catalog: RwLock::new(Arc::new(Catalog::default())),
+                remote: remote_catalog::Cache::new(config.config_dir.join("models-store.json")),
+                reload_lock: Mutex::new(()),
                 models: RwLock::new(Arc::new(ModelsConfig::default())),
                 copilot_ids,
                 refresh_locks: Mutex::default(),
@@ -186,7 +192,7 @@ impl Auth {
                 listener: Mutex::new(None),
             }),
         };
-        auth.reload();
+        auth.inner.reload();
         auth
     }
 
@@ -204,8 +210,11 @@ impl Auth {
         *lock(&self.inner.refresh_timeout) = timeout;
     }
 
-    /// Re-read `models.json`, `auth.json` and rebuild the catalog.
+    /// Re-read `models.json`, `models-store.json`, `auth.json` and rebuild the catalog.
     pub fn reload(&self) -> Arc<Catalog> {
+        // Explicit configuration/credential import may have copied a models-store.json.
+        // Invalidate earlier network refreshes before restoring that cache.
+        self.inner.remote.reload();
         self.inner.reload()
     }
 
@@ -296,12 +305,15 @@ impl Inner {
     }
 
     fn reload(&self) -> Arc<Catalog> {
+        let _reload = lock(&self.reload_lock);
         let mut warnings = Vec::new();
         let config = ModelsConfig::load(&self.config.models_path());
         if let Some(e) = &config.error {
             warnings.push(e.clone());
         }
-        let builtin = crate::provider::model::builtin_models();
+        let builtin = self
+            .remote
+            .apply(crate::provider::model::builtin_models(), &mut warnings);
         let mut models = models_json::compose(builtin, &config, &mut warnings);
 
         // Credential-dependent catalog: Copilot's account model list, Radius gateway catalogs

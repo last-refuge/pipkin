@@ -302,6 +302,81 @@ fn a_provider_configured_after_start_appears_after_refresh_models() {
 }
 
 #[test]
+fn refreshed_catalog_models_are_selectable_and_resume_offline_after_restart() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let provider = rt.block_on(MockServer::start(|_,_| MockResponse::sse(vec![
+        "data: {\"id\":\"answer\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"catalog model worked\"},\"finish_reason\":null}]}\n\n".into(),
+        "data: {\"id\":\"answer\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n".into(),
+    ])));
+    let base = provider.url.clone();
+    let catalog = rt.block_on(MockServer::start(move |_,_| {
+        MockResponse::json(200,&json!([{"id":"catalog-test","api":"openai-completions","baseUrl":format!("{base}/v1"),"contextWindow":200000,"maxTokens":4096}]))
+            .with_header("last-modified","Sun, 11 Oct 2026 12:00:00 GMT")
+            .with_header("etag","\"native-test\"")
+    }));
+    let fx = Fixture::new();
+    let mut config = fx.config();
+    config.env = Env::isolated([("OPENAI_API_KEY".into(), "private-provider-key".into())].into());
+    config.catalog_base_url = catalog.url.clone();
+    let mut e = fx.start_config(&Scripted::echo("unused"), config.clone());
+    let session = e.create(&fx.project, "catalog-session");
+    assert!(
+        !models(&mut e, None)
+            .models
+            .iter()
+            .any(|m| m.key == "openai/catalog-test")
+    );
+    e.call(Call::RefreshModels).unwrap();
+    e.until("catalog invalidation", |events| {
+        events.iter().any(|ev| matches!(ev, Event::ModelsChanged))
+    });
+    assert!(
+        models(&mut e, None)
+            .models
+            .iter()
+            .any(|m| m.key == "openai/catalog-test" && m.available)
+    );
+    e.call(Call::SetModel {
+        session: session.clone(),
+        model: "openai/catalog-test".into(),
+    })
+    .unwrap();
+    e.prompt(&session, "live", "use the refreshed model")
+        .unwrap();
+    assert_eq!(e.settled("live"), RunOutcome::Completed);
+    assert_eq!(provider.requests()[0].json()["model"], "catalog-test");
+    assert_eq!(
+        provider.requests()[0].header("authorization"),
+        Some("Bearer private-provider-key")
+    );
+    assert!(catalog.requests()[0].header("authorization").is_none());
+    e.handle.shutdown(Duration::from_secs(1));
+    drop(e);
+    config.env = Env::isolated(
+        [
+            ("OPENAI_API_KEY".into(), "private-provider-key".into()),
+            ("PI_OFFLINE".into(), "".into()),
+        ]
+        .into(),
+    );
+    let mut e = fx.start_config(&Scripted::echo("unused"), config);
+    assert_eq!(
+        e.snapshot(&session).summary.model.as_deref(),
+        Some("openai/catalog-test")
+    );
+    e.call(Call::RefreshModels).unwrap();
+    assert_eq!(
+        catalog.requests().len(),
+        1,
+        "offline disables catalog traffic, not ordinary coding"
+    );
+    e.prompt(&session, "resumed", "continue offline catalog selection")
+        .unwrap();
+    assert_eq!(e.settled("resumed"), RunOutcome::Completed);
+    assert_eq!(provider.requests().len(), 2);
+}
+
+#[test]
 fn enabled_models_scope_the_listing_and_the_initial_model_with_pattern_thinking() {
     let fx = Fixture::new();
     write_models(&fx, &local_models("http://127.0.0.1:9/v1"));

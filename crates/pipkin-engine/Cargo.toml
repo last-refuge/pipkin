@@ -17,6 +17,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json", "http2"] }
 bytes = "1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 getrandom = "0.2"
 sha2 = "0.10"
 hmac = "0.12"

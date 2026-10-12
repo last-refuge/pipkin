@@ -1,0 +1,404 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "packages/coding-agent/src/core/remote-catalog-provider.ts": "e494bfed7b1dff1c8cbc9a77976e00e9f639a7d48631d363e84f7532fde9db88",
+    "packages/coding-agent/src/utils/management-http.ts": "2195b345fdd5c607f87a55b93e7d00c6d70d7dcfe2989b08bbd9f39b529a756a",
+    "packages/coding-agent/src/utils/pi-user-agent.ts": "cd2329beb4b18fd99f5180d603fd1371c8f50441d4688f7d75918a051e565c26",
+    "packages/ai/src/utils/model-operations.ts": "d024c049a08df73498362f297ca10c45a401fb5a3364c0a4d7890ec92a3c4763",
+    "packages/ai/src/utils/models-error.ts": "f35f82bd86123be7ef05e86036f18e8d3d5df14f394f558b22c38b23d122c12c",
+    "packages/ai/src/utils/diagnostics.ts": "06fcbc2347f65a43938078094a7118036b5f12e73147affb5c73cd72753443f0"
+  },
+  "generatedAt": 1791144002992,
+  "now": 1791723600000,
+  "scope": "Original overlay/retry functions; fetch/persistence recorder, no credentials or real network",
+  "cases": [
+    {
+      "name": "newer-array",
+      "status": 200,
+      "body": [
+        {
+          "id": "new",
+          "api": "openai-completions"
+        }
+      ],
+      "lastModified": "Sun, 11 Oct 2026 12:00:00 GMT",
+      "expected": {
+        "models": [
+          {
+            "id": "new",
+            "type": "chat",
+            "provider": "openai"
+          }
+        ],
+        "requests": [
+          {
+            "path": "/api/models/providers/openai",
+            "validator": null
+          }
+        ],
+        "persisted": {
+          "checked": true,
+          "lastModified": 1791720000000,
+          "etag": "\"new\""
+        },
+        "error": null
+      }
+    },
+    {
+      "name": "typed-object",
+      "status": 200,
+      "body": {
+        "models": [
+          {
+            "id": "chat"
+          },
+          {
+            "id": "image",
+            "type": "image"
+          },
+          {
+            "id": "classifier",
+            "type": "classifier"
+          },
+          {
+            "id": "skip",
+            "type": "future"
+          }
+        ]
+      },
+      "lastModified": "Sun, 11 Oct 2026 12:00:00 GMT",
+      "expected": {
+        "models": [
+          {
+            "id": "chat",
+            "type": "chat",
+            "provider": "openai"
+          },
+          {
+            "id": "image",
+            "type": "image",
+            "provider": "openai"
+          },
+          {
+            "id": "classifier",
+            "type": "classifier",
+            "provider": "openai"
+          }
+        ],
+        "requests": [
+          {
+            "path": "/api/models/providers/openai",
+            "validator": null
+          }
+        ],
+        "persisted": {
+          "checked": true,
+          "lastModified": 1791720000000,
+          "etag": "\"new\""
+        },
+        "error": null
+      }
+    },
+    {
+      "name": "older",
+      "status": 200,
+      "body": [
+        {
+          "id": "old"
+        }
+      ],
+      "lastModified": "Sun, 04 Oct 2026 12:00:00 GMT",
+      "expected": {
+        "models": [],
+        "requests": [
+          {
+            "path": "/api/models/providers/openai",
+            "validator": null
+          }
+        ],
+        "persisted": {
+          "checked": true,
+          "lastModified": 1791115200000,
+          "etag": "\"new\""
+        },
+        "error": null
+      }
+    },
+    {
+      "name": "undated",
+      "status": 200,
+      "body": [
+        {
+          "id": "undated"
+        }
+      ],
+      "expected": {
+        "models": [],
+        "requests": [
+          {
+            "path": "/api/models/providers/openai",
+            "validator": null
+          }
+        ],
+        "persisted": {
+          "checked": true,
+          "lastModified": 0,
+          "etag": "\"new\""
+        },
+        "error": null
+      }
+    },
+    {
+      "name": "not-modified",
+      "status": 304,
+      "stored": {
+        "models": [
+          {
+            "id": "cached",
+            "provider": "openai",
+            "api": "openai-completions"
+          }
+        ],
+        "checkedAt": 0,
+        "lastModified": 1791723599000,
+        "etag": "\"cached\""
+      },
+      "expected": {
+        "models": [
+          {
+            "id": "cached",
+            "type": "chat",
+            "provider": "openai"
+          }
+        ],
+        "requests": [
+          {
+            "path": "/api/models/providers/openai",
+            "validator": "\"cached\""
+          }
+        ],
+        "persisted": {
+          "checked": true,
+          "lastModified": 1791723599000,
+          "etag": "\"cached\""
+        },
+        "error": null
+      }
+    },
+    {
+      "name": "missing",
+      "status": 404,
+      "stored": {
+        "models": [
+          {
+            "id": "cached",
+            "provider": "openai",
+            "api": "openai-completions"
+          }
+        ],
+        "checkedAt": 0,
+        "lastModified": 1791723599000,
+        "etag": "\"cached\""
+      },
+      "expected": {
+        "models": [
+          {
+            "id": "cached",
+            "type": "chat",
+            "provider": "openai"
+          }
+        ],
+        "requests": [
+          {
+            "path": "/api/models/providers/openai",
+            "validator": "\"cached\""
+          }
+        ],
+        "persisted": {
+          "checked": true,
+          "lastModified": 0,
+          "etag": null
+        },
+        "error": null
+      }
+    },
+    {
+      "name": "unsupported",
+      "status": 501,
+      "stored": {
+        "models": [
+          {
+            "id": "cached",
+            "provider": "openai",
+            "api": "openai-completions"
+          }
+        ],
+        "checkedAt": 0,
+        "lastModified": 1791723599000,
+        "etag": "\"cached\""
+      },
+      "expected": {
+        "models": [
+          {
+            "id": "cached",
+            "type": "chat",
+            "provider": "openai"
+          }
+        ],
+        "requests": [
+          {
+            "path": "/api/models/providers/openai",
+            "validator": "\"cached\""
+          }
+        ],
+        "persisted": {
+          "checked": true,
+          "lastModified": 0,
+          "etag": null
+        },
+        "error": null
+      }
+    },
+    {
+      "name": "transient",
+      "status": 503,
+      "stored": {
+        "models": [
+          {
+            "id": "cached",
+            "provider": "openai",
+            "api": "openai-completions"
+          }
+        ],
+        "checkedAt": 0,
+        "lastModified": 1791723599000,
+        "etag": "\"cached\""
+      },
+      "expected": {
+        "models": [
+          {
+            "id": "cached",
+            "type": "chat",
+            "provider": "openai"
+          }
+        ],
+        "requests": [
+          {
+            "path": "/api/models/providers/openai",
+            "validator": "\"cached\""
+          },
+          {
+            "path": "/api/models/providers/openai",
+            "validator": "\"cached\""
+          },
+          {
+            "path": "/api/models/providers/openai",
+            "validator": "\"cached\""
+          }
+        ],
+        "persisted": {
+          "checked": true,
+          "lastModified": 1791723599000,
+          "etag": "\"cached\""
+        },
+        "error": "Model catalog request failed for openai: 503"
+      }
+    },
+    {
+      "name": "empty-validator",
+      "status": 200,
+      "body": [
+        {
+          "id": "new"
+        }
+      ],
+      "lastModified": "Sun, 11 Oct 2026 12:00:00 GMT",
+      "stored": {
+        "models": [],
+        "checkedAt": 0,
+        "lastModified": 1791723599000,
+        "etag": "\"cached\""
+      },
+      "expected": {
+        "models": [
+          {
+            "id": "new",
+            "type": "chat",
+            "provider": "openai"
+          }
+        ],
+        "requests": [
+          {
+            "path": "/api/models/providers/openai",
+            "validator": null
+          }
+        ],
+        "persisted": {
+          "checked": true,
+          "lastModified": 1791720000000,
+          "etag": "\"new\""
+        },
+        "error": null
+      }
+    },
+    {
+      "name": "fresh",
+      "status": 200,
+      "body": [],
+      "stored": {
+        "models": [
+          {
+            "id": "cached",
+            "provider": "openai",
+            "api": "openai-completions"
+          }
+        ],
+        "checkedAt": 1791723600000,
+        "lastModified": 1791723599000,
+        "etag": "\"cached\""
+      },
+      "expected": {
+        "models": [
+          {
+            "id": "cached",
+            "type": "chat",
+            "provider": "openai"
+          }
+        ],
+        "requests": [],
+        "persisted": null,
+        "error": null
+      }
+    },
+    {
+      "name": "offline",
+      "status": 200,
+      "body": [],
+      "stored": {
+        "models": [
+          {
+            "id": "cached",
+            "provider": "openai",
+            "api": "openai-completions"
+          }
+        ],
+        "checkedAt": 0,
+        "lastModified": 1791723599000,
+        "etag": "\"cached\""
+      },
+      "offline": true,
+      "expected": {
+        "models": [
+          {
+            "id": "cached",
+            "type": "chat",
+            "provider": "openai"
+          }
+        ],
+        "requests": [],
+        "persisted": null,
+        "error": null
+      }
+    }
+  ]
+}

@@ -323,6 +323,7 @@ pub fn discover(agent_dir: &Path, server_dir: &Path, store: &Store) -> Discovery
 
     for name in [
         "models.json",
+        "models-store.json",
         "settings.json",
         "AGENTS.override.md",
         "AGENTS.md",
@@ -753,6 +754,7 @@ pub fn config_files(agent_dir: &Path) -> Vec<(PathBuf, PathBuf)> {
     let mut out = Vec::new();
     for name in [
         "models.json",
+        "models-store.json",
         "settings.json",
         "AGENTS.override.md",
         "AGENTS.md",

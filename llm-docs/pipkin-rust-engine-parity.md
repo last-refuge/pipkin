@@ -209,10 +209,10 @@ of all 504 capabilities.
 
 | Disposition (target) | Rows |
 | --- | --- |
-| `NC` native implementation of the same contract | 408 |
+| `NC` native implementation of the same contract | 410 |
 | `NE` native equivalent | 26 |
 | `NP` not present in the baseline (evidence in row) | 32 |
-| `PA` pending audit | 21 |
+| `PA` pending audit | 19 |
 | `BL` blocked | 0 |
 | `LB` legacy bridge only | 1 |
 | `RC` reserved for Codex — not implemented or qualified | 0 |
@@ -232,11 +232,11 @@ the row evidence for history; no package execution is claimed.
 
 | Evidence | Rows |
 | --- | --- |
-| measured | 432 |
+| measured | 434 |
 | observed | 7 |
 | failed | 0 |
 | unverified (code exists, no test) | 8 |
-| not started (implementation absent or excluded; see row evidence) | 57 |
+| not started (implementation absent or excluded; see row evidence) | 55 |
 
 | Section | Rows | NC | NE | NP | PA | BL | LB | RC | OS | measured | observed | failed | unverified | not started |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -244,7 +244,7 @@ the row evidence for history; no package execution is claimed.
 | 2 Tools (P02) | 23 | 18 | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 18 | 0 | 0 | 0 | 5 |
 | 3 Wire adapters (P03) | 34 | 27 | 2 | 1 | 4 | 0 | 0 | 0 | 0 | 30 | 0 | 0 | 0 | 4 |
 | 4 Provider ids (P03) | 43 | 41 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 42 | 0 | 0 | 0 | 1 |
-| 5 Provider config (P03/P19) | 14 | 10 | 1 | 2 | 1 | 0 | 0 | 0 | 0 | 11 | 0 | 0 | 0 | 3 |
+| 5 Provider config (P03/P19) | 14 | 11 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 12 | 0 | 0 | 0 | 2 |
 | 6 Credentials / OAuth (P04) | 59 | 49 | 1 | 1 | 8 | 0 | 0 | 0 | 0 | 56 | 0 | 0 | 2 | 1 |
 | 7 Service API / transport | 48 | 37 | 0 | 5 | 2 | 0 | 0 | 0 | 4 | 38 | 0 | 0 | 0 | 10 |
 | 8 Durable / queue / Stop (P05–P08) | 43 | 41 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 42 | 0 | 0 | 0 | 1 |
@@ -254,11 +254,11 @@ the row evidence for history; no package execution is claimed.
 | 12 Context / compaction (P13) | 15 | 13 | 0 | 1 | 0 | 0 | 0 | 0 | 1 | 14 | 0 | 0 | 0 | 1 |
 | 13 Extensions / questions (P14/P15) | 24 | 9 | 2 | 5 | 0 | 0 | 0 | 0 | 8 | 15 | 0 | 0 | 0 | 9 |
 | 14 Tool output (P16) | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 1 | 0 |
-| 15 Settings / env | 34 | 29 | 1 | 2 | 2 | 0 | 0 | 0 | 0 | 29 | 0 | 0 | 1 | 4 |
+| 15 Settings / env | 34 | 30 | 1 | 2 | 1 | 0 | 0 | 0 | 0 | 30 | 0 | 0 | 1 | 3 |
 | 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 53 | 1 | 0 | 1 | 5 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
 | 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 6 | 0 | 0 | 6 |
-| **Total** | 504 | 408 | 26 | 32 | 21 | 0 | 1 | 0 | 16 | 432 | 7 | 0 | 8 | 57 |
+| **Total** | 504 | 410 | 26 | 32 | 19 | 0 | 1 | 0 | 16 | 434 | 7 | 0 | 8 | 55 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
 whenever rows change. Release gates: native beta needs every mandatory row implemented; native
@@ -454,7 +454,7 @@ source, the difference must be reconciled by RE-01 before this section is called
 | PCFG-08 | model-runtime.ts:547-694 | Header merge: auth headers < caller headers < attribution; `authHeader:true` adds Bearer; per-model headers; `null` deletes; Copilot `auth.baseUrl` replaces model baseUrl | auth::configured_headers_merge_in_reference_order; com/headers::layering_is_case_insensitive_and_none_deletes; auth::copilot_token_sets_base_url_and_filters_models | Opus · E/auth + E/provider/api/common/headers.rs | n/a | Same final headers | all | NC | measured: auth::configured_headers_merge_in_reference_order, com/headers::layering_is_case_insensitive_and_none_deletes, auth::copilot_token_sets_base_url_and_filters_models; no differential; attribution layer absent (ADP-ATTRIBUTION) |
 | PCFG-09 | utils/provider-env.ts:45-52 | Env lookup: credential `env` > process env | cfg::isolated_env_hides_the_process_environment; cval::credential_env_wins_and_the_process_env_is_isolated | Opus · E/config.rs | n/a | Same lookup | all | NC | measured: cfg::isolated_env_hides_the_process_environment, cval::credential_env_wins_and_the_process_env_is_isolated, auth::the_process_environment_is_never_consulted_when_isolated; no differential |
 | PCFG-10 | env-api-keys.ts:151-195 | `getEnvApiKey` returns `<authenticated>` for Vertex ADC and Bedrock AWS chains; skips `ANTHROPIC_AUTH_TOKEN` | aprov::bedrock_and_vertex_ambient_detection; aprov::anthropic_env_rules_and_subscription_token_precedence | Opus · E/auth/providers.rs | n/a | Same availability | vertex, bedrock | NC | measured: aprov::bedrock_and_vertex_ambient_detection, aprov::anthropic_env_rules_and_subscription_token_precedence, auth::ambient_bedrock_vertex_and_cloudflare; no differential |
-| PCFG-11 | ca/core/remote-catalog-provider.ts:13-140; model-runtime.ts:226-238 | Built-in providers (except radius) refresh catalogs from `https://pi.dev/api/models/providers/<id>` every 4 h (ETag, 4 s) unless `PI_OFFLINE`; cached in `models-store.json` | none | Opus · E/provider/model.rs | `models-store.json` not imported | Whether native fetches a live catalog is an owner decision (plan §11: release builds must not need it) | all | PA | not started: no live catalog refresh natively (pinned embedded data only); D-06 open |
+| PCFG-11 | ca/core/remote-catalog-provider.ts:13-140; model-runtime.ts:226-238 | Built-in providers (except radius) restore public catalogs and explicitly refresh with 4 h freshness, ETag and 4 s attempts unless `PI_OFFLINE` | auth::remote_catalog::tests; rt::settings_tests::refreshed_catalog_models_are_selectable_and_resume_offline_after_restart | Codex · E/auth/remote_catalog.rs | `models-store.json` copied only by explicit config import; existing native file preserved | Cache-only startup; network metadata overlay precedes local config; no live build dependency; D-06 implementation resolved | all | NC | measured: eleven pinned-reference function comparisons plus native retry/timeout/proxy/credential isolation, stale/cancelled publication, corrupt cache, locked-file cancellation and offline restart/coding tests; see [catalog evidence](pipkin-rust-engine-evidence/remote-catalog.md); live-service and full qualification remain open |
 | PCFG-12 | ca/core/model-resolver.ts:20-62 | Default model per provider and initial root model (`--provider/--model`, settings default*) | rt::model_errors_retry_then_settle_and_missing_models_are_reported (no model) | Opus · E/runtime/models.rs | settings defaults import | Same initial model for a fresh session | all | NC | measured (part): rt::model_errors_retry_then_settle_and_missing_models_are_reported (`NoModel` when nothing is configured); settings-default selection in E/runtime/models.rs `initial` has no test; no differential |
 | PCFG-13 | models.ts:1220-1252 | Thinking levels per model (`thinkingLevelMap`, null = unsupported, xhigh/max only when mapped), clamp up then down | mdl::thinking_levels_follow_the_reference_rules | Opus · E/provider/model.rs | n/a | Same levels for every catalog model | all models | NE | measured: mdl::thinking_levels_follow_the_reference_rules, rt::thinking_and_model_selection_are_validated_and_persisted; full-catalog comparison not run; no differential |
 | PCFG-14 | settings `enabledModels`; model-resolver.ts:282-362 `resolveModelScopeFromModels`; main.ts:499-519; interactive-mode.ts:5347-5360; agent-session.ts:2452-2464 | Model scoping patterns (classic `--models` / cycling) | rts::enabled_models_scope_the_listing_and_the_initial_model_with_pattern_thinking | Opus · E/runtime/models.rs (`resolve_scope`, `initial`, `models_view`), E/runtime/mod.rs `set_model` | settings import | Same scoped list and initial model | — | NC | measured: rts::enabled_models_scope_the_listing_and_the_initial_model_with_pattern_thinking (exact, glob and `:level` patterns over available models; no-match warnings; saved default used only when in scope, else the first scoped model with its pattern level; choosing an out-of-scope model appends it to global `enabledModels`). Pipkin has no cycling: `Models` lists the scoped models (the reference selector's default "scoped" view, plus the selected model); the selector's "all" toggle is not exposed. gap: globs use `globset` with minimatch-like options (case-insensitive, `*` stops at `/`), not minimatch itself (no extglobs); alias/dated ordering uses byte order, not `localeCompare`; no differential |
@@ -833,7 +833,7 @@ place, natively too).
 | SET-ENABLED-MODELS | settings `enabledModels` | Model scoping | see PCFG-14 | Opus · E/config `enabled_models`, E/runtime/models.rs | import | — | — | NC | measured: rts::enabled_models_scope_the_listing_and_the_initial_model_with_pattern_thinking (see PCFG-14) |
 | SET-CACHEWARMING | settings `cacheWarming` (global) | Cache warming (`ca/core/cache-warmer.ts`) | planned: audit reachability on durable path | Opus | — | — | — | NP | not started (NP): CacheWarmer is constructed only by classic SDK/AgentSession; shipped pi server uses the durable coding registry. Neither Pipkin overlay registers it. Source entry-point audit, not a waived built-in feature (history-reachability-audit.md) |
 | SET-TUI-KEYS | settings terminal/tui/theme/editor keys | Terminal presentation settings | n/a | n/a | n/a | n/a | n/a | NP (terminal-only, A-prompt §7.4) | not started (NP) |
-| ENV-OFFLINE | `PI_OFFLINE` | Disables network catalog refresh | see PCFG-11 | Opus · E/config Env | — | — | — | PA | not started (PA): no live catalog to disable (PCFG-11) |
+| ENV-OFFLINE | `PI_OFFLINE` | Presence disables network catalog refresh, including empty and `0` values | auth::remote_catalog::tests; rt::settings_tests::refreshed_catalog_models_are_selectable_and_resume_offline_after_restart | Codex · E/config Env | Cached catalog survives import/restart | Coding requests remain enabled | all | NC | measured: offline pinned-reference case and native presence/no-request tests; cached selected model completes a local HTTP coding turn after restart without catalog traffic; see PCFG-11 |
 | ENV-CACHE-RETENTION | `PI_CACHE_RETENTION=long` | Long prompt-cache TTL across adapters | anth::golden_request_with_budget_thinking_caching_images_and_merged_tool_results; oaic::openai_thinking_off_uses_the_mapped_off_value_and_long_retention | Opus · E/runtime/run.rs, E/provider/api/common/mod.rs | env | Same cache fields | caching adapters | NC | measured (adapter side): anth::golden_request_with_budget_thinking_caching_images_and_merged_tool_results, oaic::openai_thinking_off_uses_the_mapped_off_value_and_long_retention, oair::cache_retention_effort_mapping_and_chatgpt_sign_in; run.rs maps `PI_CACHE_RETENTION=long` → `CacheRetention::Long` (untested); no differential |
 | ENV-OAUTH-HOST | `PI_OAUTH_CALLBACK_HOST`, `KIMI_OAUTH_HOST`/`KIMI_CODE_OAUTH_HOST`, `PI_RADIUS_GATEWAY` | OAuth/gateway host overrides | oauth:: suite (endpoint env overrides) | Opus · E/auth/oauth/mod.rs | env | Same | — | NC | measured: the oauth:: suite drives every flow through `Endpoints::from_env` overrides (`PI_RADIUS_GATEWAY`, `KIMI_*`, `PIPKIN_OAUTH_*`); `PI_OAUTH_CALLBACK_HOST` not separately asserted; no differential |
 | ENV-AGENT-DIR | `PI_CODING_AGENT_DIR`; `--pi-agent-dir` | Legacy agent directory location | rti::the_agent_directory_defaults_like_the_reference | Opus · E/runtime/import.rs | importer source discovery | Same discovered source | — | NC | measured: rti::the_agent_directory_defaults_like_the_reference; no differential |

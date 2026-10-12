@@ -431,6 +431,7 @@ impl EngineHandle {
     /// cancelled; runs in flight stay unsettled in the store and resume on the next start.
     pub fn shutdown(&self, timeout: Duration) {
         self.shared.stopping.cancel();
+        self.shared.auth.cancel_model_refresh();
         for delivery in self
             .shared
             .clients
@@ -670,15 +671,15 @@ async fn dispatch_with_cancel(
             )))
         }
         Call::RefreshModels => {
-            let shared = shared.clone();
+            let refresh = shared.clone();
             tokio::task::spawn_blocking(move || {
                 // Network settings (proxy, idle timeout) are re-read too.
-                shared.refresh_net();
-                shared.auth.reload();
-                shared.publish(Event::ModelsChanged);
+                refresh.refresh_net();
             })
             .await
             .map_err(|e| ProtoError::new(ErrorCode::Internal, e.to_string()))?;
+            shared.auth.refresh_models(cancel).await;
+            shared.publish(Event::ModelsChanged);
             Ok(Reply::Ok)
         }
         Call::Compact {

@@ -261,6 +261,35 @@ pub struct FileStore {
 }
 
 impl FileStore {
+    /// The same locked/atomic JSON storage also backs non-secret model metadata.
+    /// Keep raw values intact instead of interpreting them as credentials.
+    pub(crate) fn raw_entries(&self) -> Result<BTreeMap<String, Value>, StoreError> {
+        Ok(self
+            .load()?
+            .entries
+            .into_iter()
+            .map(|e| (e.provider, e.value))
+            .collect())
+    }
+
+    pub(crate) fn set_raw_if(
+        &self,
+        key: &str,
+        value: Value,
+        cancel: &tokio_util::sync::CancellationToken,
+        current: impl FnOnce() -> bool,
+    ) -> Result<bool, StoreError> {
+        let Some(_lock) = self.acquire_with(Some(cancel))? else {
+            return Ok(false);
+        };
+        let mut doc = self.load()?;
+        if !current() {
+            return Ok(false);
+        }
+        doc.set(key, value);
+        self.write_atomic(&doc.render())?;
+        Ok(true)
+    }
     pub fn new(path: impl Into<PathBuf>) -> FileStore {
         FileStore {
             path: path.into(),
@@ -311,6 +340,18 @@ impl FileStore {
     }
 
     fn acquire(&self) -> Result<File, StoreError> {
+        Ok(self
+            .acquire_with(None)?
+            .expect("uncancellable lock acquisition"))
+    }
+
+    fn acquire_with(
+        &self,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<Option<File>, StoreError> {
+        if cancel.is_some_and(|c| c.is_cancelled()) {
+            return Ok(None);
+        }
         self.ensure_dir()?;
         let lock = OpenOptions::new()
             .create(true)
@@ -323,10 +364,13 @@ impl FileStore {
         let deadline = Instant::now() + self.lock_wait;
         let mut delay = Duration::from_millis(5);
         loop {
+            if cancel.is_some_and(|c| c.is_cancelled()) {
+                return Ok(None);
+            }
             // SAFETY: `flock` on a valid, owned descriptor; released when `lock` is closed.
             let rc = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
             if rc == 0 {
-                return Ok(lock);
+                return Ok(Some(lock));
             }
             let err = std::io::Error::last_os_error();
             if err.raw_os_error() != Some(libc::EWOULDBLOCK) {

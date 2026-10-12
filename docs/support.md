@@ -47,9 +47,16 @@ Importing from Pi is explicit, from the command palette, and only in native mode
   copies of the imported conversations are copied (not moved) from the Pi namespace of `pipkin.sqlite3`. Running it
   again is safe: already imported sessions are skipped.
 - **Import Pi provider settings and credentials…** is a separate confirmation that lists provider ids only (values
-  are never shown or logged). It copies `models.json` and merges the selected `auth.json` entries into the native
+  are never shown or logged). It copies `models.json` and `models-store.json` when present and merges the selected `auth.json` entries into the native
   credential store without overwriting anything already set up there. Supported Anthropic subscription (OAuth)
   credentials retain their credential kind; they never become API keys.
+
+Native model refresh restores cached public catalogs from `~/.config/pipkin/engine/models-store.json`
+and revalidates configured built-in providers against the public catalog service. Local `models.json`
+overrides still apply. A refresh failure keeps the usable catalog and reports a warning. Set `PI_OFFLINE`
+(even to an empty value) to disable catalog networking while retaining embedded/cached models;
+this does not disable ordinary coding requests to a selected provider. Builds and startup do not
+require a live catalog service. Radius continues using its credential-dependent gateway catalog.
 
 Conversation import preserves Pi's plugin selections from `$PI_SERVER_DIR`, or `~/.pi/server` by default.
 For a custom coordination directory, launch native Pipkin with `PI_SERVER_DIR=/absolute/path`; protocol clients

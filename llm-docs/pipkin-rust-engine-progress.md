@@ -11,7 +11,36 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — history qualification and reachability audit
+## Current follow-up — public catalog refresh and offline recovery
+
+Following **`a98904f`**, native `RefreshModels` now restores and revalidates public
+provider catalogs. It preserves cache freshness/ETags, applies only newer metadata,
+keeps local configuration overrides, gates requests on configured credentials without
+sending those credentials to the public service, and respects proxy settings and
+presence of `PI_OFFLINE`. Explicit configuration import includes `models-store.json`.
+Startup remains cache-only; build/start do not depend on a live catalog service.
+
+Requests have bounded concurrency, body size, retries and timeouts. Cancellation and
+newer refreshes prevent stale cache publication, including while waiting for another
+process's file lock. Engine shutdown cancels catalog work. Tests exercise corrupt
+cache preservation, malformed data, type-safe chat lookup and provider-key isolation.
+An engine-protocol workflow selects a refreshed model, completes a local HTTP coding
+turn, restarts offline and completes another turn with the persisted selection.
+Eleven cases compare native behavior with original pinned-reference catalog functions.
+See [catalog evidence](pipkin-rust-engine-evidence/remote-catalog.md).
+
+Required checks: **1485 passed, 0 failed, 53 ignored**; Clippy and formatting clean.
+Logs: `/tmp/pipkin-catalog-verified-{workspace,clippy,fmt}.log`. The chrono dependency
+was already cached; no package download was needed. Protocol 9 / schema 8 unchanged.
+
+PCFG-11 and ENV-OFFLINE move PA → NC with measured evidence. Recomputed inventory:
+**504 rows, 488 non-OS; NC 410, NE 26, NP 32, PA 19, BL 0, LB 1, OS 16;
+434 measured, 7 observed, 8 unverified, 55 not started; 0 qualified**.
+Native remains opt-in. Remaining provider/auth/settings audits, wider sustained
+reliability/performance, installed workflows and packaging/platform gates still apply.
+The public metadata UA does not settle provider-wire identity/attribution decisions.
+
+## Prior follow-up — history qualification and reachability audit
 
 Following **`ea6150f`**, added public-protocol coverage for session rename (other-client
 invalidation, Unicode/trim, restart, clear, unchanged history and nonexistent-session

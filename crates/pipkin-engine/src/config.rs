@@ -22,6 +22,10 @@ pub struct Env {
 }
 
 impl Env {
+    /// Presence matters for switches such as PI_OFFLINE, even when the value is empty.
+    pub fn contains(&self, name: &str) -> bool {
+        self.vars.contains_key(name) || (self.ambient && std::env::var_os(name).is_some())
+    }
     pub fn process() -> Env {
         Env {
             vars: HashMap::new(),
@@ -58,6 +62,8 @@ pub struct EngineConfig {
     /// Non-secret configuration and the credential file.
     pub config_dir: PathBuf,
     pub env: Env,
+    /// Public model metadata service; no provider credentials are sent to this origin.
+    pub catalog_base_url: String,
     /// Initial model for new sessions (`provider/modelId`) when settings name none.
     pub default_model: Option<String>,
     /// Tests: extra wire adapters (e.g. the scripted provider) and their models.
@@ -111,6 +117,7 @@ impl EngineConfig {
             data_dir: data_dir.into(),
             config_dir: config_dir.into(),
             env: Env::process(),
+            catalog_base_url: "https://pi.dev".into(),
             default_model: None,
             extra_models: vec![],
             max_active_generations: 8,
