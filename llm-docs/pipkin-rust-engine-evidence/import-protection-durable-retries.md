@@ -9,6 +9,12 @@ native regression/crash evidence, not an executed native-versus-Pi differential.
 
 ## Import protection
 
+**Superseded policy:** the owner removed Pi extensions from scope. The current importer
+preserves selections without activation and permits history migration; see
+[inactive-profile import](inactive-profile-import.md). The refusal behavior below records
+the earlier implementation, not a current release requirement.
+
+
 `crates/pipkin-engine/src/import/plugins.rs` reads Pi's coordination directory without
 changing profiles or running package code. The import calls accept `serverDir`; otherwise
 runtime resolution uses the engine's `PI_SERVER_DIR`, then `HOME/.pi/server`. An unknown

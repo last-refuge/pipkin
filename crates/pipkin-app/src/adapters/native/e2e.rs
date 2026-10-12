@@ -2267,7 +2267,7 @@ fn an_imported_conversation_is_read_only_with_pi_until_it_is_released() {
 }
 
 #[test]
-fn a_plugin_selection_added_after_the_import_offer_never_transfers_ownership() {
+fn a_plugin_selection_added_after_the_import_offer_is_preserved_without_activation() {
     let fx = Fixture::start(|_, _| Reply::Text("unused".into()));
     assert!(add_pi_session(&fx, "a-text-multiturn"));
     let id = ConversationId(pipkin_core::stable_id("a-text-multiturn"));
@@ -2284,22 +2284,21 @@ fn a_plugin_selection_added_after_the_import_offer_never_transfers_ownership() {
     let content = r#"{"version":1,"packagePaths":["/plugins/questions"]}"#;
     std::fs::write(&profile, content).unwrap();
     h.dispatch(Command::ConfirmImport);
-    h.until("blocked import finished", |s| s.import == ImportFlow::Idle);
-    let notice = h.state.notice.as_deref().unwrap();
-    assert!(
-        notice.contains("plugin profile") && notice.contains("keep this conversation on Pi"),
-        "{notice}"
-    );
-    assert!(h.state.conversations.is_empty());
-    assert_eq!(h.storage.native_owner(id).unwrap(), None);
-    assert!(
-        fx.engine()
-            .shared()
-            .store
-            .imported("pi", "a-text-multiturn")
+    h.until("import finished", |s| {
+        s.import == ImportFlow::Idle && !s.conversations.is_empty()
+    });
+    assert!(h.storage.native_owner(id).unwrap().is_some());
+    let engine = fx.engine();
+    let store = &engine.shared().store;
+    assert!(store.imported("pi", "a-text-multiturn").unwrap().is_some());
+    let pinned: serde_json::Value = serde_json::from_str(
+        &store
+            .kv_get("a-text-multiturn", "native_extension_profile")
             .unwrap()
-            .is_none()
-    );
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(pinned, serde_json::json!({"version": 1, "extensions": []}));
     assert_eq!(std::fs::read_to_string(profile).unwrap(), content);
     h.stop();
 }

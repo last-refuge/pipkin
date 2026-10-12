@@ -411,7 +411,7 @@ fn inspect(store: &Store, id: &str, path: &Path, server_dir: &Path) -> Discovere
         };
         return found;
     }
-    if let Err(e) = plugins::Snapshot::read(server_dir).and_then(|p| p.check(path)) {
+    if let Err(e) = plugins::Snapshot::read(server_dir) {
         found.status = SessionStatus::Blocked {
             reasons: vec![e.to_string()],
         };
@@ -496,7 +496,6 @@ pub fn import_session(
     }
 
     let plugins = plugins::Snapshot::read(server_dir)?;
-    plugins.check(&dir)?;
 
     // Consistent copy, read only from the copy.
     let target_dir = backup_dir.join(session_id);
@@ -662,8 +661,8 @@ fn write_plan(
             for (key, value) in &s.kv {
                 Store::kv_set(tx, &s.id, key, value)?;
             }
-            // Import currently admits only plugin-free Pi selections. Pin that explicit
-            // empty selection so an unrelated native server default cannot activate code.
+            // Preserve Pi selections only as inactive provenance. Pin an empty native
+            // selection so an unrelated server default cannot activate extension code.
             if s.parent.is_none() {
                 crate::extensions::profiles::write_session(tx, &s.id, &[])?;
             }

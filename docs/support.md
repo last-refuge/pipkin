@@ -51,13 +51,15 @@ Importing from Pi is explicit, from the command palette, and only in native mode
   credential store without overwriting anything already set up there. Supported Anthropic subscription (OAuth)
   credentials retain their credential kind; they never become API keys.
 
-Conversation import also checks Pi's plugin selections in `$PI_SERVER_DIR`, or `~/.pi/server` by default.
+Conversation import preserves Pi's plugin selections from `$PI_SERVER_DIR`, or `~/.pi/server` by default.
 For a custom coordination directory, launch native Pipkin with `PI_SERVER_DIR=/absolute/path`; protocol clients
 can supply `serverDir` on both import discovery and import execution. The agent directory alone does not contain
-these selections. Every server identity in that directory is inspected; a pinned per-session selection overrides
-its own server default, including an explicit empty selection. Nonempty, malformed or unreadable selections block
-import and leave the conversation on Pi. A copied history with a plugin selection at its old absolute path is
-also blocked. Pipkin rechecks profiles before activation and does not change or execute any plugin package.
+these selections. Pi extensions are not supported or activated by migration. Profiles from every server identity,
+including old paths and unknown formats, are retained byte for byte (base64 plus SHA-256) in the native import
+manifest. Conversation history and source database state are preserved separately in the SQLite backup.
+Imported conversations start with an empty native extension profile, regardless of native server defaults.
+Unreadable or oversized profile files, or profiles changing during the copy, still block import to protect source
+state. Close Pi before importing. Pipkin never changes source profiles or executes their package paths.
 
 Ownership: a conversation is written by exactly one engine. When an import finishes, Pipkin records in its own
 database (`pipkin.sqlite3`, table `conversation_owners`; never in the Pi profile or the engine's data) that the

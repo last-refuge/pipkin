@@ -749,6 +749,12 @@ fn import(agent: &Agent, store: &Store, id: &str) -> Result<ImportOutcome, Impor
 #[test]
 fn imports_a_rich_session_losslessly_with_the_same_effective_context() {
     let agent = Agent::new();
+    plugin_profile(
+        &agent,
+        "historical",
+        None,
+        json!(["/plugins/old-selection"]),
+    );
     drop(rich_session(&agent));
     let source_dir = agent.dir(ROOT);
     let before = snapshot(&source_dir);
@@ -1617,78 +1623,124 @@ fn assert_plugin_blocked(agent: &Agent, store: &Store) {
     );
 }
 
+fn assert_profiles_preserved(agent: &Agent, store: &Store) -> ImportOutcome {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha256};
+    let server = agent.root.join("server");
+    let before = snapshot(&server);
+    let report = discover(&agent.root, &server, store);
+    assert_eq!(
+        report
+            .sessions
+            .iter()
+            .find(|s| s.id == ROOT)
+            .unwrap()
+            .status,
+        SessionStatus::Importable
+    );
+    let out = import(agent, store, ROOT).unwrap();
+    assert_eq!(snapshot(&server), before);
+    assert_eq!(out.manifest["pluginProfiles"]["activation"], "disabled");
+    for profile in out.manifest["pluginProfiles"]["profiles"]
+        .as_array()
+        .unwrap()
+    {
+        let source = std::fs::read(server.join(profile["file"].as_str().unwrap())).unwrap();
+        let retained = base64::engine::general_purpose::STANDARD
+            .decode(profile["sourceBase64"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(retained, source);
+        assert_eq!(profile["sha256"], format!("{:x}", Sha256::digest(&source)));
+    }
+    assert_eq!(read_import(store, ROOT).unwrap().unwrap().1, out.manifest);
+    assert!(
+        crate::extensions::profiles::pin(store, ROOT)
+            .unwrap()
+            .is_empty()
+    );
+    // All original database state remains available independently of the projection.
+    let backup = agent.backups().join(ROOT).join("session.sqlite");
+    assert_eq!(
+        reference_context(&backup, 1),
+        reference_context(&agent.dir(ROOT).join("session.sqlite"), 1)
+    );
+    out
+}
+
 #[test]
-fn plugin_profiles_block_sticky_and_pinned_selections_without_touching_the_source() {
+fn plugin_profiles_preserve_sticky_and_pinned_selections_without_activation() {
     for pinned in [false, true] {
         let agent = Agent::new();
         let _legacy = rich_session(&agent);
         let store = Store::memory().unwrap();
-        let profile = plugin_profile(
+        plugin_profile(
             &agent,
             "server-one",
             pinned.then(|| agent.dir(ROOT)).as_deref(),
             json!(["/plugins/questions"]),
         );
-        let before = std::fs::read(&profile).unwrap();
-        assert_plugin_blocked(&agent, &store);
-        assert_eq!(std::fs::read(profile).unwrap(), before);
+        let out = assert_profiles_preserved(&agent, &store);
+        assert_eq!(
+            out.manifest["pluginProfiles"]["profiles"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        // An idempotent retry keeps the captured source state, even after profiles change.
+        plugin_profile(&agent, "server-one", None, json!(["/plugins/later"]));
+        assert_eq!(import(&agent, &store, ROOT).unwrap().manifest, out.manifest);
     }
 }
 
 #[test]
-fn an_explicit_empty_session_selection_overrides_only_its_own_server() {
+fn every_server_profile_is_preserved_including_explicit_empty_selections() {
     let agent = Agent::new();
     let _legacy = rich_session(&agent);
     let store = Store::memory().unwrap();
     plugin_profile(&agent, "one", None, json!(["/plugins/sticky"]));
     plugin_profile(&agent, "one", Some(&agent.dir(ROOT)), json!([]));
-    let other = plugin_profile(&agent, "two", None, json!(["/plugins/other"]));
-    assert_plugin_blocked(&agent, &store);
-    std::fs::remove_file(other).unwrap();
-    let out = import(&agent, &store, ROOT).unwrap();
+    plugin_profile(&agent, "two", None, json!(["/plugins/other"]));
+    let out = assert_profiles_preserved(&agent, &store);
     let profiles = out.manifest["pluginProfiles"]["profiles"]
         .as_array()
         .unwrap();
-    assert_eq!(profiles.len(), 2);
+    assert_eq!(profiles.len(), 3);
     assert!(
         profiles
             .iter()
             .any(|p| p["selection"]["packagePaths"] == json!([]))
     );
-    assert!(
-        profiles
-            .iter()
-            .all(|p| p["sha256"].as_str().unwrap().len() == 64)
-    );
 }
 
 #[test]
-fn malformed_unreadable_and_mismatched_plugin_profiles_fail_closed() {
-    for malformed in [
-        "not json",
-        r#"{"version":2,"packagePaths":["/p"]}"#,
-        r#"{"version":1,"packagePaths":[]}"#,
-        r#"{"version":1,"packagePaths":["/p"],"unknown":true}"#,
-        r#"{"version":1,"packagePaths":["/p","/p"]}"#,
-        r#"{"version":1,"packagePaths":["relative"]}"#,
-        r#"{"version":1,"packagePaths":["/p"],"sessionPath":null}"#,
+fn opaque_plugin_profiles_preserve_unknown_malformed_and_non_utf8_bytes() {
+    for bytes in [
+        b"not json".as_slice(),
+        br#"{"version":2,"packagePaths":["/p"]}"#,
+        br#"{"version":1,"packagePaths":[]}"#,
+        br#"{"version":1,"packagePaths":["/p"],"unknown":true}"#,
+        br#"{"version":1,"packagePaths":["/p","/p"]}"#,
+        br#"{"version":1,"packagePaths":["relative"]}"#,
+        br#"{"version":1,"packagePaths":["/p"],"sessionPath":null}"#,
+        &[0xff, 0, 0xfe],
     ] {
         let agent = Agent::new();
         let _legacy = rich_session(&agent);
         let store = Store::memory().unwrap();
         let path = plugin_profile(&agent, "one", None, json!(["/p"]));
-        std::fs::write(path, malformed).unwrap();
-        assert_plugin_blocked(&agent, &store);
+        std::fs::write(path, bytes).unwrap();
+        assert_profiles_preserved(&agent, &store);
     }
+}
+
+#[test]
+fn unreadable_or_oversized_plugin_profiles_still_refuse_without_writing() {
     let agent = Agent::new();
     let _legacy = rich_session(&agent);
     let store = Store::memory().unwrap();
-    let profile = plugin_profile(&agent, "one", Some(&agent.dir(ROOT)), json!([]));
-    std::fs::write(
-        &profile,
-        json!({"version":1,"sessionPath":"/wrong/session","packagePaths":[]}).to_string(),
-    )
-    .unwrap();
+    let profile = plugin_profile(&agent, "one", None, json!(["/p"]));
+    std::fs::write(&profile, vec![b'x'; 1024 * 1024 + 1]).unwrap();
     assert_plugin_blocked(&agent, &store);
     std::fs::remove_file(&profile).unwrap();
     std::fs::create_dir(profile).unwrap();
@@ -1696,37 +1748,19 @@ fn malformed_unreadable_and_mismatched_plugin_profiles_fail_closed() {
 }
 
 #[test]
-fn plugin_selection_is_rechecked_after_discovery_and_during_the_copy() {
+fn plugin_snapshot_changes_refuse_but_changes_before_import_are_preserved() {
     let agent = Agent::new();
     let _legacy = rich_session(&agent);
     let store = Store::memory().unwrap();
     let server = agent.root.join("server");
-    assert!(matches!(
-        discover(&agent.root, &server, &store).sessions[0].status,
-        SessionStatus::Importable
-    ));
     let before = plugins::Snapshot::read(&server).unwrap();
     plugin_profile(&agent, "new-server", None, json!(["/plugins/new"]));
     assert!(matches!(before.unchanged(), Err(ImportError::Blocked(_))));
-    assert_plugin_blocked(&agent, &store);
+    assert_profiles_preserved(&agent, &store);
 }
 
 #[test]
-fn another_sessions_pinned_plugins_do_not_block_an_unselected_session() {
-    let agent = Agent::new();
-    let _legacy = rich_session(&agent);
-    let store = Store::memory().unwrap();
-    plugin_profile(
-        &agent,
-        "one",
-        Some(&agent.dir("unrelated")),
-        json!(["/plugins/elsewhere"]),
-    );
-    assert!(import(&agent, &store, ROOT).is_ok());
-}
-
-#[test]
-fn a_copied_session_cannot_drop_a_profile_with_its_original_absolute_path() {
+fn moved_mismatched_and_unrelated_session_profiles_are_preserved() {
     let agent = Agent::new();
     let _legacy = rich_session(&agent);
     let store = Store::memory().unwrap();
@@ -1736,43 +1770,54 @@ fn a_copied_session_cannot_drop_a_profile_with_its_original_absolute_path() {
         Some(&Path::new("/previous/agent/experimental/sessions").join(ROOT)),
         json!(["/plugins/questions"]),
     );
-    assert_plugin_blocked(&agent, &store);
+    let other = plugin_profile(&agent, "two", Some(&agent.dir("unrelated")), json!([]));
+    std::fs::write(
+        other,
+        br#"{"version":1,"sessionPath":"/wrong/session","packagePaths":[]}"#,
+    )
+    .unwrap();
+    assert_profiles_preserved(&agent, &store);
 }
 
 #[cfg(unix)]
 #[test]
-fn a_symlinked_session_keeps_its_plugin_selection() {
+fn a_symlinked_session_preserves_its_plugin_selection_without_activation() {
     let agent = Agent::new();
     let _legacy = rich_session(&agent);
     let store = Store::memory().unwrap();
     let alias = agent.root.join("alias");
     std::os::unix::fs::symlink(agent.dir(ROOT), &alias).unwrap();
     plugin_profile(&agent, "one", Some(&alias), json!(["/plugins/questions"]));
-    assert_plugin_blocked(&agent, &store);
+    assert_profiles_preserved(&agent, &store);
 }
 
 #[test]
-fn plugin_free_import_pins_empty_instead_of_inheriting_native_extensions() {
-    let agent = Agent::new();
-    drop(rich_session(&agent));
-    let store = Store::memory().unwrap();
-    crate::extensions::profiles::set_default(
-        &store,
-        &[pipkin_engine_protocol::ExtensionSpec::Builtin(
-            "questions".into(),
-        )],
-    )
-    .unwrap();
-    import(&agent, &store, ROOT).unwrap();
-    assert!(
-        crate::extensions::profiles::pin(&store, ROOT)
-            .unwrap()
-            .is_empty()
-    );
-    assert_eq!(
-        crate::extensions::profiles::default(&store).unwrap(),
-        vec![pipkin_engine_protocol::ExtensionSpec::Builtin(
-            "questions".into()
-        )]
-    );
+fn imported_profiles_pin_empty_instead_of_inheriting_native_extensions() {
+    for selected in [false, true] {
+        let agent = Agent::new();
+        drop(rich_session(&agent));
+        let store = Store::memory().unwrap();
+        if selected {
+            plugin_profile(&agent, "one", None, json!(["/plugins/questions"]));
+        }
+        crate::extensions::profiles::set_default(
+            &store,
+            &[pipkin_engine_protocol::ExtensionSpec::Builtin(
+                "questions".into(),
+            )],
+        )
+        .unwrap();
+        import(&agent, &store, ROOT).unwrap();
+        assert!(
+            crate::extensions::profiles::pin(&store, ROOT)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            crate::extensions::profiles::default(&store).unwrap(),
+            vec![pipkin_engine_protocol::ExtensionSpec::Builtin(
+                "questions".into()
+            )]
+        );
+    }
 }

@@ -11,6 +11,20 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
+## Current follow-up — migrate histories with inactive Pi profiles
+
+Historical Pi extension selections no longer block conversation migration. Exact profile
+bytes and hashes are preserved in the atomic import manifest; unknown formats and old paths
+remain inactive provenance. Root imports pin empty native profiles. Unreadable/oversized
+files and changed snapshots still refuse safely. The rich-context importer regression now
+has a nonempty selection; the desktop backend test confirms ownership transfer when a
+selection appears after discovery. See [migration evidence](pipkin-rust-engine-evidence/inactive-profile-import.md).
+
+Required checks: **1430 passed, 0 failed, 53 ignored**, Clippy and formatting clean.
+Logs: `/tmp/pipkin-import-scope-{workspace,clippy,fmt}.log`. No GUI or live-provider acceptance
+is inferred. Counts remain **503 inventory rows, 488 non-OS; 0 qualified**. Native is opt-in.
+Next: remaining core/history and cancellation audits, reliability and release qualification.
+
 ## Current owner decision — Pi extensions removed from release scope
 
 The user explicitly stated on 2026-10-11 that Pi extensions are not necessary for Pipkin.
@@ -25,8 +39,8 @@ Inventory remains **503 rows: NC 403, NE 25, NP 30, PA 29, BL 0, LB 1, OS 15**;
 427 measured, 7 observed, 10 unverified, 59 not started. This scope change supersedes historical
 extension-blocker statements below and in ADR 0006.
 
-Next work is core behavior and migration, including reconciling import protection so a Pi
-extension selection alone does not block history migration; then remaining reliability,
+Import selection policy is reconciled above. Next work is remaining core behavior and
+migration, reliability,
 provider/settings audits, packaging/install/CI and release qualification. Preserve source
 history/state and credentials. Built-in coding tools, providers and subagents remain required.
 
