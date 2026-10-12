@@ -359,6 +359,9 @@ pub struct SessionSnapshot {
     /// The session's plan (live tasks). Empty when it has none.
     #[serde(default)]
     pub plan: PlanView,
+    /// The session's current (unarchived) goal, when the engine owns goals.
+    #[serde(default)]
+    pub goal: Option<GoalView>,
 }
 
 /// Credential kinds are distinct identities: an API key never stands in for a subscription.
@@ -659,7 +662,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 15);
+        assert_eq!(crate::PROTOCOL_VERSION, 16);
         let release = Call::ReleaseSession {
             session: "s1".into(),
         };
@@ -1037,4 +1040,93 @@ pub struct WebSourceView {
     pub expired: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
+}
+
+// ---------------------------------------------------------------------------------- goals
+
+/// The state of a session's goal. `completed` and `failed` come from the executor's own
+/// report (a status marker) and are not independently verified in this version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GoalState {
+    /// Scheduling continuations.
+    Active,
+    /// Not scheduling; the reason says why (Stop, the person, a restart, an ambiguous reply).
+    Paused,
+    /// The executor reported it needs the person's input.
+    Blocked,
+    /// The executor reported the goal met.
+    Completed,
+    /// The executor reported the goal unreachable, or a turn failed.
+    Failed,
+    /// Archived or replaced by the person.
+    Cancelled,
+}
+
+impl GoalState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GoalState::Active => "active",
+            GoalState::Paused => "paused",
+            GoalState::Blocked => "blocked",
+            GoalState::Completed => "completed",
+            GoalState::Failed => "failed",
+            GoalState::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<GoalState> {
+        Some(match s {
+            "active" => GoalState::Active,
+            "paused" => GoalState::Paused,
+            "blocked" => GoalState::Blocked,
+            "completed" => GoalState::Completed,
+            "failed" => GoalState::Failed,
+            "cancelled" => GoalState::Cancelled,
+            _ => return None,
+        })
+    }
+
+    /// Resume makes sense from these states.
+    pub fn resumable(self) -> bool {
+        matches!(self, GoalState::Paused | GoalState::Blocked)
+    }
+}
+
+/// The engine-owned goal of a session.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalView {
+    /// Stable within the session; never reused.
+    pub id: u64,
+    pub objective: String,
+    /// Bumped by every revision of the objective.
+    pub revision: u64,
+    pub state: GoalState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Goal turns started so far (persisted, unlike the desktop runner's counter).
+    pub turns: u64,
+    /// Bumped per scheduled continuation; a request key names its epoch.
+    pub epoch: u64,
+    /// `user`, or `migrated:desktop` for a goal imported from the desktop's records.
+    pub provenance: String,
+    /// The request key of the latest goal turn, if one was started.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_request: Option<String>,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+/// A person's control over the current goal.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "camelCase")]
+pub enum GoalAction {
+    Pause,
+    Resume,
+    Revise {
+        objective: String,
+    },
+    /// Keep the record in history; no further continuation.
+    Archive,
 }

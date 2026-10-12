@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 13;
+pub const SCHEMA_VERSION: u32 = 14;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -331,7 +331,37 @@ CREATE INDEX web_sources_by_call ON web_sources(session, call_id);
 // Version 13 records the policy a subagent was launched with (profile, tools, model,
 // context), so enforcement never reads current settings for a running or recovering child.
 const V13: &str = "ALTER TABLE subagent_tasks ADD COLUMN launch TEXT;";
-const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13];
+// Version 14 adds engine-owned goals: one current goal per session, archived history and an
+// event log. The desktop's own goal records are imported as paused through MigrateGoal.
+const V14: &str = r#"
+CREATE TABLE goals (
+    session TEXT NOT NULL REFERENCES sessions(id),
+    id INTEGER NOT NULL,
+    objective TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    state TEXT NOT NULL CHECK (state IN ('active', 'paused', 'blocked', 'completed', 'failed', 'cancelled')),
+    reason TEXT,
+    epoch INTEGER NOT NULL DEFAULT 0,
+    turns INTEGER NOT NULL DEFAULT 0,
+    last_request TEXT,
+    provenance TEXT NOT NULL,
+    archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (session, id)
+) STRICT;
+CREATE UNIQUE INDEX goals_current ON goals(session) WHERE archived = 0;
+CREATE TABLE goal_events (
+    session TEXT NOT NULL REFERENCES sessions(id),
+    seq INTEGER NOT NULL,
+    at_ms INTEGER NOT NULL,
+    goal INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    data TEXT NOT NULL CHECK (json_valid(data)),
+    PRIMARY KEY (session, seq)
+) STRICT;
+"#;
+const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

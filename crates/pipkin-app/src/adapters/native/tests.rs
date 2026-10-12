@@ -62,6 +62,7 @@ fn snapshot(id: &str, entries: Vec<Entry>) -> SessionSnapshot {
         ui: UiView::default(),
         subagents: None,
         plan: PlanView::default(),
+        goal: None,
     }
 }
 

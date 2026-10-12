@@ -93,6 +93,10 @@ pub enum Command {
     SetGoal(String),
     /// Remove the active goal and stop scheduling continuations.
     ClearGoal,
+    /// Pause the goal without removing it.
+    PauseGoal,
+    /// Resume a paused or blocked goal.
+    ResumeGoal,
     Steer,
     QueueFollowUp,
     RemoveQueued(QueueId),
@@ -180,6 +184,26 @@ pub enum BackendRequest {
         conversation: ConversationId,
         generation: u64,
         enabled: bool,
+    },
+    /// Set or replace the engine-owned goal of a conversation.
+    SetGoal {
+        conversation: ConversationId,
+        generation: u64,
+        objective: String,
+    },
+    /// Pause, resume or archive the engine-owned goal.
+    GoalControl {
+        conversation: ConversationId,
+        generation: u64,
+        action: GoalControlAction,
+    },
+    /// Offer a desktop-kept goal record to the engine, as paused, once per key.
+    MigrateGoal {
+        conversation: ConversationId,
+        generation: u64,
+        key: String,
+        text: String,
+        paused: Option<String>,
     },
     /// One status change of a plan task, under a fresh idempotency key and conditional on
     /// the plan revision the person was looking at. Answered by `PlanEditApplied` or
@@ -367,6 +391,15 @@ pub enum EventKind {
     SubagentOlderFailed {
         child: u64,
         before: ItemId,
+        reason: String,
+    },
+    /// The engine's goal for the session (`None` when it has none). Only engines that own
+    /// goals send it; receiving it disables the desktop runner for the conversation.
+    GoalSynced {
+        goal: Option<crate::Goal>,
+    },
+    /// The engine refused a goal command.
+    GoalRefused {
         reason: String,
     },
     /// The session's plan as the engine holds it (live tasks). Engines without plans never

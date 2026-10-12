@@ -571,7 +571,7 @@ fn a_v1_database_is_backed_up_before_adding_durable_retry_state() {
         .unwrap();
         // Reconstruct the actual v1 schema, retaining a nonempty history/catalog.
         s.tx(|tx| {
-            tx.execute_batch("ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE generation_state; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 1;")?;
+            tx.execute_batch("DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE generation_state; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 1;")?;
             Ok(())
         })
         .unwrap();
@@ -702,7 +702,7 @@ fn a_v2_database_is_backed_up_before_adding_the_outbox() {
         let s = Store::open(tmp.path()).unwrap();
         session(&s, "existing");
         s.tx(|tx| {
-            tx.execute_batch("ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 2;")?;
+            tx.execute_batch("DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 2;")?;
             Ok(())
         }).unwrap();
     }
@@ -732,7 +732,7 @@ fn a_v3_database_is_backed_up_before_positional_system_bodies_are_written() {
         let s = Store::open(dir.path()).unwrap();
         session(&s, "old");
         s.tx(|tx| {
-            tx.execute_batch("ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 3")?;
+            tx.execute_batch("DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 3")?;
             Ok(())
         })
         .unwrap();
@@ -781,7 +781,7 @@ fn a_v4_database_is_backed_up_before_pinned_extension_profiles_are_written() {
         session(&s, "existing");
         s.tx(|tx| {
             Store::kv_set(tx, "existing", "opaque-state", "retained bytes")?;
-            tx.execute_batch("ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 4")?;
+            tx.execute_batch("DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 4")?;
             Ok(())
         })
         .unwrap();
@@ -826,7 +826,7 @@ fn a_v8_database_is_backed_up_before_removal_receipts_and_delete_events() {
         session(&s, "existing");
         s.tx(|tx| {
             Store::kv_set(tx, "existing", "opaque-state", "retained bytes")?;
-            tx.execute_batch("ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; PRAGMA user_version = 8")?;
+            tx.execute_batch("DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; PRAGMA user_version = 8")?;
             Ok(())
         }).unwrap();
     }
@@ -906,7 +906,7 @@ fn v9_tool_history_is_backed_up_and_preserved_before_invocation_aliases() {
                 },
             )?;
             // Reconstruct V9 before reopening; its call index is populated by the migration.
-            tx.execute_batch("ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; PRAGMA user_version=9")?;
+            tx.execute_batch("DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; PRAGMA user_version=9")?;
             Ok(())
         })
         .unwrap();

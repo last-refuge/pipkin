@@ -6,13 +6,14 @@ use std::collections::{BTreeSet, HashMap};
 
 use pipkin_core::onboarding::{SignInChallenge, SignInProvider, SignInSnapshot, SignInStatus};
 use pipkin_core::{
-    Bootstrap, ConversationId, EventKind, ModelInfo, PlanCounts, PlanEvidence, PlanTask,
-    PlanTaskStatus, Project, ProjectId, SubagentInfo, UiAnswer, UiNotice, UiNoticeLevel, UiRequest,
-    UiRequestItem, UiRequestKind, project_id_for_path, project_name_for_path,
+    Bootstrap, ConversationId, EventKind, Goal, GoalState, ModelInfo, PlanCounts, PlanEvidence,
+    PlanTask, PlanTaskStatus, Project, ProjectId, SubagentInfo, UiAnswer, UiNotice, UiNoticeLevel,
+    UiRequest, UiRequestItem, UiRequestKind, project_id_for_path, project_name_for_path,
 };
 use pipkin_engine_protocol::{
-    Answer, AuthSnapshot, AuthStatus, Block, CredentialKind, Entry, EntryKind, ErrorCode, Message,
-    ModelsView, Origin, PlanView, QuestionKind, RunOutcome, SessionSummary, SubagentsView, UiView,
+    Answer, AuthSnapshot, AuthStatus, Block, CredentialKind, Entry, EntryKind, ErrorCode, GoalView,
+    Message, ModelsView, Origin, PlanView, QuestionKind, RunOutcome, SessionSummary, SubagentsView,
+    UiView,
 };
 
 use crate::adapters::session::{self, Session};
@@ -384,6 +385,29 @@ pub fn plan(view: &PlanView) -> (u64, Vec<PlanTask>, PlanCounts, bool) {
     };
     let truncated = view.truncated || view.tasks.len() > MAX_PLAN_TASKS_SHOWN;
     (view.revision, tasks, counts, truncated)
+}
+
+/// The engine's goal as the core's `Goal`: the objective, a pause reason (the engine's
+/// reason, or its state label when it gave none) whenever it is not working, and the state.
+pub fn goal(view: &GoalView) -> Goal {
+    let state = GoalState::parse(view.state.as_str()).unwrap_or(GoalState::Paused);
+    let paused = match state {
+        GoalState::Active => None,
+        other => Some(
+            view.reason
+                .clone()
+                .filter(|r| !r.trim().is_empty())
+                .unwrap_or_else(|| other.label().to_owned()),
+        ),
+    };
+    Goal {
+        text: view.objective.chars().take(MAX_PLAN_TEXT_CHARS).collect(),
+        paused,
+        turns: view.turns,
+        native: true,
+        id: Some(view.id),
+        state: Some(state),
+    }
 }
 
 pub fn subagents(view: &SubagentsView) -> Result<Vec<SubagentInfo>, String> {

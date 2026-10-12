@@ -1,5 +1,31 @@
 # Scorecard
 
+## Engine-owned goals, GOAL-1 (2026-10-12)
+
+The native engine owns a conversation's goal ([goals.md](goals.md)): schema 14 records with
+history and events, scheduling from explicit markers with committed intent, control calls and
+desktop-record migration. Protocol 16, capability `goals`. The desktop runner is disabled
+for conversations whose engine reports goal ownership.
+
+- **Measured (automated).** Engine tests: continuation only on explicit markers and
+  completion on `MET`; blocked, unreachable and ambiguous replies stop scheduling with their
+  reasons and nothing is resent; Stop pauses the existing goal and a replacement runs on its
+  own with the old one in history; a restart pauses the goal while the interrupted turn
+  still settles, and resume starts a new epoch; no turn is scheduled with no client
+  attached; a queued human message pauses the goal; migration imports a desktop record as
+  paused exactly once and never replaces an engine goal; pause, resume, revise and archive
+  controls; the capability and input validation. Core tests: engine ownership disables the
+  desktop runner and routes set/pause/resume/clear as intent; a desktop-kept record is
+  offered once and retired when the engine reports; the legacy runner keeps working without
+  an engine report. End to end with the real engine: a goal runs two turns to completion
+  with the desktop journaling nothing and goal prompts shown as their objective. All existing
+  desktop goal tests pass unchanged. The repository gate passed.
+- **Observed.** Nothing native; the strip's new Pause and Resume buttons were not exercised
+  in a window.
+- **Unverified.** Migration against a real pre-existing desktop database; behaviour across a
+  live-model goal with tool use; the detachment rule with the real desktop closing. Not a
+  release qualification.
+
 ## Subagent profiles, SUB-1 (2026-10-12)
 
 The `subagent` tool takes a profile and a context mode; the resolved policy is frozen in a

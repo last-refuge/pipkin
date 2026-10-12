@@ -596,7 +596,11 @@ impl Worker {
             | BackendRequest::RefreshChanges { .. }
             | BackendRequest::FetchToolOutput { .. }
             | BackendRequest::UiRespond { .. }
-            | BackendRequest::UiCancel { .. } => {}
+            | BackendRequest::UiCancel { .. }
+            // The demo keeps the desktop goal runner; it never reports an engine-owned goal.
+            | BackendRequest::SetGoal { .. }
+            | BackendRequest::GoalControl { .. }
+            | BackendRequest::MigrateGoal { .. } => {}
             BackendRequest::Steer {
                 conversation,
                 generation,

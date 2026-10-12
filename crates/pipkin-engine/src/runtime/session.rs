@@ -488,6 +488,8 @@ impl Shared {
     /// Persist Stop intent and withdraw queued inputs, then cancel the active run. Settlement
     /// is published by the run itself (or here, when no run is executing in this process).
     pub async fn stop(self: &Arc<Self>, session: &str) -> Result<Reply, ProtoError> {
+        // The goal that exists at this instant pauses; one set afterwards is a replacement.
+        self.goal_on_stop(session);
         let sess = self.session(session)?;
         let _guard = sess.lock.lock().await;
         let run = self.commit(&sess, |tx| {
@@ -676,6 +678,7 @@ impl Shared {
             Ok((Some(row.request), changes))
         })?;
         if let Some(request) = request {
+            self.goal_after_settlement(&session, request.clone(), outcome.clone());
             let _ = sess.settled.send(Settled {
                 run,
                 request,

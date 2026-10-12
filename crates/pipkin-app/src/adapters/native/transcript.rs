@@ -248,6 +248,10 @@ impl Builder<'_> {
             Message::System(_) => {}
             Message::User { content, .. } => {
                 let (text, attachments) = chips_for(content);
+                // A goal turn's prompt shows as its objective, as the desktop runner did.
+                let text = pipkin_engine::goals::objective_of_prompt(&text)
+                    .map(str::to_owned)
+                    .unwrap_or(text);
                 self.push(
                     base,
                     at,

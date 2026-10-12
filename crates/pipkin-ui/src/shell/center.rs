@@ -1075,28 +1075,64 @@ impl Workspace {
                             .as_deref()
                             .unwrap_or("Working until met, blocked, or unreachable");
                         let detail = format!("{} · {}", goal.text, state);
-                        strip(
-                            cx,
-                            "zap",
-                            c.text_muted,
-                            "Goal",
-                            &detail,
-                            vec![
-                                Btn::new("clear-goal")
-                                    .icon("x")
-                                    .aria("Clear goal and stop")
+                        let can_pause = goal.paused.is_none();
+                        let can_resume = match goal.state {
+                            Some(s) => s.resumable(),
+                            None => goal.paused.is_some(),
+                        };
+                        let mut actions = Vec::new();
+                        if can_pause {
+                            actions.push(
+                                Btn::new("pause-goal")
+                                    .label("Pause")
+                                    .aria("Pause the goal")
                                     .compact()
                                     .on_click({
                                         let this = this.clone();
                                         move |_, cx| {
                                             this.update(cx, |t, cx| {
-                                                t.dispatch(Command::ClearGoal, cx)
+                                                t.dispatch(Command::PauseGoal, cx)
                                             })
                                         }
                                     })
                                     .into_any_element(),
-                            ],
-                        )
+                            );
+                        }
+                        if can_resume {
+                            actions.push(
+                                Btn::new("resume-goal")
+                                    .label("Resume")
+                                    .aria("Resume the goal")
+                                    .compact()
+                                    .on_click({
+                                        let this = this.clone();
+                                        move |_, cx| {
+                                            this.update(cx, |t, cx| {
+                                                t.dispatch(Command::ResumeGoal, cx)
+                                            })
+                                        }
+                                    })
+                                    .into_any_element(),
+                            );
+                        }
+                        actions.push(
+                            Btn::new("clear-goal")
+                                .icon("x")
+                                .aria(if goal.native {
+                                    "Archive goal and stop"
+                                } else {
+                                    "Clear goal and stop"
+                                })
+                                .compact()
+                                .on_click({
+                                    let this = this.clone();
+                                    move |_, cx| {
+                                        this.update(cx, |t, cx| t.dispatch(Command::ClearGoal, cx))
+                                    }
+                                })
+                                .into_any_element(),
+                        );
+                        strip(cx, "zap", c.text_muted, "Goal", &detail, actions)
                     }))
                     .children(status)
                     .children(status_error.as_deref().map(|message| {

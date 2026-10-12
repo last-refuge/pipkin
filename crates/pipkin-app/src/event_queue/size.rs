@@ -62,6 +62,10 @@ pub(super) fn event_bytes(event: &BackendEvent) -> usize {
                             + e.note.as_ref().map_or(0, String::capacity)
                     })
             }),
+            EventKind::GoalSynced { goal } => goal.as_ref().map_or(0, |g| {
+                g.text.capacity() + g.paused.as_ref().map_or(0, String::capacity)
+            }),
+            EventKind::GoalRefused { reason } => reason.capacity(),
             EventKind::PlanEditApplied { request } => request.0.capacity(),
             EventKind::PlanEditFailed { request, reason } => {
                 request.0.capacity() + reason.capacity()

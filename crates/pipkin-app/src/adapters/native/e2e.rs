@@ -934,17 +934,17 @@ fn stopped_input_is_not_presented_to_the_next_model_turn(as_goal: bool) {
         "keep the visible audit trail"
     );
     if as_goal {
-        assert_eq!(
-            h.state
-                .current()
-                .unwrap()
-                .goal
-                .as_ref()
-                .unwrap()
-                .paused
-                .as_deref(),
-            Some("Goal met.")
-        );
+        // The engine owns the goal now: it reports the executor's claim as such.
+        h.until("the engine reported the goal met", |s| {
+            s.current().is_some_and(|c| {
+                c.goal.as_ref().is_some_and(|g| {
+                    g.native
+                        && g.paused
+                            .as_deref()
+                            .is_some_and(|p| p.contains("Reported met"))
+                })
+            })
+        });
     }
     gate.open();
     h.stop();
@@ -3042,5 +3042,75 @@ fn the_models_plan_is_mirrored_and_a_persons_edit_round_trips_through_the_engine
     );
     assert_eq!(plan.revision, 3);
     assert_eq!(plan.task(2).unwrap().status, PlanTaskStatus::Pending);
+    h.stop();
+}
+
+// ------------------------------------------------------------------------------------ goals
+
+/// With the native engine the goal is engine-owned: the desktop sends the objective, the
+/// engine schedules the turns, and the desktop mirrors the state. Nothing is journaled by
+/// the desktop runner and goal prompts show as their objective.
+#[test]
+fn an_engine_owned_goal_runs_to_completion_without_the_desktop_runner() {
+    let fx = Fixture::start(|req, _| {
+        let last = req
+            .messages
+            .iter()
+            .rev()
+            .find_map(|m| match m {
+                Message::User { .. } => Some(m.text()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        if !last.starts_with("Pursue this ongoing goal:") {
+            return Reply::Text("hello".into());
+        }
+        let turns = req
+            .messages
+            .iter()
+            .filter(|m| {
+                matches!(m, Message::User { .. })
+                    && m.text().starts_with("Pursue this ongoing goal:")
+            })
+            .count();
+        if turns == 1 {
+            Reply::Text("One.\n[PIPKIN_GOAL_CONTINUE]".into())
+        } else {
+            Reply::Text("Two.\n[PIPKIN_GOAL_MET]".into())
+        }
+    });
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.until("the engine reported goal ownership", |s| {
+        s.current().is_some_and(|c| c.goal_native)
+    });
+    h.dispatch(Command::SetGoal("count to two".into()));
+    h.until("the goal completed", |s| {
+        s.current().is_some_and(|c| {
+            c.goal
+                .as_ref()
+                .is_some_and(|g| g.native && g.state == Some(pipkin_core::GoalState::Completed))
+        })
+    });
+    let goal = h.state.current().unwrap().goal.clone().unwrap();
+    assert_eq!(goal.turns, 2);
+    assert!(
+        goal.paused.as_deref().unwrap().contains("Reported met"),
+        "{goal:?}"
+    );
+    assert_eq!(fx.requests().len(), 2);
+    assert_eq!(open_requests(&db), 0, "the desktop journaled nothing");
+    h.until("the transcript settled", is_idle);
+    let users = h.user_messages();
+    assert_eq!(
+        users,
+        ["count to two", "count to two"],
+        "goal prompts show as their objective"
+    );
+    h.dispatch(Command::ClearGoal);
+    h.until("archived", |s| {
+        s.current().is_some_and(|c| c.goal.is_none())
+    });
     h.stop();
 }

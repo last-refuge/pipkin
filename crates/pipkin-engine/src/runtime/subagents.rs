@@ -515,7 +515,7 @@ impl Shared {
     }
 
     /// Concatenated text blocks of the child's final assistant reply.
-    fn answer_text(&self, child: &str) -> String {
+    pub(super) fn answer_text(&self, child: &str) -> String {
         let (entries, _) = self.store.page(child, None, 50).unwrap_or_default();
         entries
             .iter()

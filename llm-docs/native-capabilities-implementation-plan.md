@@ -1,6 +1,6 @@
 # Pipkin native capabilities: implementation and comparative review plan
 
-Status: implementation in progress. ASK-1 (the first reviewable change, §13), PLAN-1 and PLAN-2 (§8), WEB-1 (§5), SUB-1 (§6) and the per-tool recovery part of F0 item 4 landed on 2026-10-12; see [docs/ask-user-question.md](../docs/ask-user-question.md), [docs/plans.md](../docs/plans.md) and the progress notes under §8 and §13. Everything else remains proposed.
+Status: implementation in progress. ASK-1 (the first reviewable change, §13), PLAN-1 and PLAN-2 (§8), WEB-1 (§5), SUB-1 (§6), GOAL-1 (§9) and the per-tool recovery part of F0 item 4 landed on 2026-10-12; see [docs/ask-user-question.md](../docs/ask-user-question.md), [docs/plans.md](../docs/plans.md) and the progress notes under §8 and §13. Everything else remains proposed.
 
 Prepared: 2026-10-11 (America/Phoenix). Local audit baseline: Git HEAD `67ba56f6bf525493bf9c33ad1cad8a353d558a92`, plus the working-tree changes present during inspection. External references were read on this date. Reference links to `main` are moving targets, not reproducible dependency pins.
 
@@ -285,6 +285,8 @@ The upstream source is a reference, not the quality ceiling. Its auditor include
 3. Preserve `/goal <objective>` as the fast direct path. Offer guided planning when requested or when requirements actually need clarification; do not require a confirmation ritual for every already-clear goal. Add explicit Pause, Resume, Revise and Archive actions and palette equivalents.
 4. Migrate existing desktop goal records using an idempotent migration key containing backend/session identity and legacy goal revision. Import objective/pause reason as paused, with provenance. Never manufacture an audited completion from the old `Goal met.` string. Retain the old record until engine acknowledgement; do not run both schedulers during fallback.
 5. Reconcile outstanding journal requests before activation. Engine restart pauses runnable goals until policy permits an explicit resume. Initially match today's behavior on app close: no additional goal turn after the controlling attachment is gone. Keep-running-after-close is a later opt-in requiring engine process lifetime support.
+
+**Progress (2026-10-12).** GOAL-1 done: `goals.rs` (marker verdicts, the unchanged turn prompt, request keys), `store/goals.rs` (schema 14: `goals` with one current goal per session, archived history, `goal_events`, migration receipts in `kv`), `runtime/goals.rs` (the single scheduler: committed intent before send, settlement hook, Stop/restart/detachment/human-input pauses, Set/Pause/Resume/Revise/Archive, `MigrateGoal`), protocol 16 (`GoalView`, `GoalChanged`, the goal calls, capability `goals`), core mirroring with the desktop runner disabled on engine ownership and a one-shot migration offer, strip/palette/slash controls, and goal prompts displayed as their objective. See [docs/goals.md](../docs/goals.md). Not done: the plan link, criteria/limits (GOAL-2), audit (GOAL-3), guided planning, and keep-running after close.
 
 ### GOAL-2 — structured tools and trustworthy progress
 

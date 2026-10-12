@@ -70,6 +70,7 @@ impl Shared {
                 .unwrap_or_default(),
             subagents,
             plan: self.store.read(|c| Store::plan_view(c, session, false))?,
+            goal: self.store.read(|c| Store::goal_current(c, session))?,
         })
     }
 }

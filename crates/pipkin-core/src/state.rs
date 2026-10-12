@@ -29,6 +29,12 @@ pub struct ConversationState {
     /// User-owned continuous goal. A paused goal never schedules another prompt.
     pub goal: Option<Goal>,
     goal_op: Option<OperationId>,
+    /// The engine owns this conversation's goal (it advertised `goals` and reported one, or
+    /// none). The desktop runner is then disabled for it.
+    pub goal_native: bool,
+    /// A desktop-kept goal offered to the engine under this key; retired once the engine
+    /// reports a goal.
+    goal_migration: Option<String>,
     pub recovery_notice: bool,
     pub stop_error: Option<String>,
     pub status_error: Option<String>,
@@ -99,6 +105,8 @@ impl ConversationState {
             unseen_completion: false,
             goal: None,
             goal_op: None,
+            goal_native: false,
+            goal_migration: None,
             recovery_notice: false,
             stop_error: None,
             status_error: None,
@@ -174,8 +182,13 @@ impl ConversationState {
 pub struct Goal {
     pub text: String,
     pub paused: Option<String>,
-    /// Number of goal turns admitted to the submission journal in this process.
+    /// Number of goal turns admitted to the submission journal in this process (desktop
+    /// runner), or started by the engine (engine-owned goals).
     pub turns: u64,
+    /// The engine owns this goal: the desktop sends intent and mirrors state.
+    pub native: bool,
+    pub id: Option<u64>,
+    pub state: Option<GoalState>,
 }
 
 pub struct AppState {
@@ -1192,11 +1205,23 @@ impl AppState {
                 if !text.is_empty()
                     && let Some(id) = self.selected
                 {
+                    if let Some(c) = self.conv_mut(id).filter(|c| c.goal_native) {
+                        // The engine owns scheduling; its GoalChanged shows the result.
+                        out.effects.push(Effect::Backend(BackendRequest::SetGoal {
+                            conversation: id,
+                            generation: c.generation,
+                            objective: text,
+                        }));
+                        return out;
+                    }
                     if let Some(c) = self.conv_mut(id) {
                         c.goal = Some(Goal {
                             text: text.clone(),
                             paused: None,
                             turns: 0,
+                            native: false,
+                            id: None,
+                            state: None,
                         });
                         out.effects.push(Effect::SaveGoal {
                             conversation: id,
@@ -1209,6 +1234,30 @@ impl AppState {
                 }
             }
             Command::ClearGoal => {
+                if let Some(id) = self.selected
+                    && let Some(c) = self.conversation(id).filter(|c| c.goal_native)
+                {
+                    if c.goal.is_some() {
+                        let stop_run = c
+                            .goal
+                            .as_ref()
+                            .is_some_and(|g| g.state == Some(GoalState::Active))
+                            && matches!(
+                                c.run,
+                                RunState::Running { .. } | RunState::Submitting { .. }
+                            );
+                        out.effects
+                            .push(Effect::Backend(BackendRequest::GoalControl {
+                                conversation: id,
+                                generation: c.generation,
+                                action: GoalControlAction::Archive,
+                            }));
+                        if stop_run && self.availability().cancel {
+                            out.merge(self.dispatch(Command::Cancel));
+                        }
+                    }
+                    return out;
+                }
                 if let Some(id) = self.selected {
                     let (was_active, was_running_goal) = self
                         .conv_mut(id)
@@ -1228,6 +1277,60 @@ impl AppState {
                             out.merge(self.dispatch(Command::Cancel));
                         }
                     }
+                }
+            }
+            Command::PauseGoal | Command::ResumeGoal => {
+                let pause = matches!(cmd, Command::PauseGoal);
+                let Some(id) = self.selected else { return out };
+                let Some(c) = self.conv_mut(id) else {
+                    return out;
+                };
+                let Some(goal) = c.goal.as_mut() else {
+                    return out;
+                };
+                if c.goal_native {
+                    let wanted = if pause {
+                        GoalState::Active
+                    } else {
+                        GoalState::Paused
+                    };
+                    let applies = match goal.state {
+                        Some(GoalState::Active) => pause,
+                        Some(state) if state.resumable() => !pause,
+                        _ => false,
+                    };
+                    let _ = wanted;
+                    if applies {
+                        out.effects
+                            .push(Effect::Backend(BackendRequest::GoalControl {
+                                conversation: id,
+                                generation: c.generation,
+                                action: if pause {
+                                    GoalControlAction::Pause
+                                } else {
+                                    GoalControlAction::Resume
+                                },
+                            }));
+                    }
+                    return out;
+                }
+                if pause && goal.paused.is_none() {
+                    goal.paused = Some("Paused by you.".into());
+                    out.effects.push(Effect::SaveGoal {
+                        conversation: id,
+                        text: Some(goal.text.clone()),
+                        paused: goal.paused.clone(),
+                    });
+                    out.notes.push(Note::Other);
+                } else if !pause && goal.paused.is_some() {
+                    goal.paused = None;
+                    out.effects.push(Effect::SaveGoal {
+                        conversation: id,
+                        text: Some(goal.text.clone()),
+                        paused: None,
+                    });
+                    out.notes.push(Note::Other);
+                    out.merge(self.start_goal_if_idle(id));
                 }
             }
             Command::Steer => {
@@ -1334,6 +1437,7 @@ impl AppState {
                     // Pause the goal that exists at the instant Stop is requested. A goal set
                     // afterwards is a replacement task and must not be paused by the old ack.
                     if matches!(cmd, Command::Cancel)
+                        && !c.goal_native
                         && let Some(goal) = &mut c.goal
                     {
                         goal.paused = Some("Stop requested.".into());
@@ -2011,6 +2115,8 @@ impl AppState {
                 | EventKind::PlanSynced { .. }
                 | EventKind::PlanEditApplied { .. }
                 | EventKind::PlanEditFailed { .. }
+                | EventKind::GoalSynced { .. }
+                | EventKind::GoalRefused { .. }
         );
         if scoped && ev.op != c.run.op() {
             return out;
@@ -2065,6 +2171,65 @@ impl AppState {
                     c.plan.sync(revision, tasks, counts, truncated);
                     out.notes.push(Note::Other);
                 }
+            }
+            EventKind::GoalSynced { goal } => {
+                if !c.opened {
+                    return out;
+                }
+                let first = !c.goal_native;
+                c.goal_native = true;
+                match goal {
+                    Some(goal) => {
+                        // The engine's goal stands. A desktop-kept record (migrated or not)
+                        // is retired now that the engine reports one.
+                        let had_legacy = c.goal.as_ref().is_some_and(|g| !g.native);
+                        c.goal = Some(Goal {
+                            native: true,
+                            ..goal
+                        });
+                        if c.goal_migration.take().is_some() || had_legacy {
+                            out.effects.push(Effect::SaveGoal {
+                                conversation: c.id,
+                                text: None,
+                                paused: None,
+                            });
+                        }
+                    }
+                    None => {
+                        let legacy = c.goal.as_ref().filter(|g| !g.native).cloned();
+                        match legacy {
+                            Some(legacy) if first && c.goal_migration.is_none() => {
+                                // Offer the desktop's record to the engine, once per content.
+                                let key = format!(
+                                    "desktop-{}",
+                                    stable_id(&format!(
+                                        "{}\u{0}{}",
+                                        legacy.text,
+                                        legacy.paused.as_deref().unwrap_or("")
+                                    ))
+                                );
+                                c.goal_migration = Some(key.clone());
+                                out.effects
+                                    .push(Effect::Backend(BackendRequest::MigrateGoal {
+                                        conversation: c.id,
+                                        generation: c.generation,
+                                        key,
+                                        text: legacy.text,
+                                        paused: legacy.paused,
+                                    }));
+                            }
+                            Some(_) if c.goal_migration.is_some() => {
+                                // Still waiting for the engine's answer to the migration.
+                            }
+                            _ => c.goal = None,
+                        }
+                    }
+                }
+                out.notes.push(Note::Other);
+            }
+            EventKind::GoalRefused { reason } => {
+                out.merge(self.set_notice(format!("Goal: {reason}")));
+                return out;
             }
             EventKind::PlanEditApplied { request } => {
                 if c.plan.pending_edit.as_ref() == Some(&request) {
@@ -2156,6 +2321,13 @@ impl AppState {
                 // session's capability or child selection must not masquerade as current.
                 c.subagents = SubagentState::default();
                 c.plan = PlanState::default();
+                // An engine-owned goal is resynced by the new attachment; a desktop-kept one
+                // stays until the engine reports.
+                c.goal_native = false;
+                c.goal_migration = None;
+                if c.goal.as_ref().is_some_and(|g| g.native) {
+                    c.goal = None;
+                }
                 c.streaming_item = None;
                 c.usage = None;
                 c.has_older = has_older;
@@ -2704,6 +2876,9 @@ impl AppState {
         let Some(c) = self.conversation(id) else {
             return Outcome::default();
         };
+        if c.goal_native {
+            return Outcome::default();
+        }
         let Some(goal) = &c.goal else {
             return Outcome::default();
         };
@@ -2790,6 +2965,9 @@ impl AppState {
                         "Paused after restart; use /goal <goal> to resume.".into()
                     })),
                     turns: 0,
+                    native: false,
+                    id: None,
+                    state: None,
                 });
         }
     }
@@ -2809,6 +2987,9 @@ impl AppState {
         let Some(c) = self.conversation(id) else {
             return Outcome::default();
         };
+        if c.goal_native {
+            return Outcome::default();
+        }
         let Some(goal) = &c.goal else {
             return Outcome::default();
         };

@@ -14,6 +14,7 @@
 
 pub mod compactions;
 mod generation;
+mod goals;
 mod outbox;
 mod plans;
 pub(crate) mod prompt_result;

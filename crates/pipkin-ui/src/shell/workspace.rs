@@ -536,7 +536,10 @@ impl Workspace {
             return;
         }
         if text.trim() == "/goal" {
-            self.show_toast("Usage: /goal <goal> or /goal clear", cx);
+            self.show_toast(
+                "Usage: /goal <goal>, /goal pause, /goal resume or /goal clear",
+                cx,
+            );
             return;
         }
         if let Some(value) = text.trim().strip_prefix("/goal ") {
@@ -546,13 +549,17 @@ impl Workspace {
             }
             let value = value.trim();
             if value.is_empty() {
-                self.show_toast("Usage: /goal <goal> or /goal clear", cx);
+                self.show_toast(
+                    "Usage: /goal <goal>, /goal pause, /goal resume or /goal clear",
+                    cx,
+                );
                 return;
             }
-            let command = if value == "clear" {
-                Command::ClearGoal
-            } else {
-                Command::SetGoal(value.to_string())
+            let command = match value {
+                "clear" => Command::ClearGoal,
+                "pause" => Command::PauseGoal,
+                "resume" => Command::ResumeGoal,
+                _ => Command::SetGoal(value.to_string()),
             };
             self.dispatch(Command::EditDraft(String::new()), cx);
             self.dispatch(command, cx);

@@ -5,6 +5,7 @@ mod ask;
 mod compaction;
 pub mod faults;
 mod glue;
+mod goals;
 mod import;
 mod lifecycle;
 pub mod models;
@@ -261,6 +262,10 @@ impl EngineHandle {
             config.clear_extensions,
         )
         .map_err(|e| e.to_string())?;
+        // Nothing continues a goal across a restart without the person resuming it.
+        store
+            .pause_active_goals(crate::goals::REASON_RESTART, now_ms())
+            .map_err(|e| e.to_string())?;
         let epoch = store.next_epoch().map_err(|e| e.to_string())?;
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(4)
@@ -609,6 +614,7 @@ async fn dispatch_with_cancel(
                     "askUserQuestion".into(),
                     "plans".into(),
                     "web".into(),
+                    "goals".into(),
                     "compaction".into(),
                     "toolOutput".into(),
                 ],
@@ -801,6 +807,24 @@ async fn dispatch_with_cancel(
             include_archived,
         } => Ok(Reply::Plan(shared.plan_view(&session, include_archived)?)),
         Call::WebSources { session } => Ok(Reply::WebSources(shared.web_sources_view(&session)?)),
+        Call::SetGoal { session, objective } => {
+            Ok(Reply::Goal(shared.set_goal(&session, &objective).await?))
+        }
+        Call::GoalControl { session, action } => {
+            Ok(Reply::Goal(shared.goal_control(&session, action).await?))
+        }
+        Call::MigrateGoal {
+            session,
+            key,
+            objective,
+            paused,
+        } => Ok(Reply::Goal(shared.migrate_goal(
+            &session,
+            &key,
+            &objective,
+            paused.as_deref(),
+        )?)),
+        Call::GoalHistory { session } => Ok(Reply::Goals(shared.goal_history(&session)?)),
         Call::UpdatePlan {
             session,
             request,
@@ -1126,6 +1150,8 @@ mod ask_tests;
 mod fault_tests;
 #[cfg(test)]
 mod generation_reference_tests;
+#[cfg(test)]
+mod goal_tests;
 #[cfg(test)]
 mod plan_tests;
 #[cfg(test)]

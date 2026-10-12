@@ -231,3 +231,215 @@ fn missing_marker_pauses_and_clear_does_not_submit_again() {
     s.dispatch(Command::ClearGoal);
     assert!(s.current().unwrap().goal.is_none());
 }
+
+// ------------------------------------------------------------------ engine-owned goals
+
+fn opened(s: &mut AppState) {
+    let ev = event(
+        s,
+        EventKind::Opened {
+            items: vec![],
+            has_older: false,
+            changes: vec![],
+        },
+    );
+    s.apply_event(ev);
+}
+
+fn unscoped(s: &AppState, kind: EventKind) -> BackendEvent {
+    BackendEvent {
+        op: None,
+        ..event(s, kind)
+    }
+}
+
+fn native_goal(text: &str, state: GoalState, reason: Option<&str>) -> Goal {
+    Goal {
+        text: text.into(),
+        paused: reason.map(str::to_owned),
+        turns: 1,
+        native: true,
+        id: Some(1),
+        state: Some(state),
+    }
+}
+
+fn backend(out: &Outcome) -> Vec<&BackendRequest> {
+    out.effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Backend(r) => Some(r),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn an_engine_that_owns_goals_disables_the_desktop_runner_and_takes_intent() {
+    let mut s = state();
+    s.mode = Mode::Real;
+    s.set_connection(Connection::Ready);
+    opened(&mut s);
+    s.apply_event(unscoped(&s, EventKind::GoalSynced { goal: None }));
+    assert!(s.current().unwrap().goal_native);
+    assert!(s.current().unwrap().goal.is_none());
+    // Setting a goal sends intent; nothing is journaled or submitted locally.
+    let out = s.dispatch(Command::SetGoal("count to two".into()));
+    assert!(
+        matches!(backend(&out).as_slice(), [BackendRequest::SetGoal { objective, .. }] if objective == "count to two")
+    );
+    assert!(
+        !out.effects
+            .iter()
+            .any(|e| matches!(e, Effect::JournalIntent { .. } | Effect::SaveGoal { .. }))
+    );
+    assert!(
+        s.current().unwrap().goal.is_none(),
+        "the engine's report shows it"
+    );
+    s.apply_event(unscoped(
+        &s,
+        EventKind::GoalSynced {
+            goal: Some(native_goal("count to two", GoalState::Active, None)),
+        },
+    ));
+    let goal = s.current().unwrap().goal.clone().unwrap();
+    assert!(goal.native && goal.paused.is_none());
+    // Pause and clear are engine controls; Stop does not pause locally.
+    let out = s.dispatch(Command::PauseGoal);
+    assert!(matches!(
+        backend(&out).as_slice(),
+        [BackendRequest::GoalControl {
+            action: GoalControlAction::Pause,
+            ..
+        }]
+    ));
+    assert!(s.current().unwrap().goal.as_ref().unwrap().paused.is_none());
+    let out = s.dispatch(Command::ResumeGoal);
+    assert!(backend(&out).is_empty(), "an active goal is not resumed");
+    s.apply_event(unscoped(
+        &s,
+        EventKind::GoalSynced {
+            goal: Some(native_goal(
+                "count to two",
+                GoalState::Paused,
+                Some("Paused by you."),
+            )),
+        },
+    ));
+    let out = s.dispatch(Command::ResumeGoal);
+    assert!(matches!(
+        backend(&out).as_slice(),
+        [BackendRequest::GoalControl {
+            action: GoalControlAction::Resume,
+            ..
+        }]
+    ));
+    let out = s.dispatch(Command::ClearGoal);
+    assert!(matches!(
+        backend(&out).as_slice(),
+        [BackendRequest::GoalControl {
+            action: GoalControlAction::Archive,
+            ..
+        }]
+    ));
+    assert!(
+        s.current().unwrap().goal.is_some(),
+        "until the engine reports"
+    );
+    s.apply_event(unscoped(&s, EventKind::GoalSynced { goal: None }));
+    assert!(s.current().unwrap().goal.is_none());
+    // A completed turn never makes the desktop schedule anything.
+    let out = s.apply_event(event(&s, EventKind::Completed));
+    assert!(
+        !out.effects
+            .iter()
+            .any(|e| matches!(e, Effect::JournalIntent { .. }))
+    );
+    // Reopening forgets the engine's goal until it reports again.
+    opened(&mut s);
+    assert!(!s.current().unwrap().goal_native);
+}
+
+#[test]
+fn a_desktop_kept_goal_is_offered_to_the_engine_once_and_retired_when_it_reports() {
+    let mut s = state();
+    s.mode = Mode::Real;
+    s.set_connection(Connection::Ready);
+    s.restore_goal(
+        ConversationId(1),
+        "ship v1".into(),
+        Some("Goal met.".into()),
+    );
+    opened(&mut s);
+    assert!(
+        s.current()
+            .unwrap()
+            .goal
+            .as_ref()
+            .is_some_and(|g| !g.native)
+    );
+    let out = s.apply_event(unscoped(&s, EventKind::GoalSynced { goal: None }));
+    let requests = backend(&out);
+    let [
+        BackendRequest::MigrateGoal {
+            key, text, paused, ..
+        },
+    ] = requests.as_slice()
+    else {
+        panic!("{requests:?}");
+    };
+    assert!(key.starts_with("desktop-"));
+    assert_eq!(text, "ship v1");
+    assert_eq!(paused.as_deref(), Some("Goal met."));
+    assert!(
+        s.current().unwrap().goal.is_some(),
+        "kept visible until the engine answers"
+    );
+    // A second empty report while waiting changes nothing and asks nothing again.
+    let out = s.apply_event(unscoped(&s, EventKind::GoalSynced { goal: None }));
+    assert!(backend(&out).is_empty());
+    assert!(s.current().unwrap().goal.is_some());
+    // The engine reports the migrated goal: the desktop record is retired.
+    let out = s.apply_event(unscoped(
+        &s,
+        EventKind::GoalSynced {
+            goal: Some(native_goal("ship v1", GoalState::Paused, Some("Goal met."))),
+        },
+    ));
+    assert!(
+        out.effects
+            .iter()
+            .any(|e| matches!(e, Effect::SaveGoal { text: None, .. }))
+    );
+    let goal = s.current().unwrap().goal.clone().unwrap();
+    assert!(goal.native);
+    assert_eq!(goal.paused.as_deref(), Some("Goal met."));
+    // Without an engine report (legacy Pi), the desktop runner still works as before.
+    let mut legacy = state();
+    legacy.restore_goal(ConversationId(1), "ship v1".into(), None);
+    let out = legacy.dispatch(Command::ResumeGoal);
+    assert!(
+        out.effects
+            .iter()
+            .any(|e| matches!(e, Effect::JournalIntent { .. }))
+    );
+    assert!(
+        legacy
+            .current()
+            .unwrap()
+            .goal
+            .as_ref()
+            .unwrap()
+            .paused
+            .is_none()
+    );
+    let out = legacy.dispatch(Command::PauseGoal);
+    assert!(out.effects.iter().any(|e| matches!(
+        e,
+        Effect::SaveGoal {
+            paused: Some(_),
+            ..
+        }
+    )));
+}

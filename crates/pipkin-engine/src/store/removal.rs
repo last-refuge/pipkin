@@ -100,7 +100,7 @@ impl Store {
                 tx.execute(&format!("DELETE FROM {table} WHERE run IN (SELECT id FROM runs WHERE session IN ({group}))"),[root])?;
             }
             tx.execute("DELETE FROM subagent_tasks WHERE root=?1",[root])?;
-            for table in ["entry_chunks","entries","requests","tool_outputs","tool_calls","usage","kv","runs","plan_tasks","plan_events","plan_receipts","plans","web_sources"] {
+            for table in ["entry_chunks","entries","requests","tool_outputs","tool_calls","usage","kv","runs","plan_tasks","plan_events","plan_receipts","plans","web_sources","goal_events","goals"] {
                 tx.execute(&format!("DELETE FROM {table} WHERE session IN ({group})"),[root])?;
             }
             tx.execute(&format!("DELETE FROM import_map WHERE native_session IN ({group})"),[root])?;

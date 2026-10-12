@@ -803,3 +803,53 @@ impl PlanState {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------- goals
+
+/// The engine-reported state of a goal it owns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GoalState {
+    Active,
+    Paused,
+    Blocked,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl GoalState {
+    pub fn parse(s: &str) -> Option<GoalState> {
+        Some(match s {
+            "active" => GoalState::Active,
+            "paused" => GoalState::Paused,
+            "blocked" => GoalState::Blocked,
+            "completed" => GoalState::Completed,
+            "failed" => GoalState::Failed,
+            "cancelled" => GoalState::Cancelled,
+            _ => return None,
+        })
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            GoalState::Active => "Working",
+            GoalState::Paused => "Paused",
+            GoalState::Blocked => "Blocked",
+            GoalState::Completed => "Reported met",
+            GoalState::Failed => "Reported unreachable",
+            GoalState::Cancelled => "Cancelled",
+        }
+    }
+
+    pub fn resumable(self) -> bool {
+        matches!(self, GoalState::Paused | GoalState::Blocked)
+    }
+}
+
+/// A person's control over an engine-owned goal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GoalControlAction {
+    Pause,
+    Resume,
+    Archive,
+}

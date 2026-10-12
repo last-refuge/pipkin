@@ -27,6 +27,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use pipkin_core::GoalControlAction;
 use pipkin_core::onboarding::{SignInProvider, SignInSnapshot, SignInStatus};
 use pipkin_core::{
     Attachment, Backend, BackendEvent, BackendRequest, CancelOutcome, ChangesState, Connection,
@@ -1086,6 +1087,7 @@ impl Live {
             }
             Touched::Subagents => self.emit_subagents(worker),
             Touched::Plan => self.emit_plan(worker),
+            Touched::Goal => self.emit_goal(worker),
             Touched::Child(child) => {
                 if current.child == Some(child) {
                     self.load_child(worker, conversation, generation, child);
@@ -1118,6 +1120,19 @@ impl Live {
             let (conversation, generation) = (c.conversation, c.generation);
             self.schedule_changes(worker, conversation, generation);
         }
+    }
+
+    /// The engine-owned goal of the open session (or none); its arrival disables the
+    /// desktop runner for the conversation.
+    fn emit_goal(&self, worker: &Worker) {
+        let Some(c) = &self.current else { return };
+        worker.emit(
+            c.conversation,
+            c.generation,
+            EventKind::GoalSynced {
+                goal: c.mirror.goal.as_ref().map(mapping::goal),
+            },
+        );
     }
 
     /// The engine's plan for the open session (live tasks), as the core's projection.
@@ -1456,6 +1471,83 @@ impl Live {
                 child,
                 before,
             } => self.load_older_child(worker, conversation, generation, child, before),
+            BackendRequest::SetGoal {
+                conversation,
+                generation,
+                objective,
+            } => {
+                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
+                    return worker.notice("This conversation is not known to the engine.".into());
+                };
+                // The published goal (GoalChanged), not this reply, shows the result.
+                if let Err(error) = self.call(Call::SetGoal { session, objective }) {
+                    worker.emit(
+                        conversation,
+                        generation,
+                        EventKind::GoalRefused {
+                            reason: error.to_string(),
+                        },
+                    );
+                }
+            }
+            BackendRequest::GoalControl {
+                conversation,
+                generation,
+                action,
+            } => {
+                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
+                    return worker.notice("This conversation is not known to the engine.".into());
+                };
+                let action = match action {
+                    GoalControlAction::Pause => pipkin_engine_protocol::GoalAction::Pause,
+                    GoalControlAction::Resume => pipkin_engine_protocol::GoalAction::Resume,
+                    GoalControlAction::Archive => pipkin_engine_protocol::GoalAction::Archive,
+                };
+                if let Err(error) = self.call(Call::GoalControl { session, action }) {
+                    worker.emit(
+                        conversation,
+                        generation,
+                        EventKind::GoalRefused {
+                            reason: error.to_string(),
+                        },
+                    );
+                }
+            }
+            BackendRequest::MigrateGoal {
+                conversation,
+                generation,
+                key,
+                text,
+                paused,
+            } => {
+                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
+                    return worker.notice("This conversation is not known to the engine.".into());
+                };
+                match self.call(Call::MigrateGoal {
+                    session,
+                    key,
+                    objective: text,
+                    paused,
+                }) {
+                    // The migrated goal is published as GoalChanged by the engine; answer
+                    // directly too so a lost event cannot leave the desktop record pending.
+                    Ok(Reply::Goal(goal)) => worker.emit(
+                        conversation,
+                        generation,
+                        EventKind::GoalSynced {
+                            goal: goal.as_ref().map(mapping::goal),
+                        },
+                    ),
+                    Ok(_) => {}
+                    Err(error) => worker.emit(
+                        conversation,
+                        generation,
+                        EventKind::GoalRefused {
+                            reason: format!("could not migrate the saved goal: {error}"),
+                        },
+                    ),
+                }
+            }
             BackendRequest::UpdatePlan {
                 conversation,
                 generation,
@@ -2430,6 +2522,7 @@ impl Live {
         (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
         self.emit_subagents(worker);
         self.emit_plan(worker);
+        self.emit_goal(worker);
         self.schedule_changes(worker, conversation, generation);
         true
     }

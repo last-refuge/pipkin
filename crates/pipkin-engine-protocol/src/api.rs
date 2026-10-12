@@ -277,6 +277,29 @@ pub enum Call {
     WebSources {
         session: SessionId,
     },
+    /// Set (or replace) the session's goal; the engine schedules its turns.
+    SetGoal {
+        session: SessionId,
+        objective: String,
+    },
+    /// Pause, resume, revise or archive the current goal.
+    GoalControl {
+        session: SessionId,
+        action: GoalAction,
+    },
+    /// Import a goal the desktop kept in its own records, as paused, exactly once per `key`.
+    /// When the engine already has a goal, that goal stands and the key is still recorded.
+    MigrateGoal {
+        session: SessionId,
+        key: String,
+        objective: String,
+        #[serde(default)]
+        paused: Option<String>,
+    },
+    /// The session's goal history (archived goals, newest first).
+    GoalHistory {
+        session: SessionId,
+    },
     SubagentHistory {
         session: SessionId,
         child: u64,
@@ -444,6 +467,8 @@ pub enum Reply {
     Plan(PlanView),
     PlanUpdated(PlanReceipt),
     WebSources(Vec<WebSourceView>),
+    Goal(Option<GoalView>),
+    Goals(Vec<GoalView>),
     Auth(AuthSnapshot),
     Thinking(ThinkingView),
     ImportReport(ImportReport),
@@ -507,6 +532,10 @@ pub enum SessionChange {
     /// The plan was changed (by the model or a client); live tasks only.
     PlanChanged {
         plan: PlanView,
+    },
+    /// The current goal changed (set, scheduled, paused, completed, archived).
+    GoalChanged {
+        goal: Option<GoalView>,
     },
     /// A child session's history changed (the selected child's viewer re-reads its page).
     ChildChanged {

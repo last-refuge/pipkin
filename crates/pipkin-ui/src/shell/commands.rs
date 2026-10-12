@@ -232,6 +232,36 @@ pub fn build(state: &AppState, demo: Option<&DemoControls>) -> Vec<Cmd> {
             Run::Action(Box::new(ShowPlan)),
         ),
         cmd(
+            "Pause goal",
+            "Goal",
+            None,
+            state
+                .current()
+                .and_then(|c| c.goal.as_ref())
+                .is_some_and(|g| g.paused.is_none()),
+            Run::Dispatch(Command::PauseGoal),
+        ),
+        cmd(
+            "Resume goal",
+            "Goal",
+            None,
+            state
+                .current()
+                .and_then(|c| c.goal.as_ref())
+                .is_some_and(|g| match g.state {
+                    Some(s) => s.resumable(),
+                    None => g.paused.is_some(),
+                }),
+            Run::Dispatch(Command::ResumeGoal),
+        ),
+        cmd(
+            "Clear goal",
+            "Goal",
+            None,
+            state.current().is_some_and(|c| c.goal.is_some()),
+            Run::Dispatch(Command::ClearGoal),
+        ),
+        cmd(
             "Copy diagnostics",
             "Support (metadata only; no logs, paths or conversation text)",
             None,

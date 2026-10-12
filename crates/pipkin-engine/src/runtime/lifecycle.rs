@@ -33,6 +33,12 @@ pub(super) struct Managed {
     retire_after: Instant,
 }
 
+impl Managed {
+    pub(super) fn attached(&self) -> bool {
+        !self.clients.is_empty()
+    }
+}
+
 impl Shared {
     /// The runtime state of an existing session. Retaining this Arc holds retirement.
     pub fn session(&self, id: &str) -> Result<Arc<SessionRt>, ProtoError> {

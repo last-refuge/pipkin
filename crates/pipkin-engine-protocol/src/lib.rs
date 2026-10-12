@@ -22,6 +22,7 @@ pub use view::*;
 // Version 13 adds plans: `plan` in snapshots, `PlanChanged`, `Plan`/`UpdatePlan` calls.
 // Version 14 adds `WebSources` (retained web sources) and the `web` capability.
 // Version 15 carries the launch profile on subagent rows.
-pub const PROTOCOL_VERSION: u32 = 15;
+// Version 16 adds engine-owned goals: `goal` in snapshots, `GoalChanged`, the goal calls.
+pub const PROTOCOL_VERSION: u32 = 16;
 
 pub mod delivery;

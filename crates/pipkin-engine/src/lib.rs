@@ -10,6 +10,7 @@ pub mod config;
 pub mod context;
 pub mod endpoint;
 pub mod extensions;
+pub mod goals;
 pub mod host;
 pub mod import;
 pub mod plans;
