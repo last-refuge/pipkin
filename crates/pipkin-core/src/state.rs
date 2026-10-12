@@ -189,6 +189,12 @@ pub struct Goal {
     pub native: bool,
     pub id: Option<u64>,
     pub state: Option<GoalState>,
+    /// Engine-owned goals: criteria met of total, tokens used, and the person's allowances.
+    pub criteria_met: u32,
+    pub criteria_total: u32,
+    pub usage_tokens: u64,
+    pub max_turns: Option<u64>,
+    pub max_tokens: Option<u64>,
 }
 
 pub struct AppState {
@@ -1222,6 +1228,11 @@ impl AppState {
                             native: false,
                             id: None,
                             state: None,
+                            criteria_met: 0,
+                            criteria_total: 0,
+                            usage_tokens: 0,
+                            max_turns: None,
+                            max_tokens: None,
                         });
                         out.effects.push(Effect::SaveGoal {
                             conversation: id,
@@ -1277,6 +1288,38 @@ impl AppState {
                             out.merge(self.dispatch(Command::Cancel));
                         }
                     }
+                }
+            }
+            Command::SetGoalLimits {
+                max_turns,
+                max_tokens,
+            } => {
+                if let Some(id) = self.selected
+                    && let Some(c) = self.conversation(id).filter(|c| c.goal_native)
+                    && c.goal.is_some()
+                {
+                    out.effects
+                        .push(Effect::Backend(BackendRequest::GoalControl {
+                            conversation: id,
+                            generation: c.generation,
+                            action: GoalControlAction::SetLimits {
+                                max_turns,
+                                max_tokens,
+                            },
+                        }));
+                }
+            }
+            Command::SetGoalCriteria(criteria) => {
+                if let Some(id) = self.selected
+                    && let Some(c) = self.conversation(id).filter(|c| c.goal_native)
+                    && c.goal.is_some()
+                {
+                    out.effects
+                        .push(Effect::Backend(BackendRequest::GoalControl {
+                            conversation: id,
+                            generation: c.generation,
+                            action: GoalControlAction::SetCriteria(criteria),
+                        }));
                 }
             }
             Command::PauseGoal | Command::ResumeGoal => {
@@ -2968,6 +3011,11 @@ impl AppState {
                     native: false,
                     id: None,
                     state: None,
+                    criteria_met: 0,
+                    criteria_total: 0,
+                    usage_tokens: 0,
+                    max_turns: None,
+                    max_tokens: None,
                 });
         }
     }

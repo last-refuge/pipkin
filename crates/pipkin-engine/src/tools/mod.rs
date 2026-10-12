@@ -19,6 +19,7 @@ pub mod bash;
 pub mod diff;
 pub mod edit;
 mod files;
+pub mod goal;
 pub mod path;
 pub mod plan;
 pub mod read;
@@ -252,6 +253,42 @@ pub trait ToolHost: Send + Sync {
         >,
     > {
         Box::pin(async { Err("No web service is configured".into()) })
+    }
+
+    /// The conversation's current goal, if any.
+    fn goal_get<'a>(
+        &'a self,
+    ) -> BoxFuture<'a, Result<Option<pipkin_engine_protocol::GoalView>, String>> {
+        Box::pin(async { Err("No goal service is configured".into()) })
+    }
+
+    /// Record a structured progress report; `Err(reason)` when the report is refused.
+    #[allow(clippy::type_complexity)]
+    fn goal_update<'a>(
+        &'a self,
+        _call_id: &'a str,
+        _request: goal::GoalUpdateRequest,
+    ) -> BoxFuture<'a, Result<Result<pipkin_engine_protocol::GoalView, String>, String>> {
+        Box::pin(async { Err("No goal service is configured".into()) })
+    }
+
+    /// Propose completion; `Err((problems, goal))` when it is not accepted.
+    #[allow(clippy::type_complexity)]
+    fn goal_propose<'a>(
+        &'a self,
+        _call_id: &'a str,
+        _proposal: goal::GoalProposal,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<
+                pipkin_engine_protocol::GoalView,
+                (Vec<String>, Option<pipkin_engine_protocol::GoalView>),
+            >,
+            String,
+        >,
+    > {
+        Box::pin(async { Err("No goal service is configured".into()) })
     }
 
     /// A retained source and its text (None when unknown or expired).

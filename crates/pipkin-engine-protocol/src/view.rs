@@ -662,7 +662,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 16);
+        assert_eq!(crate::PROTOCOL_VERSION, 17);
         let release = Call::ReleaseSession {
             session: "s1".into(),
         };
@@ -1116,6 +1116,26 @@ pub struct GoalView {
     pub last_request: Option<String>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+    /// Completion criteria with their evidence.
+    #[serde(default)]
+    pub criteria: Vec<GoalCriterion>,
+    #[serde(default)]
+    pub limits: GoalLimits,
+    /// Tokens (input, output and cache) reported for this goal's turns so far.
+    #[serde(default)]
+    pub usage_tokens: u64,
+    /// Consecutive continued turns with no change to the progress signature.
+    #[serde(default)]
+    pub stall_turns: u32,
+    /// The executor's latest progress note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// Plan task ids the executor linked to this goal.
+    #[serde(default)]
+    pub linked_tasks: Vec<u64>,
+    /// The structured decision of the latest turn, if the executor made one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision: Option<GoalDecision>,
 }
 
 /// A person's control over the current goal.
@@ -1129,4 +1149,101 @@ pub enum GoalAction {
     },
     /// Keep the record in history; no further continuation.
     Archive,
+    /// Set or clear allowances (`None` clears).
+    SetLimits {
+        #[serde(default)]
+        max_turns: Option<u64>,
+        #[serde(default)]
+        max_tokens: Option<u64>,
+    },
+    /// Replace the completion criteria (statuses start open; prior evidence is kept in the
+    /// event log).
+    SetCriteria {
+        criteria: Vec<String>,
+    },
+}
+
+/// The status of one completion criterion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CriterionStatus {
+    /// Not yet claimed.
+    Open,
+    /// Claimed met, with at least one accepted evidence item.
+    Met,
+    /// Reported as not met.
+    Unmet,
+    /// Claimed but no evidence was accepted, or the basis changed since (revision, file).
+    Unverified,
+}
+
+impl CriterionStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CriterionStatus::Open => "open",
+            CriterionStatus::Met => "met",
+            CriterionStatus::Unmet => "unmet",
+            CriterionStatus::Unverified => "unverified",
+        }
+    }
+}
+
+/// Evidence attached to a criterion. `accepted` is the engine's deterministic check where
+/// one exists (a tool call that exists and did not fail, a file whose hash matches);
+/// `judgment` marks an observation the engine cannot check, which is never counted as
+/// mechanical proof.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalEvidence {
+    /// `toolCall`, `command`, `file`, `observation`.
+    pub kind: String,
+    /// A tool call id, a path relative to the session's cwd, or the observation text.
+    pub reference: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// For `file`: the content hash the claim is about; checked again on proposal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepted: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub judgment: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalCriterion {
+    pub id: u64,
+    pub text: String,
+    pub status: CriterionStatus,
+    #[serde(default)]
+    pub evidence: Vec<GoalEvidence>,
+    /// The goal revision the status was last judged against.
+    #[serde(default)]
+    pub judged_at_revision: u64,
+}
+
+/// Person-set allowances. The engine checks them before scheduling a turn, so the last turn
+/// may still overshoot a token allowance by one turn's usage; it never invents them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalLimits {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_turns: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u64>,
+}
+
+/// The executor's structured report for a turn (`update_goal` / `propose_goal_completion`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalDecision {
+    /// The goal epoch (turn) it was made in.
+    pub epoch: u64,
+    /// `continue`, `met`, `blocked`, `unreachable`.
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }

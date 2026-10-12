@@ -847,9 +847,14 @@ impl GoalState {
 }
 
 /// A person's control over an engine-owned goal.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GoalControlAction {
     Pause,
     Resume,
     Archive,
+    SetLimits {
+        max_turns: Option<u64>,
+        max_tokens: Option<u64>,
+    },
+    SetCriteria(Vec<String>),
 }

@@ -97,6 +97,13 @@ pub enum Command {
     PauseGoal,
     /// Resume a paused or blocked goal.
     ResumeGoal,
+    /// Set or clear the engine-owned goal's allowances (`None` clears).
+    SetGoalLimits {
+        max_turns: Option<u64>,
+        max_tokens: Option<u64>,
+    },
+    /// Replace the engine-owned goal's completion criteria.
+    SetGoalCriteria(Vec<String>),
     Steer,
     QueueFollowUp,
     RemoveQueued(QueueId),

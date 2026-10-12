@@ -559,6 +559,69 @@ impl Workspace {
                 "clear" => Command::ClearGoal,
                 "pause" => Command::PauseGoal,
                 "resume" => Command::ResumeGoal,
+                _ if value.starts_with("turns ") || value == "turns" => {
+                    let n = value.trim_start_matches("turns").trim();
+                    match n.parse::<u64>() {
+                        Ok(n) => Command::SetGoalLimits {
+                            max_turns: Some(n),
+                            max_tokens: self
+                                .state(cx)
+                                .current()
+                                .and_then(|c| c.goal.as_ref())
+                                .and_then(|g| g.max_tokens),
+                        },
+                        Err(_) if n == "off" => Command::SetGoalLimits {
+                            max_turns: None,
+                            max_tokens: self
+                                .state(cx)
+                                .current()
+                                .and_then(|c| c.goal.as_ref())
+                                .and_then(|g| g.max_tokens),
+                        },
+                        Err(_) => {
+                            self.show_toast("Usage: /goal turns <n> or /goal turns off", cx);
+                            return;
+                        }
+                    }
+                }
+                _ if value.starts_with("tokens ") || value == "tokens" => {
+                    let n = value.trim_start_matches("tokens").trim();
+                    match n.parse::<u64>() {
+                        Ok(n) => Command::SetGoalLimits {
+                            max_turns: self
+                                .state(cx)
+                                .current()
+                                .and_then(|c| c.goal.as_ref())
+                                .and_then(|g| g.max_turns),
+                            max_tokens: Some(n),
+                        },
+                        Err(_) if n == "off" => Command::SetGoalLimits {
+                            max_turns: self
+                                .state(cx)
+                                .current()
+                                .and_then(|c| c.goal.as_ref())
+                                .and_then(|g| g.max_turns),
+                            max_tokens: None,
+                        },
+                        Err(_) => {
+                            self.show_toast("Usage: /goal tokens <n> or /goal tokens off", cx);
+                            return;
+                        }
+                    }
+                }
+                _ if value.starts_with("criteria ") => {
+                    let items: Vec<String> = value
+                        .trim_start_matches("criteria")
+                        .split('|')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    if items.is_empty() {
+                        self.show_toast("Usage: /goal criteria <one> | <two> | …", cx);
+                        return;
+                    }
+                    Command::SetGoalCriteria(items)
+                }
                 _ => Command::SetGoal(value.to_string()),
             };
             self.dispatch(Command::EditDraft(String::new()), cx);

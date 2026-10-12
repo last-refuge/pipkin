@@ -1,6 +1,6 @@
 # Pipkin native capabilities: implementation and comparative review plan
 
-Status: implementation in progress. ASK-1 (the first reviewable change, §13), PLAN-1 and PLAN-2 (§8), WEB-1 (§5), SUB-1 (§6), GOAL-1 (§9) and the per-tool recovery part of F0 item 4 landed on 2026-10-12; see [docs/ask-user-question.md](../docs/ask-user-question.md), [docs/plans.md](../docs/plans.md) and the progress notes under §8 and §13. Everything else remains proposed.
+Status: implementation in progress. ASK-1 (the first reviewable change, §13), PLAN-1 and PLAN-2 (§8), WEB-1 (§5), SUB-1 (§6), GOAL-1 and GOAL-2 (§9) and the per-tool recovery part of F0 item 4 landed on 2026-10-12; see [docs/ask-user-question.md](../docs/ask-user-question.md), [docs/plans.md](../docs/plans.md) and the progress notes under §8 and §13. Everything else remains proposed.
 
 Prepared: 2026-10-11 (America/Phoenix). Local audit baseline: Git HEAD `67ba56f6bf525493bf9c33ad1cad8a353d558a92`, plus the working-tree changes present during inspection. External references were read on this date. Reference links to `main` are moving targets, not reproducible dependency pins.
 
@@ -298,6 +298,8 @@ The upstream source is a reference, not the quality ceiling. Its auditor include
 - Revising requirements or changing relevant artifacts invalidates stale evidence/audit acceptance. Keep prior history for inspection. Do not use task counts, elapsed time, or “tests passed” alone as proof of a user-facing outcome.
 - Add optional token/cost/time/run limits and an explicit continuation allowance. Limits are visible and never invented by the model. Count executor, child and auditor usage once. Explain that provider-reported usage can arrive late: exact token/dollar hard stops require reservation/output caps or a conservative stop-before-next-call policy, not an impossible zero-overshoot promise.
 - Detect repeated no-progress states using durable task/evidence revisions and repeated failures, then pause with an actionable reason. Use configurable, tested thresholds; do not let model wording alone reset the guard.
+
+**Progress (2026-10-12).** GOAL-2 done: `tools/goal.rs` (`get_goal`, `update_goal`, `propose_goal_completion`), criteria with engine-checked evidence (tool-call ledger, file hashes, observations as judgment), structured decisions with the marker as a labelled fallback, person-set turn/token allowances checked before each turn with per-turn token attribution, stall detection on a durable progress signature, stale marking on revision, schema 15 and protocol 17, strip detail and `/goal turns|tokens|criteria`. See [docs/goals.md](../docs/goals.md). Not done: cost limits, job-event waits (JOB-1), and GOAL-3 below.
 
 ### GOAL-3 — optional independent completion audit
 

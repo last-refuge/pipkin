@@ -148,6 +148,11 @@ impl Shared {
                 tools.push(self.subagent_tool());
             }
             tools.push(self.ask_tool());
+            tools.extend([
+                Arc::new(crate::tools::goal::GetGoalTool) as Arc<dyn Tool>,
+                Arc::new(crate::tools::goal::UpdateGoalTool),
+                Arc::new(crate::tools::goal::ProposeGoalCompletionTool),
+            ]);
         }
         // Every session has its own plan (a child's plan is separate from its parent's).
         tools.extend(self.plan_tools());
@@ -173,6 +178,7 @@ impl Shared {
             crate::tools::plan::PLAN_UPDATE => Some(Arc::new(crate::tools::plan::PlanUpdateTool)),
             crate::tools::plan::PLAN_READ => Some(Arc::new(crate::tools::plan::PlanReadTool)),
             crate::tools::web::WEB_READ => Some(Arc::new(crate::tools::web::WebReadTool)),
+            crate::tools::goal::GET_GOAL => Some(Arc::new(crate::tools::goal::GetGoalTool)),
             _ => None,
         }
     }
@@ -1150,6 +1156,8 @@ mod ask_tests;
 mod fault_tests;
 #[cfg(test)]
 mod generation_reference_tests;
+#[cfg(test)]
+mod goal2_tests;
 #[cfg(test)]
 mod goal_tests;
 #[cfg(test)]

@@ -203,6 +203,26 @@ impl ToolHost for Host {
         })
     }
 
+    fn goal_get<'a>(&'a self) -> BoxFuture<'a, Result<Option<GoalView>, String>> {
+        Box::pin(async move { self.shared.goal_view(&self.parent).map_err(|e| e.message) })
+    }
+
+    fn goal_update<'a>(
+        &'a self,
+        _call_id: &'a str,
+        request: crate::tools::goal::GoalUpdateRequest,
+    ) -> BoxFuture<'a, Result<Result<GoalView, String>, String>> {
+        Box::pin(async move { self.shared.goal_update_from_tool(&self.parent, request) })
+    }
+
+    fn goal_propose<'a>(
+        &'a self,
+        _call_id: &'a str,
+        proposal: crate::tools::goal::GoalProposal,
+    ) -> BoxFuture<'a, Result<Result<GoalView, (Vec<String>, Option<GoalView>)>, String>> {
+        Box::pin(async move { self.shared.goal_propose_from_tool(&self.parent, proposal) })
+    }
+
     fn web_source<'a>(
         &'a self,
         id: u64,

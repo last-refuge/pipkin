@@ -23,6 +23,7 @@ pub use view::*;
 // Version 14 adds `WebSources` (retained web sources) and the `web` capability.
 // Version 15 carries the launch profile on subagent rows.
 // Version 16 adds engine-owned goals: `goal` in snapshots, `GoalChanged`, the goal calls.
-pub const PROTOCOL_VERSION: u32 = 16;
+// Version 17 adds goal criteria, evidence, limits and structured decisions.
+pub const PROTOCOL_VERSION: u32 = 17;
 
 pub mod delivery;

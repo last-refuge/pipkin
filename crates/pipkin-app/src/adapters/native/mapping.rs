@@ -407,6 +407,15 @@ pub fn goal(view: &GoalView) -> Goal {
         native: true,
         id: Some(view.id),
         state: Some(state),
+        criteria_met: view
+            .criteria
+            .iter()
+            .filter(|c| c.status == pipkin_engine_protocol::CriterionStatus::Met)
+            .count() as u32,
+        criteria_total: view.criteria.len() as u32,
+        usage_tokens: view.usage_tokens,
+        max_turns: view.limits.max_turns,
+        max_tokens: view.limits.max_tokens,
     }
 }
 

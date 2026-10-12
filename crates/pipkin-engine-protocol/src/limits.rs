@@ -49,3 +49,9 @@ pub const MAX_TASK_DEPENDENCIES: usize = 50;
 pub const MAX_TASK_EVIDENCE: usize = 20;
 /// Longest evidence kind, reference or note.
 pub const MAX_EVIDENCE_CHARS: usize = 500;
+/// Most completion criteria on one goal.
+pub const MAX_GOAL_CRITERIA: usize = 20;
+/// Most evidence items per criterion.
+pub const MAX_CRITERION_EVIDENCE: usize = 10;
+/// Longest criterion text, evidence reference, note or reason (UTF-16 units).
+pub const MAX_GOAL_TEXT_CHARS: usize = 1000;

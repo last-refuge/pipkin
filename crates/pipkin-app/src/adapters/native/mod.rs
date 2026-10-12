@@ -1502,6 +1502,16 @@ impl Live {
                     GoalControlAction::Pause => pipkin_engine_protocol::GoalAction::Pause,
                     GoalControlAction::Resume => pipkin_engine_protocol::GoalAction::Resume,
                     GoalControlAction::Archive => pipkin_engine_protocol::GoalAction::Archive,
+                    GoalControlAction::SetLimits {
+                        max_turns,
+                        max_tokens,
+                    } => pipkin_engine_protocol::GoalAction::SetLimits {
+                        max_turns,
+                        max_tokens,
+                    },
+                    GoalControlAction::SetCriteria(criteria) => {
+                        pipkin_engine_protocol::GoalAction::SetCriteria { criteria }
+                    }
                 };
                 if let Err(error) = self.call(Call::GoalControl { session, action }) {
                     worker.emit(

@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 14;
+pub const SCHEMA_VERSION: u32 = 15;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -361,7 +361,22 @@ CREATE TABLE goal_events (
     PRIMARY KEY (session, seq)
 ) STRICT;
 "#;
-const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14];
+// Version 15 adds structured goal progress: criteria with evidence, limits, usage, stall
+// detection and the executor's decision.
+const V15: &str = r#"
+ALTER TABLE goals ADD COLUMN criteria TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE goals ADD COLUMN limits TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE goals ADD COLUMN usage_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE goals ADD COLUMN turn_tokens_start INTEGER;
+ALTER TABLE goals ADD COLUMN stall INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE goals ADD COLUMN signature TEXT;
+ALTER TABLE goals ADD COLUMN note TEXT;
+ALTER TABLE goals ADD COLUMN linked_tasks TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE goals ADD COLUMN decision TEXT;
+"#;
+const MIGRATIONS: &[&str] = &[
+    V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15,
+];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

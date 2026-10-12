@@ -150,11 +150,11 @@ fn blocked_unreachable_and_ambiguous_replies_stop_scheduling_with_their_reason()
             GoalState::Failed,
             goals::REASON_UNREACHABLE,
         ),
-        ("hmm, maybe", GoalState::Paused, goals::REASON_AMBIGUOUS),
+        ("hmm, maybe", GoalState::Paused, goals::REASON_NO_STATUS),
         (
             "[PIPKIN_GOAL_MET] and then some",
             GoalState::Paused,
-            goals::REASON_AMBIGUOUS,
+            goals::REASON_NO_STATUS,
         ),
     ] {
         let fx = Fixture::new();

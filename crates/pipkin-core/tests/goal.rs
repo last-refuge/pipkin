@@ -261,6 +261,11 @@ fn native_goal(text: &str, state: GoalState, reason: Option<&str>) -> Goal {
         native: true,
         id: Some(1),
         state: Some(state),
+        criteria_met: 0,
+        criteria_total: 0,
+        usage_tokens: 0,
+        max_turns: None,
+        max_tokens: None,
     }
 }
 

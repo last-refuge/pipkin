@@ -7,7 +7,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use super::{Result, Store};
 
 const COLUMNS: &str = "id, objective, revision, state, reason, epoch, turns, last_request, \
-    provenance, archived, created_at, updated_at";
+    provenance, archived, created_at, updated_at, criteria, limits, usage_tokens, stall, note, \
+    linked_tasks, decision";
 
 fn view_from_row(r: &rusqlite::Row) -> rusqlite::Result<(GoalView, bool)> {
     let state: String = r.get("state")?;
@@ -24,6 +25,16 @@ fn view_from_row(r: &rusqlite::Row) -> rusqlite::Result<(GoalView, bool)> {
             last_request: r.get("last_request")?,
             created_at_ms: r.get("created_at")?,
             updated_at_ms: r.get("updated_at")?,
+            criteria: serde_json::from_str(&r.get::<_, String>("criteria")?).unwrap_or_default(),
+            limits: serde_json::from_str(&r.get::<_, String>("limits")?).unwrap_or_default(),
+            usage_tokens: r.get::<_, i64>("usage_tokens")? as u64,
+            stall_turns: r.get::<_, i64>("stall")? as u32,
+            note: r.get("note")?,
+            linked_tasks: serde_json::from_str(&r.get::<_, String>("linked_tasks")?)
+                .unwrap_or_default(),
+            decision: r
+                .get::<_, Option<String>>("decision")?
+                .and_then(|d| serde_json::from_str(&d).ok()),
         },
         r.get::<_, i64>("archived")? != 0,
     ))
@@ -253,6 +264,68 @@ impl Store {
             }
             Ok(sessions)
         })
+    }
+
+    /// Write the structured-progress part of a goal (criteria, limits, usage, stall, note,
+    /// links, decision) from a view.
+    pub fn goal_write_progress(
+        tx: &Connection,
+        session: &str,
+        view: &GoalView,
+        now: i64,
+    ) -> Result<()> {
+        tx.execute(
+            "UPDATE goals SET criteria = ?3, limits = ?4, usage_tokens = ?5, stall = ?6, note = ?7,
+                linked_tasks = ?8, decision = ?9, updated_at = ?10
+             WHERE session = ?1 AND id = ?2 AND archived = 0",
+            params![
+                session,
+                view.id as i64,
+                serde_json::to_string(&view.criteria).expect("serializes"),
+                serde_json::to_string(&view.limits).expect("serializes"),
+                view.usage_tokens as i64,
+                view.stall_turns as i64,
+                view.note,
+                serde_json::to_string(&view.linked_tasks).expect("serializes"),
+                view.decision
+                    .as_ref()
+                    .map(|d| serde_json::to_string(d).expect("serializes")),
+                now
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The progress signature and the session token count at the start of the current turn.
+    pub fn goal_turn_marks(
+        c: &Connection,
+        session: &str,
+        id: u64,
+    ) -> Result<(Option<String>, Option<u64>)> {
+        Ok(c.query_row(
+            "SELECT signature, turn_tokens_start FROM goals WHERE session = ?1 AND id = ?2",
+            params![session, id as i64],
+            |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<i64>>(1)?.map(|v| v as u64),
+                ))
+            },
+        )?)
+    }
+
+    pub fn goal_set_turn_marks(
+        tx: &Connection,
+        session: &str,
+        id: u64,
+        signature: Option<&str>,
+        turn_tokens_start: Option<u64>,
+    ) -> Result<()> {
+        tx.execute(
+            "UPDATE goals SET signature = ?3, turn_tokens_start = ?4 WHERE session = ?1 AND id = ?2",
+            params![session, id as i64, signature, turn_tokens_start.map(|v| v as i64)],
+        )?;
+        Ok(())
     }
 
     fn goal_event(

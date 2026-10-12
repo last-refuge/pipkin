@@ -1,5 +1,29 @@
 # Scorecard
 
+## Structured goal progress, GOAL-2 (2026-10-12)
+
+Goals carry criteria with engine-checked evidence, structured decisions from three goal
+tools, person-set turn and token allowances and stall detection ([goals.md](goals.md),
+schema 15, protocol 17).
+
+- **Measured (automated).** Engine tests: a structured `continue` schedules the next turn
+  and an observation-only claim stays unverified; a proposal naming a missing tool call is
+  rejected with the unmet criteria and rejected items while a matching file hash is accepted;
+  a proposal with a real tool call id for every criterion completes the goal and attributes
+  the turn's tokens; `blocked`/`unreachable` need a reason and stop scheduling; a turn
+  allowance pauses with its reason and resuming after raising it continues; a token
+  allowance below one turn's usage pauses before the second turn; the stall guard pauses
+  after three unchanged continued turns (configurable); revising the objective or
+  replacing the criteria makes met claims unverified; a marker still works as a fallback and
+  a turn with neither pauses; the tools are root-only and refuse without a goal. Pure tests
+  cover evidence checks (missing, failed, open, hash match, stale, outside-project paths),
+  judgment versus proof, stale marking and the progress signature. The repository gate
+  passed.
+- **Observed.** Nothing native; the strip's criteria and allowance text and the new slash
+  commands were not exercised in a window.
+- **Unverified.** Live-model use of the goal tools; token attribution against a real
+  provider's late usage reports. Not a release qualification.
+
 ## Engine-owned goals, GOAL-1 (2026-10-12)
 
 The native engine owns a conversation's goal ([goals.md](goals.md)): schema 14 records with

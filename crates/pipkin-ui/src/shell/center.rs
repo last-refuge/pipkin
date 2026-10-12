@@ -1074,7 +1074,30 @@ impl Workspace {
                             .paused
                             .as_deref()
                             .unwrap_or("Working until met, blocked, or unreachable");
-                        let detail = format!("{} · {}", goal.text, state);
+                        let mut detail = format!("{} · {}", goal.text, state);
+                        if goal.native {
+                            if goal.criteria_total > 0 {
+                                detail.push_str(&format!(
+                                    " · {} of {} criteria met",
+                                    goal.criteria_met, goal.criteria_total
+                                ));
+                            }
+                            match goal.max_turns {
+                                Some(max) => {
+                                    detail.push_str(&format!(" · turn {} of {}", goal.turns, max))
+                                }
+                                None if goal.turns > 0 => {
+                                    detail.push_str(&format!(" · turn {}", goal.turns))
+                                }
+                                None => {}
+                            }
+                            if let Some(max) = goal.max_tokens {
+                                detail.push_str(&format!(
+                                    " · {} of {} tokens",
+                                    goal.usage_tokens, max
+                                ));
+                            }
+                        }
                         let can_pause = goal.paused.is_none();
                         let can_resume = match goal.state {
                             Some(s) => s.resumable(),
