@@ -83,6 +83,26 @@ pub fn agent_dir(env: &crate::config::Env, given: Option<String>) -> Result<Path
     Ok(path)
 }
 
+/// Pi stores facet selections beside its server sockets, not in the agent directory.
+pub fn server_dir(env: &crate::config::Env, given: Option<String>) -> Result<PathBuf, ProtoError> {
+    let raw = given.or_else(|| env.get("PI_SERVER_DIR"));
+    let home = || {
+        env.get("HOME").map(PathBuf::from).ok_or_else(|| invalid(
+        "The Pi server directory is unknown: set PI_SERVER_DIR or supply serverDir before importing conversations"
+    ))
+    };
+    let path = match raw.as_deref() {
+        None => home()?.join(".pi/server"),
+        Some("~") => home()?,
+        Some(raw) if raw.starts_with("~/") => home()?.join(&raw[2..]),
+        Some(raw) => PathBuf::from(raw),
+    };
+    if !path.is_absolute() {
+        return Err(invalid("The Pi server directory must be an absolute path"));
+    }
+    Ok(path)
+}
+
 /// Unique, ordered, without empties.
 fn dedupe(items: Vec<String>) -> Vec<String> {
     let mut seen = BTreeSet::new();
@@ -126,16 +146,21 @@ fn native_providers(shared: &Shared) -> BTreeSet<String> {
 
 // ---------------------------------------------------------------------------- discover
 
-pub async fn discover(shared: &Arc<Shared>, agent: Option<String>) -> Result<Reply, ProtoError> {
+pub async fn discover(
+    shared: &Arc<Shared>,
+    agent: Option<String>,
+    server: Option<String>,
+) -> Result<Reply, ProtoError> {
     let dir = agent_dir(&shared.config.env, agent)?;
+    let server = server_dir(&shared.config.env, server)?;
     blocking(shared, move |shared| {
-        Ok(Reply::ImportReport(report(shared, &dir)))
+        Ok(Reply::ImportReport(report(shared, &dir, &server)))
     })
     .await
 }
 
-fn report(shared: &Shared, dir: &Path) -> ImportReport {
-    let found = legacy::discover(dir, &shared.store);
+fn report(shared: &Shared, dir: &Path, server: &Path) -> ImportReport {
+    let found = legacy::discover(dir, server, &shared.store);
     let native = native_providers(shared);
     ImportReport {
         agent_dir: dir.display().to_string(),
@@ -180,9 +205,11 @@ fn report(shared: &Shared, dir: &Path) -> ImportReport {
 pub async fn sessions(
     shared: &Arc<Shared>,
     agent: Option<String>,
+    server: Option<String>,
     ids: Vec<String>,
 ) -> Result<Reply, ProtoError> {
     let dir = agent_dir(&shared.config.env, agent)?;
+    let server = server_dir(&shared.config.env, server)?;
     let ids = dedupe(ids);
     if ids.len() > 10_000 {
         return Err(ProtoError::new(
@@ -191,7 +218,7 @@ pub async fn sessions(
         ));
     }
     let view = blocking(shared, move |shared| {
-        Ok(import_sessions(shared, &dir, &ids))
+        Ok(import_sessions(shared, &dir, &server, &ids))
     })
     .await?;
     if view
@@ -208,7 +235,7 @@ fn count(manifest: &Value, key: &str) -> u64 {
     manifest["counts"][key].as_u64().unwrap_or(0)
 }
 
-fn import_sessions(shared: &Shared, dir: &Path, ids: &[String]) -> ImportedView {
+fn import_sessions(shared: &Shared, dir: &Path, server: &Path, ids: &[String]) -> ImportedView {
     let backup = shared.config.data_dir.join("imports").join(format!(
         "{}-{}",
         utc_stamp(crate::util::now_ms()),
@@ -217,7 +244,7 @@ fn import_sessions(shared: &Shared, dir: &Path, ids: &[String]) -> ImportedView 
     let sessions = ids
         .iter()
         .map(|id| {
-            let outcome = match legacy::import_session(&shared.store, dir, id, &backup) {
+            let outcome = match legacy::import_session(&shared.store, dir, id, server, &backup) {
                 Ok(o) if o.already_imported => ImportSessionOutcome::AlreadyImported {
                     native: o.native_session,
                 },
@@ -395,19 +422,6 @@ fn import_credentials(
     dir: &Path,
     providers: &[String],
 ) -> Result<CredentialsImportView, ProtoError> {
-    let found = legacy::discover(dir, &shared.store);
-    if let Some(why) = found.credentials_error {
-        return Err(invalid(format!(
-            "The Pi credentials could not be read: {why}"
-        )));
-    }
-    let reserved: BTreeSet<String> = found
-        .credentials
-        .iter()
-        .filter(|c| c.reserved.is_some())
-        .map(|c| c.provider.clone())
-        .collect();
-    // Reserved entries are already left out here.
     let entries = legacy::credential_entries(dir)
         .map_err(|why| invalid(format!("The Pi credentials could not be read: {why}")))?;
     let store = FileStore::new(shared.config.auth_path());
@@ -417,11 +431,7 @@ fn import_credentials(
     let mut results = Vec::new();
     let mut changed = false;
     for provider in providers {
-        let outcome = if reserved.contains(provider) {
-            CredentialImportOutcome::Reserved {
-                reason: RESERVED_KEPT.into(),
-            }
-        } else if let Some(value) = entries.get(provider) {
+        let outcome = if let Some(value) = entries.get(provider) {
             if txn.get(provider).is_some() {
                 CredentialImportOutcome::KeptExisting
             } else {

@@ -284,7 +284,10 @@ impl Live {
     }
 
     fn discover(&self) -> Result<ImportReport, String> {
-        match self.import_call(Call::ImportDiscover { agent_dir: None }) {
+        match self.import_call(Call::ImportDiscover {
+            server_dir: None,
+            agent_dir: None,
+        }) {
             Ok(Reply::ImportReport(report)) => Ok(report),
             Ok(other) => Err(format!("unexpected reply {other:?}")),
             Err(e) => Err(call_failed("The Pi profile could not be read", &e)),
@@ -309,6 +312,7 @@ impl Live {
 
     fn import_conversations(&mut self, worker: &mut Worker, sessions: Vec<String>) -> ImportResult {
         let view = match self.import_call(Call::ImportSessions {
+            server_dir: None,
             agent_dir: None,
             sessions,
         }) {

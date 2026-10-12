@@ -12,7 +12,9 @@
 //! No network, process or person is awaited while a transaction is open: callers prepare
 //! everything, then commit in one short transaction.
 
+mod generation;
 mod schema;
+pub use generation::GenerationState;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -411,6 +413,9 @@ impl Store {
                 "final_commit",
                 "BEFORE UPDATE OF body ON main.entries WHEN OLD.partial = 1 AND NEW.partial = 0",
             ),
+            Fault::RetryCheckpoint => {
+                trigger("retry_checkpoint", "BEFORE INSERT ON main.generation_state")
+            }
             Fault::ToolResult => trigger("tool_result", "BEFORE INSERT ON main.tool_outputs"),
             Fault::Settlement => trigger(
                 "settlement",
@@ -437,7 +442,8 @@ impl Store {
              DROP TRIGGER IF EXISTS temp.pipkin_fault_chunk_flush;
              DROP TRIGGER IF EXISTS temp.pipkin_fault_final_commit;
              DROP TRIGGER IF EXISTS temp.pipkin_fault_tool_result;
-             DROP TRIGGER IF EXISTS temp.pipkin_fault_settlement;",
+             DROP TRIGGER IF EXISTS temp.pipkin_fault_settlement;
+             DROP TRIGGER IF EXISTS temp.pipkin_fault_retry_checkpoint;",
         )?;
         Ok(())
     }
@@ -1652,6 +1658,8 @@ pub enum Fault {
     ChunkFlush,
     /// Finalizing a streamed message (its partial entry replaced by the final one).
     FinalCommit,
+    /// Recording the retry decision after a committed model error.
+    RetryCheckpoint,
     /// Recording a tool's result.
     ToolResult,
     /// Settling a run.

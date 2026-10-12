@@ -4,9 +4,12 @@
 and process extension hosts exist (`E/extensions`, `docs/native-extensions.md`), with tested
 ports of the questions and greeting examples. These are not TypeScript package compatibility:
 custom remote services, `waitForPrompt`, hot reload and sticky/per-session profiles remain
-missing. The importer does not yet detect facet selection (IMP-PLUGIN-STATE), so decision 3's
-refusal is a required implementation gap, not an existing safeguard. Pi remains the continuity
-path for existing facet packages; the no-feature-loss completion gate is unchanged.
+missing. The importer now validates the selected Pi coordination directory's server/session
+profiles, honors explicit empty per-session overrides, and refuses nonempty or uncertain
+selections before activation (IMP-PLUGIN-STATE). Profiles are rechecked before writing, and
+accepted inspection data/hashes are retained in the import manifest. See the import/retry
+evidence record for tested cases. Pi remains the continuity path for existing facet packages;
+the no-feature-loss completion gate is unchanged.
 
 ## Context
 

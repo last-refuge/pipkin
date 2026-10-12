@@ -11,7 +11,25 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current reconciliation — 2026-10-11, `e4c3a8c`
+## Current follow-up — plugin import protection and durable retries
+
+Implemented on top of `92629ec` (2026-10-11). See
+[import/retry evidence](pipkin-rust-engine-evidence/import-protection-durable-retries.md).
+Plugin profiles are now validated during discovery and rechecked before import activation;
+unsupported selections stay on Pi, without a native session or ownership transfer. Native
+retry deadlines, handled error entries and failure counts survive restart; Stop cancels the
+restored wait. Engine schema **2** adds generation state with a tested private v1 backup;
+protocol **3** adds explicit import `serverDir` and prevents an older worker from accepting
+an import without the new guard.
+
+Ledger: **503 rows; 417 measured, 7 observed, 1 failed, 10 unverified, 68 not started;
+0 qualified**. Final required checks: **1319 passed, 0 failed, 53 ignored**; Clippy and
+formatting passed. Earlier attempts, including a subagent-inspector timeout, are retained in
+the evidence record. NC 402, NE 23, PA 33, NP 30, BL 14, LB 1, RC 0. Import protection is
+measured refusal, not TypeScript execution compatibility. The next priorities are bounded
+durable event delivery and the unresolved memory-soak failure; full qualification remains open.
+
+## Historical reconciliation — 2026-10-11, `e4c3a8c`
 
 Claude subscription integration and its two observed UI fixes are committed in **`e4c3a8c`**.
 Browser and copy-code sign-in, saved-credential reuse after restart, a forced-expiry live refresh,
@@ -43,8 +61,8 @@ Full records: `llm-docs/pipkin-rust-engine-adr/` (index in its `README.md`).
 | ADR | Decision (summary) | Status |
 | --- | --- | --- |
 | 0001 Execution topology | One shipped `pipkin` executable; a private worker mode runs the GPUI-free `pipkin-engine` as an **owned child** over inherited pipes; one engine process for all conversations; in-process host (same API) for tests/headless/benchmark; not a sandbox | Accepted; implemented (`--engine-worker`, `App/adapters/native/supervisor.rs`, headless `pipkin-engine` binary) |
-| 0002 Protocol and transport | Length-prefixed JSON frames (32 MiB max); typed `Call`/`Reply`/`Event`; `epoch`+`seq` events, session `revision`, snapshot on gap; control lane for Stop/Shutdown; protocol version mismatch refused | Accepted; protocol **2** (adds `Import*` calls); durable outbox/acknowledged cursor and bounded fan-out still not built |
-| 0003 Durable store and recovery | One OS-locked SQLite store per data root; explicit schema v1, backup-before-migrate, newer refused untouched; short transactions; state-driven run loop; fail closed on storage error; `synchronous=FULL` (reference `NORMAL`) | Accepted; implemented; actual worker SIGKILL and injected disk-full/read-only cases tested; power loss and real schema upgrade unverified |
+| 0002 Protocol and transport | Length-prefixed JSON frames (32 MiB max); typed `Call`/`Reply`/`Event`; `epoch`+`seq` events, session `revision`, snapshot on gap; control lane for Stop/Shutdown; protocol version mismatch refused | Accepted; protocol **3** (adds import `serverDir` and requires profile protection); durable outbox/acknowledged cursor and bounded fan-out still not built |
+| 0003 Durable store and recovery | One OS-locked SQLite store per data root; explicit schema v2, backup-before-migrate, newer refused untouched; short transactions; state-driven run loop; fail closed on storage error; `synchronous=FULL` (reference `NORMAL`) | Accepted; implemented; actual worker SIGKILL and injected disk-full/read-only cases tested; v1 → v2 backup/migration tested; power loss unverified |
 | 0004 Stop and queue | Reference queue boundaries and outcomes; durable Stop intent then cancellation; retirement by `entries.retired` flag instead of `pi.cancelled-input` omit-edit entries | Accepted; implemented; `all` delivery modes tested; differential qualification and general Stop-after-completion race pending |
 | 0005 Tool replay and subagent recovery | Intent before effect; unsafe-by-default replay; `subagent` is the replay-safe registration with an atomic `(parent session, call)` → child mapping and once-only delivery; recorded-contract check | Accepted; implemented incl. recorded-contract check; mismatch, disabled recovery and Stop-child tests pass |
 | 0006 Extension compatibility | Native versioned extension contract + out-of-process protocol; existing TypeScript facet packages need Node, so their rows stay **blocked** and run on the **legacy bridge** (Pi) | Proposed; native contract implemented (`E/extensions`, `docs/native-extensions.md`); TS facets blocked |
@@ -83,13 +101,13 @@ platform/provider gates have not closed it; Claude has separate live evidence.
 | RE-02 | Frozen behavioral fixtures and performance baseline | Opus | implemented-but-unverified | `b2ff206`: `fixtures/pi-sessions/` 8 scenarios + `BASELINE.md`; reference package/runtime artifact hashes still TODO (§4) |
 | RE-03A | Non-reserved provider/auth feasibility and inventory | Opus | implemented-but-unverified | All non-reserved adapters and OAuth flows implemented and tested against local mocks (ledger §3–§6); no live provider call |
 | RE-03B | Claude subscription feasibility review | Codex | reviewed; user-confirmed approval | `pipkin-rust-engine-evidence/claude-subscription.md`; user-confirmed approval; live access subsequently exercised in RE-13B |
-| RE-04 | Context, durable-task and extension-state import spike | Opus | implemented-but-unverified | `8290556`; all 8 reference fixtures import and continue equivalently (`rti::reference_fixtures_import_open_and_continue_equivalently`); plugin state not read (IMP-PLUGIN-STATE) |
+| RE-04 | Context, durable-task and extension-state import spike | Opus | implemented-but-unverified | `8290556`; all 8 reference fixtures import and continue equivalently (`rti::reference_fixtures_import_open_and_continue_equivalently`); plugin profile protection now detects/refuses nonempty selections (IMP-PLUGIN-STATE) |
 | RE-05 | Extension compatibility spike and ADRs | Opus | in progress | ADR 0006 still Proposed; native ports of the two baseline examples (`ext::`, `extp::`); TS facets blocked |
 | RE-06 | Typed engine contract and private worker transport | Opus | in progress | Protocol v2 + frame and import-call round-trip tests (`frm::`, `P/view.rs`); gap detection (`ncl::sequencer_detects_gaps_and_new_epochs`); durable outbox/acknowledged cursor missing (XPORT-OUTBOX) |
 | RE-07 | Engine library, host/supervisor and headless harness | Opus | implemented-but-unverified | `nsup::` (7), `ew::` (2), `wp::` (2: SIGKILL + second-writer refusal), headless `pipkin-engine` binary |
-| RE-08 | SQLite store, migrations, lock, request ledger and outbox | Opus | in progress | `st::` (12), `wp::admission_survives_sigkill_and_is_found_by_lookup_after_restart`; outbox and a real schema migration remain; injected disk-full/read-only faults and damaged-database refusal pass (`rtf::`, `cp::`) |
+| RE-08 | SQLite store, migrations, lock, request ledger and outbox | Opus | in progress | `st::` (12), `wp::admission_survives_sigkill_and_is_found_by_lookup_after_restart`; outbox remains; v1 → v2 backup/migration passes; injected disk-full/read-only faults and damaged-database refusal pass (`rtf::`, `cp::`) |
 | RE-09 | Durable scripted generation and NativeBackend | Opus | implemented-but-unverified | `rt::` (19), `ne2e::` (20 workflows), `nt::` (9); observed in `native-walkthrough.md` |
-| RE-10 | Stop, queue, steering and recovery | Opus | implemented-but-unverified | Stop/queue/steer/restart measured (`rt::`, `ne2e::`); `all` modes tested (`rts::`); gaps: durable retry wait/count (REC-RETRY), general Stop-after-completion race |
+| RE-10 | Stop, queue, steering and recovery | Opus | implemented-but-unverified | Stop/queue/steer/restart measured (`rt::`, `ne2e::`); `all` modes tested (`rts::`); durable retry wait/count and Stop across restart now pass (REC-RETRY); general Stop-after-completion race remains |
 | RE-11 | Coding tools and execution environments | Opus | implemented-but-unverified | `5768dda`; `trd::`/`twr::`/`ted::`/`tbs::`/`tout::`/`trun::`/`tsch::` incl. reference-captured goldens; corpus tests ignored with no recorded run; sequential-tool rounds tested (`rt::tool_rounds_run_in_parallel_unless_a_tool_is_sequential`); reference setting override needs comparison |
 | RE-12 | First provider and real coding slice | Opus | implemented-but-unverified | Walkthrough §3 (real `write` tool via an `openai-completions` custom provider to a local stub); perf harness uses the same path; Claude live coding slice now passed (RE-13B) |
 | RE-13A | Generic credentials and non-reserved providers | Opus | implemented-but-unverified | `dd43920`, 10 wire adapters + `provider/api/common`; `auth::`, `oauth::`, adapter suites; Codex adapter goldens are reference captures |
@@ -119,8 +137,8 @@ platform/provider gates have not closed it; Claude has separate live evidence.
 | Subagents overlay hash (`pipkinSubagentsSha256`) | `9fb846e55a931d829e2ca25bde08ae98d2f128c14ceb6f1bc033b0a2e6fb3664` = `sha256(pi-subagents.patch ‖ pi-subagents/subagents.ts ‖ pi-subagents/subagents-provider.ts)` |
 | Model-data manifest hash | `b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05` (`crates/pipkin-engine/model-data/manifest.json`, equal to the archive's `.manifest.json`) |
 | Model-data archive | `packaging/pi-model-data-d2a311097cbcf669e699479587332ae3988a49d0.tar.zst`, sha256 `2be5f68d90695e71372c01ccbd08d5728b93691e07c45918846997c8949bcabb` |
-| Native engine schema | **1** (`crates/pipkin-engine/src/store/schema.rs::SCHEMA_VERSION`) |
-| Native protocol | **2** (`crates/pipkin-engine-protocol/src/lib.rs::PROTOCOL_VERSION`; 1 → 2 added `ImportDiscover`/`ImportSessions`/`ImportConfig`/`ImportCredentials` in `21ff99a`) |
+| Native engine schema | **2** (`crates/pipkin-engine/src/store/schema.rs::SCHEMA_VERSION`) |
+| Native protocol | **3** (`crates/pipkin-engine-protocol/src/lib.rs::PROTOCOL_VERSION`; 2 → 3 adds guarded import `serverDir`; 1 → 2 added `ImportDiscover`/`ImportSessions`/`ImportConfig`/`ImportCredentials` in `21ff99a`) |
 | Native engine version | `0.0.1` (`pipkin_engine::runtime::ENGINE_VERSION` = crate version) |
 | Reference protocol / app DB schema (unchanged) | Pi protocol 8; desktop `pipkin.sqlite3` schema 8 (`storage.rs` migration assertion) |
 | Toolchain | Rust 1.99.0 (`rustc 1.99.0 (b940084d7 2026-09-28)`), installed user-locally via rustup (`~/.cargo/bin`) with the owner's approval |
@@ -192,9 +210,9 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
 
 ## 7. Current blockers
 
-1. **Correctness and migration gaps:** plugin profiles are not detected by import, retry waits
-   and counts are not durable, system prompt patches are flattened, and reasoning/1h-cache
-   counters are not represented (report groups A–C).
+1. **Correctness and migration gaps:** system prompt patches are flattened and reasoning/1h-cache
+   counters are not represented. Plugin-profile import protection and durable retry waits/counts
+   are now implemented and tested; TypeScript execution and unsupported-history conversion remain open.
 2. **Transport and compatibility:** durable event replay/backpressure and external attach are
    missing; TypeScript facets, sticky profiles, remote services and reload still depend on Pi.
 3. **Performance:** E2E-37 remains failed; no new soak evidence supersedes it. Package reduction
@@ -208,9 +226,9 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
 
 ## 8. Next implementation batches
 
-1. Make plugin-profile import fail closed, then persist retry count/deadline through restart.
-   Both need regression tests asserting the intended behavior, not the current gap.
-2. Implement bounded event delivery with durable catch-up and acknowledged cursors; investigate
+1. Completed this batch: plugin-profile import fails closed; retry count/deadline survive restart,
+   with failure injection, actual SIGKILL and desktop ownership regression tests.
+2. Next: implement bounded event delivery with durable catch-up and acknowledged cursors; investigate
    E2E-37 with the existing soak diagnostics and repeat the same measurement after a fix.
 3. Close protocol/context gaps (usage counters, positional prompt updates), Codex WebSocket
    lifecycle/proxy gaps and external attachment. Resolve facet ports/profile lifecycle while

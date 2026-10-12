@@ -237,12 +237,18 @@ pub enum Call {
     /// items and credential metadata. Read-only. `agent_dir` defaults to
     /// `$PI_CODING_AGENT_DIR`, else `~/.pi/agent`.
     ImportDiscover {
+        /// Pi coordination directory; defaults to PI_SERVER_DIR, else ~/.pi/server.
+        #[serde(default, rename = "serverDir", skip_serializing_if = "Option::is_none")]
+        server_dir: Option<String>,
         #[serde(default, rename = "agentDir")]
         agent_dir: Option<String>,
     },
     /// Import the named legacy sessions (explicit user action). Idempotent per session; the
     /// legacy source is never written.
     ImportSessions {
+        /// The same coordination directory inspected during discovery.
+        #[serde(default, rename = "serverDir", skip_serializing_if = "Option::is_none")]
+        server_dir: Option<String>,
         #[serde(default, rename = "agentDir")]
         agent_dir: Option<String>,
         sessions: Vec<String>,

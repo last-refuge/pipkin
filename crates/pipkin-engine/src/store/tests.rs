@@ -500,3 +500,88 @@ fn injected_faults_fail_their_phase_and_roll_back_until_cleared() {
     disk.clear_faults().unwrap();
     disk.tx(|tx| Store::kv_set(tx, "s", "a", "b")).unwrap();
 }
+
+#[test]
+fn a_v1_database_is_backed_up_before_adding_durable_retry_state() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("engine.sqlite");
+    {
+        let s = Store::open(tmp.path()).unwrap();
+        session(&s, "saved");
+        s.tx(|tx| {
+            Store::admit(
+                tx,
+                "saved",
+                "pending",
+                InputMode::Prompt,
+                "keep me",
+                &[],
+                None,
+                1,
+            )?;
+            let run = Store::start_run(tx, "saved", Some("pending"), 1)?;
+            Store::append_entry(tx, "saved", 1, Some(run), &user("keep me"))?;
+            Ok(())
+        })
+        .unwrap();
+        // Reconstruct the actual v1 schema, retaining a nonempty history/catalog.
+        s.tx(|tx| {
+            tx.execute_batch("DROP TABLE generation_state; PRAGMA user_version = 1;")?;
+            Ok(())
+        })
+        .unwrap();
+    }
+    let upgraded = Store::open(tmp.path()).unwrap();
+    assert!(upgraded.session("saved").unwrap().is_some());
+    assert_eq!(
+        upgraded.request("saved", "pending").unwrap().unwrap().text,
+        "keep me"
+    );
+    assert!(upgraded.open_run("saved").unwrap().is_some());
+    assert_eq!(
+        upgraded
+            .read(|c| Store::entries_of_run(c, "saved", 1))
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(upgraded.read(schema::version).unwrap(), 2);
+    assert!(
+        upgraded
+            .read(|c| Store::generation_state(c, 1))
+            .unwrap()
+            .handled_error
+            .is_none()
+    );
+    let backup = Connection::open_with_flags(
+        path.with_extension("sqlite.v1.bak"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    assert_eq!(schema::version(&backup).unwrap(), 1);
+    assert_eq!(
+        backup
+            .query_row("SELECT id FROM sessions", [], |r| r.get::<_, String>(0))
+            .unwrap(),
+        "saved"
+    );
+    assert!(backup.prepare("SELECT * FROM generation_state").is_err());
+    assert_eq!(
+        backup
+            .query_row("SELECT text FROM requests", [], |r| r.get::<_, String>(0))
+            .unwrap(),
+        "keep me"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(path.with_extension("sqlite.v1.bak"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+}

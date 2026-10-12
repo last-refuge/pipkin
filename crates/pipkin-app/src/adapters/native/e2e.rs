@@ -166,10 +166,16 @@ impl Fixture {
         let mut c = EngineConfig::new(self.root.join("engine"), self.root.join("engine-config"));
         // The Pi profile an import reads (the engine's default agent directory).
         c.env = Env::isolated(
-            [(
-                "PI_CODING_AGENT_DIR".to_owned(),
-                self.pi_agent().display().to_string(),
-            )]
+            [
+                (
+                    "PI_CODING_AGENT_DIR".to_owned(),
+                    self.pi_agent().display().to_string(),
+                ),
+                (
+                    "PI_SERVER_DIR".to_owned(),
+                    self.root.join("pi-server").display().to_string(),
+                ),
+            ]
             .into(),
         );
         if !self.bare {
@@ -2223,4 +2229,42 @@ fn an_imported_conversation_is_read_only_with_pi_until_it_is_released() {
         "the native-only history stays with the built-in engine"
     );
     assert!(sessions.join("a-text-multiturn/session.sqlite").is_file());
+}
+
+#[test]
+fn a_plugin_selection_added_after_the_import_offer_never_transfers_ownership() {
+    let fx = Fixture::start(|_, _| Reply::Text("unused".into()));
+    assert!(add_pi_session(&fx, "a-text-multiturn"));
+    let id = ConversationId(pipkin_core::stable_id("a-text-multiturn"));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.until("connected", |s| s.connection.is_ready());
+    h.state.import_available = true;
+    h.dispatch(Command::ImportFromPi(ImportKind::Conversations));
+    h.until("offer", |s| offer(s).is_some());
+    assert_eq!(offer(&h.state).unwrap().sessions, ["a-text-multiturn"]);
+    let server = fx.root.join("pi-server");
+    std::fs::create_dir_all(&server).unwrap();
+    let profile = server.join("plugin-packages-custom.json");
+    let content = r#"{"version":1,"packagePaths":["/plugins/questions"]}"#;
+    std::fs::write(&profile, content).unwrap();
+    h.dispatch(Command::ConfirmImport);
+    h.until("blocked import finished", |s| s.import == ImportFlow::Idle);
+    let notice = h.state.notice.as_deref().unwrap();
+    assert!(
+        notice.contains("plugin profile") && notice.contains("keep this conversation on Pi"),
+        "{notice}"
+    );
+    assert!(h.state.conversations.is_empty());
+    assert_eq!(h.storage.native_owner(id).unwrap(), None);
+    assert!(
+        fx.engine()
+            .shared()
+            .store
+            .imported("pi", "a-text-multiturn")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(std::fs::read_to_string(profile).unwrap(), content);
+    h.stop();
 }

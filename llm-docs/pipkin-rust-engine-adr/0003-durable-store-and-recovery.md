@@ -1,12 +1,14 @@
 # ADR 0003: Durable store and recovery
 
-**Status:** Accepted; implementation reconciled at `e4c3a8c` (2026-10-11). Schema 1,
+**Status:** Accepted; implementation reconciled at `e4c3a8c` (2026-10-11). Schema 2,
 OS-locked storage, admission ledger, runs, streamed chunks, tool intent/result/output, usage,
 subagent tasks, `kv` and `import_map` are implemented. Injected disk-full/read-only faults at
 admission and mid-run are covered in `runtime/fault_tests.rs`. Actual worker SIGKILL boundaries,
 damaged-database refusal without mutation and orphan process reaping are covered in
 `tests/crash_points.rs`; a second process is refused in `tests/worker_process.rs`.
-Power loss and migration from a non-empty older native schema remain unverified.
+The v1 → v2 migration is tested with an admitted request, open run and history entry; the private
+backup retains schema 1. Power loss remains unverified. See
+`../pipkin-rust-engine-evidence/import-protection-durable-retries.md`.
 
 ## Context
 
@@ -35,10 +37,10 @@ each commit durable progress (`scheduler.ts:893-896`); on open every `running` t
    has been fsynced. This is a deliberate strengthening over the reference `NORMAL`
    (intentional improvement I-02 in the parity ledger); process-kill tests do not prove power
    loss and none is claimed.
-3. **Schema:** explicit `PRAGMA user_version`; `SCHEMA_VERSION = 1`; ordered `MIGRATIONS`.
+3. **Schema:** explicit `PRAGMA user_version`; `SCHEMA_VERSION = 2`; ordered `MIGRATIONS`.
    A newer database is refused **before** any pragma change (`schema::open`); an older one is
    backed up with the SQLite backup API next to itself, then migrated inside one transaction.
-   Database file mode `0600` on Unix.
+   Database and migration-backup file mode `0600` on Unix.
 4. **Authoritative records** (all `STRICT`, JSON payloads `json_valid`-checked): `sessions`
    (create key unique, revision, `blocked`), `entries` (with `retired` and `partial` flags),
    `entry_chunks` (committed stream deltas of a partial message, dropped on finalize),
@@ -47,7 +49,8 @@ each commit durable progress (`scheduler.ts:893-896`); on open every `running` t
    (`intent|done|interrupted`, `replay_safe`), `tool_outputs` (retained bounded output with
    dropped-byte count), `usage`, `subagent_tasks` (unique `(parent_session, parent_call)` and
    unique `child_session`, `result_delivered`), `kv` (engine/extension state preserved
-   verbatim), `import_map`. No rebuildable projections yet.
+   verbatim), `import_map`; schema 2 adds `generation_state` keyed by run (failure count, handled error,
+   retry deadline and overflow-compaction marker). No rebuildable projections yet.
 5. **Transactions:** every mutation is one short transaction that bumps the session revision;
    nothing awaits network, processes or people inside it (`Store::tx`). Events are published
    only after commit.
@@ -70,6 +73,13 @@ each commit durable progress (`scheduler.ts:893-896`); on open every `running` t
    `Aborted` (`a_durable_stop_survives_a_restart_and_settles_aborted`); partial streaming
    entries are materialized from committed chunks. Tool recovery follows ADR 0005.
 
+10. **Durable retry:** an error entry is classified once, keyed by its entry id. The persisted
+    deadline uses the saved response timestamp; expired deadlines proceed without a new delay.
+    Counts survive interrupted requests and reset atomically with a successful generation.
+    A terminal decision remains terminal after a crash; Stop cancels a restored wait and retires
+    its inputs. Retry-checkpoint storage failures fail closed. Actual SIGKILL tests cover both
+    the committed error before classification and the committed retry/terminal checkpoint.
+
 ## Consequences
 
 - One writer for all sessions simplifies ownership and backup but serializes commits across
@@ -80,7 +90,7 @@ each commit durable progress (`scheduler.ts:893-896`); on open every `running` t
   every document, including `pi.provider.sessionId` (provider cache affinity) and
   `pi.agent.extensions` (subagent enable state), into these rows or `kv`; unknown payloads are
   preserved verbatim and block conversion of that conversation.
-- Still unverified: migration of a non-empty older native schema and power loss. Corrupt
+- Still unverified: power loss and migration on other supported platforms. Corrupt
   databases are refused and left untouched (tested), not automatically set aside or repaired.
   Fault tests inject SQLite failures; they do not claim a physically full-disk or power-loss test.
 

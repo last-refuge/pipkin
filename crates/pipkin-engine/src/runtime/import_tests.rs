@@ -51,6 +51,7 @@ fn agent_with(root: &Path, ids: &[String]) -> PathBuf {
 
 fn report(e: &mut Engine, agent: &Path) -> ImportReport {
     match e.call(Call::ImportDiscover {
+        server_dir: Some(agent.parent().unwrap().join("server").display().to_string()),
         agent_dir: Some(agent.display().to_string()),
     }) {
         Ok(Reply::ImportReport(r)) => r,
@@ -60,6 +61,7 @@ fn report(e: &mut Engine, agent: &Path) -> ImportReport {
 
 fn import(e: &mut Engine, agent: &Path, ids: &[String]) -> ImportedView {
     match e.call(Call::ImportSessions {
+        server_dir: Some(agent.parent().unwrap().join("server").display().to_string()),
         agent_dir: Some(agent.display().to_string()),
         sessions: ids.to_vec(),
     }) {
@@ -724,4 +726,22 @@ fn backup_directories_are_named_by_utc_time() {
     assert_eq!(utc_stamp(0), "19700101T000000.000Z");
     assert_eq!(utc_stamp(1_791_750_696_257), "20261011T203136.257Z");
     assert_eq!(utc_stamp(951_782_400_000), "20000229T000000.000Z");
+}
+
+#[test]
+fn plugin_profile_directory_is_explicit_or_comes_from_the_engine_environment() {
+    use super::server_dir;
+    let env = Env::isolated([("HOME".into(), "/home/test".into())].into());
+    assert_eq!(
+        server_dir(&env, None).unwrap(),
+        PathBuf::from("/home/test/.pi/server")
+    );
+    let env = Env::isolated([("PI_SERVER_DIR".into(), "/custom/pi".into())].into());
+    assert_eq!(server_dir(&env, None).unwrap(), PathBuf::from("/custom/pi"));
+    assert_eq!(
+        server_dir(&env, Some("/explicit".into())).unwrap(),
+        PathBuf::from("/explicit")
+    );
+    assert!(server_dir(&Env::isolated(Default::default()), None).is_err());
+    assert!(server_dir(&env, Some("relative".into())).is_err());
 }

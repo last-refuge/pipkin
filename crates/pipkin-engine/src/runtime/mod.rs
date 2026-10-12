@@ -642,11 +642,15 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
             shared.publish(Event::ModelsChanged);
             Ok(Reply::Ok)
         }
-        Call::ImportDiscover { agent_dir } => import::discover(shared, agent_dir).await,
+        Call::ImportDiscover {
+            server_dir,
+            agent_dir,
+        } => import::discover(shared, agent_dir, server_dir).await,
         Call::ImportSessions {
+            server_dir,
             agent_dir,
             sessions,
-        } => import::sessions(shared, agent_dir, sessions).await,
+        } => import::sessions(shared, agent_dir, server_dir, sessions).await,
         Call::ImportConfig { agent_dir, items } => import::config(shared, agent_dir, items).await,
         Call::ImportCredentials {
             agent_dir,

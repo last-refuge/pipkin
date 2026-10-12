@@ -45,8 +45,16 @@ Importing from Pi is explicit, from the command palette, and only in native mode
   again is safe: already imported sessions are skipped.
 - **Import Pi provider settings and credentials…** is a separate confirmation that lists provider ids only (values
   are never shown or logged). It copies `models.json` and merges the selected `auth.json` entries into the native
-  credential store without overwriting anything already set up there. Anthropic subscription (OAuth) sign-ins stay
-  in the Pi profile, unimported, for a later integration.
+  credential store without overwriting anything already set up there. Supported Anthropic subscription (OAuth)
+  credentials retain their credential kind; they never become API keys.
+
+Conversation import also checks Pi's plugin selections in `$PI_SERVER_DIR`, or `~/.pi/server` by default.
+For a custom coordination directory, launch native Pipkin with `PI_SERVER_DIR=/absolute/path`; protocol clients
+can supply `serverDir` on both import discovery and import execution. The agent directory alone does not contain
+these selections. Every server identity in that directory is inspected; a pinned per-session selection overrides
+its own server default, including an explicit empty selection. Nonempty, malformed or unreadable selections block
+import and leave the conversation on Pi. A copied history with a plugin selection at its old absolute path is
+also blocked. Pipkin rechecks profiles before activation and does not change or execute any plugin package.
 
 Ownership: a conversation is written by exactly one engine. When an import finishes, Pipkin records in its own
 database (`pipkin.sqlite3`, table `conversation_owners`; never in the Pi profile or the engine's data) that the
@@ -91,6 +99,12 @@ On reopen, saved goals are paused rather than automatically resubmitted. The cli
 engine's authoritative settlement; a lost acknowledgement does not mean the input never ran. Engine recovery can
 repeat a partially executed tool even when Pipkin does **not** resend the prompt. Prompt deduplication is not a
 universal exactly-once guarantee for external side effects.
+
+The native engine saves whole-turn retry deadlines and the number of failed attempts. Restarting keeps the remaining
+wait and retry limit; an expired deadline proceeds without another full delay. Stop cancels a restored retry wait
+and retires the instruction. Native engine schema 2 upgrades schema 1 only after writing a private
+`engine.sqlite.v1.bak` beside the database. Older binaries refuse the newer schema; keep the backup if rollback is
+needed. Schema 1 did not persist retry deadlines, so an upgrade cannot restore a prior deadline that was never saved.
 
 For prolonged **Stopping**, an unresolved outcome, or a lost connection:
 

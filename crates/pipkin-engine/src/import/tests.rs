@@ -730,7 +730,13 @@ fn texts(messages: &[Value]) -> Vec<String> {
 }
 
 fn import(agent: &Agent, store: &Store, id: &str) -> Result<ImportOutcome, ImportError> {
-    import_session(store, &agent.root, id, &agent.backups())
+    import_session(
+        store,
+        &agent.root,
+        id,
+        &agent.root.join("server"),
+        &agent.backups(),
+    )
 }
 
 // ---------------------------------------------------------------------------- tests
@@ -743,7 +749,7 @@ fn imports_a_rich_session_losslessly_with_the_same_effective_context() {
     let before = snapshot(&source_dir);
     let store = Store::memory().unwrap();
 
-    let report = discover(&agent.root, &store);
+    let report = discover(&agent.root, &agent.root.join("server"), &store);
     assert_eq!(report.sessions.len(), 1);
     let found = &report.sessions[0];
     assert_eq!(found.status, SessionStatus::Importable, "{found:?}");
@@ -1006,7 +1012,7 @@ fn imports_a_rich_session_losslessly_with_the_same_effective_context() {
     store.integrity_check().unwrap();
 
     // Discovery now reports it as imported.
-    let report = discover(&agent.root, &store);
+    let report = discover(&agent.root, &agent.root.join("server"), &store);
     assert_eq!(
         report.sessions[0].status,
         SessionStatus::AlreadyImported {
@@ -1093,7 +1099,7 @@ fn a_reset_with_handoff_keeps_the_new_context_only() {
 
 fn blocked(agent: &Agent, id: &str) -> Vec<String> {
     let store = Store::memory().unwrap();
-    let report = discover(&agent.root, &store);
+    let report = discover(&agent.root, &agent.root.join("server"), &store);
     let found = report.sessions.iter().find(|s| s.id == id).unwrap();
     let SessionStatus::Blocked { reasons } = &found.status else {
         panic!("{found:?}")
@@ -1201,7 +1207,7 @@ fn a_fresh_lock_reports_locked_and_a_stale_one_does_not() {
     let lock = lock_path(&agent.dir(ROOT));
     std::fs::create_dir(&lock).unwrap();
     let store = Store::memory().unwrap();
-    let report = discover(&agent.root, &store);
+    let report = discover(&agent.root, &agent.root.join("server"), &store);
     assert_eq!(
         report.sessions.len(),
         1,
@@ -1220,7 +1226,7 @@ fn a_fresh_lock_reports_locked_and_a_stale_one_does_not() {
 
     set_mtime(&lock, LOCK_STALE + std::time::Duration::from_secs(5));
     assert_eq!(
-        discover(&agent.root, &store).sessions[0].status,
+        discover(&agent.root, &agent.root.join("server"), &store).sessions[0].status,
         SessionStatus::Importable
     );
     import(&agent, &store, ROOT).unwrap();
@@ -1257,7 +1263,7 @@ fn sessions_without_storage_or_meta_are_reported_not_imported() {
     std::fs::write(dir.join("meta.json"), r#"{"createdAt": 1, "cwd": "/x"}"#).unwrap();
     std::fs::create_dir_all(agent.dir("nometa-1")).unwrap();
     let store = Store::memory().unwrap();
-    let report = discover(&agent.root, &store);
+    let report = discover(&agent.root, &agent.root.join("server"), &store);
     let status = |id: &str| {
         report
             .sessions
@@ -1298,7 +1304,7 @@ fn credentials_and_config_are_listed_without_values() {
     std::fs::create_dir_all(agent.root.join("skills/review")).unwrap();
     std::fs::write(agent.root.join("skills/review/SKILL.md"), "x").unwrap();
     let store = Store::memory().unwrap();
-    let report = discover(&agent.root, &store);
+    let report = discover(&agent.root, &agent.root.join("server"), &store);
     let printed = format!("{report:?}");
     assert!(!printed.contains("SECRET"), "{printed}");
     let mut creds: Vec<(String, String, bool)> = report
@@ -1524,4 +1530,181 @@ fn matches_last_request(requests: &Path, context: &[Value]) -> String {
         sent.len(),
         native.len() - sent.len()
     )
+}
+
+fn plugin_profile(agent: &Agent, server: &str, session: Option<&Path>, packages: Value) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let dir = agent.root.join("server");
+    std::fs::create_dir_all(&dir).unwrap();
+    let (name, value) = match session {
+        Some(session) => {
+            let session = session.to_str().unwrap();
+            let hash = format!("{:x}", Sha256::digest(session.as_bytes()));
+            (
+                format!("session-plugin-packages-{server}-{}.json", &hash[..24]),
+                json!({"version":1,"sessionPath":session,"packagePaths":packages}),
+            )
+        }
+        None => (
+            format!("plugin-packages-{server}.json"),
+            json!({"version":1,"packagePaths":packages}),
+        ),
+    };
+    let path = dir.join(name);
+    std::fs::write(&path, value.to_string()).unwrap();
+    path
+}
+
+fn assert_plugin_blocked(agent: &Agent, store: &Store) {
+    let report = discover(&agent.root, &agent.root.join("server"), store);
+    let row = report.sessions.iter().find(|s| s.id == ROOT).unwrap();
+    assert!(
+        matches!(&row.status, SessionStatus::Blocked { reasons } if reasons.iter().any(|r| r.contains("plugin profile"))),
+        "{:?}",
+        row.status
+    );
+    assert!(matches!(
+        import(agent, store, ROOT),
+        Err(ImportError::Blocked(_))
+    ));
+    assert!(store.session(ROOT).unwrap().is_none());
+    assert!(store.imported(ENGINE, ROOT).unwrap().is_none());
+    assert!(
+        !agent.backups().exists(),
+        "refused before copying or activating"
+    );
+}
+
+#[test]
+fn plugin_profiles_block_sticky_and_pinned_selections_without_touching_the_source() {
+    for pinned in [false, true] {
+        let agent = Agent::new();
+        let _legacy = rich_session(&agent);
+        let store = Store::memory().unwrap();
+        let profile = plugin_profile(
+            &agent,
+            "server-one",
+            pinned.then(|| agent.dir(ROOT)).as_deref(),
+            json!(["/plugins/questions"]),
+        );
+        let before = std::fs::read(&profile).unwrap();
+        assert_plugin_blocked(&agent, &store);
+        assert_eq!(std::fs::read(profile).unwrap(), before);
+    }
+}
+
+#[test]
+fn an_explicit_empty_session_selection_overrides_only_its_own_server() {
+    let agent = Agent::new();
+    let _legacy = rich_session(&agent);
+    let store = Store::memory().unwrap();
+    plugin_profile(&agent, "one", None, json!(["/plugins/sticky"]));
+    plugin_profile(&agent, "one", Some(&agent.dir(ROOT)), json!([]));
+    let other = plugin_profile(&agent, "two", None, json!(["/plugins/other"]));
+    assert_plugin_blocked(&agent, &store);
+    std::fs::remove_file(other).unwrap();
+    let out = import(&agent, &store, ROOT).unwrap();
+    let profiles = out.manifest["pluginProfiles"]["profiles"]
+        .as_array()
+        .unwrap();
+    assert_eq!(profiles.len(), 2);
+    assert!(
+        profiles
+            .iter()
+            .any(|p| p["selection"]["packagePaths"] == json!([]))
+    );
+    assert!(
+        profiles
+            .iter()
+            .all(|p| p["sha256"].as_str().unwrap().len() == 64)
+    );
+}
+
+#[test]
+fn malformed_unreadable_and_mismatched_plugin_profiles_fail_closed() {
+    for malformed in [
+        "not json",
+        r#"{"version":2,"packagePaths":["/p"]}"#,
+        r#"{"version":1,"packagePaths":[]}"#,
+        r#"{"version":1,"packagePaths":["/p"],"unknown":true}"#,
+        r#"{"version":1,"packagePaths":["/p","/p"]}"#,
+        r#"{"version":1,"packagePaths":["relative"]}"#,
+        r#"{"version":1,"packagePaths":["/p"],"sessionPath":null}"#,
+    ] {
+        let agent = Agent::new();
+        let _legacy = rich_session(&agent);
+        let store = Store::memory().unwrap();
+        let path = plugin_profile(&agent, "one", None, json!(["/p"]));
+        std::fs::write(path, malformed).unwrap();
+        assert_plugin_blocked(&agent, &store);
+    }
+    let agent = Agent::new();
+    let _legacy = rich_session(&agent);
+    let store = Store::memory().unwrap();
+    let profile = plugin_profile(&agent, "one", Some(&agent.dir(ROOT)), json!([]));
+    std::fs::write(
+        &profile,
+        json!({"version":1,"sessionPath":"/wrong/session","packagePaths":[]}).to_string(),
+    )
+    .unwrap();
+    assert_plugin_blocked(&agent, &store);
+    std::fs::remove_file(&profile).unwrap();
+    std::fs::create_dir(profile).unwrap();
+    assert_plugin_blocked(&agent, &store);
+}
+
+#[test]
+fn plugin_selection_is_rechecked_after_discovery_and_during_the_copy() {
+    let agent = Agent::new();
+    let _legacy = rich_session(&agent);
+    let store = Store::memory().unwrap();
+    let server = agent.root.join("server");
+    assert!(matches!(
+        discover(&agent.root, &server, &store).sessions[0].status,
+        SessionStatus::Importable
+    ));
+    let before = plugins::Snapshot::read(&server).unwrap();
+    plugin_profile(&agent, "new-server", None, json!(["/plugins/new"]));
+    assert!(matches!(before.unchanged(), Err(ImportError::Blocked(_))));
+    assert_plugin_blocked(&agent, &store);
+}
+
+#[test]
+fn another_sessions_pinned_plugins_do_not_block_an_unselected_session() {
+    let agent = Agent::new();
+    let _legacy = rich_session(&agent);
+    let store = Store::memory().unwrap();
+    plugin_profile(
+        &agent,
+        "one",
+        Some(&agent.dir("unrelated")),
+        json!(["/plugins/elsewhere"]),
+    );
+    assert!(import(&agent, &store, ROOT).is_ok());
+}
+
+#[test]
+fn a_copied_session_cannot_drop_a_profile_with_its_original_absolute_path() {
+    let agent = Agent::new();
+    let _legacy = rich_session(&agent);
+    let store = Store::memory().unwrap();
+    plugin_profile(
+        &agent,
+        "one",
+        Some(&Path::new("/previous/agent/experimental/sessions").join(ROOT)),
+        json!(["/plugins/questions"]),
+    );
+    assert_plugin_blocked(&agent, &store);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_session_keeps_its_plugin_selection() {
+    let agent = Agent::new();
+    let _legacy = rich_session(&agent);
+    let store = Store::memory().unwrap();
+    let alias = agent.root.join("alias");
+    std::os::unix::fs::symlink(agent.dir(ROOT), &alias).unwrap();
+    plugin_profile(&agent, "one", Some(&alias), json!(["/plugins/questions"]));
+    assert_plugin_blocked(&agent, &store);
 }

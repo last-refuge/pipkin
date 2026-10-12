@@ -936,3 +936,66 @@ fn a_damaged_database_stops_the_engine_at_start_and_is_left_untouched() {
     assert!(!p.data.join("engine.sqlite-wal").exists());
     let _ = &p.root;
 }
+
+#[test]
+fn sigkill_around_retry_classification_preserves_the_deadline_and_attempt_budget() {
+    for (point, retries) in [
+        ("after_generation_result", 1),
+        ("after_retry_checkpoint", 1),
+        ("after_retry_checkpoint", 0),
+    ] {
+        let times = Arc::new(Mutex::new(Vec::new()));
+        let recorded = times.clone();
+        let stub = Stub::start(move |_, _| {
+            recorded.lock().unwrap().push(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i64,
+            );
+            Plan { pieces: vec!["data: {\"error\":{\"message\":\"503: overloaded\",\"type\":\"server_error\"}}\n\n".into()], hang: false }
+        });
+        let p = Profile::new(&stub.url());
+        std::fs::write(
+            p.config.join("settings.json"),
+            json!({"retry":{"maxRetries":retries,"baseDelayMs":900,"provider":{"maxRetries":0}}})
+                .to_string(),
+        )
+        .unwrap();
+        let mut w = Worker::start(&p, Some(point));
+        let s = w.create(&p.project);
+        let _ = w.prompt(&s, "r1", "work");
+        w.reap_killed();
+        let conn = rusqlite::Connection::open(p.data.join("engine.sqlite")).unwrap();
+        let until: Option<i64> = conn
+            .query_row("SELECT retry_until FROM generation_state", [], |r| r.get(0))
+            .ok()
+            .flatten();
+        if point == "after_retry_checkpoint" && retries > 0 {
+            assert!(until.is_some());
+        }
+        drop(conn);
+        let mut w = Worker::start(&p, None);
+        assert!(
+            matches!(w.settled(&s, "r1"), RunOutcome::ModelError { .. }),
+            "{point}"
+        );
+        assert_eq!(
+            stub.bodies().len(),
+            1 + retries,
+            "{point}: no replenished budget"
+        );
+        if let Some(until) = until {
+            assert!(times.lock().unwrap()[1] >= until, "{point}: no early retry");
+        }
+        w.close();
+        let mut w = Worker::start(&p, None);
+        assert!(matches!(w.settled(&s, "r1"), RunOutcome::ModelError { .. }));
+        assert_eq!(
+            stub.bodies().len(),
+            1 + retries,
+            "settled errors never resume"
+        );
+        w.close();
+    }
+}

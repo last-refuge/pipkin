@@ -1,4 +1,4 @@
-//! Schema versions and migrations. Version 1 is the initial native schema.
+//! Schema versions and migrations. Version 2 adds durable generation retry state.
 
 use std::path::Path;
 
@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -158,7 +158,17 @@ CREATE TABLE import_map (
 "#;
 
 /// Ordered migrations; index `i` produces version `i + 1`.
-const MIGRATIONS: &[&str] = &[V1];
+const V2: &str = r#"
+CREATE TABLE generation_state (
+    run INTEGER PRIMARY KEY REFERENCES runs(id),
+    failures INTEGER NOT NULL CHECK (failures >= 0),
+    handled_error INTEGER,
+    retry_until INTEGER,
+    overflow_compacted INTEGER NOT NULL CHECK (overflow_compacted IN (0, 1))
+) STRICT;
+"#;
+
+const MIGRATIONS: &[&str] = &[V1, V2];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {
@@ -196,6 +206,12 @@ pub fn migrate(conn: &Connection, path: Option<&Path>) -> Result<()> {
     {
         let backup = path.with_extension(format!("sqlite.v{current}.bak"));
         let mut target = Connection::open(&backup)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&backup, std::fs::Permissions::from_mode(0o600))
+                .map_err(StoreError::Io)?;
+        }
         let b = rusqlite::backup::Backup::new(conn, &mut target)?;
         b.run_to_completion(256, std::time::Duration::from_millis(0), None)?;
     }

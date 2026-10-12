@@ -5,6 +5,12 @@ Code identity: **`e4c3a8c`**, branch `native-engine`, 2026-10-11. Reference iden
 [ledger](../pipkin-rust-engine-parity.md). This is a source/evidence reconciliation, not a new
 full reference execution or a qualification run. The execution plan was not changed.
 
+**Subsequent implementation:** plugin-profile import protection and durable retries are now
+implemented; the real v1 → v2 migration/backup is tested. See
+[follow-up evidence](import-protection-durable-retries.md) and the current ledger. The findings,
+counts and recommended batch below are the historical reconciliation at `e4c3a8c`, retained
+so the record is not rewritten as if these features already existed then.
+
 ## Result and scope
 
 Claude subscription integration is committed and its requested lifecycle checks passed:

@@ -603,18 +603,29 @@ mod import_tests {
 
     #[test]
     fn import_calls_round_trip_with_their_wire_names() {
-        let json = round_trip(&Call::ImportDiscover { agent_dir: None });
+        let json = round_trip(&Call::ImportDiscover {
+            server_dir: None,
+            agent_dir: None,
+        });
         assert_eq!(
             json,
             serde_json::json!({"call": "importDiscover", "agentDir": null})
         );
         let parsed: Call = serde_json::from_str(r#"{"call": "importDiscover"}"#).unwrap();
-        assert_eq!(parsed, Call::ImportDiscover { agent_dir: None });
+        assert_eq!(
+            parsed,
+            Call::ImportDiscover {
+                server_dir: None,
+                agent_dir: None
+            }
+        );
         let json = round_trip(&Call::ImportSessions {
+            server_dir: Some("/server".into()),
             agent_dir: Some("/a".into()),
             sessions: vec!["s1".into()],
         });
         assert_eq!(json["agentDir"], "/a");
+        assert_eq!(json["serverDir"], "/server");
         assert_eq!(json["sessions"][0], "s1");
         round_trip(&Call::ImportConfig {
             agent_dir: None,
@@ -625,7 +636,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 2);
+        assert_eq!(crate::PROTOCOL_VERSION, 3);
     }
 
     fn view(id: &str, status: ImportSessionStatus) -> ImportSessionView {

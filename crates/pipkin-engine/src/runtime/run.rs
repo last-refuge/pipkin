@@ -53,6 +53,9 @@ pub(super) struct Prepared {
 enum Step {
     Tools(Vec<(String, String, Value)>),
     Final,
+    Retry(i64),
+    Error(u64, i64, Box<Message>),
+    Failed(String),
     Request,
 }
 
@@ -94,8 +97,6 @@ impl Shared {
         run: u64,
         cancel: &CancellationToken,
     ) -> Option<RunOutcome> {
-        let mut attempt: u32 = 0;
-        let mut overflow_compacted = false;
         loop {
             if cancel.is_cancelled() {
                 return (sess.failure().is_none()).then_some(RunOutcome::Aborted);
@@ -125,69 +126,96 @@ impl Shared {
                         return None;
                     }
                 }
+                Step::Retry(until) => {
+                    let remaining = until.saturating_sub(now_ms()).max(0) as u64;
+                    tokio::select! {
+                        _ = cancel.cancelled() => {}
+                        _ = tokio::time::sleep(Duration::from_millis(remaining)) => {}
+                    }
+                }
+                Step::Failed(detail) => return Some(RunOutcome::ModelError { detail }),
+                Step::Error(entry, at_ms, message) => {
+                    if self
+                        .classify_error(sess, run, entry, at_ms, &message, cancel)
+                        .await
+                        .is_err()
+                    {
+                        return None;
+                    }
+                }
                 Step::Request if self.compact_if_needed(sess, run, cancel).await => continue,
                 Step::Request => match self.request(sess, run, cancel).await {
-                    Ok(Some(message)) => {
-                        let settings = self.settings_for(&sess.id);
-                        if let Message::Assistant {
-                            stop_reason: StopReason::Error,
-                            error_message,
-                            ..
-                        } = &message
-                        {
-                            // Context overflow: compact once per attempt, then ask again.
-                            let window = self
-                                .auth
-                                .catalog()
-                                .find(&format!(
-                                    "{}/{}",
-                                    message_provider(&message),
-                                    message_model(&message)
-                                ))
-                                .map_or(0, |m| m.context_window);
-                            if !overflow_compacted
-                                && settings.compaction.enabled
-                                && errors::is_context_overflow(&message, window)
-                            {
-                                overflow_compacted = true;
-                                if let Ok(super::compaction::Compacted::Done(_)) =
-                                    self.compact(sess, Some(run), None, cancel).await
-                                {
-                                    continue;
-                                }
-                            }
-                            attempt += 1;
-                            let retry = &settings.retry;
-                            if retry.enabled
-                                && attempt <= retry.max_retries
-                                && errors::is_retryable(&message)
-                            {
-                                let wait = errors::retry_delay_ms(
-                                    attempt,
-                                    retry.base_delay_ms,
-                                    retry.max_agent_delay_ms,
-                                );
-                                tokio::select! {
-                                    _ = cancel.cancelled() => {}
-                                    _ = tokio::time::sleep(Duration::from_millis(wait)) => {}
-                                }
-                                continue;
-                            }
-                            return Some(RunOutcome::ModelError {
-                                detail: error_message
-                                    .clone()
-                                    .unwrap_or_else(|| "The model failed.".into()),
-                            });
-                        }
-                        attempt = 0;
-                        overflow_compacted = false;
-                    }
-                    Ok(None) => {}
+                    Ok(_) => {}
                     Err(Some(outcome)) => return Some(outcome),
                     Err(None) => return None,
                 },
             }
         }
+    }
+
+    /// Classify each committed error exactly once. The checkpoint precedes waiting and is
+    /// retained while the next request streams, so crashing cannot replenish the retry budget.
+    async fn classify_error(
+        self: &Arc<Self>,
+        sess: &Arc<SessionRt>,
+        run: u64,
+        entry: u64,
+        at_ms: i64,
+        message: &Message,
+        cancel: &CancellationToken,
+    ) -> Result<(), ProtoError> {
+        let mut state =
+            tokio::task::block_in_place(|| self.store.read(|c| Store::generation_state(c, run)))
+                .map_err(ProtoError::from)?;
+        let settings = self.settings_for(&sess.id);
+        let window = self
+            .auth
+            .catalog()
+            .find(&format!(
+                "{}/{}",
+                message_provider(message),
+                message_model(message)
+            ))
+            .map_or(0, |m| m.context_window);
+        if !state.overflow_compacted
+            && settings.compaction.enabled
+            && errors::is_context_overflow(message, window)
+        {
+            state.overflow_compacted = true;
+            self.commit(sess, |tx| {
+                Store::save_generation_state(tx, run, &state)?;
+                Ok(((), vec![]))
+            })?;
+            if let Ok(super::compaction::Compacted::Done(_)) =
+                self.compact(sess, Some(run), None, cancel).await
+            {
+                state.handled_error = Some(entry);
+                state.retry_until = Some(now_ms());
+                return self.commit(sess, |tx| {
+                    Store::save_generation_state(tx, run, &state)?;
+                    Ok(((), vec![]))
+                });
+            }
+        }
+        state.failures = state.failures.saturating_add(1);
+        state.handled_error = Some(entry);
+        let retry = &settings.retry;
+        state.retry_until =
+            (retry.enabled && state.failures <= retry.max_retries && errors::is_retryable(message))
+                .then(|| {
+                    let delay = errors::retry_delay_ms(
+                        state.failures,
+                        retry.base_delay_ms,
+                        retry.max_agent_delay_ms,
+                    );
+                    at_ms.saturating_add(i64::try_from(delay).unwrap_or(i64::MAX))
+                });
+        self.commit(sess, |tx| {
+            Store::save_generation_state(tx, run, &state)?;
+            Ok(((), vec![]))
+        })?;
+        super::faults::crash_point("after_retry_checkpoint");
+        Ok(())
     }
 
     /// What the committed record says to do next.
@@ -236,11 +264,30 @@ impl Shared {
                         {
                             return Ok(Step::Tools(pending));
                         }
+                        if *stop_reason == StopReason::Error {
+                            let state = Store::generation_state(c, run)?;
+                            if state.handled_error != Some(last.id) {
+                                return Ok(Step::Error(
+                                    last.id,
+                                    last.at_ms,
+                                    Box::new(message.clone()),
+                                ));
+                            }
+                            return Ok(match state.retry_until {
+                                Some(until) if until > now_ms() => Step::Retry(until),
+                                Some(_) => Step::Request,
+                                None => Step::Failed(match message {
+                                    Message::Assistant { error_message, .. } => error_message
+                                        .clone()
+                                        .unwrap_or_else(|| "The model failed.".into()),
+                                    _ => unreachable!(),
+                                }),
+                            });
+                        }
                         match stop_reason {
                             StopReason::Stop | StopReason::Length => Ok(Step::Final),
                             StopReason::ToolUse if !has_calls => Ok(Step::Final),
-                            // Results recorded: ask the model again. Errors/aborts: request again
-                            // (a resumed run retries; a live run handles errors in `drive`).
+                            // Results recorded or an interrupted partial: ask the model again.
                             _ => Ok(Step::Request),
                         }
                     }
@@ -350,6 +397,15 @@ impl Shared {
                     entry: Store::append_entry(tx, &session, now, Some(run), &kind)?,
                 },
             };
+            if !matches!(
+                &final_message,
+                Message::Assistant {
+                    stop_reason: StopReason::Error,
+                    ..
+                }
+            ) {
+                Store::reset_generation_state(tx, run)?;
+            }
             let mut changes = vec![change];
             if let Message::Assistant { usage, .. } = &final_message
                 && (usage.total_tokens > 0 || usage.cost.total > 0.0)
@@ -362,7 +418,10 @@ impl Shared {
             Ok(((), changes))
         });
         match committed {
-            Ok(()) => Ok(Some(message)),
+            Ok(()) => {
+                super::faults::crash_point("after_generation_result");
+                Ok(Some(message))
+            }
             Err(_) => Err(None),
         }
     }

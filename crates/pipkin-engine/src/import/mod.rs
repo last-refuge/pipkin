@@ -21,6 +21,7 @@ mod context;
 mod delta;
 mod legacy;
 mod plan;
+mod plugins;
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -290,7 +291,7 @@ fn children_of(manifest: &Value, native: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------- discovery
 
 /// List every legacy session and the importable configuration and credentials. Read-only.
-pub fn discover(agent_dir: &Path, store: &Store) -> DiscoveryReport {
+pub fn discover(agent_dir: &Path, server_dir: &Path, store: &Store) -> DiscoveryReport {
     let dir = sessions_dir(agent_dir);
     let mut report = DiscoveryReport {
         agent_dir: agent_dir.to_path_buf(),
@@ -315,7 +316,9 @@ pub fn discover(agent_dir: &Path, store: &Store) -> DiscoveryReport {
         if name.ends_with(".lock") && !path.join(META_FILE).exists() {
             continue;
         }
-        report.sessions.push(inspect(store, &name, &path));
+        report
+            .sessions
+            .push(inspect(store, &name, &path, server_dir));
     }
 
     for name in [
@@ -361,7 +364,7 @@ pub fn discover(agent_dir: &Path, store: &Store) -> DiscoveryReport {
     report
 }
 
-fn inspect(store: &Store, id: &str, path: &Path) -> DiscoveredSession {
+fn inspect(store: &Store, id: &str, path: &Path, server_dir: &Path) -> DiscoveredSession {
     let sqlite = path.join(STORAGE_FILE);
     let meta = read_meta(path);
     let mut found = DiscoveredSession {
@@ -405,6 +408,12 @@ fn inspect(store: &Store, id: &str, path: &Path) -> DiscoveredSession {
     if !sqlite.is_file() {
         found.status = SessionStatus::Blocked {
             reasons: vec!["no session.sqlite: the session was never opened".into()],
+        };
+        return found;
+    }
+    if let Err(e) = plugins::Snapshot::read(server_dir).and_then(|p| p.check(path)) {
+        found.status = SessionStatus::Blocked {
+            reasons: vec![e.to_string()],
         };
         return found;
     }
@@ -452,6 +461,7 @@ pub fn import_session(
     store: &Store,
     agent_dir: &Path,
     session_id: &str,
+    server_dir: &Path,
     backup_dir: &Path,
 ) -> Result<ImportOutcome, ImportError> {
     if !is_session_id(session_id) {
@@ -484,6 +494,9 @@ pub fn import_session(
             "a native session {session_id} already exists and was not imported from this source"
         )));
     }
+
+    let plugins = plugins::Snapshot::read(server_dir)?;
+    plugins.check(&dir)?;
 
     // Consistent copy, read only from the copy.
     let target_dir = backup_dir.join(session_id);
@@ -544,6 +557,11 @@ pub fn import_session(
             }),
         );
         m.insert("importedAt".into(), json!(now));
+        m.insert("pluginProfiles".into(), plugins.manifest());
+    }
+    plugins.unchanged()?;
+    if let Some(why) = fresh_lock(&dir) {
+        return Err(ImportError::Locked(why));
     }
     write_plan(store, session_id, &plan, &manifest, now)?;
     Ok(ImportOutcome {

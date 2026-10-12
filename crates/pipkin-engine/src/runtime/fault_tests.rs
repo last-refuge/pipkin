@@ -664,32 +664,171 @@ fn stop_during_a_retry_wait_settles_aborted_promptly() {
     assert_eq!(provider.requests().len(), 1, "no retry after Stop");
 }
 
-/// Native behavior (REC-RETRY): the retry wait is in memory, not a durable `until`. After a
-/// restart the resumed run asks the model again at once, and the retry count starts over.
-/// The reference persists the retry phase and honors the remaining delay after a reopen.
+fn retry_checkpoint(
+    e: &Engine,
+    session: &str,
+    failures: u32,
+) -> (u64, crate::store::GenerationState) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let store = &e.handle.shared().store;
+        if let Some(run) = store.open_run(session).unwrap() {
+            let state = store.read(|c| Store::generation_state(c, run.id)).unwrap();
+            if state.failures == failures && state.retry_until.is_some() {
+                return (run.id, state);
+            }
+        }
+        assert!(Instant::now() < deadline, "no retry checkpoint");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 #[test]
-fn a_retry_wait_does_not_survive_a_restart_and_the_resumed_run_asks_at_once() {
+fn retry_deadline_and_attempt_budget_survive_a_restart() {
     let fx = Fixture::new();
-    with_settings(&fx, json!({"retry": {"baseDelayMs": 30000}}));
+    with_settings(&fx, json!({"retry":{"maxRetries":1,"baseDelayMs":1500}}));
+    let first = Scripted::new(|_, _| R::Error("503: overloaded".into()));
     let s;
+    let until;
     {
-        let (failing, _) = timed(|_| R::Error("503: overloaded".into()));
-        let mut e = fx.start(&failing);
+        let mut e = fx.start(&first);
         s = e.create(&fx.project, "c");
         e.prompt(&s, "r1", "x").unwrap();
-        e.until("in the retry wait", |_| failing.requests().len() == 1);
-        std::thread::sleep(Duration::from_millis(200));
+        until = retry_checkpoint(&e, &s, 1).1.retry_until.unwrap();
         e.handle.shutdown(Duration::from_millis(100));
     }
-    let started = Instant::now();
-    let answer = Scripted::echo("second try");
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let at = calls.clone();
+    let retry = Scripted::new(move |_, _| {
+        at.lock().unwrap().push(crate::util::now_ms());
+        R::Error("503: overloaded".into())
+    });
+    let mut e = fx.start(&retry);
+    assert!(matches!(
+        settled_by_lookup(&mut e, &s, "r1"),
+        RunOutcome::ModelError { .. }
+    ));
+    let times = calls.lock().unwrap();
+    assert_eq!(first.requests().len(), 1);
+    assert_eq!(
+        times.len(),
+        1,
+        "restart must not replenish the retry budget"
+    );
+    assert!(times[0] >= until, "request before the committed deadline");
+    assert_eq!(user_texts(&retry.requests()[0]), ["x"]);
+}
+
+#[test]
+fn an_expired_retry_deadline_does_not_restart_the_delay() {
+    let fx = Fixture::new();
+    with_settings(&fx, json!({"retry":{"baseDelayMs":30000}}));
+    let first = Scripted::new(|_, _| R::Error("503: overloaded".into()));
+    let s;
+    {
+        let mut e = fx.start(&first);
+        s = e.create(&fx.project, "c");
+        e.prompt(&s, "r1", "x").unwrap();
+        let (run, mut state) = retry_checkpoint(&e, &s, 1);
+        state.retry_until = Some(crate::util::now_ms() - 1000);
+        e.handle
+            .shared()
+            .store
+            .tx(|tx| Store::save_generation_state(tx, run, &state))
+            .unwrap();
+        e.handle.shutdown(Duration::from_millis(100));
+    }
+    let answer = Scripted::echo("after deadline");
+    let start = Instant::now();
     let mut e = fx.start(&answer);
     assert_eq!(settled_by_lookup(&mut e, &s, "r1"), RunOutcome::Completed);
     assert!(
-        started.elapsed() < Duration::from_secs(10),
-        "not the 30 s delay: {:?}",
-        started.elapsed()
+        start.elapsed() < Duration::from_secs(3),
+        "did not start a fresh 30-second delay"
     );
     assert_eq!(answer.requests().len(), 1);
-    assert_eq!(user_texts(&answer.requests()[0]), ["x"]);
+}
+
+#[test]
+fn stop_during_a_restored_retry_wait_retires_the_run_without_another_request() {
+    let fx = Fixture::new();
+    with_settings(&fx, json!({"retry":{"baseDelayMs":30000}}));
+    let provider = Scripted::new(|_, _| R::Error("503: overloaded".into()));
+    let s;
+    {
+        let mut e = fx.start(&provider);
+        s = e.create(&fx.project, "c");
+        e.prompt(&s, "r1", "retire me").unwrap();
+        retry_checkpoint(&e, &s, 1);
+        e.handle.shutdown(Duration::from_millis(100));
+    }
+    let answer = Scripted::echo("next");
+    {
+        let mut e = fx.start(&answer);
+        let start = Instant::now();
+        e.call(Call::Stop { session: s.clone() }).unwrap();
+        assert_eq!(settled_by_lookup(&mut e, &s, "r1"), RunOutcome::Aborted);
+        assert!(start.elapsed() < Duration::from_secs(2));
+        assert!(answer.requests().is_empty());
+        assert!(e.snapshot(&s).entries.iter().any(|e| e.retired));
+        e.handle.shutdown(Duration::from_millis(100));
+    }
+    let mut e = fx.start(&answer);
+    assert!(answer.requests().is_empty());
+    e.prompt(&s, "r2", "new instruction").unwrap();
+    assert_eq!(e.settled("r2"), RunOutcome::Completed);
+    assert_eq!(user_texts(&answer.requests()[0]), ["new instruction"]);
+}
+
+#[test]
+fn a_successful_tool_generation_resets_the_retry_budget() {
+    let fx = Fixture::new();
+    with_settings(&fx, json!({"retry":{"maxRetries":1,"baseDelayMs":1}}));
+    let provider = Scripted::new(|_, n| match n {
+        0 | 2 => R::Error("503: overloaded".into()),
+        1 => R::Tools(None, vec![("bash".into(), json!({"command":"true"}))]),
+        _ => R::Text("done".into()),
+    });
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    e.prompt(&s, "r1", "work").unwrap();
+    assert_eq!(e.settled("r1"), RunOutcome::Completed);
+    assert_eq!(provider.requests().len(), 4);
+}
+
+#[test]
+fn a_failed_retry_checkpoint_fails_closed_and_reclassifies_the_saved_error_once() {
+    let fx = Fixture::new();
+    with_settings(&fx, json!({"retry":{"maxRetries":1,"baseDelayMs":50}}));
+    let provider = Scripted::new(|_, _| R::Error("503: overloaded".into()));
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    e.handle
+        .shared()
+        .store
+        .inject(Fault::RetryCheckpoint)
+        .unwrap();
+    e.prompt(&s, "r1", "work").unwrap();
+    e.until("retry checkpoint failed closed", |ev| {
+        storage_notice(ev).is_some()
+    });
+    assert_eq!(provider.requests().len(), 1);
+    assert!(matches!(
+        lookup(&mut e, &s, "r1"),
+        LookupResult::Known { open: true, .. }
+    ));
+    assert_eq!(
+        e.prompt(&s, "r2", "more").unwrap_err().code,
+        ErrorCode::Storage
+    );
+    e.handle.shared().store.clear_faults().unwrap();
+    assert!(matches!(
+        reopen_until_settled(&mut e, &s, "r1"),
+        RunOutcome::ModelError { .. }
+    ));
+    assert_eq!(
+        provider.requests().len(),
+        2,
+        "saved failure counted once after reopen"
+    );
 }
