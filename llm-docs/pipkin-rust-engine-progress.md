@@ -11,7 +11,30 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — packaged desktop focus and recovery
+## Current follow-up — subagent storage-failure recovery
+
+2026-10-12, following **`2aea0e8`**, protocol 12/schema 10 unchanged. A real child-tool
+regression reproduced a parent waiting for a settlement that a read-only database could
+not save. Parent reopen also failed to resume its existing child, and independent streamed
+child storage failure could leave its parent waiting indefinitely. Failed child Stop now
+waits for execution cleanup without claiming settlement; child storage errors keep the parent
+call unresolved, and explicit parent replay reconciles the same durable child.
+
+Read-only/admission-only parent faults and streamed-child commit failure now pass. The real
+shell's first effect occurs once, its later effect never occurs, and interrupted work is not
+rerun. No provider calls resume merely because storage becomes writable. Parent reopen yields
+one child/result. See [recovery evidence](pipkin-rust-engine-evidence/subagent-storage-recovery.md).
+Required checks: **1,643 passed, 0 failed, 56 ignored**, clean Clippy/all-targets and formatting.
+The old SUB-CANCEL wording overstated the cancellation gap: failed Stop already cancelled
+child execution; the reproduced failure was impossible-settlement waiting and missing recovery.
+
+Ledger counts remain **444 measured, 9 observed, 1 unverified, 50 not started; 0 fully qualified**.
+The stale evidence-summary cell reading 51 not started was corrected to match all 504 actual
+rows and existing section totals. No gate was waived. Installed/GUI fault testing, remaining
+comparisons and release qualification, sustained desktop work and native-default/Pi retirement
+remain open. Owner plan and worktree changes are preserved.
+
+## Prior follow-up — packaged desktop focus and recovery
 
 2026-10-12, following **`9915177`**, protocol 12 / engine schema 10 / desktop schema 8
 unchanged. Actual Arch desktop testing exposed lost keyboard actions after Welcome → Explore

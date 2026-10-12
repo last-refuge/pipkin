@@ -166,13 +166,29 @@ impl Shared {
         let child = task_row.child_session.clone();
         let details = json!({"conversationId": child});
         let key = format!("subagent:{call_id}");
+        let parent_session = self.session(parent).map_err(|e| e.message)?;
         let sess = self.session(&child).map_err(|e| e.message)?;
         let mut settled = sess.settled.subscribe();
+        // Reopening the parent also reopens its existing durable child. After an in-process
+        // storage failure, admission alone only finds the old key; it does not resume it.
+        if let Err(error) = self.recover_session(&child) {
+            if error.code == ErrorCode::Storage {
+                self.storage_failure(&parent_session, &error.message);
+            }
+            return Err(error.message);
+        }
         // Idempotent admission: a replay finds the original.
         match self.prompt(&child, &key, task, &[]).await {
             Ok(_) => {}
             Err(e) if e.code == ErrorCode::Busy => {}
-            Err(e) => return Err(format!("Subagent {} failed: {}", task_row.child, e.message)),
+            Err(e) => {
+                if e.code == ErrorCode::Storage {
+                    // Recovery may still be waiting for the preceding child execution to
+                    // unwind. Do not turn that unresolved call into a final error result.
+                    self.storage_failure(&parent_session, &e.message);
+                }
+                return Err(format!("Subagent {} failed: {}", task_row.child, e.message));
+            }
         }
         self.set_task_status(&root, &child, "running", None);
         // Wait for this key's settlement (it may already be settled).
@@ -183,10 +199,30 @@ impl Shared {
             {
                 break outcome;
             }
+            if let Some(why) = sess.failure() {
+                // A failed child cannot publish settlement. Keep the parent's replay-safe
+                // call open too, so explicit recovery can resume the same child and result.
+                self.storage_failure(&parent_session, &format!("subagent storage error: {why}"));
+                return Err(format!(
+                    "Subagent {} stopped after a storage error",
+                    task_row.child
+                ));
+            }
             tokio::select! {
                 _ = cancel.cancelled() => {
                     if sess.removed.is_cancelled() { return Err("The conversation was removed".into()); }
-                    let _ = self.stop(&child).await;
+                    if let Err(error) = self.stop(&child).await {
+                        // A failed Stop commit cancels execution through storage_failure,
+                        // but cannot produce a durable settlement. Wait for execution to
+                        // unwind, not for a settlement that storage cannot record. In
+                        // particular, do not label this still-open child "aborted".
+                        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                            while sess.active_run().is_some() {
+                                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                            }
+                        }).await;
+                        return Err(format!("Subagent {} could not confirm Stop: {}", task_row.child, error.message));
+                    }
                     // Wait briefly for the child to settle as stopped.
                     tokio::select! {
                         _ = sess.removed.cancelled() => return Err("The conversation was removed".into()),

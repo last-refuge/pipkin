@@ -639,6 +639,169 @@ fn stopping_the_parent_stops_its_running_child() {
     assert_eq!(child_requests(&provider), 1);
 }
 
+#[cfg(unix)]
+#[test]
+fn a_parent_storage_failure_cancels_child_tools_and_reopens_without_repeating_effects() {
+    for fault in [Fault::ReadOnly, Fault::Admission] {
+        let fx = Fixture::new();
+        let provider = Scripted::new(delegating(|req| {
+            if req
+                .messages
+                .iter()
+                .any(|m| matches!(m, Message::ToolResult { .. }))
+            {
+                R::Text("child recovered its interrupted command".into())
+            } else {
+                R::Tools(
+                    None,
+                    vec![(
+                        "bash".into(),
+                        json!({
+                            "command": "printf 'started\\n' >> child-effects; sleep 30; printf 'finished\\n' >> child-effects"
+                        }),
+                    )],
+                )
+            }
+        }));
+        let mut e = fx.start(&provider);
+        let s = e.create(&fx.project, "c");
+        e.prompt(&s, "r1", "delegate").unwrap();
+        let effects = fx.project.join("child-effects");
+        e.until("the child's real command started", |_| effects.exists());
+        let view = subagents(&mut e, &s);
+        let child = view.children[0].session.clone();
+        let child_key = format!("subagent:{}", view.children[0].call_id);
+        let shared = e.handle.shared().clone();
+        let parent_rt = shared.session(&s).unwrap();
+        let child_rt = shared.session(&child).unwrap();
+        shared.store.inject(fault).unwrap();
+        let error = e
+            .call(Call::Enqueue {
+                session: s.clone(),
+                request: "failed-follow-up".into(),
+                mode: InputMode::FollowUp,
+                text: "must never be admitted".into(),
+                images: vec![],
+            })
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::Storage);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while parent_rt.active_run().is_some() || child_rt.active_run().is_some() {
+            assert!(
+                Instant::now() < deadline,
+                "{fault:?}: failed parent/child did not unwind promptly"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(parent_rt.failure().is_some());
+        assert!(matches!(
+            lookup(&mut e, &s, "r1"),
+            LookupResult::Known { open: true, .. }
+        ));
+        assert_eq!(
+            lookup(&mut e, &s, "failed-follow-up"),
+            LookupResult::Unknown
+        );
+        assert_eq!(std::fs::read_to_string(&effects).unwrap(), "started\n");
+        let before = provider.requests().len();
+        shared.store.clear_faults().unwrap();
+        // Restored storage alone grants no recovery authority.
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(provider.requests().len(), before);
+        assert_eq!(
+            reopen_until_settled(&mut e, &s, "r1"),
+            RunOutcome::Completed
+        );
+        assert_eq!(std::fs::read_to_string(&effects).unwrap(), "started\n");
+        assert_eq!(subagents(&mut e, &s).children.len(), 1);
+        let outcome = settled_by_lookup(&mut e, &child, &child_key);
+        if matches!(fault, Fault::ReadOnly) {
+            assert_eq!(outcome, RunOutcome::Completed);
+            let child_history = e.snapshot(&child);
+            let results = tool_results(&child_history);
+            assert_eq!(results.len(), 1);
+            assert!(
+                results[0].1 && results[0].2.contains("interrupted"),
+                "{results:?}"
+            );
+        } else {
+            assert_eq!(outcome, RunOutcome::Aborted);
+        }
+        assert_eq!(tool_results(&e.snapshot(&s)).len(), 1);
+    }
+}
+
+#[test]
+fn a_child_storage_failure_keeps_the_parent_call_recoverable() {
+    let fx = Fixture::new();
+    let turns = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let child_turns = turns.clone();
+    let provider = Scripted::new(delegating(move |_| {
+        if child_turns.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            R::Text("child streaming partial progress ".repeat(1000))
+        } else {
+            R::Text("recovered child answer".into())
+        }
+    }))
+    .paced(Duration::from_millis(1));
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    e.prompt(&s, "r1", "delegate").unwrap();
+    e.until("the child began streaming", |_| {
+        child_requests(&provider) == 1
+    });
+    let child = subagents(&mut e, &s).children[0].session.clone();
+    let shared = e.handle.shared().clone();
+    let parent_rt = shared.session(&s).unwrap();
+    let child_rt = shared.session(&child).unwrap();
+    shared.store.inject(Fault::ChunkFlush).unwrap();
+    e.until("child storage failure reaches its waiting parent", |_| {
+        parent_rt.failure().is_some()
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while parent_rt.active_run().is_some() || child_rt.active_run().is_some() {
+        assert!(
+            Instant::now() < deadline,
+            "parent/child failed execution did not unwind"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(child_rt.failure().is_some());
+    assert!(matches!(
+        lookup(&mut e, &s, "r1"),
+        LookupResult::Known { open: true, .. }
+    ));
+    assert_eq!(
+        e.prompt(&s, "r2", "must wait for recovery")
+            .unwrap_err()
+            .code,
+        ErrorCode::Storage
+    );
+    let parent_history = history(&mut e, &s);
+    assert!(!parent_history.iter().any(|entry| matches!(
+        &entry.kind,
+        EntryKind::Message {
+            message: Message::ToolResult { .. },
+            ..
+        }
+    )));
+    shared.store.clear_faults().unwrap();
+    assert_eq!(
+        reopen_until_settled(&mut e, &s, "r1"),
+        RunOutcome::Completed
+    );
+    assert_eq!(
+        tool_results(&e.snapshot(&s)),
+        [("subagent".into(), false, "recovered child answer".into())]
+    );
+    assert_eq!(
+        child_requests(&provider),
+        2,
+        "the existing child resumes once"
+    );
+    assert_eq!(subagents(&mut e, &s).children.len(), 1);
+}
+
 #[test]
 fn a_stop_after_the_child_finished_still_delivers_its_result_once() {
     let fx = Fixture::new();
