@@ -1,0 +1,33 @@
+{
+  "app": {
+    "version": "0.0.1",
+    "revision": "4b42079e88474450f47409f11cae1ea227270fa3",
+    "dirty": "false",
+    "binarySha256": "1364b99e4800405d3ff0cb645ae32dd51bd09a3dbc418a3321e0e860b179781d"
+  },
+  "archiveSha256": "9b848de294d06e9673829e5c92dbd59e7363f9b4fc0b4d3d04eb0de31739bbbe",
+  "archiveBytes": 76934157,
+  "installedBytes": 365116368,
+  "compatibility": {
+    "engine": "native",
+    "engineSelector": "--engine native",
+    "engineProtocol": 12,
+    "engineSchema": 10,
+    "desktopSchema": 8,
+    "nodeMinimum": null
+  },
+  "installedWorkflow": "passed",
+  "upgradeRollbackRestore": "passed",
+  "workspaceTests": {
+    "passed": 1446,
+    "failed": 0,
+    "ignored": 9
+  },
+  "clippy": "passed",
+  "format": "passed",
+  "noPiNodeInvocations": true,
+  "hostedLinuxRun": 38266456562,
+  "hostedMacOSRun": 38266459911,
+  "hostedStatusAtRecording": "in_progress_or_queued",
+  "dependencyAudit": "engine and core have no transitive GPUI/UI/app/pi-client dependency; workspace has no pi-client"
+}

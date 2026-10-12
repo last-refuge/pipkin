@@ -62,3 +62,16 @@ observes disconnect before restarting and locally passes. Full follow-up workspa
 These close the specific earlier hosted failures; they are not the final native-default artifact.
 The build-path retirement replaces both legacy Pi CI jobs with native-only checks, full workspace
 checks on Linux and actual native app/ZIP packaging on macOS. The final candidate needs its own run.
+
+## Native-only packaging candidate
+
+macOS [38265027473](https://github.com/last-refuge/pipkin/actions/runs/38265027473)
+on `cc8931c` **passed**, including native engine/worker/adapter tests, actual release build,
+target-specific notices, ad-hoc signed native app/ZIP, extracted signature and isolated
+plain diagnostic handshake. No Pi/Node invocation occurred. This is automated native
+packaging evidence, not Finder/Gatekeeper or interactive macOS acceptance.
+
+The final audit subsequently found and fixed offline saved-conversation reattachment in
+`4b42079`. Linux [38266456562](https://github.com/last-refuge/pipkin/actions/runs/38266456562)
+and macOS [38266459911](https://github.com/last-refuge/pipkin/actions/runs/38266459911)
+qualify that production fix. Do not substitute the prior green run for their outcomes.

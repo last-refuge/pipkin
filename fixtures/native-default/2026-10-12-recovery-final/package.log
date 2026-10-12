@@ -1,0 +1,12 @@
+verified 48 reqwest files, pinned archive identity and explicit patch
+verified 47 regress files, pinned archive identity and explicit patch
+   Compiling pipkin-core v0.0.1 (/tmp/pipkin-native-final-cc8931c/crates/pipkin-core)
+   Compiling pipkin-app v0.0.1 (/tmp/pipkin-native-final-cc8931c/crates/pipkin-app)
+   Compiling pipkin-engine v0.0.1 (/tmp/pipkin-native-final-cc8931c/crates/pipkin-engine)
+   Compiling pipkin-ui v0.0.1 (/tmp/pipkin-native-final-cc8931c/crates/pipkin-ui)
+    Finished `release` profile [optimized + debuginfo] target(s) in 27.43s
+build info: 0.0.1 (4b42079e88474450f47409f11cae1ea227270fa3, dirty: false), native engine 0.0.1 protocol 12 schema 10
+license inventory: {'rust': 613, 'npm': 0}; review required: 32
+runtime inventory: 1 native artifacts, 0 foreign-format/architecture review flags
+built /tmp/pipkin-native-final-cc8931c/dist/native/pipkin-native-0.0.1-x86_64.tar.zst
+installed tree: 365116368 bytes; archive: 76934157 bytes

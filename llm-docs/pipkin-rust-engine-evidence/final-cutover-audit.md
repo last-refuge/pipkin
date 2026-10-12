@@ -40,3 +40,17 @@ platforms and general 1.0 manual acceptance are separate from retiring the Pi de
 Completion remains unproven until the final binary and hosted checks above pass and their
 identities/outcomes are recorded. The production code delta after `cc8931c` is the offline
 read-only attachment fix plus native-engine display text; no new engine/schema changes.
+
+## Updated clean local candidate
+
+The recovery fix is pushed as **`4b42079e88474450f47409f11cae1ea227270fa3`**. Its clean
+source checkout produces a **dirty: false** archive; installed migration/coding/restart,
+actual upgrade and rollback against clean `cc8931c`, schema refusal, full archive restoration
+and continued coding all pass. Node/npm/Pi traps remain unused. Exact identities and logs:
+[`fixtures/native-default/2026-10-12-recovery-final`](../../fixtures/native-default/2026-10-12-recovery-final).
+Resolved Cargo metadata confirms no transitive GPUI/UI/app/Pi-client dependency in the engine
+or core and no Pi-client package anywhere in the resolved workspace.
+
+The `cc8931c` macOS native app/ZIP run passed. The updated candidate's hosted runs
+`38266456562` (Linux) and `38266459911` (macOS) remain queued/running at this recording.
+These are the remaining candidate checks; do not rebuild unchanged code while they run.

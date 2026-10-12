@@ -1,0 +1,64 @@
+ok   archive has the binary, marker, desktop entry, notices and inventories
+ok   archive has no Node, npm or Pi engine files
+ok   installed help is the current source documentation
+ok   native Pi source port includes the exact upstream MIT notice
+ok   native federation source port includes the exact Anthropic SDK notice
+ok   native model parser includes exact minimatch and brace-expansion notices
+ok   license inventory lists Rust packages only
+ok   runtime inventory names the built-in engine and no Node
+ok   build info identifies the binary and a native engine
+     | 
+     | PIPKIN  /  INSTALL
+     | 
+     | [OK] [###---------------]  16%  Linux, Git and native libraries
+     | [OK] [######------------]  33%  Built-in native engine: no Node runtime needed; no system changes
+     | [OK] [#########---------]  50%  Pipkin and built-in native engine verified
+     | [OK] [############------]  66%  Copied version to /tmp/pk-native-1yMkgy/prefix with spaces
+     | [OK] [###############---]  83%  Installed app and engine passed an offline handshake
+     | [OK] [##################] 100%  Desktop shortcut ready; existing app data preserved
+     | [NOTE] No graphical display is active in this shell; open Pipkin from a desktop session.
+     | 
+     | Open Pipkin from your app menu or run /tmp/pk-native-1yMkgy/prefix with spaces/bin/pipkin.
+     | Sign in, choose a project and select a model in the Pipkin GUI.
+     | No account credentials were requested or sent during installation.
+ok   installer used the native path
+ok   installed version is named as native
+ok   installed tree has no Node, npm or Pi engine files
+ok   desktop entry launches the native engine explicitly
+ok   desktop entry validates
+     | pipkin 0.0.1 (source 4b42079e88474450f47409f11cae1ea227270fa3, dirty: false, engine native 0.0.1, engine protocol 12, engine schema 10, schema 8)
+ok   installed --version names the native default with a bare PATH
+     | pipkin 0.0.1 (source 4b42079e88474450f47409f11cae1ea227270fa3, dirty: false, engine native 0.0.1, engine protocol 12, engine schema 10, schema 8)
+ok   installed --version --engine native names the engine
+     | Pipkin 0.0.1 (desktop schema 8) with --engine native
+     | app source: 4b42079e88474450f47409f11cae1ea227270fa3 (dirty: false)
+     | binary: /tmp/pk-native-1yMkgy/prefix with spaces/lib/pipkin/versions/0.0.1-native-1364b99e4800/usr/bin/pipkin
+     | engine: native (built into this binary) 0.0.1 (protocol 12, schema 10)
+     | engine runtime: `pipkin --engine-worker`; no Node, npm or Pi engine is used
+     | installed as: native candidate (/tmp/pk-native-1yMkgy/prefix with spaces/lib/pipkin/versions/0.0.1-native-1364b99e4800/usr/lib/pipkin/native-engine.json)
+     | data directory: ~/.local/share/pipkin
+     | database: none yet (created on first run)
+     | engine data directory: ~/.local/share/pipkin/engine (not created yet)
+     | engine config directory: ~/.config/pipkin/engine (not created yet)
+     | engine isolation: default per-user directories, separate from Pi's ~/.pi
+     | note: history written by the native engine is native-only; Pi does not read it.
+     | display: no WAYLAND_DISPLAY (a window cannot open here)
+     | engine probe: OK (hello: protocol 12, engine 0.0.1 revision 4b42079e88474450f47409f11cae1ea227270fa3, schema 10; sessions in a fresh profile: 0; stopped cleanly in 0.0s)
+ok   native --diagnose --probe exits 0 with a bare PATH
+ok   the probe shook hands and listed sessions
+ok   the report identifies the installed native candidate
+ok   native engine directories are separate from Pi's
+ok   the probe left no engine data in the real profile
+ok   with node/npm/pi shims first on PATH the probe still passes
+closed native data/config archive restores every file and permission; SQLite integrity passes
+installed native migration, coding, restart, complete archive/restore, retained output and durable replay passed
+ok   installed native migration, coding tools and restart work
+ok   nothing invoked node, npm, npx or pi
+ok   plain --diagnose --probe runs the native default without Pi or Node
+sizes (bytes):
+     | binary            358651312
+     | installed version 365116368
+     | archive           76934157
+ok   uninstall removes the links and versions
+ok   app data survives install and uninstall
+native package verified

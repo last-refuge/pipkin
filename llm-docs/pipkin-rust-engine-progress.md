@@ -11,7 +11,22 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — final audit found and fixed offline attachment
+## Current follow-up — recovery fix packaged and remotely backed up
+
+**`4b42079`** is pushed. Clean-source local package identity is dirty=false, and installed
+coding/migration/restart/upgrade/rollback/complete archive restoration all pass against the
+previous clean native-default candidate. Exact logs/identities:
+`fixtures/native-default/2026-10-12-recovery-final/`. Required checks: **1,446/0/9 ignored**,
+clean Clippy/fmt. Resolved metadata confirms engine/core remain GPUI-free, with no Pi client.
+
+macOS native-only app/ZIP run **38265027473** on `cc8931c` passed. Linux **38265023304**
+is finishing cache/evidence retention. The final recovery-fix jobs are **38266456562** (Linux)
+and **38266459911** (macOS); inspect these exact jobs until terminal. Do not restart unchanged
+builds. Once green, record outcomes, finalize the bounded conversion qualification ledger/audit,
+push the evidence, and complete the goal. Keep broader manual/platform/signing gates explicit.
+No new soak, provider expansion or unrelated feature work is required.
+
+## Prior follow-up — final audit found and fixed offline attachment
 
 After `13720a4`, the bounded ledger audit added seven direct assertions: runtime provider
 settings/cache environment across restart, compaction disabled/enabled, child failure output,
