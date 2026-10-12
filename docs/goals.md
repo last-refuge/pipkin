@@ -115,10 +115,41 @@ usage. The engine never invents an allowance.
 linked tasks, the plan revision) is taken at each continued turn; `goals.stallTurns`
 unchanged continued turns (default 3) pause the goal with an actionable reason.
 
+## Independent audit (GOAL-3)
+
+With `/goal audit on` (or `GoalAction::SetAudit`), an accepted completion proposal does not
+complete the goal. The goal enters **verifying** and the engine launches an **auditor**
+subagent: a child with the built-in `auditor` profile, which can only `read`, `list_files`,
+`search_files` and `plan_read`, reaches no network, inherits no goal and cannot delegate.
+Its task carries the objective, the criteria with the executor's evidence (marked
+engine-accepted, engine-rejected or judgment), the executor's summary, and the instruction
+to check every criterion itself and end with a JSON verdict.
+
+| Auditor verdict | Goal |
+| --- | --- |
+| `approved` | completed, "Audit approved (round N); the completion claim was independently checked" |
+| `changes_requested`, rounds left | active again; the next turn's prompt carries the findings |
+| `changes_requested`, limit reached (default 2 rounds) | paused for review |
+| `inconclusive`, a reply without a verdict object, or a provider failure | paused for review; never approval |
+| approval after the claim's files changed during the audit | paused as stale; propose again |
+
+A fingerprint of the file evidence and the plan revision is taken when the audit starts and
+compared when the verdict arrives. Stop during an audit stops the auditor child and pauses
+the goal; an engine restart pauses it with the pending audit, which is stopped when the
+person resumes. The auditor's tokens count against the goal's allowance once (the child's
+usage is part of the conversation tree). `/goal skip-audit` completes a goal that is waiting
+on an audit and records the verdict as `skipped` with the reason "Completed without audit:
+skipped by the person (unreviewed)"; a stopped audit is not skippable.
+
+Verification that needs executing something (tests, builds) is outside the auditor's
+tools by design; it marks such criteria inconclusive rather than guessing. Explicit
+verification jobs arrive with JOB-1.
+
 ## Boundaries
 
-- Completion is still unaudited: GOAL-3 adds the independent reviewer. The state label says
-  "Reported met".
+- The audit is a model's judgment over the engine's evidence checks; it is recorded as
+  such, and the state label still says what happened ("Audit approved" versus "Reported
+  met").
 - Cost limits are not supported, only turns and tokens; provider-reported usage can arrive
   late, which is why limits are enforced before the next call rather than as hard stops.
 - A subagent cannot own a goal; context inheritance never carries one.

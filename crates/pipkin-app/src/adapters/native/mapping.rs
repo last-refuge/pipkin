@@ -416,6 +416,8 @@ pub fn goal(view: &GoalView) -> Goal {
         usage_tokens: view.usage_tokens,
         max_turns: view.limits.max_turns,
         max_tokens: view.limits.max_tokens,
+        audit_required: view.audit.required,
+        audit_verdict: view.audit.result.as_ref().map(|r| r.verdict.clone()),
     }
 }
 

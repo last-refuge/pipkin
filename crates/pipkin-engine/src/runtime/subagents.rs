@@ -259,6 +259,7 @@ impl Shared {
         self.tools
             .iter()
             .map(|t| t.spec().name)
+            .chain(["list_files".to_owned(), "search_files".to_owned()])
             .chain(self.plan_tools().iter().map(|t| t.spec().name))
             .chain(self.web_tools().iter().map(|t| t.spec().name))
             .filter(|n| !profiles::NEVER_FOR_CHILDREN.contains(&n.as_str()))
@@ -275,7 +276,7 @@ impl Shared {
             .and_then(|l| LaunchRecord::from_json(&l))
     }
 
-    async fn run_subagent(
+    pub(super) async fn run_subagent(
         self: &Arc<Self>,
         parent: &str,
         call_id: &str,

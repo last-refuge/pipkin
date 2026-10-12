@@ -190,6 +190,8 @@ fn the_model_creates_tasks_and_the_next_request_carries_the_plan_section() {
             "write",
             "edit",
             "bash",
+            "list_files",
+            "search_files",
             "subagent",
             "ask_user_question",
             "get_goal",

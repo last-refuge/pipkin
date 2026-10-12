@@ -194,13 +194,12 @@ fn structured_continue_and_completion_with_checked_evidence() {
     assert_eq!(goal.id, 1);
     // The criteria were set after the goal had already scheduled turn 1; they appear in
     // the prompt from the next turn on.
-    assert!(
+    e.until("a prompt listed the criteria", |_| {
         provider
             .requests()
             .iter()
-            .any(|r| user_text(r).contains("Completion criteria:\n- #1 [")),
-        "no prompt listed the criteria"
-    );
+            .any(|r| user_text(r).contains("Completion criteria:\n- #1 ["))
+    });
     // Turn 2: the first proposal names a missing tool call and is rejected; the goal stays
     // active. Patch the second proposal to cite the real read call before it runs.
     let deadline = std::time::Instant::now() + Duration::from_secs(20);

@@ -1097,6 +1097,13 @@ impl Workspace {
                                     goal.usage_tokens, max
                                 ));
                             }
+                            if goal.audit_required {
+                                detail.push_str(" · audit required");
+                            }
+                            if let Some(verdict) = &goal.audit_verdict {
+                                detail
+                                    .push_str(&format!(" · audit: {}", verdict.replace('_', " ")));
+                            }
                         }
                         let can_pause = goal.paused.is_none();
                         let can_resume = match goal.state {

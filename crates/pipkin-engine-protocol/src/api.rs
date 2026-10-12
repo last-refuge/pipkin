@@ -535,7 +535,7 @@ pub enum SessionChange {
     },
     /// The current goal changed (set, scheduled, paused, completed, archived).
     GoalChanged {
-        goal: Option<GoalView>,
+        goal: Option<Box<GoalView>>,
     },
     /// A child session's history changed (the selected child's viewer re-reads its page).
     ChildChanged {

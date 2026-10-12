@@ -432,3 +432,268 @@ mod structured_tests {
         assert_ne!(a, progress_signature(&c, Some("n"), &[1], 2));
     }
 }
+
+// ---------------------------------------------------------------- GOAL-3: completion audit
+
+use pipkin_engine_protocol::{AuditFinding, GoalView};
+
+pub const DEFAULT_AUDIT_ROUNDS: u32 = 2;
+
+/// The parent call id under which an audit round's child session is created.
+pub fn audit_call_id(goal: u64, round: u32) -> String {
+    format!("audit:{goal}:{round}")
+}
+pub const REASON_AUDIT_RUNNING: &str =
+    "Verifying: an independent auditor is checking the completion claim.";
+pub const REASON_AUDIT_STOPPED: &str =
+    "Paused: the audit was stopped; resume and propose completion again.";
+pub const REASON_AUDIT_RESTART: &str =
+    "Paused after an engine restart during an audit; resume and propose completion again.";
+pub const REASON_AUDIT_STALE: &str = "Paused: files the completion claim stood on changed during the audit; propose completion again.";
+pub const REASON_AUDIT_SKIPPED: &str =
+    "Completed without audit: skipped by the person (unreviewed).";
+
+/// The auditor's structured verdict.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuditVerdict {
+    /// `approved`, `changes_requested` or `inconclusive`.
+    pub verdict: String,
+    pub findings: Vec<AuditFinding>,
+}
+
+/// Parse the auditor's reply: the last JSON object in the text with a `verdict` field.
+/// Anything else is `None`, which the runner treats as inconclusive, never as approval.
+pub fn parse_audit_verdict(text: &str) -> Option<AuditVerdict> {
+    let mut end = text.len();
+    while let Some(close) = text[..end].rfind('}') {
+        // Walk back to the matching open brace.
+        let mut depth = 0i32;
+        let mut start = None;
+        for (i, ch) in text[..=close].char_indices().rev() {
+            match ch {
+                '}' => depth += 1,
+                '{' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        start = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(start) = start else { break };
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text[start..=close])
+            && let Some(verdict) = value.get("verdict").and_then(serde_json::Value::as_str)
+        {
+            let verdict = match verdict.trim() {
+                "approved" => "approved",
+                "changes_requested" | "changes-requested" | "changes requested" => {
+                    "changes_requested"
+                }
+                "inconclusive" => "inconclusive",
+                _ => return None,
+            };
+            let findings = value
+                .get("findings")
+                .and_then(serde_json::Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|f| {
+                            Some(AuditFinding {
+                                criterion: f.get("criterion")?.as_u64()?,
+                                ok: f
+                                    .get("ok")
+                                    .and_then(serde_json::Value::as_bool)
+                                    .unwrap_or(false),
+                                note: f
+                                    .get("note")
+                                    .and_then(serde_json::Value::as_str)
+                                    .map(|n| n.chars().take(MAX_GOAL_TEXT_CHARS).collect()),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            return Some(AuditVerdict {
+                verdict: verdict.to_owned(),
+                findings,
+            });
+        }
+        end = start;
+    }
+    None
+}
+
+/// The auditor's task: the claim and everything it must check, as text.
+pub fn audit_prompt(goal: &GoalView, round: u32, summary: &str) -> String {
+    let mut out = format!(
+        "Audit round {round}: another agent claims this goal is complete. Check the claim yourself; do not take its word.\n\nObjective: {}\n\nExecutor's summary of what was done: {summary}\n\nCriteria and the evidence the executor cited:",
+        goal.objective
+    );
+    for c in &goal.criteria {
+        out.push_str(&format!("\n- #{} [{}] {}", c.id, c.status.as_str(), c.text));
+        for e in &c.evidence {
+            let mark = match (e.accepted, e.judgment) {
+                (Some(true), true) => "judgment",
+                (Some(true), false) => "engine-accepted",
+                (Some(false), _) => "engine-rejected",
+                (None, _) => "unchecked",
+            };
+            out.push_str(&format!(
+                "\n    · {mark} {} {}{}",
+                e.kind,
+                e.reference,
+                e.note
+                    .as_deref()
+                    .map(|n| format!(" — {n}"))
+                    .unwrap_or_default()
+            ));
+        }
+    }
+    if let Some(note) = &goal.note {
+        out.push_str(&format!("\n\nExecutor's last note: {note}"));
+    }
+    out.push_str("\n\nUse read, list_files and search_files to verify each criterion in the workspace. Report one finding per criterion.");
+    out
+}
+
+/// A fingerprint of what the claim stands on: every accepted file evidence's current
+/// content and the plan revision. If it changes while the auditor works, the verdict is stale.
+pub fn claim_fingerprint(goal: &GoalView, cwd: &std::path::Path, plan_revision: u64) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    plan_revision.hash(&mut h);
+    goal.revision.hash(&mut h);
+    for c in &goal.criteria {
+        for e in &c.evidence {
+            if e.kind == "file" {
+                let path = std::path::Path::new(e.reference.trim());
+                let full = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    cwd.join(path)
+                };
+                match std::fs::read(&full) {
+                    Ok(bytes) => crate::web::sha256_hex(&bytes).hash(&mut h),
+                    Err(_) => "missing".hash(&mut h),
+                }
+            }
+        }
+    }
+    format!("{:016x}", h.finish())
+}
+
+/// The findings of the last audit, for the next turn's prompt.
+pub fn findings_section(goal: &GoalView) -> Option<String> {
+    let result = goal.audit.result.as_ref()?;
+    if result.verdict != "changes_requested" {
+        return None;
+    }
+    let mut out = format!(
+        "\n\nAn independent audit (round {}) did not approve your last completion proposal. Address these findings before proposing again:",
+        result.round
+    );
+    for f in &result.findings {
+        out.push_str(&format!(
+            "\n- criterion #{}: {}{}",
+            f.criterion,
+            if f.ok { "ok" } else { "not met" },
+            f.note
+                .as_deref()
+                .map(|n| format!(" — {n}"))
+                .unwrap_or_default()
+        ));
+    }
+    if let Some(summary) = &result.summary {
+        out.push_str(&format!("\nAuditor's summary: {summary}"));
+    }
+    Some(out)
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn verdicts_are_parsed_from_the_last_json_object_and_never_invented() {
+        let text = "I checked things.\n{\"verdict\": \"approved\", \"findings\": [{\"criterion\": 1, \"ok\": true, \"note\": \"tests pass\"}]}";
+        let v = parse_audit_verdict(text).unwrap();
+        assert_eq!(v.verdict, "approved");
+        assert_eq!(v.findings.len(), 1);
+        assert!(v.findings[0].ok);
+        let v = parse_audit_verdict("{\"verdict\": \"approved\"} then {\"verdict\": \"changes requested\", \"findings\": [{\"criterion\": 2, \"ok\": false}]}").unwrap();
+        assert_eq!(v.verdict, "changes_requested");
+        assert!(!v.findings[0].ok);
+        assert_eq!(parse_audit_verdict("looks good to me"), None);
+        assert_eq!(parse_audit_verdict("{\"verdict\": \"yes\"}"), None);
+        assert_eq!(parse_audit_verdict("{\"verdict\": \"approved\""), None);
+        assert_eq!(parse_audit_verdict("{\"findings\": []}"), None);
+        let v =
+            parse_audit_verdict("{\"verdict\": \"inconclusive\", \"findings\": \"n/a\"}").unwrap();
+        assert!(v.findings.is_empty());
+    }
+
+    #[test]
+    fn fingerprints_follow_file_evidence_and_the_plan_revision() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "one").unwrap();
+        let mut goal = GoalView {
+            id: 1,
+            objective: "o".into(),
+            revision: 1,
+            state: pipkin_engine_protocol::GoalState::Active,
+            reason: None,
+            turns: 0,
+            epoch: 0,
+            provenance: "user".into(),
+            last_request: None,
+            created_at_ms: 0,
+            updated_at_ms: 0,
+            criteria: vec![GoalCriterion {
+                id: 1,
+                text: "c".into(),
+                status: CriterionStatus::Met,
+                evidence: vec![GoalEvidence {
+                    kind: "file".into(),
+                    reference: "a.txt".into(),
+                    note: None,
+                    sha256: None,
+                    accepted: Some(true),
+                    verdict: None,
+                    judgment: false,
+                }],
+                judged_at_revision: 1,
+            }],
+            limits: Default::default(),
+            usage_tokens: 0,
+            stall_turns: 0,
+            note: None,
+            linked_tasks: vec![],
+            decision: None,
+            audit: Default::default(),
+        };
+        let a = claim_fingerprint(&goal, dir.path(), 1);
+        assert_eq!(a, claim_fingerprint(&goal, dir.path(), 1));
+        assert_ne!(a, claim_fingerprint(&goal, dir.path(), 2));
+        std::fs::write(dir.path().join("a.txt"), "two").unwrap();
+        assert_ne!(a, claim_fingerprint(&goal, dir.path(), 1));
+        goal.audit.result = Some(pipkin_engine_protocol::GoalAuditResult {
+            round: 1,
+            verdict: "changes_requested".into(),
+            findings: vec![AuditFinding {
+                criterion: 1,
+                ok: false,
+                note: Some("no".into()),
+            }],
+            summary: Some("not yet".into()),
+            fingerprint: None,
+            child: None,
+        });
+        let section = findings_section(&goal).unwrap();
+        assert!(section.contains("criterion #1: not met — no"));
+        assert!(section.contains("Auditor's summary: not yet"));
+        assert!(audit_prompt(&goal, 1, "did it").contains("engine-accepted file a.txt"));
+    }
+}

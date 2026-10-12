@@ -266,6 +266,8 @@ fn native_goal(text: &str, state: GoalState, reason: Option<&str>) -> Goal {
         usage_tokens: 0,
         max_turns: None,
         max_tokens: None,
+        audit_required: false,
+        audit_verdict: None,
     }
 }
 

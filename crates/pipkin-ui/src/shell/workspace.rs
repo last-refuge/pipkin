@@ -559,6 +559,9 @@ impl Workspace {
                 "clear" => Command::ClearGoal,
                 "pause" => Command::PauseGoal,
                 "resume" => Command::ResumeGoal,
+                "audit on" => Command::SetGoalAudit(true),
+                "audit off" => Command::SetGoalAudit(false),
+                "skip-audit" => Command::SkipGoalAudit,
                 _ if value.starts_with("turns ") || value == "turns" => {
                     let n = value.trim_start_matches("turns").trim();
                     match n.parse::<u64>() {

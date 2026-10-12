@@ -24,9 +24,27 @@ use crate::config::Settings;
 pub const PROFILE_VERSION: u32 = 1;
 pub const DEFAULT_PROFILE: &str = "worker";
 /// Tools a reviewer may use: reading the workspace and retained material only.
-pub const REVIEWER_TOOLS: &[&str] = &["read", "plan_read", "web_read"];
+pub const REVIEWER_TOOLS: &[&str] = &[
+    "read",
+    "list_files",
+    "search_files",
+    "plan_read",
+    "web_read",
+];
 /// Tools a scout may use: reads plus the web.
-pub const SCOUT_TOOLS: &[&str] = &["read", "plan_read", "web_search", "web_fetch", "web_read"];
+pub const SCOUT_TOOLS: &[&str] = &[
+    "read",
+    "list_files",
+    "search_files",
+    "plan_read",
+    "web_search",
+    "web_fetch",
+    "web_read",
+];
+/// Tools the goal auditor may use: inspection only, no network.
+pub const AUDITOR_TOOLS: &[&str] = &["read", "list_files", "search_files", "plan_read"];
+/// The auditor must end its reply with this JSON object (and nothing after it).
+pub const AUDITOR_VERDICT_HINT: &str = r#"{"verdict": "approved" | "changes_requested" | "inconclusive", "findings": [{"criterion": <id>, "ok": true | false, "note": "<what you checked and found>"}]}"#;
 /// Tools that never reach a child regardless of profile.
 pub const NEVER_FOR_CHILDREN: &[&str] = &["subagent", "ask_user_question"];
 /// Bounds of an inherited context excerpt.
@@ -138,6 +156,18 @@ pub fn builtin_profiles() -> Vec<Profile> {
             model: None,
             thinking: None,
             tools: ToolPolicy::Only(strings(REVIEWER_TOOLS)),
+            context: ContextMode::Fresh,
+            builtin: true,
+        },
+        Profile {
+            name: "auditor".into(),
+            description: "Independently checks a completion claim against the goal's criteria and the workspace; reads only, reaches no network, and ends with a JSON verdict.".into(),
+            instructions: Some(format!(
+                "You are auditing another agent's claim that a goal is complete. You did not do the work and must not trust the claim: check each criterion yourself with the read, list_files and search_files tools, citing what you looked at. You cannot modify files, run commands or fetch pages; if a criterion can only be verified by running something, say so and mark it inconclusive rather than guessing. End your reply with exactly one JSON object on its own as the final text, in this shape and nothing after it: {AUDITOR_VERDICT_HINT}"
+            )),
+            model: None,
+            thinking: None,
+            tools: ToolPolicy::Only(strings(AUDITOR_TOOLS)),
             context: ContextMode::Fresh,
             builtin: true,
         },

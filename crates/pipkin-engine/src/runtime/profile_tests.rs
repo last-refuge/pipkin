@@ -173,7 +173,16 @@ fn a_reviewer_is_offered_only_reads_and_its_write_is_refused() {
     assert_eq!(e.settled("r1"), RunOutcome::Completed);
     let child = child_requests(&provider);
     assert!(!child.is_empty());
-    assert_eq!(tool_names(&child[0]), ["read", "plan_read", "web_read"]);
+    assert_eq!(
+        tool_names(&child[0]),
+        [
+            "read",
+            "list_files",
+            "search_files",
+            "plan_read",
+            "web_read"
+        ]
+    );
     let resolved = child[0].resolve_systems(false);
     assert!(
         resolved
@@ -229,7 +238,15 @@ fn a_scout_reaches_the_web_but_not_the_workspace() {
     let child = child_requests(&provider);
     assert_eq!(
         tool_names(&child[0]),
-        ["read", "plan_read", "web_search", "web_fetch", "web_read"]
+        [
+            "read",
+            "list_files",
+            "search_files",
+            "plan_read",
+            "web_search",
+            "web_fetch",
+            "web_read"
+        ]
     );
     let (_, text) = parent_result(&e.snapshot(&s));
     assert!(text.contains("Tool bash is not available"), "{text}");
@@ -462,7 +479,13 @@ fn an_edited_profile_does_not_change_a_recovering_child() {
         });
         assert_eq!(
             tool_names(&child_requests(&provider)[0]),
-            ["read", "plan_read", "web_read"]
+            [
+                "read",
+                "list_files",
+                "search_files",
+                "plan_read",
+                "web_read"
+            ]
         );
         e.handle.shutdown(Duration::from_millis(200));
     }
@@ -498,7 +521,13 @@ fn an_edited_profile_does_not_change_a_recovering_child() {
     for req in &resumed {
         assert_eq!(
             tool_names(req),
-            ["read", "plan_read", "web_read"],
+            [
+                "read",
+                "list_files",
+                "search_files",
+                "plan_read",
+                "web_read"
+            ],
             "frozen policy"
         );
     }

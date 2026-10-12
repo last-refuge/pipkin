@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 15;
+pub const SCHEMA_VERSION: u32 = 16;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -374,8 +374,47 @@ ALTER TABLE goals ADD COLUMN note TEXT;
 ALTER TABLE goals ADD COLUMN linked_tasks TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE goals ADD COLUMN decision TEXT;
 "#;
+// Version 16 adds the `verifying` goal state and the audit record. SQLite cannot change a
+// CHECK constraint in place, so the table is rebuilt and its rows copied.
+const V16: &str = r#"
+CREATE TABLE goals_v16 (
+    session TEXT NOT NULL REFERENCES sessions(id),
+    id INTEGER NOT NULL,
+    objective TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    state TEXT NOT NULL CHECK (state IN ('active', 'verifying', 'paused', 'blocked', 'completed', 'failed', 'cancelled')),
+    reason TEXT,
+    epoch INTEGER NOT NULL DEFAULT 0,
+    turns INTEGER NOT NULL DEFAULT 0,
+    last_request TEXT,
+    provenance TEXT NOT NULL,
+    archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    criteria TEXT NOT NULL DEFAULT '[]',
+    limits TEXT NOT NULL DEFAULT '{}',
+    usage_tokens INTEGER NOT NULL DEFAULT 0,
+    turn_tokens_start INTEGER,
+    stall INTEGER NOT NULL DEFAULT 0,
+    signature TEXT,
+    note TEXT,
+    linked_tasks TEXT NOT NULL DEFAULT '[]',
+    decision TEXT,
+    audit TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (session, id)
+) STRICT;
+INSERT INTO goals_v16(session, id, objective, revision, state, reason, epoch, turns, last_request,
+    provenance, archived, created_at, updated_at, criteria, limits, usage_tokens, turn_tokens_start,
+    stall, signature, note, linked_tasks, decision)
+SELECT session, id, objective, revision, state, reason, epoch, turns, last_request, provenance,
+    archived, created_at, updated_at, criteria, limits, usage_tokens, turn_tokens_start, stall,
+    signature, note, linked_tasks, decision FROM goals;
+DROP TABLE goals;
+ALTER TABLE goals_v16 RENAME TO goals;
+CREATE UNIQUE INDEX goals_current ON goals(session) WHERE archived = 0;
+"#;
 const MIGRATIONS: &[&str] = &[
-    V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15,
+    V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16,
 ];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {

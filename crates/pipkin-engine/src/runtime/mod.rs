@@ -143,6 +143,9 @@ impl Shared {
     /// requests.
     pub fn tools_for(&self, row: &SessionRow) -> Vec<Arc<dyn Tool>> {
         let mut tools = self.tools.clone();
+        // Bounded read-only inspection, for every session.
+        tools.push(Arc::new(crate::tools::inspect::ListFilesTool));
+        tools.push(Arc::new(crate::tools::inspect::SearchFilesTool));
         if row.parent.is_none() {
             if row.subagents_enabled {
                 tools.push(self.subagent_tool());
@@ -1158,6 +1161,8 @@ mod fault_tests;
 mod generation_reference_tests;
 #[cfg(test)]
 mod goal2_tests;
+#[cfg(test)]
+mod goal3_tests;
 #[cfg(test)]
 mod goal_tests;
 #[cfg(test)]

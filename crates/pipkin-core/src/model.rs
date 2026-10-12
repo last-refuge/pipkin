@@ -810,6 +810,7 @@ impl PlanState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GoalState {
     Active,
+    Verifying,
     Paused,
     Blocked,
     Completed,
@@ -821,6 +822,7 @@ impl GoalState {
     pub fn parse(s: &str) -> Option<GoalState> {
         Some(match s {
             "active" => GoalState::Active,
+            "verifying" => GoalState::Verifying,
             "paused" => GoalState::Paused,
             "blocked" => GoalState::Blocked,
             "completed" => GoalState::Completed,
@@ -833,6 +835,7 @@ impl GoalState {
     pub fn label(self) -> &'static str {
         match self {
             GoalState::Active => "Working",
+            GoalState::Verifying => "Verifying",
             GoalState::Paused => "Paused",
             GoalState::Blocked => "Blocked",
             GoalState::Completed => "Reported met",
@@ -857,4 +860,6 @@ pub enum GoalControlAction {
         max_tokens: Option<u64>,
     },
     SetCriteria(Vec<String>),
+    SetAudit(bool),
+    SkipAudit,
 }

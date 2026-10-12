@@ -1512,6 +1512,13 @@ impl Live {
                     GoalControlAction::SetCriteria(criteria) => {
                         pipkin_engine_protocol::GoalAction::SetCriteria { criteria }
                     }
+                    GoalControlAction::SetAudit(required) => {
+                        pipkin_engine_protocol::GoalAction::SetAudit {
+                            required,
+                            max_rounds: None,
+                        }
+                    }
+                    GoalControlAction::SkipAudit => pipkin_engine_protocol::GoalAction::SkipAudit,
                 };
                 if let Err(error) = self.call(Call::GoalControl { session, action }) {
                     worker.emit(

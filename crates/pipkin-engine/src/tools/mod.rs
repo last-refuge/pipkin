@@ -20,6 +20,7 @@ pub mod diff;
 pub mod edit;
 mod files;
 pub mod goal;
+pub mod inspect;
 pub mod path;
 pub mod plan;
 pub mod read;

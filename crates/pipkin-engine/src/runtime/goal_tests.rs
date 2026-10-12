@@ -88,7 +88,7 @@ fn goal_changes(events: &[Event], s: &str) -> Vec<Option<GoalView>> {
                 session,
                 change: SessionChange::GoalChanged { goal },
                 ..
-            } if session == s => Some(goal.clone()),
+            } if session == s => Some(goal.clone().map(|g| *g)),
             _ => None,
         })
         .collect()

@@ -180,7 +180,7 @@ impl Mirror {
                 Touched::Plan
             }
             SessionChange::GoalChanged { goal } => {
-                self.goal = goal;
+                self.goal = goal.map(|g| *g);
                 Touched::Goal
             }
             SessionChange::SummaryChanged { .. } => Touched::Nothing,

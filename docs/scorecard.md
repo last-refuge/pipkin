@@ -1,5 +1,26 @@
 # Scorecard
 
+## Independent goal audit, GOAL-3 (2026-10-12)
+
+An audit-required goal sends accepted completion proposals to a read-only `auditor`
+subagent whose JSON verdict completes, repairs (bounded) or pauses the goal
+([goals.md](goals.md)); schema 16 (goals table rebuilt for the `verifying` state), protocol
+18, plus bounded `list_files`/`search_files` inspection tools for every session.
+
+- **Measured (automated).** Engine tests: an approved audit completes the goal through a
+  child launched with the auditor profile and only inspection tools, with the verifying
+  state published and the audit's tokens counted; requested changes feed the next turn's
+  prompt, a second refusal pauses at the round limit, and skipping completes as unreviewed;
+  an inconclusive or malformed verdict pauses and never approves; a file changed during
+  the audit makes approval stale; Stop stops the auditor child and pauses, a late approval
+  changes nothing, and a restart pauses with the pending audit stopped on resume before a
+  fresh round approves. Pure tests cover verdict parsing (last JSON object only, unknown
+  verdicts rejected), fingerprints and the findings section; tool tests cover listing and
+  search bounds, ignores, binaries and path escapes. The repository gate passed.
+- **Observed.** Nothing native.
+- **Unverified.** A live model as auditor; audits on real repositories; the strip's audit
+  text and `/goal audit` commands in a window. Not a release qualification.
+
 ## Structured goal progress, GOAL-2 (2026-10-12)
 
 Goals carry criteria with engine-checked evidence, structured decisions from three goal

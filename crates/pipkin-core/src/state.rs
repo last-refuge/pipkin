@@ -195,6 +195,10 @@ pub struct Goal {
     pub usage_tokens: u64,
     pub max_turns: Option<u64>,
     pub max_tokens: Option<u64>,
+    /// Engine-owned goals: an independent audit is required before completion, and the
+    /// latest audit's verdict (`pending`, `approved`, `changes_requested`, …).
+    pub audit_required: bool,
+    pub audit_verdict: Option<String>,
 }
 
 pub struct AppState {
@@ -1233,6 +1237,8 @@ impl AppState {
                             usage_tokens: 0,
                             max_turns: None,
                             max_tokens: None,
+                            audit_required: false,
+                            audit_verdict: None,
                         });
                         out.effects.push(Effect::SaveGoal {
                             conversation: id,
@@ -1306,6 +1312,32 @@ impl AppState {
                                 max_turns,
                                 max_tokens,
                             },
+                        }));
+                }
+            }
+            Command::SetGoalAudit(required) => {
+                if let Some(id) = self.selected
+                    && let Some(c) = self.conversation(id).filter(|c| c.goal_native)
+                    && c.goal.is_some()
+                {
+                    out.effects
+                        .push(Effect::Backend(BackendRequest::GoalControl {
+                            conversation: id,
+                            generation: c.generation,
+                            action: GoalControlAction::SetAudit(required),
+                        }));
+                }
+            }
+            Command::SkipGoalAudit => {
+                if let Some(id) = self.selected
+                    && let Some(c) = self.conversation(id).filter(|c| c.goal_native)
+                    && c.goal.is_some()
+                {
+                    out.effects
+                        .push(Effect::Backend(BackendRequest::GoalControl {
+                            conversation: id,
+                            generation: c.generation,
+                            action: GoalControlAction::SkipAudit,
                         }));
                 }
             }
@@ -3016,6 +3048,8 @@ impl AppState {
                     usage_tokens: 0,
                     max_turns: None,
                     max_tokens: None,
+                    audit_required: false,
+                    audit_verdict: None,
                 });
         }
     }

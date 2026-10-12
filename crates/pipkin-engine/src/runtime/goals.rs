@@ -26,8 +26,10 @@ use pipkin_engine_protocol::*;
 use super::Shared;
 use crate::goals;
 use crate::store::{RequestState, Store};
+use crate::tools::SubagentLaunch;
 use crate::tools::goal::{CriterionClaim, GoalProposal, GoalUpdateRequest, parse_claim_status};
 use crate::util::now_ms;
+use tokio_util::sync::CancellationToken;
 
 impl Shared {
     pub fn goal_view(&self, session: &str) -> Result<Option<GoalView>, ProtoError> {
@@ -60,7 +62,12 @@ impl Shared {
         self.commit(&sess, |tx| {
             f(tx)?;
             let goal = Store::goal_current(tx, session)?;
-            Ok((goal.clone(), vec![SessionChange::GoalChanged { goal }]))
+            Ok((
+                goal.clone(),
+                vec![SessionChange::GoalChanged {
+                    goal: goal.map(Box::new),
+                }],
+            ))
         })
     }
 
@@ -139,6 +146,24 @@ impl Shared {
                 }
             }
             GoalAction::Resume => {
+                if current
+                    .audit
+                    .result
+                    .as_ref()
+                    .is_some_and(|r| r.verdict == "pending")
+                {
+                    let _ = self.abort_child(
+                        session,
+                        &goals::audit_call_id(current.id, current.audit.rounds),
+                    );
+                    let mut view = current.clone();
+                    if let Some(r) = &mut view.audit.result {
+                        r.verdict = "stopped".into();
+                    }
+                    self.goal_commit(session, |tx| {
+                        Store::goal_write_progress(tx, session, &view, now)
+                    })?;
+                }
                 if !current.state.resumable() {
                     return Err(ProtoError::new(
                         ErrorCode::Invalid,
@@ -183,6 +208,73 @@ impl Shared {
                 };
                 self.goal_commit(session, |tx| {
                     Store::goal_write_progress(tx, session, &view, now)
+                })?;
+            }
+            GoalAction::SetAudit {
+                required,
+                max_rounds,
+            } => {
+                let mut view = current.clone();
+                view.audit.required = required;
+                view.audit.max_rounds =
+                    max_rounds
+                        .filter(|n| *n > 0)
+                        .unwrap_or(if view.audit.max_rounds == 0 {
+                            goals::DEFAULT_AUDIT_ROUNDS
+                        } else {
+                            view.audit.max_rounds
+                        });
+                self.goal_commit(session, |tx| {
+                    Store::goal_write_progress(tx, session, &view, now)
+                })?;
+            }
+            GoalAction::SkipAudit => {
+                // Only a goal waiting on an audit (running, or paused on its outcome) can be
+                // completed this way, and the record says so.
+                let waiting = current.state == GoalState::Verifying
+                    || (current.state == GoalState::Paused
+                        && current.audit.result.as_ref().is_some_and(|r| {
+                            matches!(
+                                r.verdict.as_str(),
+                                "changes_requested" | "inconclusive" | "stale" | "failed"
+                            )
+                        }));
+                if !waiting {
+                    return Err(ProtoError::new(
+                        ErrorCode::Invalid,
+                        "no audit to skip: the goal is not waiting on one",
+                    ));
+                }
+                if current.state == GoalState::Verifying {
+                    let _ = self.abort_child(
+                        session,
+                        &goals::audit_call_id(current.id, current.audit.rounds),
+                    );
+                }
+                let mut view = current.clone();
+                match &mut view.audit.result {
+                    Some(result) => result.verdict = "skipped".into(),
+                    None => {
+                        view.audit.result = Some(GoalAuditResult {
+                            round: view.audit.rounds,
+                            verdict: "skipped".into(),
+                            findings: vec![],
+                            summary: None,
+                            fingerprint: None,
+                            child: None,
+                        })
+                    }
+                }
+                self.goal_commit(session, |tx| {
+                    Store::goal_write_progress(tx, session, &view, now)?;
+                    Store::goal_set_state(
+                        tx,
+                        session,
+                        current.id,
+                        GoalState::Completed,
+                        Some(goals::REASON_AUDIT_SKIPPED),
+                        now,
+                    )
                 })?;
             }
             GoalAction::SetCriteria { criteria } => {
@@ -488,6 +580,63 @@ impl Shared {
                 kind: "met".into(),
                 reason: None,
             });
+            if view.audit.required {
+                // An independent audit decides; the executor's turn ends with the claim
+                // recorded and the goal verifying.
+                let round = view.audit.rounds + 1;
+                let plan_revision = self
+                    .store
+                    .read(|c| Store::plan_state(c, session))
+                    .map(|p| p.revision)
+                    .unwrap_or(0);
+                let fingerprint = goals::claim_fingerprint(&view, &cwd, plan_revision);
+                view.audit.rounds = round;
+                if view.audit.max_rounds == 0 {
+                    view.audit.max_rounds = goals::DEFAULT_AUDIT_ROUNDS;
+                }
+                view.audit.result = Some(GoalAuditResult {
+                    round,
+                    verdict: "pending".into(),
+                    findings: vec![],
+                    summary: None,
+                    fingerprint: Some(fingerprint.clone()),
+                    child: None,
+                });
+                let summary_text = view.note.clone().unwrap_or_default();
+                let written = self.goal_commit(session, |tx| {
+                    Store::goal_write_progress(tx, session, &view, now)?;
+                    Store::goal_set_state(
+                        tx,
+                        session,
+                        id,
+                        GoalState::Verifying,
+                        Some(goals::REASON_AUDIT_RUNNING),
+                        now,
+                    )
+                });
+                return match written {
+                    Ok(Some(goal)) => {
+                        if let Some(shared) = self.me.upgrade() {
+                            let session = session.to_owned();
+                            let audited = goal.clone();
+                            self.spawn(async move {
+                                shared
+                                    .run_goal_audit(
+                                        &session,
+                                        audited,
+                                        round,
+                                        summary_text,
+                                        fingerprint,
+                                    )
+                                    .await;
+                            });
+                        }
+                        Ok(Ok(goal))
+                    }
+                    Ok(None) => Ok(Err((vec!["The goal was archived meanwhile.".into()], None))),
+                    Err(e) => Err(e.message),
+                };
+            }
             let written = self.goal_commit(session, |tx| {
                 Store::goal_write_progress(tx, session, &view, now)?;
                 Store::goal_set_state(
@@ -575,6 +724,28 @@ impl Shared {
         let Ok(Some(goal)) = self.goal_view(session) else {
             return;
         };
+        if goal.state == GoalState::Verifying {
+            if let Some(shared) = self.me.upgrade() {
+                let _ =
+                    shared.abort_child(session, &goals::audit_call_id(goal.id, goal.audit.rounds));
+            }
+            let mut view = goal.clone();
+            if let Some(r) = &mut view.audit.result {
+                r.verdict = "stopped".into();
+            }
+            let _ = self.goal_commit(session, |tx| {
+                Store::goal_write_progress(tx, session, &view, now_ms())?;
+                Store::goal_set_state(
+                    tx,
+                    session,
+                    goal.id,
+                    GoalState::Paused,
+                    Some(goals::REASON_AUDIT_STOPPED),
+                    now_ms(),
+                )
+            });
+            return;
+        }
         if goal.state != GoalState::Active {
             return;
         }
@@ -684,11 +855,9 @@ impl Shared {
                 } else {
                     0
                 };
-                let mut progressed = goal.clone();
-                progressed.usage_tokens = goal.usage_tokens.saturating_add(spent);
-                progressed.stall_turns = stall_turns;
+                let usage_after = goal.usage_tokens.saturating_add(spent);
                 let _ = self.goal_commit(session, |tx| {
-                    Store::goal_write_progress(tx, session, &progressed, now_ms())?;
+                    Store::goal_account(tx, session, goal.id, spent, Some(stall_turns), now_ms())?;
                     Store::goal_set_turn_marks(tx, session, goal.id, Some(&signature), tokens_start)
                 });
                 match verdict {
@@ -722,11 +891,7 @@ impl Shared {
                 if goal.limits.max_turns.is_some_and(|max| goal.turns >= max) {
                     return pause(GoalState::Paused, goals::REASON_TURNS_USED);
                 }
-                if goal
-                    .limits
-                    .max_tokens
-                    .is_some_and(|max| progressed.usage_tokens >= max)
-                {
+                if goal.limits.max_tokens.is_some_and(|max| usage_after >= max) {
                     return pause(GoalState::Paused, goals::REASON_TOKENS_USED);
                 }
             }
@@ -801,7 +966,10 @@ impl Shared {
         if !advanced {
             return;
         }
-        let text = goals::turn_prompt_structured(&goal.objective, &goal.criteria);
+        let mut text = goals::turn_prompt_structured(&goal.objective, &goal.criteria);
+        if let Some(findings) = goals::findings_section(&goal) {
+            text.push_str(&findings);
+        }
         match self.prompt(session, &key, &text, &[]).await {
             Ok(_) => {}
             Err(e) if e.code == ErrorCode::Busy => {
@@ -821,15 +989,155 @@ impl Shared {
             .store
             .read(|c| Store::goal_turn_marks(c, session, goal.id))
             .unwrap_or((None, None));
-        let Some(start) = tokens_start else { return };
-        let mut progressed = goal.clone();
-        progressed.usage_tokens = goal
-            .usage_tokens
-            .saturating_add(tokens_now.saturating_sub(start));
+        let Some(start) = tokens_start else {
+            return;
+        };
+        let spent = tokens_now.saturating_sub(start);
         let _ = self.goal_commit(session, |tx| {
-            Store::goal_write_progress(tx, session, &progressed, now_ms())?;
+            Store::goal_account(tx, session, goal.id, spent, None, now_ms())?;
             Store::goal_set_turn_marks(tx, session, goal.id, signature.as_deref(), None)
         });
+    }
+
+    /// Run one audit round in an auditor child and settle the goal from its verdict. Every
+    /// failure path (malformed reply, provider error, Stop, a changed workspace) is anything
+    /// but approval.
+    async fn run_goal_audit(
+        self: &Arc<Self>,
+        session: &str,
+        goal: GoalView,
+        round: u32,
+        summary: String,
+        fingerprint: String,
+    ) {
+        let tokens_start = self.session_tokens(session);
+        let call_id = goals::audit_call_id(goal.id, round);
+        let launch = SubagentLaunch {
+            task: goals::audit_prompt(&goal, round, &summary),
+            profile: Some("auditor".into()),
+            context: Some(crate::profiles::ContextMode::Fresh),
+        };
+        let outcome = self
+            .run_subagent(session, &call_id, launch, CancellationToken::new())
+            .await;
+        // Only the audit still pending for this round may settle the goal.
+        let Ok(Some(current)) = self.goal_view(session) else {
+            return;
+        };
+        if current.id != goal.id
+            || current.state != GoalState::Verifying
+            || current.audit.rounds != round
+            || current
+                .audit
+                .result
+                .as_ref()
+                .is_none_or(|r| r.verdict != "pending")
+        {
+            return;
+        }
+        let child = self
+            .store
+            .read(|c| Store::task_for_call(c, session, &call_id))
+            .ok()
+            .flatten()
+            .map(|t| t.child);
+        let cwd = self
+            .store
+            .session(session)
+            .ok()
+            .flatten()
+            .map(|r| std::path::PathBuf::from(r.cwd))
+            .unwrap_or_default();
+        let plan_revision = self
+            .store
+            .read(|c| Store::plan_state(c, session))
+            .map(|p| p.revision)
+            .unwrap_or(0);
+        let now = now_ms();
+        let mut view = current.clone();
+        view.usage_tokens = view
+            .usage_tokens
+            .saturating_add(self.session_tokens(session).saturating_sub(tokens_start));
+        let (verdict, findings, auditor_summary) = match &outcome {
+            Ok((text, _)) => match goals::parse_audit_verdict(text) {
+                Some(v) => (
+                    v.verdict,
+                    v.findings,
+                    Some(
+                        text.chars()
+                            .take(limits::MAX_GOAL_TEXT_CHARS)
+                            .collect::<String>(),
+                    ),
+                ),
+                None => (
+                    "inconclusive".to_owned(),
+                    vec![],
+                    Some(format!(
+                        "The auditor's reply carried no verdict object: {}",
+                        text.chars().take(300).collect::<String>()
+                    )),
+                ),
+            },
+            Err(error) => ("failed".to_owned(), vec![], Some(error.clone())),
+        };
+        let stale = goals::claim_fingerprint(&view, &cwd, plan_revision) != fingerprint;
+        let verdict = if stale && verdict == "approved" {
+            "stale".to_owned()
+        } else {
+            verdict
+        };
+        if let Some(result) = &mut view.audit.result {
+            result.verdict = verdict.clone();
+            result.findings = findings;
+            result.summary = auditor_summary;
+            result.child = child;
+        }
+        let failure_detail = view
+            .audit
+            .result
+            .as_ref()
+            .and_then(|r| r.summary.clone())
+            .unwrap_or_default();
+        let (state, reason) = match verdict.as_str() {
+            "approved" => (
+                GoalState::Completed,
+                format!(
+                    "Audit approved (round {round}); the completion claim was independently checked."
+                ),
+            ),
+            "stale" => (GoalState::Paused, goals::REASON_AUDIT_STALE.to_owned()),
+            "changes_requested" if round < view.audit.max_rounds => (
+                GoalState::Active,
+                format!("Audit round {round} requested changes; continuing with its findings."),
+            ),
+            "changes_requested" => (
+                GoalState::Paused,
+                format!(
+                    "Paused: the audit requested changes {round} time(s) (the limit is {}); review the findings, then revise or resume.",
+                    view.audit.max_rounds
+                ),
+            ),
+            "failed" => (
+                GoalState::Paused,
+                format!("Paused: the audit could not run ({failure_detail})."),
+            ),
+            _ => (
+                GoalState::Paused,
+                format!(
+                    "Paused: audit round {round} was inconclusive; review its notes, then revise or resume."
+                ),
+            ),
+        };
+        if state == GoalState::Active {
+            view.decision = None;
+        }
+        let written = self.goal_commit(session, |tx| {
+            Store::goal_write_progress(tx, session, &view, now)?;
+            Store::goal_set_state(tx, session, goal.id, state, Some(&reason), now)
+        });
+        if written.is_ok() && state == GoalState::Active {
+            self.goal_tick(session, None).await;
+        }
     }
 
     /// `goals.stallTurns` from settings (default 3, at least 1).

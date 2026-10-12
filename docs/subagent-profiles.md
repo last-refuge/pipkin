@@ -14,8 +14,13 @@ Status: implemented and covered by automated engine tests (2026-10-12).
 | Profile | Tools | Context | Access, honestly |
 | --- | --- | --- | --- |
 | `worker` (default) | Every tool a child can have | fresh | full access |
-| `reviewer` | `read`, `plan_read`, `web_read` | fresh | read-only |
-| `scout` | `read`, `plan_read`, `web_search`, `web_fetch`, `web_read` | fresh | workspace read-only; web access |
+| `reviewer` | `read`, `list_files`, `search_files`, `plan_read`, `web_read` | fresh | read-only |
+| `scout` | `read`, `list_files`, `search_files`, `plan_read`, `web_search`, `web_fetch`, `web_read` | fresh | workspace read-only; web access |
+| `auditor` | `read`, `list_files`, `search_files`, `plan_read` | fresh | read-only; used by goal audits ([goals.md](goals.md)) |
+
+`list_files` and `search_files` are bounded, read-only inspection tools available to every
+session: they respect `.gitignore`, skip hidden entries and binaries, stay inside the project
+directory and cap their output (200 entries or matches by default, 2000 at most).
 
 No child is ever offered `subagent` or `ask_user_question`: children do not delegate further
 and do not ask the person. `reviewer` and `scout` carry short instructions that reach the

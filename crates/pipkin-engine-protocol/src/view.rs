@@ -662,7 +662,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 17);
+        assert_eq!(crate::PROTOCOL_VERSION, 18);
         let release = Call::ReleaseSession {
             session: "s1".into(),
         };
@@ -1051,6 +1051,8 @@ pub struct WebSourceView {
 pub enum GoalState {
     /// Scheduling continuations.
     Active,
+    /// A completion proposal is being audited by an independent child; no continuation.
+    Verifying,
     /// Not scheduling; the reason says why (Stop, the person, a restart, an ambiguous reply).
     Paused,
     /// The executor reported it needs the person's input.
@@ -1067,6 +1069,7 @@ impl GoalState {
     pub fn as_str(self) -> &'static str {
         match self {
             GoalState::Active => "active",
+            GoalState::Verifying => "verifying",
             GoalState::Paused => "paused",
             GoalState::Blocked => "blocked",
             GoalState::Completed => "completed",
@@ -1078,6 +1081,7 @@ impl GoalState {
     pub fn parse(s: &str) -> Option<GoalState> {
         Some(match s {
             "active" => GoalState::Active,
+            "verifying" => GoalState::Verifying,
             "paused" => GoalState::Paused,
             "blocked" => GoalState::Blocked,
             "completed" => GoalState::Completed,
@@ -1136,6 +1140,57 @@ pub struct GoalView {
     /// The structured decision of the latest turn, if the executor made one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decision: Option<GoalDecision>,
+    /// The audit policy and the latest audit.
+    #[serde(default)]
+    pub audit: GoalAudit,
+}
+
+/// One criterion's finding from the auditor.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditFinding {
+    pub criterion: u64,
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// The outcome of one audit round.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalAuditResult {
+    pub round: u32,
+    /// `pending`, `approved`, `changes_requested`, `inconclusive`, `stale`, `skipped`,
+    /// `stopped`, `failed`.
+    pub verdict: String,
+    #[serde(default)]
+    pub findings: Vec<AuditFinding>,
+    /// The auditor's own words, bounded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// Fingerprint of the file evidence and plan the proposal stood on when the audit began.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
+    /// The auditor child (subagent directory number), when one ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child: Option<u64>,
+}
+
+/// Audit policy and history on a goal.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalAudit {
+    /// An accepted proposal must pass an independent audit before completion.
+    #[serde(default)]
+    pub required: bool,
+    /// Audit rounds run so far on the current objective revision.
+    #[serde(default)]
+    pub rounds: u32,
+    /// Rounds allowed before the goal pauses for the person (default 2).
+    #[serde(default)]
+    pub max_rounds: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<GoalAuditResult>,
 }
 
 /// A person's control over the current goal.
@@ -1161,6 +1216,15 @@ pub enum GoalAction {
     SetCriteria {
         criteria: Vec<String>,
     },
+    /// Require (or stop requiring) an independent audit of completion proposals.
+    SetAudit {
+        required: bool,
+        #[serde(default)]
+        max_rounds: Option<u32>,
+    },
+    /// Complete a goal that is verifying or waiting on audit findings without the audit; the
+    /// record says "unreviewed", never "approved".
+    SkipAudit,
 }
 
 /// The status of one completion criterion.

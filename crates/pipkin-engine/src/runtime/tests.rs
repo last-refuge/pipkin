@@ -744,6 +744,8 @@ fn the_system_prompt_carries_project_instructions_and_stays_byte_stable() {
             "write",
             "edit",
             "bash",
+            "list_files",
+            "search_files",
             "subagent",
             "ask_user_question",
             "get_goal",

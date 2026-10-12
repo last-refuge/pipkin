@@ -104,6 +104,10 @@ pub enum Command {
     },
     /// Replace the engine-owned goal's completion criteria.
     SetGoalCriteria(Vec<String>),
+    /// Require (or stop requiring) an independent audit of completion proposals.
+    SetGoalAudit(bool),
+    /// Complete a goal waiting on an audit without it (recorded as unreviewed).
+    SkipGoalAudit,
     Steer,
     QueueFollowUp,
     RemoveQueued(QueueId),

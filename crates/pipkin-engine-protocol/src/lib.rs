@@ -24,6 +24,7 @@ pub use view::*;
 // Version 15 carries the launch profile on subagent rows.
 // Version 16 adds engine-owned goals: `goal` in snapshots, `GoalChanged`, the goal calls.
 // Version 17 adds goal criteria, evidence, limits and structured decisions.
-pub const PROTOCOL_VERSION: u32 = 17;
+// Version 18 adds the verifying state and the goal audit record.
+pub const PROTOCOL_VERSION: u32 = 18;
 
 pub mod delivery;

@@ -8,7 +8,7 @@ use super::{Result, Store};
 
 const COLUMNS: &str = "id, objective, revision, state, reason, epoch, turns, last_request, \
     provenance, archived, created_at, updated_at, criteria, limits, usage_tokens, stall, note, \
-    linked_tasks, decision";
+    linked_tasks, decision, audit";
 
 fn view_from_row(r: &rusqlite::Row) -> rusqlite::Result<(GoalView, bool)> {
     let state: String = r.get("state")?;
@@ -35,6 +35,7 @@ fn view_from_row(r: &rusqlite::Row) -> rusqlite::Result<(GoalView, bool)> {
             decision: r
                 .get::<_, Option<String>>("decision")?
                 .and_then(|d| serde_json::from_str(&d).ok()),
+            audit: serde_json::from_str(&r.get::<_, String>("audit")?).unwrap_or_default(),
         },
         r.get::<_, i64>("archived")? != 0,
     ))
@@ -249,7 +250,7 @@ impl Store {
     pub fn pause_active_goals(&self, reason: &str, now: i64) -> Result<Vec<String>> {
         self.tx(|tx| {
             let mut stmt = tx
-                .prepare("SELECT session, id FROM goals WHERE archived = 0 AND state = 'active'")?;
+                .prepare("SELECT session, id FROM goals WHERE archived = 0 AND state IN ('active', 'verifying')")?;
             let rows = stmt
                 .query_map([], |r| {
                     Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64))
@@ -276,7 +277,7 @@ impl Store {
     ) -> Result<()> {
         tx.execute(
             "UPDATE goals SET criteria = ?3, limits = ?4, usage_tokens = ?5, stall = ?6, note = ?7,
-                linked_tasks = ?8, decision = ?9, updated_at = ?10
+                linked_tasks = ?8, decision = ?9, updated_at = ?10, audit = ?11
              WHERE session = ?1 AND id = ?2 AND archived = 0",
             params![
                 session,
@@ -290,8 +291,27 @@ impl Store {
                 view.decision
                     .as_ref()
                     .map(|d| serde_json::to_string(d).expect("serializes")),
-                now
+                now,
+                serde_json::to_string(&view.audit).expect("serializes")
             ],
+        )?;
+        Ok(())
+    }
+
+    /// Add a turn's tokens and set the stall count without touching anything else, so a
+    /// settlement tick can never overwrite a concurrent audit or tool write.
+    pub fn goal_account(
+        tx: &Connection,
+        session: &str,
+        id: u64,
+        tokens: u64,
+        stall: Option<u32>,
+        now: i64,
+    ) -> Result<()> {
+        tx.execute(
+            "UPDATE goals SET usage_tokens = usage_tokens + ?3, stall = COALESCE(?4, stall), updated_at = ?5
+             WHERE session = ?1 AND id = ?2 AND archived = 0",
+            params![session, id as i64, tokens as i64, stall.map(|s| s as i64), now],
         )?;
         Ok(())
     }
