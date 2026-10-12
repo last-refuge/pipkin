@@ -48,6 +48,12 @@ jobs:
             chmod +x "$RUNNER_TEMP/native-shims/$tool"
           done
           echo "$RUNNER_TEMP/native-shims" >> "$GITHUB_PATH"
+      - name: Exercise native engine without Node or Pi
+        run: |
+          mkdir -p qualification-logs
+          set -o pipefail
+          cargo test -p pipkin-engine -p pipkin-engine-protocol --locked 2>&1 | tee qualification-logs/native-engine.log
+          test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
       - name: Build and qualify the installed native candidate
         run: |
           mkdir -p qualification-logs

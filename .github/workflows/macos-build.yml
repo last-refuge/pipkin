@@ -14,6 +14,58 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  native-engine:
+    # Experimental platform evidence: this does not qualify macOS desktop UX or packaging.
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: "3"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      RUST_BACKTRACE: "1"
+      TMPDIR: /private/tmp/pipkin-native-ci
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare native dependencies and pinned toolchain
+        run: |
+          mkdir -p "$TMPDIR" qualification-logs
+          chmod 700 "$TMPDIR"
+          brew install cmake pkg-config
+          toolchain=$(awk -F '"' '/^channel =/ {print $2}' rust-toolchain.toml)
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+          uname -a > qualification-logs/runner.txt
+          rustc -vV > qualification-logs/rustc.txt
+          xcodebuild -version > qualification-logs/xcode.txt
+          git rev-parse HEAD > qualification-logs/app-revision.txt
+      - name: Reject Node, npm and Pi during native qualification
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-shims"
+          for tool in node npm npx pi; do
+            printf '#!/bin/sh\necho "unexpected native dependency: %s" >&2\ntouch "%s/native-forbidden-invocations"\nexit 93\n' \
+              "$tool" "$RUNNER_TEMP" > "$RUNNER_TEMP/native-shims/$tool"
+            chmod +x "$RUNNER_TEMP/native-shims/$tool"
+          done
+          echo "$RUNNER_TEMP/native-shims" >> "$GITHUB_PATH"
+      - name: Native engine, protocol and actual app worker checks
+        run: |
+          set -o pipefail
+          cargo test -p pipkin-engine -p pipkin-engine-protocol --locked 2>&1 | tee qualification-logs/native-engine.log
+          cargo test -p pipkin-app --locked --test engine_worker --test native_diagnose 2>&1 | tee qualification-logs/native-worker.log
+          cargo test -p pipkin-app --locked adapters::native:: 2>&1 | tee qualification-logs/native-adapter.log
+          test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
+      - name: Retain experimental native evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-native-engine-${{ github.sha }}
+          path: qualification-logs/
+          if-no-files-found: warn
+          retention-days: 30
+
   build:
     runs-on: macos-15
     timeout-minutes: 90

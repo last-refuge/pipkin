@@ -11,7 +11,22 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — dedicated-server memory regression closed
+## Current follow-up — hosted native qualification
+
+2026-10-12, following **`19c4082`**. The Linux native packaging job now executes the
+engine/protocol tests with Node/npm/npx/Pi traps before building its installed candidate.
+The experimental macOS workflow gains an independent native job covering engine/protocol,
+actual app worker/diagnostic processes and native adapter tests under the same traps.
+It uses a short private temporary directory for Darwin socket paths and retains evidence
+even on failure. Existing Pi qualification jobs remain during the transition.
+
+Workflow YAML and every shell block parse locally. This is test infrastructure, not a
+hosted pass: Linux CI and experimental macOS remain unverified pending actual runs.
+Native-default, supported release-platform acceptance and Pi retirement are unchanged.
+The preceding source passes all required workspace checks (1,656 passed, 56 ignored;
+clean Clippy/fmt); this batch changes workflow/documentation only.
+
+## Prior follow-up — dedicated-server memory regression closed
 
 2026-10-12, following **`281de0f`**, protocol 12 / engine schema 10 / desktop schema 8
 unchanged. The socket-server process bypassed the existing stdio allocator policy.
