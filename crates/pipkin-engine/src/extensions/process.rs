@@ -47,9 +47,10 @@
 //! | `ask` | `kind` (`select`/`confirm`/`input`), `title`, `message`?, `options`? (`[{value,label,description?}]`, select), `placeholder`?, `defaultValue`?, `timeoutMs`? (default 120000, 0 waits indefinitely) | the answer (a string, or a boolean for `confirm`), or `null` when unanswered |
 //! | `notify` | `level` (`info`/`warning`/`error`), `message` | `null` |
 //! | `setStatus` | `key`, `text` (a string, or `null` to clear) | `null` |
-//! | `prompt` / `steer` / `followUp` | `text`, `requestKey`? | `{"run": n or null, "entry": n or null}` |
+//! | `prompt` / `steer` / `followUp` | `text`, `requestKey`? | `{"operationId": "opaque-key", "run": n or null, "entry": n or null}` |
 //! | `cancelQueued` | `entry` | `{"outcome": "cancelled" or "alreadyConsumed" or "notFound"}` |
 //! | `lookup` | `requestKey` | the protocol's `LookupResult` (`{"state":"unknown"}` or `{"state":"known",...}`) |
+//! | `waitForPrompt` | `operationId` from admission | `{"status":"done","text":"...","reason":null}` or `{"status":"unanswered","text":null,"reason":"..."}` |
 //! | `abort` | none | `{"run": n or null}` |
 //! | `compact` | `instructions`? | `null` |
 //! | `historyPage` | `before`?, `limit` (at most 200) | `{"entries": [Entry...], "hasOlder": bool}` (oldest first) |
@@ -718,7 +719,9 @@ async fn handle(
                 "steer" => host.steer(p.text, p.request_key).await?,
                 _ => host.follow_up(p.text, p.request_key).await?,
             };
-            Ok(json!({"run": admitted.run, "entry": admitted.entry}))
+            Ok(
+                json!({"run": admitted.run, "entry": admitted.entry, "operationId": admitted.operation_id}),
+            )
         }
         "cancelQueued" => {
             let p: CancelQueuedParams = params(method, &raw)?;
@@ -728,6 +731,19 @@ async fn handle(
         "lookup" => {
             let p: LookupParams = params(method, &raw)?;
             to_json(&host.lookup(p.request_key).await?)
+        }
+        "waitForPrompt" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct WaitParams {
+                operation_id: String,
+            }
+            let p: WaitParams = params(method, &raw)?;
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Err(RpcError::new("cancelled", "Prompt wait cancelled")),
+                result = host.wait_for_prompt(p.operation_id) => to_json(&result?),
+            }
         }
         "abort" => {
             let run = host.abort().await?;

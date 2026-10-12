@@ -18,7 +18,7 @@ pub use content::*;
 pub use view::*;
 
 /// Wire protocol version. Bump on any incompatible change to [`api`], [`content`] or [`view`].
-// Version 7 adds typed native extension profile preparation and selection.
-pub const PROTOCOL_VERSION: u32 = 7;
+// Version 8 adds durable prompt waits and their settled result.
+pub const PROTOCOL_VERSION: u32 = 8;
 
 pub mod delivery;

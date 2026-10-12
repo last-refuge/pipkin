@@ -951,6 +951,36 @@ fn imports_a_rich_session_losslessly_with_the_same_effective_context() {
             detail: "529 overloaded".into()
         })
     );
+    // Exact historical prompt answers must not drift to the most recent imported reply.
+    for (key, expected) in [
+        (
+            "req-1",
+            json!({"status":"done","text":"hi there","reason":null}),
+        ),
+        (
+            "req-2",
+            json!({"status":"done","text":"two files","reason":null}),
+        ),
+        (
+            "req-3",
+            json!({"status":"unanswered","text":null,"reason":"aborted"}),
+        ),
+        (
+            "req-4",
+            json!({"status":"unanswered","text":null,"reason":"aborted"}),
+        ),
+        (
+            "req-5",
+            json!({"status":"unanswered","text":null,"reason":"model_error"}),
+        ),
+    ] {
+        let crate::store::prompt_result::PromptState::Settled(result) =
+            store.prompt_result(ROOT, key).unwrap()
+        else {
+            panic!("not settled: {key}")
+        };
+        assert_eq!(serde_json::to_value(result).unwrap(), expected);
+    }
     assert!(store.request(&child, "subagent:28").unwrap().is_some());
     assert_eq!(outcome.manifest["counts"]["inputSubmissionsWithoutKey"], 1);
     assert!(store.queue(ROOT).unwrap().is_empty());

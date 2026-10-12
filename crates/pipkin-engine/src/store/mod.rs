@@ -14,6 +14,7 @@
 
 mod generation;
 mod outbox;
+pub(crate) mod prompt_result;
 mod schema;
 pub use generation::GenerationState;
 

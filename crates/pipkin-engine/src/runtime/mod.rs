@@ -12,6 +12,7 @@ mod run;
 mod session;
 mod subagents;
 mod views;
+mod wait;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -48,6 +49,8 @@ pub struct Shared {
     pub processes: Arc<Semaphore>,
     pub locks: Arc<MutationLocks>,
     publication: Mutex<()>,
+    stopping: tokio_util::sync::CancellationToken,
+    prompt_waits: Arc<Semaphore>,
     clients: Mutex<HashMap<u64, crate::delivery::Delivery>>,
     cursors: Mutex<HashMap<u64, (u64, u64)>>,
     sessions: Mutex<lifecycle::Sessions>,
@@ -226,6 +229,8 @@ impl EngineHandle {
             locks: Arc::default(),
             cursors: Mutex::new(HashMap::new()),
             publication: Mutex::new(()),
+            stopping: tokio_util::sync::CancellationToken::new(),
+            prompt_waits: Arc::new(Semaphore::new(64)),
             clients: Mutex::new(HashMap::new()),
             sessions: Mutex::new(lifecycle::Sessions::default()),
             handle: runtime.handle().clone(),
@@ -245,13 +250,19 @@ impl EngineHandle {
         {
             let shared = shared.clone();
             runtime.spawn(async move {
-                let runs = shared.store.unsettled_runs().unwrap_or_default();
-                let mut seen = std::collections::HashSet::new();
-                for run in runs {
-                    if seen.insert(run.session.clone())
-                        && let Err(e) = shared.recover_session(&run.session)
-                    {
-                        log::error!("cannot recover session {}: {e}", run.session);
+                let sessions = shared.store.pending_sessions().unwrap_or_else(|error| {
+                    log::error!("cannot enumerate pending work: {error}");
+                    Vec::new()
+                });
+                for session in sessions {
+                    if let Err(e) = shared.recover_session(&session) {
+                        log::error!("cannot recover session {session}: {e}");
+                        continue;
+                    }
+                    // A crash can fall after settlement but before the next queued run is
+                    // started. Such a session has no open run and still needs scheduling.
+                    if let Ok(sess) = shared.session(&session) {
+                        shared.next_from_queue(&sess).await;
                     }
                 }
             });
@@ -307,6 +318,7 @@ impl EngineHandle {
                 let mut disconnected = false;
                 let normal_slots = Arc::new(Semaphore::new(16));
                 let control_slots = Arc::new(Semaphore::new(4));
+                let wait_slots = Arc::new(Semaphore::new(64));
                 loop {
                     // Reserve a task slot before dequeuing, keeping queued and active calls bounded.
                     // Control has independent capacity and is polled first.
@@ -332,17 +344,28 @@ impl EngineHandle {
                     let shared = shared.clone();
                     let out = out_tx.clone();
                     let lifetime = lifetime.clone();
+                    let wait_slots = wait_slots.clone();
                     tasks.spawn(async move {
-                        let _permit = permit;
+                        // Waiters have their own bounded admission; they must not occupy all
+                        // normal slots and prevent the prompt/queue actions they await.
+                        let waiting = matches!(&frame.call, Call::WaitForPrompt { .. });
+                        // Retain this connection's wait slot through reply delivery too, so
+                        // a client that stops reading cannot accumulate completed wait tasks.
+                        let _wait_permit = if waiting { wait_slots.try_acquire_owned().ok() } else { None };
+                        let wait_full = waiting && _wait_permit.is_none();
+                        let _permit = if _wait_permit.is_some() { drop(permit); None } else { Some(permit) };
                         let signing_in = matches!(&frame.call,
                             Call::AuthStart { .. } | Call::AuthReuse { .. } | Call::AuthAnswer { .. });
                         let result = tokio::select! {
                             biased;
-                            _ = lifetime.cancelled(), if signing_in => {
+                            _ = lifetime.cancelled(), if signing_in || waiting => {
                                 shared.auth.client_gone(client);
                                 Err(ProtoError::new(ErrorCode::ShuttingDown, "the client disconnected"))
                             }
                             result = async {
+                                if wait_full {
+                                    return Err(ProtoError::new(ErrorCode::Busy, "Too many prompt waits on this connection"));
+                                }
                                 if !owns_engine && matches!(frame.call, Call::Shutdown) {
                                     return Err(ProtoError::new(ErrorCode::Invalid, "Only the server owner can shut down an external engine"));
                                 }
@@ -375,6 +398,7 @@ impl EngineHandle {
     /// Orderly stop: extensions are deactivated (their processes ended) and questions
     /// cancelled; runs in flight stay unsettled in the store and resume on the next start.
     pub fn shutdown(&self, timeout: Duration) {
+        self.shared.stopping.cancel();
         for delivery in self
             .shared
             .clients
@@ -467,6 +491,7 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
                     "durableInvalidations".into(),
                     "sessionAttachments".into(),
                     "extensionProfiles".into(),
+                    "waitForPrompt".into(),
                     "subagents".into(),
                     "questions".into(),
                     "compaction".into(),
@@ -564,6 +589,10 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
                 },
             ))
         }
+        Call::WaitForPrompt { session, request } => shared
+            .wait_for_prompt(&session, &request)
+            .await
+            .map(Reply::PromptResult),
         Call::CancelQueued { session, entry } => shared.cancel_queued(&session, entry).await,
         Call::Stop { session } => shared.stop(&session).await,
         Call::SetModel { session, model } => shared.set_model(&session, &model),

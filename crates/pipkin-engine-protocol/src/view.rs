@@ -140,6 +140,20 @@ pub enum Delta {
     },
 }
 
+/// The settled result of an input operation. Text includes only the answer's text blocks.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum PromptResult {
+    Done {
+        text: String,
+        reason: Option<String>,
+    },
+    Unanswered {
+        text: Option<String>,
+        reason: String,
+    },
+}
+
 /// Why a run ended.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "reason", rename_all = "camelCase")]
@@ -636,7 +650,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 7);
+        assert_eq!(crate::PROTOCOL_VERSION, 8);
         let release = Call::ReleaseSession {
             session: "s1".into(),
         };

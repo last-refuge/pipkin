@@ -185,13 +185,10 @@ async fn the_greeting_example_counts_activations_and_greets_like_the_reference()
         shown,
         "We got this: Hello from the TUI from the bundled Session worker facet!!! Worker activations: 2."
     );
-    assert_eq!(
-        admitted.unwrap(),
-        Admission {
-            run: Some(1),
-            entry: None
-        }
-    );
+    let admitted = admitted.unwrap();
+    assert_eq!(admitted.run, Some(1));
+    assert_eq!(admitted.entry, None);
+    assert!(admitted.operation_id.starts_with("ext-"));
     let (_, _) = greeting.hello(host.as_ref(), "Armin").await;
     let prompts: Vec<String> = host
         .calls()
@@ -316,6 +313,7 @@ async fn the_call_host_drives_the_agent_through_protocol_calls() {
     assert_eq!(
         prompt,
         Admission {
+            operation_id: "k1".into(),
             run: Some(1),
             entry: None
         }

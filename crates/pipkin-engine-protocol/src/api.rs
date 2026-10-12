@@ -187,6 +187,11 @@ pub enum Call {
         session: SessionId,
         request: String,
     },
+    /// Wait for a durable prompt/steer/follow-up key without admitting or cancelling work.
+    WaitForPrompt {
+        session: SessionId,
+        request: String,
+    },
     CancelQueued {
         session: SessionId,
         entry: u64,
@@ -365,6 +370,7 @@ pub struct ToolOutputView {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "reply", rename_all = "camelCase")]
 pub enum Reply {
+    PromptResult(PromptResult),
     Welcome(Welcome),
     Events(EventPage),
     ExtensionProfile {

@@ -140,10 +140,42 @@ pub fn connect(path: &Path) -> io::Result<UnixStream> {
     Ok(stream)
 }
 
+/// Unlock explicitly on every return path, including a bind failure after flock succeeds.
+/// Closing the file alone is insufficient while a concurrent fork holds its CLOEXEC copy.
+struct EndpointLock {
+    file: File,
+    owner_pid: u32,
+}
+impl EndpointLock {
+    fn acquire(file: File) -> io::Result<Self> {
+        // SAFETY: file owns a live descriptor; flock does not use pointers.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::AddrInUse,
+                "endpoint already has an owner",
+            ));
+        }
+        Ok(Self {
+            file,
+            owner_pid: std::process::id(),
+        })
+    }
+}
+impl Drop for EndpointLock {
+    fn drop(&mut self) {
+        if self.owner_pid == std::process::id() {
+            // SAFETY: file remains live until after the Drop body.
+            unsafe {
+                libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
+            }
+        }
+    }
+}
+
 struct Endpoint {
     socket: PathBuf,
     identity: (u64, u64),
-    _lock: File,
+    _lock: EndpointLock,
     owner_pid: u32,
 }
 impl Drop for Endpoint {
@@ -155,11 +187,6 @@ impl Drop for Endpoint {
         // lock a different inode while this owner is releasing the old one.
         if fs::symlink_metadata(&self.socket).is_ok_and(|m| (m.dev(), m.ino()) == self.identity) {
             let _ = fs::remove_file(&self.socket);
-        }
-        // Release even if a concurrently forked tool still holds a CLOEXEC copy.
-        // SAFETY: _lock remains a valid owned descriptor until after this Drop body.
-        unsafe {
-            libc::flock(self._lock.as_raw_fd(), libc::LOCK_UN);
         }
     }
 }
@@ -179,13 +206,7 @@ impl Endpoint {
             return Err(denied("endpoint lock is not a regular file"));
         }
         private_metadata(&meta)?;
-        // SAFETY: lock is a live fd; flock does not use pointers.
-        if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::AddrInUse,
-                "endpoint already has an owner",
-            ));
-        }
+        let lock = EndpointLock::acquire(lock)?;
         let socket = directory.join(SOCKET);
         match fs::symlink_metadata(&socket) {
             Ok(meta) => {

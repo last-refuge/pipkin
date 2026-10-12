@@ -4,7 +4,7 @@
 //! This is the native counterpart of the reference's session facets (chord facet plugin
 //! packages loaded by `pi server -e`), restricted to what those facets can reach there:
 //! `UiRequestHost` (questions, notices, status), `AgentController` (prompt, steer, follow-up,
-//! cancel queued, abort, compact, lookup) and `History.page`. See `docs/native-extensions.md`.
+//! cancel queued, abort, compact, lookup, waitForPrompt) and `History.page`. See `docs/native-extensions.md`.
 //!
 //! Two ways to write one:
 //! - **In process, in Rust:** implement [`Extension`]; the runtime gives it an
@@ -30,7 +30,7 @@ use std::time::Duration;
 use futures_util::FutureExt;
 use pipkin_engine_protocol::{
     Answer, Call, CancelQueuedOutcome, Entry, EntryId, ErrorCode, InputMode, LookupResult,
-    NoticeLevel, ProtoError, Reply, SessionId,
+    NoticeLevel, PromptResult, ProtoError, Reply, SessionId,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -68,6 +68,8 @@ pub trait Extension: Send + Sync {
 /// A prompt, steer or follow-up the session admitted (`Reply::Admitted`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Admission {
+    /// Opaque durable input identity for wait_for_prompt (the native request key).
+    pub operation_id: String,
     pub run: Option<u64>,
     pub entry: Option<u64>,
 }
@@ -130,6 +132,12 @@ pub trait ExtensionHost: Send + Sync {
     /// What became of a request key. Never admits anything.
     fn lookup(&self, request_key: String) -> BoxFuture<'static, Result<LookupResult, ProtoError>>;
 
+    /// Wait for this admitted input. Dropping the future abandons only the wait.
+    fn wait_for_prompt(
+        &self,
+        operation_id: String,
+    ) -> BoxFuture<'static, Result<PromptResult, ProtoError>>;
+
     /// Stop the active run (and its queue). Returns the run being stopped, if any.
     fn abort(&self) -> BoxFuture<'static, Result<Option<u64>, ProtoError>>;
 
@@ -174,7 +182,7 @@ impl CallHost {
     fn call<T: Send + 'static>(
         &self,
         call: Call,
-        decode: fn(Reply) -> Option<T>,
+        decode: impl FnOnce(Reply) -> Option<T> + Send + 'static,
     ) -> BoxFuture<'static, Result<T, ProtoError>> {
         let reply = (self.dispatch)(call);
         Box::pin(async move {
@@ -191,15 +199,16 @@ impl CallHost {
         text: String,
         request_key: Option<String>,
     ) -> BoxFuture<'static, Result<Admission, ProtoError>> {
+        let operation_id = request_key_or_fresh(request_key);
         self.call(
             Call::Enqueue {
                 session: self.session.clone(),
-                request: request_key_or_fresh(request_key),
+                request: operation_id.clone(),
                 mode,
                 text,
                 images: Vec::new(),
             },
-            admission,
+            move |reply| admission(reply, operation_id),
         )
     }
 }
@@ -211,9 +220,13 @@ fn request_key_or_fresh(key: Option<String>) -> String {
     }
 }
 
-fn admission(reply: Reply) -> Option<Admission> {
+fn admission(reply: Reply, operation_id: String) -> Option<Admission> {
     match reply {
-        Reply::Admitted { run, entry } => Some(Admission { run, entry }),
+        Reply::Admitted { run, entry } => Some(Admission {
+            operation_id,
+            run,
+            entry,
+        }),
         _ => None,
     }
 }
@@ -245,15 +258,16 @@ impl ExtensionHost for CallHost {
         text: String,
         request_key: Option<String>,
     ) -> BoxFuture<'static, Result<Admission, ProtoError>> {
+        let operation_id = request_key_or_fresh(request_key);
         self.call(
             Call::Prompt {
                 session: self.session.clone(),
-                request: request_key_or_fresh(request_key),
+                request: operation_id.clone(),
                 text,
                 images: Vec::new(),
                 model: None,
             },
-            admission,
+            move |reply| admission(reply, operation_id),
         )
     }
 
@@ -297,6 +311,22 @@ impl ExtensionHost for CallHost {
             },
             |reply| match reply {
                 Reply::Lookup(result) => Some(result),
+                _ => None,
+            },
+        )
+    }
+
+    fn wait_for_prompt(
+        &self,
+        operation_id: String,
+    ) -> BoxFuture<'static, Result<PromptResult, ProtoError>> {
+        self.call(
+            Call::WaitForPrompt {
+                session: self.session.clone(),
+                request: operation_id,
+            },
+            |reply| match reply {
+                Reply::PromptResult(result) => Some(result),
                 _ => None,
             },
         )

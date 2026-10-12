@@ -390,10 +390,36 @@ fn peer_identity_requires_the_current_os_user_and_handshake_deadlines_are_absolu
 fn an_inherited_endpoint_lock_descriptor_cannot_keep_a_closed_owner_alive() {
     let fx = Fixture::new(Scripted::echo("ok"), false);
     let server = fx.server();
-    let inherited = server._endpoint._lock.try_clone().unwrap();
+    let inherited = server._endpoint._lock.file.try_clone().unwrap();
     drop(server);
     let next = fx.server();
     drop(inherited);
     assert!(Server::start(fx.engine.clone(), &fx.path).is_err());
     drop(next);
+}
+
+#[test]
+fn failed_bind_scope_releases_the_lock_even_while_a_fork_copy_remains() {
+    let fx = Fixture::new(Scripted::echo("ok"), false);
+    fs::DirBuilder::new().mode(0o700).create(&fx.path).unwrap();
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(fx.path.join("owner.lock"))
+        .unwrap();
+    let mut inherited = None;
+    let failure: io::Result<()> = (|| {
+        let lock = EndpointLock::acquire(file)?;
+        inherited = Some(lock.file.try_clone()?);
+        // Model bind/metadata/permission failure before an Endpoint is constructed.
+        Err(denied("bind failed"))
+    })();
+    assert!(failure.is_err());
+    let server = fx.server();
+    drop(inherited);
+    assert!(Server::start(fx.engine.clone(), &fx.path).is_err());
+    drop(server);
 }

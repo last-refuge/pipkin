@@ -190,6 +190,13 @@ impl ExtensionHost for TestHost {
         self.inner.lookup(request_key)
     }
 
+    fn wait_for_prompt(
+        &self,
+        operation_id: String,
+    ) -> BoxFuture<'static, Result<pipkin_engine_protocol::PromptResult, ProtoError>> {
+        self.inner.wait_for_prompt(operation_id)
+    }
+
     fn abort(&self) -> BoxFuture<'static, Result<Option<u64>, ProtoError>> {
         self.inner.abort()
     }

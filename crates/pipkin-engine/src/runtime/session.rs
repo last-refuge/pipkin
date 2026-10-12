@@ -45,6 +45,7 @@ pub struct SessionRt {
     pub active: Mutex<Option<Active>>,
     pub failed: Mutex<Option<String>>,
     pub settled: broadcast::Sender<Settled>,
+    pub(super) changed: tokio::sync::Notify,
     /// The system prompt last sent, so it stays byte-stable between turns (prompt caching).
     pub prompt: Mutex<Option<(String, Map<String, serde_json::Value>)>>,
     /// Questions, status lines and notices from this session's extensions (volatile).
@@ -69,6 +70,7 @@ impl SessionRt {
             active: Mutex::new(None),
             failed: Mutex::new(None),
             settled: broadcast::channel(64).0,
+            changed: tokio::sync::Notify::new(),
             prompt: Mutex::new(None),
         }
     }
@@ -189,6 +191,7 @@ impl Shared {
         match result {
             Ok((value, changes, revision)) => {
                 super::faults::crash_point("after_state_commit_before_delivery");
+                sess.changed.notify_waiters();
                 for change in changes {
                     self.publish(Event::Session {
                         session: id.clone(),
@@ -214,6 +217,7 @@ impl Shared {
             .unwrap_or_else(|e| e.into_inner())
             .replace(why.to_owned())
             .is_none();
+        sess.changed.notify_waiters();
         if first {
             self.publish(Event::Notice { message: format!("Conversation {id} stopped after a storage error ({why}). What was saved before it is kept; reopen the conversation to continue.") });
         }

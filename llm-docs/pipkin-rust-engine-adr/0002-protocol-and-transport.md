@@ -15,6 +15,11 @@ Protocol **7** adds `PrepareExtensions`, `ExtensionProfile` and the `extensionPr
 capability. Schema **5** prevents older engines from silently ignoring persistent native
 extension selections; see [profile evidence](../pipkin-rust-engine-evidence/extension-profiles.md).
 
+Protocol **8** adds `WaitForPrompt`, `PromptResult` and the `waitForPrompt` capability.
+Input waits use durable request keys and committed answer identities; schema remains **5**.
+Wait admission and reply delivery are bounded independently of normal/control calls. See
+[wait evidence](../pipkin-rust-engine-evidence/prompt-waits.md).
+
 ## Context
 
 Reference wire stack (audit `service-api.md` §4.2–4.3): CBOR frames with a 4-byte big-endian
