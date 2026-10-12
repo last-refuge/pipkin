@@ -265,6 +265,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_user_agent_is_sent_and_explicit_provider_identity_takes_precedence() {
+        let server = MockServer::start(|_, _| ok()).await;
+        let http = client();
+        http.get(&server.url).send().await.unwrap();
+        http.get(&server.url)
+            .header("User-Agent", "provider-identity")
+            .header("Authorization", "Bearer fixture-token")
+            .send()
+            .await
+            .unwrap();
+        let seen = server.requests();
+        assert_eq!(
+            seen[0].header("user-agent"),
+            Some(concat!("pipkin/", env!("CARGO_PKG_VERSION")))
+        );
+        assert_eq!(seen[1].header("user-agent"), Some("provider-identity"));
+        assert_eq!(
+            seen[1].header("authorization"),
+            Some("Bearer fixture-token")
+        );
+        assert_eq!(
+            seen[1]
+                .headers
+                .iter()
+                .filter(|(k, _)| k == "user-agent")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
     async fn plain_http_requests_are_forwarded_through_the_configured_proxy() {
         let proxy = MockServer::start(|_, _| ok()).await;
         let client = client_with(&net(&[("HTTP_PROXY", &proxy.url)], None));

@@ -593,6 +593,13 @@ mod tests {
                 ),
                 provider("openai-codex", true, true, None),
                 provider("openai", true, true, None),
+                provider("github-copilot", true, true, None),
+                provider("openrouter", true, true, None),
+                provider("kimi-coding", true, true, None),
+                provider("meta", true, true, None),
+                provider("radius", true, true, None),
+                provider("xai", true, true, None),
+                provider("custom-radius", true, true, None),
             ],
             ..AuthSnapshot::default()
         };

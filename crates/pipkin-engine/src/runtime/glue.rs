@@ -43,7 +43,6 @@ impl Resources {
                 tools: Vec::new(),
                 context_files,
                 skills,
-                docs_dir: None,
             }
         });
         input.tools.clear();
@@ -111,6 +110,53 @@ mod tests {
                         .contains(&format!("- {tool}:"))
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use crate::provider::scripted::{Reply, Scripted};
+    use crate::runtime::tests::Fixture;
+    use pipkin_engine_protocol::RunOutcome;
+
+    #[test]
+    fn root_and_child_receive_embedded_pipkin_help_without_a_docs_installation_after_restart() {
+        let fx = Fixture::new();
+        let provider = Scripted::new(|_, n| {
+            if n == 0 {
+                Reply::Tools(
+                    None,
+                    vec![(
+                        "subagent".into(),
+                        serde_json::json!({"task":"review built-in help"}),
+                    )],
+                )
+            } else {
+                Reply::Text("reviewed".into())
+            }
+        });
+        let mut e = fx.start(&provider);
+        let root = e.create(&fx.project, "root");
+        e.prompt(&root, "first", "explain Pipkin").unwrap();
+        assert_eq!(e.settled("first"), RunOutcome::Completed);
+        assert_eq!(provider.requests().len(), 3);
+        e.handle.shutdown(std::time::Duration::from_secs(1));
+        drop(e);
+        let mut e = fx.start(&provider);
+        e.prompt(&root, "second", "continue after restart").unwrap();
+        assert_eq!(e.settled("second"), RunOutcome::Completed);
+        assert_eq!(provider.requests().len(), 4);
+        for request in provider.requests() {
+            // Scripted records the durable positional messages before adapter flattening.
+            let request = request.resolve_systems(false);
+            assert!(request.system.contains("operating inside Pipkin,"));
+            assert!(
+                request
+                    .system
+                    .contains(crate::context::prompt::ENGINE_REFERENCE.trim())
+            );
+            assert!(!request.system.contains("Pi documentation ("));
         }
     }
 }

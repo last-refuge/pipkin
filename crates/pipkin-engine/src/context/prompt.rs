@@ -12,10 +12,9 @@
 //! `subagent`) are not listed but still count as selected for the shell rule and the skills
 //! read tool.
 //!
-//! Intentional difference: the `docs` section points at Pi's own package documentation
-//! (README, docs/, examples/ next to the installed package; config.ts:444-456). A native
-//! Pipkin install ships no such bundle, so the section is omitted unless
-//! [`PromptInput::docs_dir`] names one.
+//! Product-specific sections identify Pipkin and embed its engine reference. They require
+//! no Pi package paths, filesystem reads or network access. Other prompt sections preserve
+//! the durable server's contract.
 
 use std::path::PathBuf;
 
@@ -33,7 +32,10 @@ pub const SECTION_KEYS: [&str; 7] = [
     "cwd",
 ];
 
-pub const PREAMBLE: &str = "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+pub const PREAMBLE: &str = "You are an expert coding assistant operating inside Pipkin, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+
+/// Product help is shipped as data inside every native engine binary.
+pub const ENGINE_REFERENCE: &str = include_str!("../../../../docs/native-engine-reference.md");
 
 /// A tool's prompt line and guideline bullets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,17 +86,14 @@ pub struct PromptInput {
     pub context_files: Vec<ContextFile>,
     /// From [`super::resources::load_skills`].
     pub skills: Vec<Skill>,
-    /// Root of a Pi documentation bundle laid out like the reference package (`README.md`,
-    /// `docs/`, `examples/`). `None` omits the `docs` section (see the module docs).
-    pub docs_dir: Option<PathBuf>,
 }
 
 pub struct SystemPrompt;
 
 impl SystemPrompt {
     /// The present sections in [`SECTION_KEYS`] order, each already tagged (except the
-    /// preamble). Absent sections (`docs` without a bundle, `project_context` without files,
-    /// `skills` without a read tool or visible skill) are left out.
+    /// preamble). Project context without files and skills without a read tool or visible
+    /// skill are left out; embedded product documentation is always available.
     pub fn sections(input: &PromptInput) -> Vec<(&'static str, String)> {
         let selected: Vec<&str> = input.tools.iter().map(String::as_str).collect();
         let has = |name: &str| selected.contains(&name);
@@ -119,9 +118,7 @@ impl SystemPrompt {
 
         out.push(("rules", rules(&selected, &has)));
 
-        if let Some(dir) = &input.docs_dir {
-            out.push(("docs", docs(dir)));
-        }
+        out.push(("docs", ENGINE_REFERENCE.trim().to_owned()));
 
         if !input.context_files.is_empty() {
             let mut parts = vec!["Project-specific instructions and guidelines:".to_string()];
@@ -208,22 +205,6 @@ fn rules(selected: &[&str], has: &dyn Fn(&str) -> bool) -> String {
         .map(|rule| format!("- {rule}"))
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn docs(dir: &std::path::Path) -> String {
-    format!(
-        "Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
-- Main documentation: {}
-- Additional docs: {}
-- Examples: {} (extensions, custom tools, SDK)
-- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory
-- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)
-- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing
-- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)",
-        dir.join("README.md").display(),
-        dir.join("docs").display(),
-        dir.join("examples").display(),
-    )
 }
 
 #[cfg(test)]

@@ -11,7 +11,45 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — durable root and child removal
+## Current follow-up — product identity, embedded help and OAuth reachability
+
+Following **`291e854`**, the native system prompt identifies Pipkin and embeds a compact
+product/engine reference from `docs/native-engine-reference.md`. It no longer points at
+Pi package documentation or silently omits help. Root/child/restart requests contain the
+reference without an installed docs tree. Tool, project, skill and positional section
+behavior is preserved; eight executed pinned-reference prompt cases assert all sections
+with exactly the declared preamble-name/docs transformations.
+
+Audited actual provider identity: the shared HTTP client already sends pipkin/version,
+with explicit provider/configuration override precedence. Codex's existing pi UA/originator
+and Claude subscription identities remain unchanged. A local HTTP test measures the real
+default/override headers and retained auth. OAuth reachability is now resolved: keep existing
+native service login flows while desktop retains only Claude/ChatGPT subscription choices.
+The mapping regression includes all additional providers and a custom Radius gateway.
+See [identity/auth audit](pipkin-rust-engine-evidence/identity-auth-audit.md).
+
+Required checks: **1504 passed, 0 failed, 53 ignored**; Clippy and formatting clean.
+Logs: `/tmp/pipkin-identity-workspace.log`, `/tmp/pipkin-identity-clippy.log`,
+`/tmp/pipkin-identity-fmt.log`. The reference capture initially lacked sandbox subprocess
+permission to check Git; its permitted rerun succeeded. An initial runtime test inspected
+the legacy leading-system field instead of resolving durable positional messages; corrected
+before the passing full run. No failure was waived and no live-provider login was claimed.
+
+The remaining eleven PA rows move to NE: eight service OAuth login rows, provider UA,
+preamble and product docs. Recomputed inventory: **504 rows, 488 non-OS; NC 413, NE 37,
+NP 37, PA 0, BL 0, LB 1, OS 16; 436 measured, 7 observed, 8 unverified,
+53 not started; 0 fully qualified**. This closes disposition decisions, not release gates.
+Native remains opt-in and unrelated owner plan/worktree changes remain untouched.
+
+Next: replace the eight unverified row claims with evidence or concrete fixes. They cover
+Copilot/Radius refresh, subagent execution permits, aggregate child usage, throwing prompt
+sections, interrupted tool-output recovery, WebSocket connection timeout and desktop editor/
+terminal actions. Audit applicability against actual built-in paths without reintroducing
+extensions. Then complete sustained reliability/performance, installed coding/migration,
+packaging/platform qualification and the final native-default/Pi removal batch. The one LB
+row is the transitional `--pi-repo` launch path, to retire at cutover.
+
+## Prior follow-up — durable root and child removal
 
 Following **`dfbca07`**, implemented `RemoveSession` with protocol **11** / schema **9**.
 Removal commits an intent before stopping work, rejects new admissions, cancels live root/

@@ -27,7 +27,7 @@ fn input(tools: &[&str]) -> PromptInput {
 }
 
 /// The durable server's tool order is read, write, edit, bash (durable/src/tools/index.ts).
-const GOLDEN: &str = r#"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+const GOLDEN: &str = r#"You are an expert coding assistant operating inside Pipkin, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
 
 <tools>
 - read: Read file contents
@@ -100,7 +100,14 @@ fn golden_prompt_for_a_fixture_project() {
         skill("deploy", "Ship it & <verify>.", false),
         skill("manual", "Only by command.", true),
     ];
-    assert_eq!(SystemPrompt::build(&input), GOLDEN);
+    let expected = GOLDEN.replace(
+        "</rules>\n\n<project_context>",
+        &format!(
+            "</rules>\n\n<docs>\n{}\n</docs>\n\n<project_context>",
+            ENGINE_REFERENCE.trim()
+        ),
+    );
+    assert_eq!(SystemPrompt::build(&input), expected);
     let keys: Vec<&str> = SystemPrompt::sections(&input)
         .iter()
         .map(|(k, _)| *k)
@@ -111,6 +118,7 @@ fn golden_prompt_for_a_fixture_project() {
             "preamble",
             "tools",
             "rules",
+            "docs",
             "project_context",
             "skills",
             "cwd"
@@ -119,12 +127,13 @@ fn golden_prompt_for_a_fixture_project() {
 }
 
 #[test]
-fn minimal_prompt_has_preamble_tools_rules_and_cwd_only() {
+fn minimal_prompt_includes_embedded_help_without_external_resources() {
     let prompt = SystemPrompt::build(&input(&[]));
     assert_eq!(
         prompt,
         format!(
-            "{PREAMBLE}\n\n<tools>\n(none)\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n<rules>\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>\n\n<cwd>\n/repo\n</cwd>"
+            "{PREAMBLE}\n\n<tools>\n(none)\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n<rules>\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>\n\n<docs>\n{}\n</docs>\n\n<cwd>\n/repo\n</cwd>",
+            ENGINE_REFERENCE.trim()
         )
     );
 }
@@ -133,8 +142,13 @@ fn minimal_prompt_has_preamble_tools_rules_and_cwd_only() {
 fn tools_without_a_contribution_are_not_listed() {
     let prompt = SystemPrompt::build(&input(&["read", "subagent", "dynamic_tool"]));
     assert!(prompt.contains("<tools>\n- read: Read file contents\n\nIn addition"));
-    assert!(!prompt.contains("subagent"));
-    assert!(!prompt.contains("dynamic_tool"));
+    let tools = SystemPrompt::sections(&input(&["read", "subagent", "dynamic_tool"]))
+        .into_iter()
+        .find(|(key, _)| *key == "tools")
+        .unwrap()
+        .1;
+    assert!(!tools.contains("subagent"));
+    assert!(!tools.contains("dynamic_tool"));
 }
 
 #[test]
@@ -173,24 +187,6 @@ fn skills_use_the_read_tool_then_bash_and_need_one() {
 }
 
 #[test]
-fn docs_section_only_with_a_bundle() {
-    assert!(!SystemPrompt::build(&input(&["read"])).contains("<docs>"));
-    let mut with_docs = input(&["read"]);
-    with_docs.docs_dir = Some(PathBuf::from("/opt/pi"));
-    let prompt = SystemPrompt::build(&with_docs);
-    assert!(prompt.contains("<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /opt/pi/README.md\n- Additional docs: /opt/pi/docs\n- Examples: /opt/pi/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n"));
-    assert!(prompt.contains(
-        "environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md)"
-    ));
-    // docs sits between rules and cwd.
-    let keys: Vec<&str> = SystemPrompt::sections(&with_docs)
-        .iter()
-        .map(|(k, _)| *k)
-        .collect();
-    assert_eq!(keys, ["preamble", "tools", "rules", "docs", "cwd"]);
-}
-
-#[test]
 fn cwd_backslashes_render_as_slashes() {
     let mut windowsish = input(&[]);
     windowsish.cwd = PathBuf::from(r"C:\work\repo");
@@ -213,4 +209,52 @@ fn section_keys_match_the_durable_server() {
     );
     assert!(tool_contribution("subagent").is_none());
     assert_eq!(tool_contribution("edit").unwrap().guidelines.len(), 4);
+}
+
+#[test]
+fn native_sections_match_executed_reference_except_documented_product_identity() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../fixtures/native-prompt-identity/reference.json"
+    ))
+    .unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let input = PromptInput {
+            cwd: PathBuf::from(case["cwd"].as_str().unwrap()),
+            tools: serde_json::from_value(case["selectedTools"].clone()).unwrap(),
+            context_files: case["contextFiles"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| ContextFile {
+                    path: f["path"].as_str().unwrap().into(),
+                    content: f["content"].as_str().unwrap().into(),
+                })
+                .collect(),
+            skills: vec![],
+        };
+        let mut expected = case["expected"].as_object().unwrap().clone();
+        let reference_preamble = expected["preamble"].as_str().unwrap();
+        assert!(reference_preamble.contains("inside pi,"));
+        expected.insert(
+            "preamble".into(),
+            reference_preamble
+                .replace("inside pi,", "inside Pipkin,")
+                .into(),
+        );
+        assert!(
+            expected["docs"]
+                .as_str()
+                .unwrap()
+                .contains("/reference/docs")
+        );
+        expected.insert(
+            "docs".into(),
+            format!("<docs>\n{}\n</docs>", ENGINE_REFERENCE.trim()).into(),
+        );
+        let got: serde_json::Map<String, serde_json::Value> = SystemPrompt::sections(&input)
+            .into_iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect();
+        assert_eq!(got, expected, "{}", case["name"]);
+    }
 }
