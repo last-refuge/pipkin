@@ -1081,7 +1081,25 @@ fn readiness() {
         let mut e = Engine::spawn(&p);
         let welcome_existing = e.hello() - e.spawned;
         let (snap, _, _) = e.open(&session, None);
-        assert_eq!(snap.entries.len(), 2);
+        // Native persists the effective system context as well as the user/reply pair.
+        // Check identities/content so an unexpected duplicate never passes as metadata.
+        let [prompt, context, answer] = snap.entries.as_slice() else {
+            panic!("expected one prompt, one system snapshot and one reply after restart");
+        };
+        assert!(matches!(&prompt.kind, EntryKind::Message {
+            message: message @ Message::User { .. }, request: Some(key), partial: false, ..
+        } if message.text() == "ping" && key == "k1"));
+        assert!(matches!(
+            &context.kind,
+            EntryKind::Message {
+                message: Message::System(_),
+                partial: false,
+                ..
+            }
+        ));
+        assert!(matches!(&answer.kind, EntryKind::Message {
+            message: message @ Message::Assistant { stop_reason: StopReason::Stop, .. }, partial: false, ..
+        } if message.text() == "ready"));
         let ready_existing = Instant::now() - e.spawned;
         let _ = e.shutdown();
         // Floor: exec + dynamic linking + argument parsing, no engine start.
@@ -1576,6 +1594,7 @@ fn stream_scaling() {
         (2.0, 1024),
         (4.0, 1024),
         (8.0, 1024),
+        (10.0, 1024),
         (0.25, 64),
         (0.5, 64),
         (1.0, 64),

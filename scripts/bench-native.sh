@@ -30,9 +30,11 @@ LOG="$OUT/run.log"
 
 say() { echo "== $*" | tee -a "$LOG"; }
 
+built_bins=("$TARGET/release/pipkin-engine")
 say "building release engine"
 cargo build --release -p pipkin-engine 2>&1 | tail -n 2 | tee -a "$LOG"
 if [[ -z "${SKIP_APP:-}" ]]; then
+    built_bins+=("$TARGET/release/pipkin")
     say "building release app (pipkin-app)"
     cargo build --release -p pipkin-app 2>&1 | tail -n 2 | tee -a "$LOG"
 fi
@@ -82,8 +84,8 @@ done
 # ---- package bytes ------------------------------------------------------------------------
 say "binary sizes"
 tmp="$(mktemp -d "$scratch/sizes-XXXXXX")"
-python3 - "$OUT/package-sizes.json" "$tmp" "$TARGET/release/pipkin-engine" "$TARGET/release/pipkin" <<'PY'
-import gzip, json, lzma, os, shutil, subprocess, sys
+python3 - "$OUT/package-sizes.json" "$tmp" "${built_bins[@]}" <<'PY'
+import gzip, hashlib, json, lzma, os, shutil, subprocess, sys
 out, tmp, bins = sys.argv[1], sys.argv[2], sys.argv[3:]
 rows = []
 for b in bins:
@@ -97,6 +99,7 @@ for b in bins:
         "binary": os.path.basename(b),
         "present": True,
         "unstrippedBytes": os.path.getsize(b),
+        "unstrippedSha256": hashlib.file_digest(open(b, "rb"), "sha256").hexdigest(),
         "strippedBytes": len(data),
         "strippedGzip9Bytes": len(gzip.compress(data, 9)),
         "strippedXz6Bytes": len(lzma.compress(data, preset=6)),

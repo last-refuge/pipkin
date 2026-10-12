@@ -1,5 +1,9 @@
 # Native engine performance (plan §7 scorecard)
 
+Latest scoped follow-up: [2026-10-12 performance measurements](qualification-performance.md),
+including the repaired readiness check, current 1500-turn pass and measured 10 MiB memory gap.
+The historical numbers and failures below are retained with their original scope.
+
 **2026-10-11 follow-up:** the headless memory-budget failure and missing durable catch-up
 have new implementation/measurement evidence in [durable delivery and memory](durable-delivery-memory.md).
 This document retains its original historical results; broader qualification remains open.

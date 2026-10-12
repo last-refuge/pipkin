@@ -1,0 +1,8 @@
+{
+  "binary": "target/release/pipkin-engine",
+  "sha256": "8cc567be7256ab7b19620fd8d7574f4240f0fc2d65b00f5851b99c2c52964c70",
+  "engineRevision": "4a9d4eb0e3ec92dce50d02ab160547c4e0e50172",
+  "protocol": 12,
+  "schema": 9,
+  "note": "Engine code unchanged; benchmark harness and owner documentation changes are uncommitted."
+}

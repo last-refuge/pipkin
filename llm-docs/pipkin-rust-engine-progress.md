@@ -11,7 +11,37 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — native-only history labels
+## Current follow-up — release performance qualification measurements
+
+2026-10-12, engine **`4a9d4eb`**, protocol 12 / schema 9. Ran all six requested release
+benchmarks on the current engine: readiness, full 100+1500-turn soak, stream latency,
+stream scaling (now through 10 MiB), 1k/10k/100k history and Stop. Initial readiness failed a
+stale two-entry assertion; the diagnostic identified the saved system context. The corrected
+check verifies exactly user `ping` / system snapshot / assistant `ready`, preserving duplicate
+protection. Failed and successful runs are both retained.
+
+Current results: readiness p95 33.480 ms, idle RSS p95 23,500 KiB; full text soak 30,112 KiB
+idle / 41,588 KiB VmHWM, 13→13 fds and one worker. Second-half RSS slope remains positive
+at 1.726 KiB/turn. Stream p95 ≤45.767 ms with zero missing markers; all 27 output lengths
+match through 10 MiB. Stop settled-aborted p95 6.065/6.264 ms (stream/bash), no descendants
+left. A warm 200-entry initial page from 100k entries took p95 0.943 ms.
+
+**Open large-response memory issue:** 10 MiB text peaks at 118,496 KiB (115.72 MiB).
+The single-session text-soak pass does not qualify this peak or long tool/multi-session/
+desktop workloads. Approximate CPU/write scaling is measured, not a universal proof.
+Engine-only size output now excludes stale desktop artifacts and includes the built binary's
+SHA-256. No full package reduction or freshly matched Pi comparison is claimed.
+
+Evidence and raw artifact links: [performance qualification](pipkin-rust-engine-evidence/qualification-performance.md).
+Final required checks: **1634 passed, 0 failed, 53 ignored**, clean Clippy/all-targets and
+formatting; shell syntax check passed. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**. Native remains opt-in. The next performance work is
+large-response peak attribution and sustained tool/multi-session/desktop workloads. Broader
+core/transport, installed migration/rollback, CI/platform, relative Pi and native-default/
+Pi-removal gates remain open. Owner plan/worktree changes preserved.
+
+## Previous follow-up — native-only history labels
 
 2026-10-12, following **`ee5b5d7`**. Snapshots and paged history now carry the importer's
 saved entry boundary. Native transcript items and subagent previews label history written
