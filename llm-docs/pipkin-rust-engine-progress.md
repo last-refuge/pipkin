@@ -11,7 +11,32 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — Copilot retry bounds and subagent accounting
+## Current follow-up — durable partial tool output and Stop recovery
+
+Following **`6253ebb`**, tool progress now commits its bounded window and truncation counts
+before publication. Interrupted and durable-Stop recovery retains that output in history,
+the next model request and retained-output access. Result settlement and checkpoint deletion
+are atomic; Stop recovery reaps orphaned processes. A new fault test also exposed and fixed
+early reopening clearing a storage failure before the canceled execution finished.
+
+The strengthened old SIGKILL test failed because its published prefix disappeared. Two new
+process-crash tests cover commit-before-publication and bounded output with/without durable
+Stop. A new runtime test covers failed progress writes and rolled-back final results, both
+without repeating effects. Full crash suite: **17 passed**. See
+[recovery evidence](pipkin-rust-engine-evidence/tool-output-recovery.md), including failures.
+
+Required checks: **1529 passed, 0 failed, 53 ignored**; Clippy, formatting and diff checks clean.
+Logs: `/tmp/pipkin-output-recovery-workspace.log`, `/tmp/pipkin-output-recovery-clippy.log`,
+`/tmp/pipkin-output-recovery-fmt.log`. Protocol 11 / schema 9 unchanged.
+
+Inventory: **504 rows, 488 non-OS; NC 413, NE 37, NP 37, PA 0, BL 0, LB 1, OS 16;
+441 measured, 7 observed, 3 unverified, 53 not started; 0 fully qualified**.
+OUT-RECOVERY now has measured evidence. Next: throwing prompt-section applicability,
+WebSocket connection timeout and native editor/terminal flags; then remaining partial-row
+gaps and sustained/installed/packaging/platform qualification. Native remains opt-in.
+Unrelated owner plan/worktree files remain untouched.
+
+## Previous follow-up — Copilot retry bounds and subagent accounting
 
 Following **`4a0601f`**, Copilot login retries now handle numeric prefixes and HTTP dates,
 reject non-finite delays without panics, discard stalled 429 bodies, and honor cancellation

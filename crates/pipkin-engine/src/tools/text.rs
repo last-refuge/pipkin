@@ -436,7 +436,7 @@ fn count_newlines(text: &str) -> usize {
 }
 
 /// Retained output and what the limits dropped from the whole stream.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BoundedOutput {
     pub text: String,
     pub dropped_bytes: u64,

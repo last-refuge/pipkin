@@ -160,8 +160,17 @@ pub struct ToolResult {
     pub dropped_bytes: u64,
 }
 
-/// Engine services a tool may need (subagents, questions).
+/// Engine services a tool may need (durable progress, subagents, questions).
 pub trait ToolHost: Send + Sync {
+    /// Commit the bounded output window before it is published. Stateless hosts may omit it.
+    fn checkpoint_output(
+        &self,
+        _call_id: &str,
+        _output: &text::BoundedOutput,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Run (or resume) the subagent child for `call_id` and return its answer text.
     fn subagent<'a>(
         &'a self,
@@ -282,11 +291,7 @@ fn retained_limits(retain: Retain) -> OutputLimits {
 }
 
 /// Publish the window to the session's progress callback, throttled.
-async fn publish_progress(
-    stream: &Mutex<Stream>,
-    notify: &Notify,
-    progress: &(dyn Fn(&str) + Send + Sync),
-) {
+async fn publish_progress(stream: &Mutex<Stream>, notify: &Notify, ctx: &ToolCtx) {
     let mut next_at = Instant::now();
     let mut written = String::new();
     loop {
@@ -294,21 +299,28 @@ async fn publish_progress(
         if next_at > Instant::now() {
             tokio::time::sleep_until(next_at).await;
         }
-        let text = {
+        let output = {
             let mut s = stream.lock().unwrap_or_else(|e| e.into_inner());
             if !s.dirty {
                 continue;
             }
             s.dirty = false;
-            s.window.snapshot().text
+            s.window.snapshot()
         };
+        if let Some(host) = &ctx.host
+            && host.checkpoint_output(&ctx.call_id, &output).is_err()
+        {
+            ctx.cancel.cancel();
+            continue;
+        }
+        let text = output.text;
         let fresh = if text.starts_with(&written) {
             text.len() - written.len()
         } else {
             text.len()
         };
         let started = Instant::now();
-        progress(&text);
+        (ctx.progress)(&text);
         written = text;
         let pace = Duration::from_millis(fresh as u64 * 1000 / PROGRESS_BYTES_PER_SECOND);
         next_at = started + PROGRESS_INTERVAL.max(pace);
@@ -467,7 +479,7 @@ pub async fn run(tool: &dyn Tool, args: Value, ctx: &ToolCtx) -> ToolResult {
     };
     let outcome = {
         let execution = tool.execute(args, &call_ctx);
-        let publisher = publish_progress(&stream, &notify, ctx.progress.as_ref());
+        let publisher = publish_progress(&stream, &notify, ctx);
         tokio::pin!(execution, publisher);
         tokio::select! {
             biased;
@@ -615,4 +627,31 @@ pub fn aborted(name: &str, partial: &str) -> ToolResult {
         retained: partial.to_owned(),
         dropped_bytes: 0,
     }
+}
+
+/// Rebuild a result from the last durable model-visible window and its truncation counts.
+pub fn recovered_output(name: &str, output: &text::BoundedOutput, aborted: bool) -> ToolResult {
+    let mut result = if aborted {
+        self::aborted(name, &output.text)
+    } else {
+        interrupted(name, &output.text)
+    };
+    if output.dropped_bytes > 0 {
+        let error = if aborted {
+            format!("Tool {name} was aborted")
+        } else {
+            format!("Tool {name} was interrupted and may have partially run")
+        };
+        *result.content.last_mut().expect("interruption diagnostic") =
+            Block::text(render_diagnostics(&[
+                truncated(output.dropped_lines, output.dropped_bytes, None),
+                Diagnostic::new(
+                    Severity::Error,
+                    if aborted { "aborted" } else { "interrupted" },
+                    error,
+                ),
+            ]));
+    }
+    result.dropped_bytes = output.dropped_bytes;
+    result
 }

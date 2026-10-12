@@ -776,7 +776,10 @@ impl Shared {
         if let Some(prior) = &prior
             && !(prior.replay_safe && tool.replay_safe() && self.replay_allowed(prior))
         {
-            let result = tools::interrupted(name, "");
+            let output = self
+                .store
+                .read(|c| Store::tool_progress(c, &session, call_id))?;
+            let result = tools::recovered_output(name, &output, false);
             self.record_tool_result(sess, run, call_id, name, &result, ToolState::Interrupted)?;
             return Ok(());
         }

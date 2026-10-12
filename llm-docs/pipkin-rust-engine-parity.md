@@ -122,6 +122,14 @@ Owner: **Opus** = main implementation; **Codex** = reserved final integration.
 
 ## Current status summary (2026-10-11)
 
+Tool progress now checkpoints bounded output before publication. Interrupted and stopped
+recovery preserves that output and truncation counts, settles tool state atomically, and
+reaps orphaned tool processes. Early reopening no longer clears a storage failure while
+the canceled execution is still unwinding. Required checks: **1529 passed, 0 failed,
+53 ignored**, clean Clippy/formatting. OUT-RECOVERY moves unverified → measured; three
+explicitly unverified rows remain. Full release qualification remains open. See
+[recovery evidence](pipkin-rust-engine-evidence/tool-output-recovery.md).
+
 Copilot login retries now have bounded/cancellable request and wait lifetimes plus safe
 numeric-prefix/HTTP-date parsing. Parent usage views now include committed child model spend;
 ancestor invalidation and child usage commit atomically. Saturated scheduling, replay/restart,
@@ -272,10 +280,10 @@ the row evidence for history; no package execution is claimed.
 
 | Evidence | Rows |
 | --- | --- |
-| measured | 440 |
+| measured | 441 |
 | observed | 7 |
 | failed | 0 |
-| unverified (code exists, no test) | 4 |
+| unverified (code exists, no test) | 3 |
 | not started (implementation absent or excluded; see row evidence) | 53 |
 
 | Section | Rows | NC | NE | NP | PA | BL | LB | RC | OS | measured | observed | failed | unverified | not started |
@@ -293,12 +301,12 @@ the row evidence for history; no package execution is claimed.
 | 11 Prompt / resources (P12) | 23 | 17 | 2 | 4 | 0 | 0 | 0 | 0 | 0 | 18 | 0 | 0 | 1 | 4 |
 | 12 Context / compaction (P13) | 15 | 13 | 0 | 1 | 0 | 0 | 0 | 0 | 1 | 14 | 0 | 0 | 0 | 1 |
 | 13 Extensions / questions (P14/P15) | 24 | 9 | 2 | 5 | 0 | 0 | 0 | 0 | 8 | 15 | 0 | 0 | 0 | 9 |
-| 14 Tool output (P16) | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 1 | 0 |
+| 14 Tool output (P16) | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 5 | 0 | 0 | 0 | 0 |
 | 15 Settings / env | 34 | 30 | 1 | 3 | 0 | 0 | 0 | 0 | 0 | 30 | 0 | 0 | 1 | 3 |
 | 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 53 | 1 | 0 | 1 | 5 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
 | 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 6 | 0 | 0 | 6 |
-| **Total** | 504 | 413 | 37 | 37 | 0 | 0 | 1 | 0 | 16 | 440 | 7 | 0 | 4 | 53 |
+| **Total** | 504 | 413 | 37 | 37 | 0 | 0 | 1 | 0 | 16 | 441 | 7 | 0 | 3 | 53 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
 whenever rows change. Release gates: native beta needs every mandatory row implemented; native
@@ -828,7 +836,7 @@ presentations, and general durable submission identities beyond input request ke
 | OUT-ENTRY | tool.ts:512-548 | Bounded content stored in the tool-result entry (what the model saw) + details + diagnostics | rt::real_tools_run_their_effects_are_recorded_and_the_complete_output_is_retained; trun::bounds_explicit_text_content_and_keeps_other_content | Opus · E/tools::run, E/store | entries imported verbatim | Same entry content | — | NC | measured: rt::real_tools_run_their_effects_are_recorded_and_the_complete_output_is_retained (model saw ≤52 KiB with `<harness>`), trun::bounds_explicit_text_content_and_keeps_other_content, ted::result_text_through_run_has_no_harness_block; no differential |
 | OUT-RETAINED | env/node.ts:776-790 (bash spill only) | Full bash output in temp spill file (never cleaned) | st::tool_output_is_retained_with_honest_drop_counts; trun::retains_at_most_the_retained_limit_and_counts_the_rest; rt::real_tools_run_their_effects_are_recorded_and_the_complete_output_is_retained | Opus · E/store tool_outputs (I-04) | spill paths kept as text; files not copied | Native retains ≤16 MiB per call in SQLite with dropped-byte count | — | NC | measured: st::tool_output_is_retained_with_honest_drop_counts, trun::retains_at_most_the_retained_limit_and_counts_the_rest, rt::real_tools_run_their_effects_are_recorded_and_the_complete_output_is_retained |
 | OUT-FETCH | e2e::the_complete_output_of_a_long_tool_result_is_copied_and_saved_not_the_preview | Desktop copies/saves the complete output, not the preview | ne2e::the_complete_tool_output_is_copied_from_the_engine | Opus · `Call::ToolOutput` + App/adapters/native | — | Same copied bytes (up to retention) | desktop | NC | measured: ne2e::the_complete_tool_output_is_copied_from_the_engine, ntr::large_output_is_bounded_and_reports_its_size; no differential |
-| OUT-RECOVERY | tool.ts:463-474 | Interrupted/aborted results rebuilt from last committed partial output | none | Opus · E/runtime | — | Same | — | NC | unverified: interrupted/aborted results from the last committed partial output after a crash are not tested (Stop path: TOOL-ABORT) |
+| OUT-RECOVERY | D/harness/tool.ts::fromSlot / appendToolResult | Interrupted/aborted results rebuilt from last committed partial output | crash_points::sigkill_after_tool_checkpoint_before_progress_publication_keeps_the_output, sigkill_tool_recovery_preserves_bounded_output_and_stop_intent; fault_tests::tool_checkpoint_faults_keep_the_last_commit_and_do_not_publish_failed_output | Codex · E/runtime/store/tools | — | Same bounded partial text and truncation/error diagnostics | actual local tools + SIGKILL / storage faults | NC | measured: commit precedes progress publication; interrupted and durable-Stop recovery preserve bounded UTF-8 output and dropped counts, atomically settle calls/output and clear checkpoints, kill orphans, and never repeat unsafe effects. Storage faults retain the previous checkpoint without publishing failed output; early reopen preserves failure until execution unwinds. Source audit, no full-harness differential; see tool-output-recovery evidence |
 
 ## 15. Settings keys the durable harness reads (and server-level keys)
 

@@ -18,6 +18,7 @@ mod outbox;
 pub(crate) mod prompt_result;
 pub(crate) mod removal;
 mod schema;
+mod tool_progress;
 mod writes;
 pub use generation::GenerationState;
 
@@ -1411,6 +1412,7 @@ impl Store {
         dropped: u64,
         now: i64,
     ) -> Result<()> {
+        Self::clear_tool_progress(tx, session, call_id)?;
         let state = match state {
             ToolState::Intent => "intent",
             ToolState::Done => "done",

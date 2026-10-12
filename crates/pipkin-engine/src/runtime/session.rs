@@ -586,11 +586,12 @@ impl Shared {
                     } if *stop_reason == StopReason::ToolUse => Some(m.clone()),
                     _ => None,
                 });
-                for (id, name, _) in last.as_ref().map(|m| m.tool_calls()).unwrap_or_default() {
+                for (id, name, args) in last.as_ref().map(|m| m.tool_calls()).unwrap_or_default() {
                     if answered.contains(id) {
                         continue;
                     }
-                    let result = crate::tools::aborted(name, "");
+                    let output = Store::tool_progress(tx, &session, id)?;
+                    let result = crate::tools::recovered_output(name, &output, true);
                     let kind = EntryKind::Message {
                         message: Message::ToolResult {
                             tool_call_id: id.to_owned(),
@@ -605,6 +606,17 @@ impl Shared {
                         partial: false,
                     };
                     let entry = Store::append_entry(tx, &session, now, Some(run), &kind)?;
+                    Store::tool_intent(tx, &session, id, Some(run), name, args, false, now)?;
+                    Store::tool_result(
+                        tx,
+                        &session,
+                        id,
+                        ToolState::Done,
+                        entry.id,
+                        &result.retained,
+                        result.dropped_bytes,
+                        now,
+                    )?;
                     changes.push(SessionChange::EntryAppended { entry });
                 }
             }
@@ -652,14 +664,25 @@ impl Shared {
             sess.profile_pin_pending
                 .store(false, std::sync::atomic::Ordering::Release);
         }
-        *sess.failed.lock().unwrap_or_else(|e| e.into_inner()) = None;
         if sess.active_run().is_some() {
+            // The failed execution is still unwinding. Clearing its error now lets it
+            // mistake storage-induced cancellation for a user Stop and settle the run.
             return Ok(());
         }
+        *sess.failed.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let Some(run) = self.store.open_run(session).map_err(ProtoError::from)? else {
             return Ok(());
         };
         if run.stop_requested {
+            let intents = self
+                .store
+                .read(|c| Store::tools_in_state(c, session, "intent"))?;
+            for call in intents.iter().filter(|c| c.run == Some(run.id)) {
+                super::faults::kill_tool_processes(&super::faults::tool_call_token(
+                    session,
+                    &call.call_id,
+                ));
+            }
             self.abort_orphaned_children(session, run.id);
             return self.settle(&sess, run.id, RunOutcome::Aborted);
         }
@@ -687,7 +710,10 @@ impl Shared {
             if call.name == "subagent" {
                 self.abort_child(session, &call.call_id);
             }
-            let result = crate::tools::interrupted(&call.name, "");
+            let output = self
+                .store
+                .read(|c| Store::tool_progress(c, session, &call.call_id))?;
+            let result = crate::tools::recovered_output(&call.name, &output, false);
             self.record_tool_result(
                 &sess,
                 run.id,

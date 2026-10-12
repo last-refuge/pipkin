@@ -66,13 +66,29 @@ impl Tool for SubagentTool {
     }
 }
 
-/// The engine side of subagent calls for one parent session.
+/// Durable execution services for one session: progress checkpoints and subagent calls.
 pub struct Host {
     pub shared: Arc<Shared>,
     pub parent: String,
 }
 
 impl ToolHost for Host {
+    fn checkpoint_output(
+        &self,
+        call_id: &str,
+        output: &crate::tools::text::BoundedOutput,
+    ) -> Result<(), String> {
+        let session = self.shared.session(&self.parent).map_err(|e| e.message)?;
+        self.shared
+            .commit(&session, |tx| {
+                Store::save_tool_progress(tx, &self.parent, call_id, output)?;
+                Ok(((), vec![]))
+            })
+            .map_err(|e| e.message)?;
+        super::faults::crash_point("after_tool_progress_checkpoint");
+        Ok(())
+    }
+
     fn subagent<'a>(
         &'a self,
         call_id: &'a str,

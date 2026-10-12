@@ -266,6 +266,98 @@ fn a_fault_recording_a_tool_result_never_reruns_the_command() {
 }
 
 #[test]
+fn tool_checkpoint_faults_keep_the_last_commit_and_do_not_publish_failed_output() {
+    for (fault, after_gate) in [
+        (Fault::ReadOnly, "printf 'uncommitted-suffix'; sleep 30"),
+        (Fault::ToolResult, ":"),
+    ] {
+        let fx = Fixture::new();
+        let gate = fx.project.join("release-tool");
+        let ran = fx.project.join("ran-once");
+        let command = format!(
+            "echo once >> {}; printf 'saved-prefix'; while [ ! -e {} ]; do sleep 0.02; done; {after_gate}",
+            ran.display(),
+            gate.display(),
+        );
+        let provider = Scripted::new(move |_, n| {
+            if n == 0 {
+                R::Tools(None, vec![("bash".into(), json!({"command": command}))])
+            } else {
+                R::Text("recovered".into())
+            }
+        });
+        let mut e = fx.start(&provider);
+        let s = e.create(&fx.project, "c");
+        e.prompt(&s, "r1", "run it").unwrap();
+        e.until("first durable output", |events| {
+            events.iter().any(|event| {
+                matches!(event,
+                    Event::Session { change: SessionChange::ToolProgress { text, .. }, .. }
+                        if text == "saved-prefix"
+                )
+            })
+        });
+        let call_id = e
+            .events
+            .iter()
+            .find_map(|event| match event {
+                Event::Session {
+                    change: SessionChange::ToolProgress { call_id, .. },
+                    ..
+                } => Some(call_id.clone()),
+                _ => None,
+            })
+            .unwrap();
+        e.handle.shared().store.inject(fault).unwrap();
+        std::fs::write(&gate, "go").unwrap();
+        e.until("storage fault", |events| storage_notice(events).is_some());
+        assert!(!settled_event(&e.events, "r1"));
+        assert!(!e.events.iter().any(|event| matches!(event,
+            Event::Session { change: SessionChange::ToolProgress { text, .. }, .. }
+                if text.contains("uncommitted-suffix")
+        )));
+        let checkpoint = e
+            .handle
+            .shared()
+            .store
+            .read(|c| Store::tool_progress(c, &s, &call_id))
+            .unwrap();
+        assert_eq!(
+            checkpoint.text, "saved-prefix",
+            "{fault:?}: old checkpoint survives rollback"
+        );
+        assert!(
+            e.handle
+                .shared()
+                .store
+                .tool_output(&s, &call_id)
+                .unwrap()
+                .is_none()
+        );
+        e.handle.shared().store.clear_faults().unwrap();
+        assert_eq!(
+            reopen_until_settled(&mut e, &s, "r1"),
+            RunOutcome::Completed
+        );
+        let result = tool_results(&e.snapshot(&s));
+        assert_eq!(result.len(), 1);
+        assert!(result[0].2.contains("saved-prefix"));
+        assert!(result[0].2.contains("was interrupted"));
+        assert!(!result[0].2.contains("uncommitted-suffix"));
+        assert_eq!(std::fs::read_to_string(&ran).unwrap(), "once\n");
+        assert_eq!(provider.requests().len(), 2);
+        assert!(
+            e.handle
+                .shared()
+                .store
+                .kv_get(&s, &format!("tool_progress:{call_id}"))
+                .unwrap()
+                .is_none()
+        );
+    }
+}
+
+#[test]
 fn a_fault_settling_the_run_keeps_the_answer_and_reopening_settles_without_asking_again() {
     let fx = Fixture::new();
     let provider = Scripted::echo("all done");

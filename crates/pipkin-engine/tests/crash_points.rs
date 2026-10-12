@@ -724,7 +724,7 @@ fn sigkill_while_a_command_runs_records_it_interrupted_and_never_reruns_it() {
     let started = tmp.path().join("started.txt");
     let finished = tmp.path().join("finished.txt");
     let command = format!(
-        "echo started >> {}; sleep 4; echo finished > {}",
+        "echo started >> {}; printf 'committed tool prefix\\n'; sleep 4; echo finished > {}",
         started.display(),
         finished.display()
     );
@@ -739,6 +739,7 @@ fn sigkill_while_a_command_runs_records_it_interrupted_and_never_reruns_it() {
         assert!(Instant::now() < deadline, "the command never started");
         std::thread::sleep(Duration::from_millis(20));
     }
+    w.until("tool prefix", |events| events.iter().any(|event| matches!(event,Event::Session { change:SessionChange::ToolProgress { text,.. },.. } if text.contains("committed tool prefix"))));
     w.kill();
     assert!(
         !session_processes(&s).is_empty(),
@@ -773,13 +774,160 @@ fn sigkill_while_a_command_runs_records_it_interrupted_and_never_reruns_it() {
             .contains("Tool bash was interrupted and may have partially run"),
         "{all:?}"
     );
+    assert!(
+        tool[0].1.contains("committed tool prefix"),
+        "last published partial output must survive: {tool:?}"
+    );
     let bodies = stub.bodies();
     assert_eq!(bodies.len(), 2, "the tool call is not asked for again");
     let results = messages_with_role(&bodies[1], "tool");
     assert_eq!(results.len(), 1);
     assert!(results[0].contains("was interrupted"), "{results:?}");
+    assert!(results[0].contains("committed tool prefix"));
     assert_eq!(messages_with_role(&bodies[1], "user"), ["run the job"]);
     w.close();
+}
+
+#[test]
+fn sigkill_after_tool_checkpoint_before_progress_publication_keeps_the_output() {
+    let stub = Stub::start(|n, _| {
+        tool_plan(
+            n,
+            "bash",
+            json!({"command": "printf 'checkpoint-only-prefix'; sleep 30"}),
+        )
+    });
+    let p = Profile::new(&stub.url());
+    let mut w = Worker::start(&p, Some("after_tool_progress_checkpoint"));
+    let s = w.create(&p.project);
+    w.prompt(&s, "k1", "run it").unwrap().unwrap();
+    let deadline = Instant::now() + WAIT;
+    while w.child.try_wait().unwrap().is_none() {
+        assert!(Instant::now() < deadline, "checkpoint crash did not happen");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    w.reap_killed();
+    // Drain even events not consumed while waiting for the process to die.
+    w.events
+        .extend(w.rx.try_iter().filter_map(|frame| match frame {
+            ServerFrame::Event { event, .. } => Some(event),
+            _ => None,
+        }));
+    assert!(!w.events.iter().any(|event| matches!(
+        event,
+        Event::Session {
+            change: SessionChange::ToolProgress { .. },
+            ..
+        }
+    )));
+    stub.set_script(|_, _| text_plan("recovered"));
+    let mut w = Worker::start(&p, None);
+    assert_eq!(w.settled(&s, "k1"), RunOutcome::Completed);
+    let results = messages_with_role(&stub.bodies()[1], "tool");
+    assert_eq!(results.len(), 1);
+    assert!(results[0].contains("checkpoint-only-prefix"));
+    assert!(results[0].contains("was interrupted"));
+    no_processes_left(&s);
+    w.close();
+}
+
+#[test]
+fn sigkill_tool_recovery_preserves_bounded_output_and_stop_intent() {
+    for stop in [false, true] {
+        let stub = Stub::start(|n, _| {
+            tool_plan(
+                n,
+                "bash",
+                json!({"command": "printf '%60000s' x; printf '\\nTAIL-✓\\n'; sleep 30"}),
+            )
+        });
+        let p = Profile::new(&stub.url());
+        let mut w = Worker::start(&p, stop.then_some("after-stop-intent"));
+        let s = w.create(&p.project);
+        w.prompt(&s, "k1", "run it").unwrap().unwrap();
+        w.until("bounded tail", |events| {
+            events.iter().any(|event| {
+                matches!(event,
+                    Event::Session { change: SessionChange::ToolProgress { text, .. }, .. }
+                        if text.contains("TAIL-✓")
+                )
+            })
+        });
+        let (call_id, published) = w
+            .events
+            .iter()
+            .rev()
+            .find_map(|event| match event {
+                Event::Session {
+                    change: SessionChange::ToolProgress { call_id, text, .. },
+                    ..
+                } if text.contains("TAIL-✓") => Some((call_id.clone(), text.clone())),
+                _ => None,
+            })
+            .unwrap();
+        assert!(published.len() <= 50 * 1024);
+        if stop {
+            assert!(w.call(Call::Stop { session: s.clone() }).is_none());
+            w.reap_killed();
+        } else {
+            w.kill();
+        }
+        stub.set_script(|_, _| text_plan("noted"));
+        let mut w = Worker::start(&p, None);
+        assert_eq!(
+            w.settled(&s, "k1"),
+            if stop {
+                RunOutcome::Aborted
+            } else {
+                RunOutcome::Completed
+            }
+        );
+        let snap = w.snapshot(&s);
+        let all = texts(&snap);
+        let results: Vec<_> = all.iter().filter(|t| t.0 == "tool").collect();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].1.contains(&published));
+        assert!(results[0].1.contains("Output truncated"));
+        assert!(results[0].1.contains(if stop {
+            "was aborted"
+        } else {
+            "was interrupted"
+        }));
+        let Reply::ToolOutput(output) = w.ok(Call::ToolOutput {
+            session: s.clone(),
+            call_id: call_id.clone(),
+        }) else {
+            panic!()
+        };
+        assert_eq!(output.text, published);
+        assert_eq!(output.retained_bytes, published.len() as u64);
+        assert!(output.dropped_bytes > 0);
+        assert_eq!(stub.bodies().len(), if stop { 1 } else { 2 });
+        no_processes_left(&s);
+        w.close();
+        let store = pipkin_engine::store::Store::open(&p.data).unwrap();
+        let remaining = store
+            .read(|c| {
+                Ok(c.query_row(
+                    "SELECT COUNT(*) FROM kv WHERE session = ?1 AND key LIKE 'tool_progress:%'",
+                    [&s],
+                    |row| row.get::<_, i64>(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(
+            remaining, 0,
+            "settlement clears transient checkpoints atomically"
+        );
+        assert!(
+            store
+                .tool_call(&s, &call_id)
+                .unwrap()
+                .unwrap()
+                .result_entry
+                .is_some()
+        );
+    }
 }
 
 /// (d) Killed after the Stop intent was committed, before the run settled. The restart settles
