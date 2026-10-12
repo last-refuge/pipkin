@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build (release), package and install the native-engine candidate into a scratch prefix, then run
 # the installed binary with a bare environment. Asserts the package carries no Node/npm/Pi payload,
-# that installed migration/coding/restart works without node/npm/pi, and that Pi stays default.
+# that installed migration/coding/restart works without node/npm/pi, and that the built-in engine is the default.
 #
 #   scripts/test-native-package.sh                 build + package + install + checks
 #   scripts/test-native-package.sh --no-build TAR  reuse an existing native archive
@@ -73,7 +73,7 @@ fi
 
 version=$(bare "$prefix/bin/pipkin" --version)
 echo "     | $version"
-check "installed --version (Pi-default line) runs with a bare PATH" "echo \"\$version\" | grep -q '^pipkin .*protocol [0-9]*, schema [0-9]*)$'"
+check "installed --version names the native default with a bare PATH" "echo \"\$version\" | grep -q '^pipkin .*engine native .*engine protocol [0-9]*, engine schema [0-9]*, schema [0-9]*)$'"
 native_version=$(bare "$prefix/bin/pipkin" --version --engine native)
 echo "     | $native_version"
 check "installed --version --engine native names the engine" "echo \"\$native_version\" | grep -q 'engine native .*engine protocol [0-9]*, engine schema [0-9]*'"
@@ -92,10 +92,11 @@ check "installed native migration, coding tools and restart work" \
   "run python3 '$here/scripts/test-installed-native-workflow.py' '$prefix/bin/pipkin' '$here/fixtures/native-fork-import'"
 check "nothing invoked node, npm, npx or pi" "[ -z \"\$(ls '$root' | grep '^used-')\" ]"
 set +e
-default=$(cd "$root" && bare "$prefix/bin/pipkin" --diagnose 2>&1); default_code=$?
+default=$(cd "$root" && bare "$prefix/bin/pipkin" --diagnose --probe 2>&1); default_code=$?
 set -e
-check "Pi stays the default: plain --diagnose looks for a Pi engine and points at --engine native" \
-  "[ $default_code != 0 ] && echo \"\$default\" | grep -q 'engine: NOT FOUND' && echo \"\$default\" | grep -q 'diagnose --engine native'"
+check "plain --diagnose --probe runs the native default without Pi or Node" \
+  "[ $default_code = 0 ] && echo \"\$default\" | grep -q 'engine: native' && echo \"\$default\" | grep -q 'engine probe: OK'"
+
 
 echo "sizes (bytes):"
 echo "     | binary            $(stat -c %s "$installed/usr/bin/pipkin")"

@@ -11,7 +11,27 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — focused parity assertions complete
+## Current follow-up — native-default runtime removed Pi dependencies
+
+2026-10-12, following **`76ca778`**. Ordinary application launches and diagnostics now use
+the built-in engine. The Pi adapter, pi-client crate/workspace dependency, Node discovery and
+legacy runtime launch flags are removed. Native child/in-process/external hosts, demo mode,
+migration source readers, backups and imported desktop identities remain. The retired Pi
+transcript mapping is frozen as a synthetic golden before source removal.
+
+Full workspace: **1,439 passed, zero failed, 9 ignored benchmarks**. The lower total removes
+tests for retired Pi/client/Node code; native tests remain. Clippy's single style warning was
+corrected and controller tests/Clippy/fmt rerun. A native-default package passes installed
+migration, coding, restart, full closed archive restoration, retained output, replay and
+plain --diagnose --probe; Node/npm/npx/Pi traps remain unused. Binary/package identity and
+limitations are in [runtime retirement evidence](pipkin-rust-engine-evidence/runtime-retirement.md).
+
+Next required batch: replace legacy setup/package/release routes and CI jobs, update current
+user docs, verify the final candidate (including upgrade/rollback and supported desktop
+launch), push it, and perform the final capability accounting. Do not publish a release or
+mark the goal complete yet. Preserve unrelated owner plan/draft/worktree changes.
+
+## Prior follow-up — focused parity assertions complete
 
 2026-10-12, following **`252938a`**. Required checks pass **1,664 tests, zero failed,
 54 ignored**, clean Clippy/all-targets and formatting. Five added checks cover engine

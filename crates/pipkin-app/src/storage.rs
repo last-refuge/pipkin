@@ -275,6 +275,7 @@ pub struct CopyReport {
 }
 
 /// The desktop's record that the built-in engine owns a conversation imported from Pi.
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NativeOwnership {
     pub conversation: ConversationId,
@@ -1027,6 +1028,7 @@ impl Storage {
 
     /// Every conversation the built-in engine owns, oldest import first. Read fresh from the
     /// database each time, so an import made by another window is seen.
+    #[cfg(test)]
     pub fn native_owned(&self) -> Result<Vec<NativeOwnership>, String> {
         let conn = self.read_connection()?;
         let mut stmt = conn
@@ -1042,6 +1044,7 @@ impl Storage {
     }
 
     /// Whether the built-in engine owns `conversation`, read fresh from the database.
+    #[cfg(test)]
     pub fn native_owner(
         &self,
         conversation: ConversationId,
@@ -1095,6 +1098,7 @@ impl Drop for Storage {
     }
 }
 
+#[cfg(test)]
 fn ownership_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<NativeOwnership> {
     Ok(NativeOwnership {
         conversation: ConversationId(r.get::<_, i64>(0)? as u64),

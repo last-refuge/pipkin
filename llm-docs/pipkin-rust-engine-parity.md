@@ -15,14 +15,14 @@ reference-derived output exists.
   `b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05` (archive
   `2be5f68d90695e71372c01ccbd08d5728b93691e07c45918846997c8949bcabb`), plus the Pipkin desktop
   at app base `75f5c35`. Frozen reference fixtures: `fixtures/pi-sessions/` (8 scenarios, RE-02).
-- **Current follow-up:** focused assertions cover selected models, configured retry cap,
-  complete worker auth output/log redaction, imported outcome reasons, and native missing
-  attachments/retry. Required checks: **1,664 passed, zero failed, 54 ignored**, clean
-  Clippy/fmt. Corrected macOS engine/protocol/process/diagnostic checks pass; its one remaining
-  reconnect test had a stale-Ready race, corrected locally. Linux packaging rerun remains
-  active. [Evidence](pipkin-rust-engine-evidence/final-parity-assertions.md). Counts remain
-  **446 measured, 10 observed, 2 failed (hosted), 0 unverified, 46 not started**; no default
-  switch or complete qualification is claimed in this batch.
+- **Current follow-up:** native is now the application default and the Pi runtime adapter/client
+  are removed from source, Cargo workspace, dependencies and lockfile. Migration readers,
+  source backups and frozen evidence remain. Required Rust checks: **1,439 passed, zero failed,
+  9 ignored benchmarks**; obsolete Pi runtime/client tests were retired with their code.
+  Native package migration/coding/restart/restore and plain default diagnostics pass with
+  Node/Pi traps unused. Legacy setup/package/release entry points still need the next batch;
+  the overall goal and final candidate qualification remain open.
+  [Runtime evidence](pipkin-rust-engine-evidence/runtime-retirement.md).
 - **Prior follow-up:** sustained compaction on the `ca8c89b` runtime passes 720 turns,
   232 automatic compactions and all 720 retained replies/effects/tool outputs. Peak worker
   memory is 39,312 KiB; sized synthetic usage exercises thresholds with model requests bounded
@@ -264,6 +264,13 @@ reference-derived output exists.
 - **ADRs:** `llm-docs/pipkin-rust-engine-adr/0001`–`0007`. **Handoff (Claude
   subscription):** `llm-docs/pipkin-rust-engine-claude-subscription-handoff.md`.
 
+### Retired reference sources
+
+After `76ca778`, Pi-specific runtime/client tests and paired drivers are historical evidence,
+recoverable at that commit. Their names in baseline/evidence columns identify those recorded
+runs, not current native tests. The shared desktop mapping is now a frozen synthetic golden;
+all native workflow/migration/provider tests remain. There is no Pi runtime fallback.
+
 ## Current owner scope: extension compatibility excluded
 
 On 2026-10-11 the user explicitly removed Pi extensions from Pipkin's requirements. See the
@@ -483,11 +490,11 @@ of all 504 capabilities.
 | Disposition (target) | Rows |
 | --- | --- |
 | `NC` native implementation of the same contract | 412 |
-| `NE` native equivalent | 38 |
+| `NE` native equivalent | 39 |
 | `NP` not present in the baseline (evidence in row) | 37 |
 | `PA` pending audit | 0 |
 | `BL` blocked | 0 |
-| `LB` legacy bridge only | 1 |
+| `LB` legacy bridge only | 0 |
 | `RC` reserved for Codex — not implemented or qualified | 0 |
 | `OS` out of scope by owner decision | 16 |
 
@@ -505,11 +512,11 @@ the row evidence for history; no package execution is claimed.
 
 | Evidence | Rows |
 | --- | --- |
-| measured | 446 |
+| measured | 447 |
 | observed | 10 |
-| failed | 1 |
-| unverified (code exists, required execution not observed) | 1 |
-| not started (implementation absent or excluded; see row evidence) | 46 |
+| failed | 2 |
+| unverified (code exists, required execution not observed) | 0 |
+| not started (implementation absent or excluded; see row evidence) | 45 |
 
 | Section | Rows | NC | NE | NP | PA | BL | LB | RC | OS | measured | observed | failed | unverified | not started |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -528,9 +535,9 @@ the row evidence for history; no package execution is claimed.
 | 13 Extensions / questions (P14/P15) | 24 | 9 | 2 | 5 | 0 | 0 | 0 | 0 | 8 | 15 | 0 | 0 | 0 | 9 |
 | 14 Tool output (P16) | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 5 | 0 | 0 | 0 | 0 |
 | 15 Settings / env | 34 | 30 | 1 | 3 | 0 | 0 | 0 | 0 | 0 | 31 | 0 | 0 | 0 | 3 |
-| 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 55 | 1 | 0 | 0 | 4 |
+| 16 Desktop workflows (P05–P19) | 60 | 44 | 13 | 0 | 0 | 0 | 0 | 0 | 3 | 56 | 1 | 0 | 0 | 3 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
-| 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 9 | 1 | 1 | 1 |
+| 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 9 | 2 | 0 | 1 |
 | **Total** | 504 | 412 | 38 | 37 | 0 | 0 | 1 | 0 | 16 | 446 | 10 | 1 | 1 | 46 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
@@ -1183,16 +1190,16 @@ that cover them or say what is not ported. The Pi reference tests were not run f
 | DSK-EDITOR-TERMINAL | App/launch.rs | Editor/terminal launches via argv | launch:: (7 tests) | Opus · desktop (unchanged) | n/a | Same | desktop | NE | measured (desktop, backend-independent): launch::a_gui_editor_gets_the_real_path_as_one_argument_and_no_shell, launch::a_terminal_editor_is_started_inside_a_terminal, launch::a_file_outside_the_project_or_reached_through_a_link_out_of_it_is_refused |
 | DSK-DIAG | App/diagnostics.rs; docs/support.md | `--diagnose`, `--probe`, palette Copy diagnostics (metadata allowlist) | diag::native_metadata_names_the_built_in_engine_without_a_manifest; inst::a_native_report_names_the_engine_and_its_directories_without_node_or_pi; ndiag:: (2 tests) | Opus · App + native engine identity | n/a | Native engine identity reported; no Node checks | desktop | NC | measured: diag::native_metadata_names_the_built_in_engine_without_a_manifest, inst::a_native_report_names_the_engine_and_its_directories_without_node_or_pi, inst::the_native_probe_fails_with_a_reason, ndiag::diagnose_probe_with_the_native_engine_passes_with_a_bare_environment; observed: pkg-ev (installed `--diagnose --probe --engine native` under `env -i`); diagnostics-correlation advantage not done |
 | DSK-DEMO | App/demo/*; AGENTS.md | Demo mode with "Demo · simulated agent" marker | demo::subagents_snapshots_are_deterministic_honest_and_bounded (App/adapters/demo.rs) | Opus · desktop (unchanged) | n/a | Marker kept | desktop | NE | measured (desktop, unchanged): demo::subagents_snapshots_are_deterministic_honest_and_bounded and the demo/story suites; `--demo` is refused with `--engine native` (controller.rs); walk §1–2 observed no demo marker in native mode |
-| FLAG-PI-REPO | App/controller.rs | `--pi-repo <engine>` launches a source/installed Pi engine | n/a | Pi adapter (kept during transition) | n/a | Native selector `--engine` is new (plan §8) | — | LB | not started (LB; Pi adapter kept; native selector is `--engine native`) |
-| FLAG-PI-DIR | App/controller.rs; docs/support.md | `--pi-dir` selects owned profile or attaches to running server | ctl::external_native_attachment_has_its_own_namespace_and_rejects_owned_host_options; ew::external::foreground_server_is_external_to_clients_and_recovers_its_stale_socket_after_sigkill | Native equivalent: explicit --engine-server / --engine-attach directory (ADR 0008) | n/a | Equivalent explicit selection/attachment and independent ownership; no literal Pi flag translation | — | NE | measured (native equivalent): endpoint-specific desktop namespace, shared server, diagnostics and restart tested. --pi-dir / --pi-server-id remain Pi-only; native commands documented in docs/native-attachment.md; no differential or installed GUI qualification |
-| FLAG-PI-SERVER-ID | App/controller.rs | `--pi-server-id` external server | ctl::external_native_attachment_has_its_own_namespace_and_rejects_owned_host_options; ew::external::foreground_server_is_external_to_clients_and_recovers_its_stale_socket_after_sigkill | Native equivalent: explicit --engine-server / --engine-attach directory (ADR 0008) | n/a | Equivalent explicit selection/attachment and independent ownership; no literal Pi flag translation | — | NE | measured (native equivalent): endpoint-specific desktop namespace, shared server, diagnostics and restart tested. --pi-dir / --pi-server-id remain Pi-only; native commands documented in docs/native-attachment.md; no differential or installed GUI qualification |
-| FLAG-PI-AGENT-DIR | App/controller.rs | `--pi-agent-dir` agent dir (credentials/config) | rti::the_agent_directory_defaults_like_the_reference | Opus · E/runtime/import.rs | importer source | Native uses own config root; flag maps to import source | — | NC | measured: rti::the_agent_directory_defaults_like_the_reference (`PI_CODING_AGENT_DIR` else `~/.pi/agent`); controller::native_agent_directory_selects_an_import_source_for_owned_and_attached_hosts and ne2e::an_explicit_pi_import_source_overrides_the_engine_default_without_changing_native_storage verify explicit CLI source admission, absolute paths, source precedence, confirmed conversation/config/credential imports, unchanged source data and imported-history continuation ([source flag evidence](pipkin-rust-engine-evidence/import-source-flag.md)); native data/config roots remain independent; no new desktop/platform acceptance claimed |
+| FLAG-PI-REPO | App/controller.rs | Launch and own an engine from source/installation | ctl::native_is_default_and_explicit_alias_preserves_options; ew::the_worker_answers_over_its_pipes_and_exits_when_its_input_closes | Native equivalent: built-in child worker | Existing Pi data is explicitly imported, never launched | Ordinary launch owns the compiled worker; --engine-host inprocess and --engine-attach remain | Linux | NE | measured: native is the default; retired --pi-repo / --engine pi fail with migration guidance. Pi adapter/client removed. This intentional runtime retirement follows the owner goal; no Pi runtime compatibility retained. [Evidence](pipkin-rust-engine-evidence/runtime-retirement.md) |
+| FLAG-PI-DIR | App/controller.rs; docs/support.md | `--pi-dir` selects owned profile or attaches to running server | ctl::native_profiles_and_external_hosts_keep_separate_desktop_namespaces; ew::external::foreground_server_is_external_to_clients_and_recovers_its_stale_socket_after_sigkill | Native equivalent: explicit --engine-server / --engine-attach directory (ADR 0008) | n/a | Equivalent explicit selection/attachment and independent ownership; no literal Pi flag translation | — | NE | measured (native equivalent): endpoint-specific desktop namespace, shared server, diagnostics and restart tested. --pi-dir / --pi-server-id now refuse with native attachment guidance; the Pi runtime is retired; native commands documented in docs/native-attachment.md; no differential or installed GUI qualification |
+| FLAG-PI-SERVER-ID | App/controller.rs | `--pi-server-id` external server | ctl::native_profiles_and_external_hosts_keep_separate_desktop_namespaces; ew::external::foreground_server_is_external_to_clients_and_recovers_its_stale_socket_after_sigkill | Native equivalent: explicit --engine-server / --engine-attach directory (ADR 0008) | n/a | Equivalent explicit selection/attachment and independent ownership; no literal Pi flag translation | — | NE | measured (native equivalent): endpoint-specific desktop namespace, shared server, diagnostics and restart tested. --pi-dir / --pi-server-id now refuse with native attachment guidance; the Pi runtime is retired; native commands documented in docs/native-attachment.md; no differential or installed GUI qualification |
+| FLAG-PI-AGENT-DIR | App/controller.rs | `--pi-agent-dir` agent dir (credentials/config) | rti::the_agent_directory_defaults_like_the_reference | Opus · E/runtime/import.rs | importer source | Native uses own config root; flag maps to import source | — | NC | measured: rti::the_agent_directory_defaults_like_the_reference (`PI_CODING_AGENT_DIR` else `~/.pi/agent`); controller::migration_source_projects_and_native_extensions_keep_their_contracts and ne2e::an_explicit_pi_import_source_overrides_the_engine_default_without_changing_native_storage verify explicit CLI source admission, absolute paths, source precedence, confirmed conversation/config/credential imports, unchanged source data and imported-history continuation ([source flag evidence](pipkin-rust-engine-evidence/import-source-flag.md)); native data/config roots remain independent; no new desktop/platform acceptance claimed |
 | FLAG-PI-EXTENSION | App/controller.rs:139-143,301 | `--pi-extension <path>` → `pi server -e` | E2E-34 | see EXT-FACET-SESSION | profile recorded | — | — | OS | not started (BL / LB); the native counterpart is `--engine-extension builtin:questions` or `--engine-extension <executable>` (EXT-NATIVE); excluded from release gates by owner on 2026-10-11 (previous disposition: BL / LB); retained evidence does not claim Pi package compatibility |
-| FLAG-DATA-DIR | docs/support.md | `--data-dir`/`PIPKIN_DATA` isolate desktop data (not engine profile) | ctl::the_native_namespace_names_the_engine_data_directory | Opus · App + EngineConfig.data_dir | n/a | Native: `--data-dir` isolates engine state too (improvement, plan §6) | — | NC | measured: ctl::the_native_namespace_names_the_engine_data_directory, ctl::relative_paths_become_absolute_because_the_engine_starts_elsewhere; observed: walk (throwaway `--data-dir` isolated engine-config and data) |
+| FLAG-DATA-DIR | docs/support.md | `--data-dir`/`PIPKIN_DATA` isolate desktop data (not engine profile) | ctl::native_profiles_and_external_hosts_keep_separate_desktop_namespaces | Opus · App + EngineConfig.data_dir | n/a | Native: `--data-dir` isolates engine state too (improvement, plan §6) | — | NC | measured: ctl::native_profiles_and_external_hosts_keep_separate_desktop_namespaces, ctl::migration_source_projects_and_native_extensions_keep_their_contracts; observed: walk (throwaway `--data-dir` isolated engine-config and data) |
 | FLAG-PROJECT | App/controller.rs | `--project` initial project | existing | desktop | n/a | Same | — | NE | observed: walk §1 (`--engine native --project <dir>`) |
 | FLAG-EDITOR-TERMINAL | App/controller.rs | `--editor`, `--terminal` | ne2e::native_editor_and_terminal_flags_launch_from_a_real_tool_change | Codex · desktop | n/a | Same | native adapter/core + real recorder processes | NE | measured: flags parsed with --engine native, built-in write creates a Changes entry, core OpenTerminal/OpenInEditor effects run through production launcher; graphical and terminal editor options, project cwd and literal path with spaces/semicolon verified. Headless integration; no guarded GUI acceptance claim. See prompt-timeout-launch-checks evidence |
-| FLAG-DEMO-SPEED | App/controller.rs | `--demo <scenario>`, `--speed` | existing | desktop | n/a | Same | — | NE | measured (part): ctl::the_engine_is_pi_unless_native_is_chosen_explicitly asserts native + demo is refused; Pi/demo speed behavior is unchanged; this is parser coverage, not a native GUI speed test |
-| FLAG-VERSION | App/install.rs | `--version` (Pi protocol 8; desktop schema 8 at current revision) | inst::the_native_version_line_keeps_the_default_prefix_and_names_the_engine; ndiag::the_default_version_line_is_unchanged_and_the_native_one_extends_it | Opus · App | n/a | Reports native protocol/schema too | — | NC | measured: inst::the_native_version_line_keeps_the_default_prefix_and_names_the_engine, ndiag::the_default_version_line_is_unchanged_and_the_native_one_extends_it (engine protocol 3, schema 2) |
+| FLAG-DEMO-SPEED | App/controller.rs | `--demo <scenario>`, `--speed` | existing | desktop | n/a | Same | — | NE | measured (part): ctl::demo_remains_explicit_and_simulated asserts native + demo is refused; demo speed behavior is unchanged; this is parser coverage, not a native GUI speed test |
+| FLAG-VERSION | App/install.rs | `--version` (Pi protocol 8; desktop schema 8 at current revision) | inst::the_native_version_line_keeps_the_default_prefix_and_names_the_engine; ndiag::default_and_explicit_native_version_lines_are_identical | Opus · App | n/a | Reports native protocol/schema too | — | NC | measured: inst::the_native_version_line_keeps_the_default_prefix_and_names_the_engine, ndiag::default_and_explicit_native_version_lines_are_identical (engine protocol 12, schema 10); ordinary --version identifies the native default |
 | MULTI-CLIENT | A-svc §4.4; e2e E2E-17 | Several clients attached; per-connection auth; first responder wins questions | ep::endpoint_clients_share_work_and_disconnect_without_owning_shutdown; ep::two_socket_clients_share_questions_and_only_the_first_answer_wins; ne2e::external_desktops_share_runs_and_reconnect_without_owning_the_server | Codex · E/endpoint + App/adapters/native | n/a | Same multi-client outcomes | — | NC | measured: real Unix socket clients, same-UID peer authentication, first question responder wins, per-client auth attempts retained, shared runs/Stop and reconnect; no Pi differential, cross-user process test or live GUI qualification |
 
 ## 17. Import and migration (plan §6)

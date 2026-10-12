@@ -1,21 +1,17 @@
 //! Shareable support metadata: an allowlist, never a scrubbed copy of logs or error text.
 //! This is a configured launch-source snapshot, not an attestation of an external server.
 
-use std::path::Path;
-
 use pipkin_core::Mode;
 
 use crate::install;
 
-pub fn prepare(mode: Mode, launch_source: Option<&Path>) -> String {
-    let manifest = (mode == Mode::Real)
-        .then(|| launch_source.and_then(|path| install::check_engine(path).ok()))
-        .flatten();
-    render(
-        mode,
-        manifest.as_ref(),
+pub fn prepare_demo() -> String {
+    body(
+        Mode::Demo,
         install::APP_REVISION,
         install::APP_DIRTY,
+        install::native_identity().protocol,
+        "engine: simulated (no real execution)",
     )
 }
 
@@ -45,35 +41,6 @@ fn revision(value: &str) -> &str {
     } else {
         "unidentified"
     }
-}
-
-fn render(
-    mode: Mode,
-    manifest: Option<&install::Manifest>,
-    app_revision: &str,
-    dirty: &str,
-) -> String {
-    let engine = if mode == Mode::Demo {
-        "simulated (no real engine)".to_owned()
-    } else {
-        manifest.map_or_else(
-            || "unidentified (external, missing or rejected launch source)".to_owned(),
-            |m| {
-                format!(
-                    "{} (manifest protocol {})",
-                    revision(&m.version),
-                    m.protocol
-                )
-            },
-        )
-    };
-    body(
-        mode,
-        app_revision,
-        dirty,
-        install::PROTOCOL,
-        &format!("configured engine manifest: {engine}"),
-    )
 }
 
 fn body(mode: Mode, app_revision: &str, dirty: &str, protocol: u32, engine_line: &str) -> String {
@@ -109,47 +76,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn arbitrary_manifest_strings_and_invalid_build_stamp_are_not_copied() {
-        let secret = "sk-secret /home/private/project\nAuthorization: Bearer secret";
-        let manifest = install::Manifest {
-            name: secret.into(),
-            version: secret.into(),
-            protocol: 8,
-            min_client: Some(secret.into()),
-            built_at: Some(secret.into()),
-        };
-        let report = render(Mode::Real, Some(&manifest), secret, secret);
-        for fragment in [
-            "sk-secret",
-            "/home/private",
-            "Authorization",
-            "Bearer secret",
-        ] {
-            assert!(!report.contains(fragment), "{report}");
-        }
-        assert!(report.contains("app revision: unidentified"));
-        assert!(report.contains("app dirty: unknown"));
-        assert!(report.contains("configured engine manifest: unidentified"));
-    }
-
-    #[test]
-    fn preserves_only_public_identity_and_marks_unknown_external_identity() {
-        let sha = "d2a311097cbcf669e699479587332ae3988a49d0";
-        let manifest = install::Manifest {
-            name: "private name".into(),
-            version: sha.into(),
-            protocol: 8,
-            min_client: None,
-            built_at: None,
-        };
-        let report = render(Mode::Real, Some(&manifest), sha, "false");
-        assert!(report.contains(sha));
-        assert!(!report.contains("private name"));
-        assert!(render(Mode::Real, None, sha, "true").contains("external, missing or rejected"));
-        assert!(render(Mode::Demo, Some(&manifest), sha, "false").contains("no real engine"));
-    }
-
-    #[test]
     fn native_metadata_names_the_built_in_engine_without_a_manifest() {
         let sha = "d2a311097cbcf669e699479587332ae3988a49d0";
         let id = install::native_identity();
@@ -169,15 +95,9 @@ mod tests {
     }
 
     #[test]
-    fn missing_and_hostile_manifest_files_do_not_leak_paths_or_errors() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("secret-project-sk-token");
-        std::fs::create_dir_all(&path).unwrap();
-        std::fs::write(path.join("engine.json"), "private token invalid JSON").unwrap();
-        let report = prepare(Mode::Real, Some(&path));
-        assert!(!report.contains("secret-project"));
-        assert!(!report.contains("private token"));
-        assert!(report.contains("unidentified"));
-        assert!(prepare(Mode::Demo, Some(&path)).contains("simulated"));
+    fn demo_metadata_is_explicitly_simulated() {
+        let report = prepare_demo();
+        assert!(report.contains("mode: demo (simulated)"));
+        assert!(report.contains("engine: simulated (no real execution)"));
     }
 }

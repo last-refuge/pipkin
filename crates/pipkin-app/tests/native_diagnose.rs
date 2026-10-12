@@ -16,14 +16,14 @@ fn bare(dir: &std::path::Path) -> Command {
 }
 
 #[test]
-fn the_default_version_line_is_unchanged_and_the_native_one_extends_it() {
+fn default_and_explicit_native_version_lines_are_identical() {
     let dir = tempfile::tempdir().unwrap();
     let default = bare(dir.path()).arg("--version").output().unwrap();
     let default = String::from_utf8(default.stdout).unwrap();
     assert!(default.starts_with("pipkin "), "{default}");
     assert!(
-        default.trim_end().ends_with(')') && !default.contains("engine native"),
-        "the Pi-default line keeps its shape: {default}"
+        default.trim_end().ends_with(')') && default.contains("engine native"),
+        "the default identifies the built-in engine: {default}"
     );
     let native = bare(dir.path())
         .args(["--version", "--engine", "native"])
@@ -31,8 +31,7 @@ fn the_default_version_line_is_unchanged_and_the_native_one_extends_it() {
         .unwrap();
     assert!(native.status.success());
     let native = String::from_utf8(native.stdout).unwrap();
-    let prefix = default.split(", protocol ").next().unwrap();
-    assert!(native.starts_with(prefix), "{native} vs {default}");
+    assert_eq!(native, default);
     assert!(
         native.contains(&format!(
             "engine protocol {}",
@@ -47,7 +46,7 @@ fn diagnose_probe_with_the_native_engine_passes_with_a_bare_environment() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
     let output = bare(dir.path())
-        .args(["--diagnose", "--probe", "--engine", "native", "--data-dir"])
+        .args(["--diagnose", "--probe", "--data-dir"])
         .arg(&data)
         .output()
         .unwrap();

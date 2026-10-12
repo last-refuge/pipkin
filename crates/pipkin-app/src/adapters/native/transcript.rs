@@ -547,20 +547,6 @@ mod tests {
         map_entries(entries, &HashMap::new())
     }
 
-    /// The same history as a Pi `ConversationView`, for id comparison.
-    fn pi_view(entries: &[Entry]) -> serde_json::Value {
-        let rows: Vec<_> = entries
-            .iter()
-            .map(|e| match &e.kind {
-                EntryKind::Message { message, .. } => {
-                    json!({ "id": e.id, "kind": "pi.message", "model": [message] })
-                }
-                _ => json!({ "id": e.id }),
-            })
-            .collect();
-        json!({ "entries": rows, "docs": {} })
-    }
-
     #[test]
     fn item_ids_match_the_pi_mapping_for_the_same_history() {
         let history = vec![
@@ -580,8 +566,10 @@ mod tests {
             user(15, "thanks"),
         ];
         let native = map(&history);
-        let pi = crate::adapters::pi::transcript::map_view(&pi_view(&history));
-        assert_eq!(native.items, pi.items);
+        assert_eq!(
+            format!("{:#?}\n", native.items),
+            include_str!("../../../../../fixtures/native-transcript/retired-pi-history.txt")
+        );
         assert_eq!(native.unsupported, 0);
     }
 

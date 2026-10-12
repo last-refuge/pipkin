@@ -1,0 +1,103 @@
+[
+    TranscriptItem {
+        native_only: false,
+        id: ItemId(
+            10240,
+        ),
+        at: 1700000000,
+        kind: User {
+            text: "fix it",
+            attachments: [],
+            delivery: Sent,
+            steer: false,
+        },
+    },
+    TranscriptItem {
+        native_only: false,
+        id: ItemId(
+            11264,
+        ),
+        at: 1700000005,
+        kind: Notice {
+            text: "Thinking\nhm",
+            level: Info,
+        },
+    },
+    TranscriptItem {
+        native_only: false,
+        id: ItemId(
+            11265,
+        ),
+        at: 1700000005,
+        kind: Assistant {
+            text: "Reading.",
+            streaming: false,
+        },
+    },
+    TranscriptItem {
+        native_only: false,
+        id: ItemId(
+            11266,
+        ),
+        at: 1700000005,
+        kind: Tool(
+            ToolCall {
+                call_ref: None,
+                call_id: Some(
+                    "c1",
+                ),
+                name: "read",
+                input: "{\"path\":\"a.rs\"}",
+                output: "fn main() {}",
+                truncated: false,
+                full_len: 12,
+                status: Ok,
+            },
+        ),
+    },
+    TranscriptItem {
+        native_only: false,
+        id: ItemId(
+            11267,
+        ),
+        at: 1700000005,
+        kind: Tool(
+            ToolCall {
+                call_ref: None,
+                call_id: Some(
+                    "c2",
+                ),
+                name: "bash",
+                input: "{\"cmd\":\"false\"}",
+                output: "exit 1",
+                truncated: false,
+                full_len: 6,
+                status: Failed,
+            },
+        ),
+    },
+    TranscriptItem {
+        native_only: false,
+        id: ItemId(
+            14336,
+        ),
+        at: 1700000005,
+        kind: Assistant {
+            text: "Done.",
+            streaming: false,
+        },
+    },
+    TranscriptItem {
+        native_only: false,
+        id: ItemId(
+            15360,
+        ),
+        at: 1700000000,
+        kind: User {
+            text: "thanks",
+            attachments: [],
+            delivery: Sent,
+            steer: false,
+        },
+    },
+]

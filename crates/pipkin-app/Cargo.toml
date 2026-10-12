@@ -14,7 +14,6 @@ gpui.workspace = true
 gpui_platform.workspace = true
 pipkin-core = { path = "../pipkin-core" }
 pipkin-ui = { path = "../pipkin-ui" }
-pi-client = { path = "../pi-client" }
 pipkin-engine = { path = "../pipkin-engine" }
 pipkin-engine-protocol = { path = "../pipkin-engine-protocol" }
 libc = "0.2"

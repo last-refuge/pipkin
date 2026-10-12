@@ -44,41 +44,22 @@ fn main() {
         Err(message) => {
             eprintln!("pipkin: {message}");
             eprintln!(
-                "usage: pipkin [--version] [--diagnose [--probe]] [--pi-dir <path>] [--pi-server-id <uuid>] [--data-dir <path>]\n       pipkin --engine native [--engine-host child|inprocess | --engine-attach <endpoint-dir>] [--data-dir <path>] [--version | --diagnose [--probe]]\n       pipkin --engine-server <endpoint-dir> --engine-data-dir <path> --engine-config-dir <path>\n       pipkin --demo <scenario> [--data-dir <path>] [--speed <factor>]"
+                "usage: pipkin [--version] [--diagnose [--probe]] [--pi-agent-dir <import-source>] [--data-dir <path>]\n       pipkin --engine native [--engine-host child|inprocess | --engine-attach <endpoint-dir>] [--data-dir <path>] [--version | --diagnose [--probe]]\n       pipkin --engine-server <endpoint-dir> --engine-data-dir <path> --engine-config-dir <path>\n       pipkin --demo <scenario> [--data-dir <path>] [--speed <factor>]"
             );
             std::process::exit(2);
         }
     };
     match options.action {
         controller::Action::Run => {}
-        controller::Action::Version if options.engine == controller::EngineKind::Native => {
+        controller::Action::Version => {
             println!("{}", install::native_version_line(storage::SCHEMA_VERSION));
             return;
         }
-        controller::Action::Version => {
-            println!(
-                "pipkin {} (source {}, dirty: {}, protocol {}, schema {})",
-                install::VERSION,
-                install::APP_REVISION,
-                install::APP_DIRTY,
-                install::PROTOCOL,
-                storage::SCHEMA_VERSION
-            );
-            return;
-        }
-        controller::Action::Diagnose { probe }
-            if options.engine == controller::EngineKind::Native =>
-        {
+        controller::Action::Diagnose { probe } => {
             let (text, bad) = match &options.engine_attach {
                 Some(endpoint) => install::diagnose_native_attachment(endpoint, probe),
                 None => install::diagnose_native(options.data_dir.as_deref(), probe),
             };
-            print!("{text}");
-            std::process::exit(if bad { 1 } else { 0 });
-        }
-        controller::Action::Diagnose { probe } => {
-            let data_dir = platform::data_dir(options.data_dir.as_deref());
-            let (text, bad) = install::diagnose(&data_dir, options.pi_repo.as_deref(), probe);
             print!("{text}");
             std::process::exit(if bad { 1 } else { 0 });
         }

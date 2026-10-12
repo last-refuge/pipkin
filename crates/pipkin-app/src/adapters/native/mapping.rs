@@ -15,10 +15,10 @@ use pipkin_engine_protocol::{
     ModelsView, Origin, QuestionKind, RunOutcome, SessionSummary, SubagentsView, UiView,
 };
 
-use crate::adapters::session::{self as pi_session, Session as PiSession};
+use crate::adapters::session::{self, Session};
 
 /// The project of a session whose working directory is not usable.
-pub const SESSIONS_PROJECT: ProjectId = pi_session::SESSIONS_PROJECT;
+pub const SESSIONS_PROJECT: ProjectId = session::SESSIONS_PROJECT;
 
 const MAX_CHILDREN: usize = 4_096;
 const MAX_TASK_CHARS: usize = 160;
@@ -40,20 +40,19 @@ fn usable_cwd(summary: &SessionSummary) -> Option<&str> {
     Some(summary.cwd.as_str()).filter(|c| c.starts_with('/'))
 }
 
-/// Assign conversation ids exactly as `adapters/pi/session.rs::assign_ids` does, keyed by
+/// Assign conversation ids exactly as `the preserved shared session::assign_ids` does, keyed by
 /// [`identity_key`] and ordered by creation time.
 pub fn assign_ids(sessions: &[SessionSummary]) -> Vec<(ConversationId, SessionSummary)> {
-    let pi: Vec<PiSession> = sessions
+    let pi: Vec<Session> = sessions
         .iter()
-        .map(|s| PiSession {
+        .map(|s| Session {
             session_id: identity_key(s).to_owned(),
             created_at: created_secs(s),
-            cwd: None,
         })
         .collect();
     let by_key: HashMap<&str, &SessionSummary> =
         sessions.iter().map(|s| (identity_key(s), s)).collect();
-    pi_session::assign_ids(&pi)
+    session::assign_ids(&pi)
         .into_iter()
         .filter_map(|(id, p)| Some((id, (*by_key.get(p.session_id.as_str())?).clone())))
         .collect()
@@ -66,7 +65,7 @@ pub fn title(summary: &SessionSummary) -> String {
             let short: String = identity_key(summary).chars().take(8).collect();
             format!(
                 "Session {short} \u{b7} {}",
-                pi_session::format_time(created_secs(summary))
+                session::format_time(created_secs(summary))
             )
         }
     }
@@ -474,18 +473,16 @@ mod tests {
     #[test]
     fn imported_sessions_keep_the_desktop_ids_the_pi_adapter_gave_them() {
         let pi_rows = vec![
-            pi_session::Session {
+            session::Session {
                 session_id: "pi-a".into(),
                 created_at: 1_700_000_000,
-                cwd: Some("/work/app".into()),
             },
-            pi_session::Session {
+            session::Session {
                 session_id: "pi-b".into(),
                 created_at: 1_700_000_100,
-                cwd: Some("/work/app".into()),
             },
         ];
-        let pi_ids = pi_session::assign_ids(&pi_rows);
+        let pi_ids = session::assign_ids(&pi_rows);
         let native = assign_ids(&[
             imported("n-2", "pi-b", 1_700_000_100_000),
             summary("n-new", 1_700_000_200_000, "/work/app"),

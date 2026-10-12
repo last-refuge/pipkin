@@ -3,7 +3,9 @@
 //! Effects emitted by the core are executed here, never in render. Backend events arrive on an
 //! async channel and are applied on the foreground in coalesced batches.
 
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -14,8 +16,6 @@ use pipkin_ui::{DemoControls, Model};
 
 use crate::adapters::native::supervisor::{HostKind, HostSpec, WorkerSpec};
 use crate::adapters::native::{ImportResult, NativeBackend, NativeConfig};
-use crate::adapters::pi::engine::EngineConfig;
-use crate::adapters::pi::{OwnershipCheck, PiBackend, PiConfig};
 use crate::adapters::script;
 use crate::adapters::{DemoBackend, DemoOptions};
 use crate::launch::{self, LaunchConfig};
@@ -37,24 +37,15 @@ pub struct Options {
     pub scenario: String,
     pub data_dir: Option<PathBuf>,
     pub speed: f32,
-    /// Real mode: the Pi server profile directory (default `PI_SERVER_DIR` or `~/.pi/server`).
-    pub pi_dir: Option<PathBuf>,
-    /// Real mode: connect to this logical server instead of discovering one.
-    pub pi_server_id: Option<String>,
-    /// Real mode: a Pi checkout to launch and own an engine from (the development entry point).
-    /// Without it, an engine must already be running.
-    pub pi_repo: Option<PathBuf>,
-    /// Real mode: the agent directory (credentials, models, sessions) for a launched engine.
+    /// Legacy agent directory used only as an explicit import source.
     pub pi_agent_dir: Option<PathBuf>,
     /// Real mode: project folders to add at startup (repeatable); the last one is selected.
     pub projects: Vec<PathBuf>,
-    /// Real mode: plugin packages the launched engine loads (repeatable).
-    pub pi_extensions: Vec<PathBuf>,
     /// The editor command for "open in editor" (otherwise `$VISUAL`, `$EDITOR`, the desktop's).
     pub editor: Option<String>,
     /// The terminal command for "open terminal" (otherwise `$TERMINAL`, the desktop's).
     pub terminal: Option<String>,
-    /// Real mode: which engine backs the app. Pi unless `--engine native` is given.
+    /// Real mode uses the built-in engine. `--engine native` remains a CLI alias.
     pub engine: EngineKind,
     /// `--engine native`: where the built-in engine runs (`--engine-host`).
     pub engine_host: HostKind,
@@ -69,9 +60,8 @@ pub struct Options {
 /// The engine behind real mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum EngineKind {
-    #[default]
-    Pi,
     /// Pipkin's built-in engine (`pipkin-engine`).
+    #[default]
     Native,
 }
 
@@ -95,15 +85,11 @@ impl Default for Options {
             scenario: "normal".into(),
             data_dir: None,
             speed: 1.0,
-            pi_dir: None,
-            pi_server_id: None,
-            pi_repo: None,
             pi_agent_dir: None,
             projects: vec![],
-            pi_extensions: vec![],
             editor: None,
             terminal: None,
-            engine: EngineKind::Pi,
+            engine: EngineKind::Native,
             engine_host: HostKind::Child,
             engine_attach: None,
             engine_extensions: vec![],
@@ -113,7 +99,7 @@ impl Default for Options {
 }
 
 /// A path made absolute against the current directory. The engine is started from the home
-/// directory, so a relative `--pi-repo ../pi-fork/pi` would point somewhere else there.
+/// directory, so relative data/import paths must be resolved before that change.
 fn absolute(path: String) -> Result<PathBuf, String> {
     std::path::absolute(&path).map_err(|e| format!("{path}: {e}"))
 }
@@ -129,6 +115,7 @@ impl Options {
     pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Options, String> {
         let mut options = Options::default();
         let mut engine_host = None;
+        let mut explicit_engine = false;
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             let (flag, inline) = match arg.split_once('=') {
@@ -161,22 +148,19 @@ impl Options {
                 }
                 "--probe" => options.action = Action::Diagnose { probe: true },
                 "--data-dir" => options.data_dir = Some(absolute(value("--data-dir")?)?),
-                "--pi-dir" => options.pi_dir = Some(absolute(value("--pi-dir")?)?),
-                "--pi-repo" => options.pi_repo = Some(absolute(value("--pi-repo")?)?),
                 "--project" => options.projects.push(PathBuf::from(value("--project")?)),
-                "--pi-extension" => {
-                    let path = PathBuf::from(value("--pi-extension")?);
-                    options.pi_extensions.push(
-                        std::fs::canonicalize(&path)
-                            .map_err(|e| format!("--pi-extension {}: {e}", path.display()))?,
-                    );
+                "--pi-dir" | "--pi-repo" | "--pi-server-id" | "--pi-extension" => {
+                    return Err(format!(
+                        "{flag} belonged to the retired Pi runtime; use the built-in engine, --engine-attach for a native server, or --pi-agent-dir for migration"
+                    ));
                 }
                 "--engine" => {
+                    explicit_engine = true;
                     options.engine = match value("--engine")?.as_str() {
-                        "pi" => EngineKind::Pi,
+                        "pi" => return Err("The Pi runtime has been retired; Pipkin uses its built-in engine. Use Import from Pi to bring over existing conversations.".into()),
                         "native" => EngineKind::Native,
                         other => {
-                            return Err(format!("unknown engine {other:?}; choose pi or native"));
+                            return Err(format!("unknown engine {other:?}; choose native"));
                         }
                     }
                 }
@@ -217,15 +201,6 @@ impl Options {
                 "--pi-agent-dir" => {
                     options.pi_agent_dir = Some(absolute(value("--pi-agent-dir")?)?)
                 }
-                "--pi-server-id" => {
-                    let id = value("--pi-server-id")?;
-                    if !pi_client::protocol::is_server_id(&id) {
-                        return Err(format!(
-                            "--pi-server-id must be a lowercase UUIDv4, got {id:?}"
-                        ));
-                    }
-                    options.pi_server_id = Some(id);
-                }
                 "--speed" => {
                     let raw = value("--speed")?;
                     let speed: f32 = raw
@@ -239,45 +214,20 @@ impl Options {
                 other => return Err(format!("unknown argument {other:?}")),
             }
         }
-        if options.engine == EngineKind::Native {
-            if options.mode == Mode::Demo {
-                return Err("--engine native cannot be combined with --demo".into());
-            }
-            if options.pi_dir.is_some()
-                || options.pi_server_id.is_some()
-                || options.pi_repo.is_some()
-                || !options.pi_extensions.is_empty()
-            {
-                return Err(
-                    "Pi launch options require --engine pi; --pi-agent-dir may select a native import source".into(),
-                );
-            }
+        if explicit_engine && options.mode == Mode::Demo {
+            return Err("--engine native cannot be combined with --demo".into());
         }
         if options.engine_clear_extensions && !options.engine_extensions.is_empty() {
             return Err("Cannot select extensions and clear the default together".into());
         }
-        if (options.engine_clear_extensions || !options.engine_extensions.is_empty())
-            && options.engine != EngineKind::Native
-        {
-            return Err(
-                "--engine-extension and --engine-clear-extensions apply to --engine native".into(),
-            );
-        }
-        if options.engine_attach.is_some() {
-            if options.engine != EngineKind::Native {
-                return Err("--engine-attach applies to --engine native".into());
-            }
-            if engine_host.is_some()
+        if options.engine_attach.is_some()
+            && (engine_host.is_some()
                 || !options.engine_extensions.is_empty()
-                || options.engine_clear_extensions
-            {
-                return Err("an attached engine owns its configuration; omit --engine-host, --engine-extension and --engine-clear-extensions".into());
-            }
+                || options.engine_clear_extensions)
+        {
+            return Err("an attached engine owns its configuration; omit --engine-host, --engine-extension and --engine-clear-extensions".into());
         }
         if let Some(host) = engine_host {
-            if options.engine != EngineKind::Native {
-                return Err("--engine-host applies to --engine native".into());
-            }
             options.engine_host = host;
         }
         Ok(options)
@@ -317,12 +267,16 @@ fn coalesce(batch: Vec<BackendEvent>) -> Vec<BackendEvent> {
     out
 }
 
-/// The Pi server profile directory this run talks to.
-fn profile_dir(options: &Options) -> PathBuf {
-    options
-        .pi_dir
-        .clone()
-        .unwrap_or_else(crate::adapters::pi::default_directory)
+/// Legacy profile location used only to find the desktop namespace for migration.
+fn profile_dir(_options: &Options) -> PathBuf {
+    std::env::var_os("PI_SERVER_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_default()
+                .join(".pi/server")
+        })
 }
 
 /// Desktop data is namespaced by backend so identities from one never apply to another. A real
@@ -331,7 +285,7 @@ fn profile_dir(options: &Options) -> PathBuf {
 fn namespace(options: &Options) -> String {
     match options.mode {
         Mode::Demo => DEMO_NAMESPACE.to_owned(),
-        Mode::Real if options.engine == EngineKind::Native && options.engine_attach.is_some() => {
+        Mode::Real if options.engine_attach.is_some() => {
             format!(
                 "native-attach:{:x}",
                 stable_id(
@@ -344,7 +298,7 @@ fn namespace(options: &Options) -> String {
                 )
             )
         }
-        Mode::Real if options.engine == EngineKind::Native => format!(
+        Mode::Real => format!(
             "native:{:x}",
             stable_id(
                 &platform::engine_dirs(options.data_dir.as_deref())
@@ -353,7 +307,6 @@ fn namespace(options: &Options) -> String {
                     .to_string()
             )
         ),
-        Mode::Real => pi_namespace(options),
     }
 }
 
@@ -400,8 +353,8 @@ fn import_notice(message: String, imported: usize, copied: Result<CopyReport, St
             }
             if imported > 0 {
                 notice.push_str(
-                    "\nThe imported conversations now continue in the built-in engine; with \
-                     --engine pi they are read-only (the history as of the import).",
+                    "\nThe imported conversations now continue in the built-in engine; \
+                     the original Pi profile remains unchanged for backup or an older Pipkin installation.",
                 );
             }
             notice
@@ -411,115 +364,6 @@ fn import_notice(message: String, imported: usize, copied: Result<CopyReport, St
              not marked as owned by the built-in engine: {e}"
         ),
     }
-}
-
-/// Pi mode: the conversations the built-in engine owns, for the core's guard. A record that
-/// cannot be read is said, not ignored.
-pub(crate) fn restore_ownership(storage: &Storage, state: &mut AppState) {
-    match storage.native_owned() {
-        Ok(rows) => {
-            for row in rows {
-                state.restore_owner(
-                    row.conversation,
-                    ConversationOwner::NativeEngine {
-                        imported_at: row.imported_at,
-                    },
-                );
-            }
-        }
-        Err(e) => {
-            log::error!("cannot read which conversations the built-in engine owns: {e}");
-            state.set_storage_issue(format!(
-                "Pipkin could not read which conversations now continue in the built-in engine \
-                 ({e}). Sending is checked again before anything goes to Pi."
-            ));
-        }
-    }
-}
-
-/// The Pi adapter's boundary check: the desktop's ownership record, read at the moment a change
-/// would be sent (fail closed).
-pub(crate) fn ownership_check(storage: &Arc<Storage>) -> OwnershipCheck {
-    let storage = storage.clone();
-    OwnershipCheck(Arc::new(move |conversation| {
-        storage
-            .native_owner(conversation)
-            .map(|owner| owner.is_some())
-    }))
-}
-
-/// The engine directory to launch and own: `--pi-repo`, else, when no running server was named
-/// (`--pi-dir`, `--pi-server-id`), the bundled engine of an installation.
-fn engine_to_launch(options: &Options) -> Option<PathBuf> {
-    if let Some(repo) = &options.pi_repo {
-        return Some(repo.clone());
-    }
-    if options.pi_dir.is_some() || options.pi_server_id.is_some() {
-        return None;
-    }
-    let candidates = crate::install::engine_search_dirs(
-        std::env::current_exe().ok().as_deref(),
-        std::env::var_os(crate::install::ENGINE_DIR_ENV).map(PathBuf::from),
-    );
-    match crate::install::find_engine(&candidates) {
-        Ok((dir, manifest)) => {
-            log::info!(
-                "using the bundled engine {} at {}",
-                manifest.version,
-                dir.display()
-            );
-            Some(dir)
-        }
-        Err(reasons) => {
-            log::info!(
-                "no bundled engine ({}); looking for a running server",
-                reasons.join("; ")
-            );
-            None
-        }
-    }
-}
-
-/// The engine to launch and own, for `--pi-repo`. Its server identity is the one given, else the
-/// profile's `default-server-id` (the identity Pi itself would use), else a fresh one that is
-/// remembered there so the next launch is the same logical server.
-fn managed_engine(options: &Options, pi_repo: &Path) -> Result<EngineConfig, String> {
-    let server_dir = profile_dir(options);
-    let id_file = server_dir.join("default-server-id");
-    let server_id = match &options.pi_server_id {
-        Some(id) => id.clone(),
-        None => match std::fs::read_to_string(&id_file) {
-            Ok(text) if pi_client::protocol::is_server_id(text.trim()) => text.trim().to_owned(),
-            _ => {
-                let id = platform::fresh_server_id()
-                    .map_err(|e| format!("cannot create a server id: {e}"))?;
-                std::fs::create_dir_all(&server_dir)
-                    .and_then(|_| std::fs::write(&id_file, &id))
-                    .map_err(|e| {
-                        format!(
-                            "cannot remember the server id in {}: {e}",
-                            id_file.display()
-                        )
-                    })?;
-                id
-            }
-        },
-    };
-    let cwd = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_dir())
-        .unwrap_or_else(|| PathBuf::from("/"));
-    Ok(EngineConfig {
-        pi_repo: pi_repo.to_path_buf(),
-        log_path: platform::data_dir(options.data_dir.as_deref()).join("engine.log"),
-        server_dir,
-        server_id,
-        agent_dir: options.pi_agent_dir.clone(),
-        cwd,
-        model: None,
-        env: vec![],
-        extensions: options.pi_extensions.clone(),
-    })
 }
 
 /// Open the desktop database, and say when it is not the one the user expects: a damaged file
@@ -803,7 +647,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
     });
 
     let now = unix_secs();
-    let (event_tx, event_rx) = if options.engine == EngineKind::Native {
+    let (event_tx, event_rx) = if options.mode == Mode::Real {
         crate::event_queue::bounded(
             crate::event_queue::NATIVE_EVENTS,
             crate::event_queue::NATIVE_BYTES,
@@ -823,19 +667,16 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
             },
         ))
     });
-    let launch_source = (options.mode == Mode::Real && options.engine == EngineKind::Pi)
-        .then(|| engine_to_launch(&options))
-        .flatten();
-    let support_report = if options.mode == Mode::Real && options.engine == EngineKind::Native {
+    let support_report = if options.mode == Mode::Real {
         crate::diagnostics::prepare_native()
     } else {
-        crate::diagnostics::prepare(options.mode, launch_source.as_deref())
+        crate::diagnostics::prepare_demo()
     };
     // The built-in engine also imports Pi profiles (explicitly, never at startup).
     let mut native_backend: Option<Arc<NativeBackend>> = None;
     let backend: Arc<dyn Backend> = match &demo {
         Some(demo) => demo.clone(),
-        None if options.engine == EngineKind::Native => {
+        None => {
             let dirs = platform::engine_dirs(options.data_dir.as_deref());
             let log_path = crate::adapters::native::engine_log_path(&platform::data_dir(
                 options.data_dir.as_deref(),
@@ -879,26 +720,6 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
             native_backend = Some(native.clone());
             native
         }
-        None => {
-            let config = match launch_source {
-                Some(repo) => match managed_engine(&options, &repo) {
-                    Ok(engine) => PiConfig::managed(engine),
-                    Err(error) => {
-                        // Say why the engine cannot be launched; do not quietly fall back.
-                        eprintln!("pipkin: cannot manage a Pi engine: {error}");
-                        std::process::exit(2);
-                    }
-                },
-                None => {
-                    let mut config = PiConfig::new(profile_dir(&options));
-                    config.server_id = options.pi_server_id.clone();
-                    config
-                }
-            };
-            let mut config = config;
-            config.owned_elsewhere = Some(ownership_check(&storage));
-            Arc::new(PiBackend::new(event_tx, config))
-        }
     };
 
     // State starts empty and `Connecting`; the backend's catalog arrives asynchronously.
@@ -914,11 +735,6 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
     state.mode = options.mode;
     if let Some(issue) = storage_issue {
         state.set_storage_issue(issue);
-    }
-    // With Pi as the engine, conversations imported into the built-in engine are read-only.
-    // The built-in engine writes them, so it ignores the record.
-    if options.mode == Mode::Real && options.engine == EngineKind::Pi {
-        restore_ownership(&storage, &mut state);
     }
     state.set_now(now);
     state.set_request_prefix(request_prefix(now));
@@ -975,9 +791,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
             || !loaded.goals.is_empty()
             || !loaded.projects.is_empty(),
         demo: options.mode == Mode::Demo,
-        explicit_external_server: options.pi_server_id.is_some()
-            || options.pi_dir.is_some()
-            || options.pi_repo.is_some(),
+        explicit_external_server: options.engine_attach.is_some(),
     }
     .surface();
     let restore = Rc::new(std::cell::RefCell::new(Restore::new(
@@ -1478,284 +1292,117 @@ mod tests {
     }
 
     #[test]
-    fn managed_engine_remembers_a_portable_id_and_honors_explicit_identity() {
-        let profile = tempfile::tempdir().unwrap();
-        let options = Options {
-            pi_dir: Some(profile.path().join("server")),
-            data_dir: Some(profile.path().join("app")),
-            ..Options::default()
-        };
-        let first = managed_engine(&options, profile.path()).unwrap();
-        assert!(pi_client::protocol::is_server_id(&first.server_id));
+    fn native_is_default_and_explicit_alias_preserves_options() {
+        let default = parse(&[]).unwrap();
+        assert_eq!(default, Options::default());
+        assert_eq!(default.engine, EngineKind::Native);
+        assert_eq!(default.engine_host, HostKind::Child);
+        assert_eq!(parse(&["--engine", "native"]).unwrap(), default);
+        assert!(parse(&["--engine", "pi"]).unwrap_err().contains("retired"));
+        for flag in ["--pi-repo", "--pi-dir", "--pi-server-id", "--pi-extension"] {
+            assert!(parse(&[flag, "/old"]).unwrap_err().contains("retired"));
+        }
+        assert!(parse(&["--engine", "other"]).is_err());
         assert_eq!(
-            managed_engine(&options, profile.path()).unwrap().server_id,
-            first.server_id
+            parse(&["--engine-host", "inprocess"]).unwrap().engine_host,
+            HostKind::InProcess
         );
-        let explicit = platform::fresh_server_id().unwrap();
-        let options = Options {
-            pi_server_id: Some(explicit.clone()),
-            ..options
-        };
-        assert_eq!(
-            managed_engine(&options, profile.path()).unwrap().server_id,
-            explicit
-        );
-        assert_eq!(
-            std::fs::read_to_string(first.server_dir.join("default-server-id")).unwrap(),
-            first.server_id
-        );
+        assert!(parse(&["--engine-host", "cloud"]).is_err());
     }
 
     #[test]
-    fn external_native_attachment_has_its_own_namespace_and_rejects_owned_host_options() {
-        let attached = parse(&["--engine", "native", "--engine-attach", "/endpoint-a"]).unwrap();
+    fn demo_remains_explicit_and_simulated() {
+        let demo = parse(&["--demo", "followup", "--speed=0.5", "--data-dir=/tmp/demo"]).unwrap();
+        assert_eq!(demo.mode, Mode::Demo);
+        assert_eq!(demo.scenario, "followup");
+        assert_eq!(demo.speed, 0.5);
+        assert_eq!(namespace(&demo), DEMO_NAMESPACE);
+        assert!(parse(&["--engine", "native", "--demo", "normal"]).is_err());
+        assert!(parse(&["--demo", "nope"]).is_err());
+        assert!(parse(&["--speed", "-1"]).is_err());
+        assert!(parse(&["--bogus"]).is_err());
+    }
+
+    #[test]
+    fn native_profiles_and_external_hosts_keep_separate_desktop_namespaces() {
+        let a = parse(&["--data-dir", "/tmp/a"]).unwrap();
+        let b = parse(&["--data-dir", "/tmp/b"]).unwrap();
+        let attached = parse(&["--engine-attach", "/endpoint-a"]).unwrap();
+        let other = parse(&["--engine-attach", "/endpoint-b"]).unwrap();
         assert_eq!(
-            attached.engine_attach.as_deref(),
-            Some(Path::new("/endpoint-a"))
+            namespace(&a),
+            format!("native:{:x}", stable_id("/tmp/a/engine"))
         );
-        let other = parse(&["--engine", "native", "--engine-attach", "/endpoint-b"]).unwrap();
+        assert_ne!(namespace(&a), namespace(&b));
         assert_ne!(namespace(&attached), namespace(&other));
-        assert_ne!(
-            namespace(&attached),
-            namespace(&parse(&["--engine", "native"]).unwrap())
+        assert_ne!(namespace(&a), namespace(&attached));
+        assert_eq!(
+            pi_namespace(&a),
+            format!("pi:{:x}", stable_id(&profile_dir(&a).display().to_string()))
         );
-        assert!(parse(&["--engine-attach", "/endpoint"]).is_err());
-        assert!(
-            parse(&[
-                "--engine",
-                "native",
-                "--engine-attach",
-                "/endpoint",
-                "--engine-host",
+        assert_ne!(pi_namespace(&a), namespace(&a));
+        for flag in ["--engine-host", "--engine-extension"] {
+            let value = if flag == "--engine-host" {
                 "child"
-            ])
-            .is_err()
-        );
-        assert!(
-            parse(&[
-                "--engine",
-                "native",
-                "--engine-attach",
-                "/endpoint",
-                "--engine-extension",
+            } else {
                 "builtin:questions"
-            ])
-            .is_err()
-        );
+            };
+            assert!(parse(&["--engine-attach", "/endpoint", flag, value]).is_err());
+        }
+        assert!(parse(&["--engine-attach", "/endpoint", "--engine-clear-extensions"]).is_err());
     }
 
     #[test]
-    fn native_agent_directory_selects_an_import_source_for_owned_and_attached_hosts() {
-        for args in [
-            vec!["--engine", "native", "--pi-agent-dir", "custom-agent"],
-            vec![
-                "--engine",
-                "native",
-                "--engine-attach",
-                "/endpoint",
+    fn migration_source_projects_and_native_extensions_keep_their_contracts() {
+        for attached in [false, true] {
+            let mut args = vec![
                 "--pi-agent-dir",
-                "custom-agent",
-            ],
-        ] {
+                "agent",
+                "--data-dir",
+                "data",
+                "--project",
+                "/a",
+                "--project=/b",
+            ];
+            if attached {
+                args.extend(["--engine-attach", "/endpoint"]);
+            }
             let options = parse(&args).unwrap();
             assert_eq!(
                 options.pi_agent_dir,
-                Some(std::env::current_dir().unwrap().join("custom-agent"))
+                Some(std::env::current_dir().unwrap().join("agent"))
             );
-            assert_eq!(options.data_dir, None);
-            let config = NativeConfig::new(
-                HostSpec::External(PathBuf::from("/endpoint")),
-                "native-data".into(),
-            )
-            .with_import_source(options.pi_agent_dir.as_deref());
+            assert!(options.data_dir.as_ref().unwrap().is_absolute());
+            assert_eq!(options.projects, [PathBuf::from("/a"), PathBuf::from("/b")]);
+            let config =
+                NativeConfig::new(HostSpec::External("/endpoint".into()), "native-data".into())
+                    .with_import_source(options.pi_agent_dir.as_deref());
             assert_eq!(
                 config.import_agent_dir.as_deref(),
                 options.pi_agent_dir.as_deref().and_then(Path::to_str)
             );
-            assert_eq!(config.location, "native-data");
         }
-        assert!(parse(&["--engine", "native", "--pi-repo", "/pi"]).is_err());
-        assert!(parse(&["--engine", "native", "--pi-dir", "/pi-server"]).is_err());
-    }
-
-    #[test]
-    fn defaults_and_flags() {
-        assert_eq!(parse(&[]).unwrap(), Options::default());
-        assert_eq!(Options::default().mode, Mode::Real);
-        let o = parse(&["--demo", "followup", "--data-dir=/tmp/x", "--speed", "0.5"]).unwrap();
-        assert_eq!(o.scenario, "followup");
-        assert_eq!(o.mode, Mode::Demo);
-        assert_eq!(o.data_dir, Some(PathBuf::from("/tmp/x")));
-        assert_eq!(o.speed, 0.5);
-    }
-
-    #[test]
-    fn relative_paths_become_absolute_because_the_engine_starts_elsewhere() {
-        let here = std::env::current_dir().unwrap();
-        let o = parse(&[
-            "--pi-repo=../pi-fork/pi",
-            "--pi-agent-dir",
-            "agent",
-            "--data-dir=d",
-            "--pi-dir=s",
-        ])
-        .unwrap();
-        for path in [&o.pi_repo, &o.pi_agent_dir, &o.data_dir, &o.pi_dir] {
-            assert!(path.as_ref().unwrap().is_absolute(), "{path:?}");
-        }
-        assert_eq!(o.pi_agent_dir, Some(here.join("agent")));
-    }
-
-    #[test]
-    fn real_mode_flags() {
-        let o = parse(&[
-            "--pi-repo=/pi",
-            "--pi-dir",
-            "/srv",
-            "--pi-agent-dir=/agent",
-            "--project",
-            "/work/a",
-            "--project=/work/b",
-        ])
-        .unwrap();
-        assert_eq!(o.mode, Mode::Real);
-        assert_eq!(o.pi_repo, Some(PathBuf::from("/pi")));
-        assert_eq!(o.pi_dir, Some(PathBuf::from("/srv")));
-        assert_eq!(o.pi_agent_dir, Some(PathBuf::from("/agent")));
         assert_eq!(
-            o.projects,
-            [PathBuf::from("/work/a"), PathBuf::from("/work/b")]
-        );
-        assert!(parse(&["--pi-server-id", "nope"]).is_err());
-        assert!(parse(&["--project"]).is_err());
-    }
-
-    #[test]
-    fn the_namespace_names_the_backend_and_the_profile() {
-        let demo = parse(&["--demo", "normal"]).unwrap();
-        assert_eq!(namespace(&demo), DEMO_NAMESPACE);
-        let a = parse(&["--pi-dir", "/srv/a"]).unwrap();
-        let b = parse(&["--pi-dir", "/srv/b"]).unwrap();
-        assert!(namespace(&a).starts_with("pi:"));
-        assert_ne!(
-            namespace(&a),
-            namespace(&b),
-            "two profiles never share drafts or journals"
-        );
-        assert_eq!(
-            namespace(&a),
-            namespace(&parse(&["--pi-dir", "/srv/a"]).unwrap())
-        );
-    }
-
-    #[test]
-    fn the_engine_is_pi_unless_native_is_chosen_explicitly() {
-        let o = parse(&[]).unwrap();
-        assert_eq!((o.engine, o.engine_host), (EngineKind::Pi, HostKind::Child));
-        assert_eq!(parse(&["--engine", "pi"]).unwrap(), Options::default());
-        let n = parse(&["--engine=native"]).unwrap();
-        assert_eq!(
-            (n.mode, n.engine, n.engine_host),
-            (Mode::Real, EngineKind::Native, HostKind::Child)
-        );
-        let i = parse(&["--engine-host", "inprocess", "--engine", "native"]).unwrap();
-        assert_eq!(i.engine_host, HostKind::InProcess);
-        assert_eq!(
-            parse(&["--engine", "native", "--engine-host=child"])
+            parse(&["--engine-extension", "builtin:questions"])
                 .unwrap()
-                .engine_host,
-            HostKind::Child
+                .engine_extensions,
+            ["builtin:questions"]
         );
         assert!(
-            parse(&["--engine", "zed"])
-                .unwrap_err()
-                .contains("unknown engine")
-        );
-        assert!(parse(&["--engine"]).is_err());
-        assert!(
-            parse(&["--engine-host", "inprocess"])
-                .unwrap_err()
-                .contains("--engine native")
-        );
-        assert!(parse(&["--engine", "native", "--engine-host", "cloud"]).is_err());
-        let ext = parse(&[
-            "--engine",
-            "native",
-            "--engine-extension",
-            "builtin:questions",
-        ])
-        .unwrap();
-        assert_eq!(ext.engine_extensions, vec!["builtin:questions".to_owned()]);
-        assert!(
-            parse(&["--engine", "native", "--engine-clear-extensions"])
+            parse(&["--engine-clear-extensions"])
                 .unwrap()
                 .engine_clear_extensions
         );
-        assert!(parse(&["--engine-clear-extensions"]).is_err());
         assert!(
             parse(&[
-                "--engine",
-                "native",
                 "--engine-clear-extensions",
                 "--engine-extension",
                 "builtin:questions"
             ])
             .is_err()
         );
-        assert!(
-            parse(&[
-                "--engine",
-                "native",
-                "--engine-attach",
-                "/tmp/owned-elsewhere",
-                "--engine-clear-extensions"
-            ])
-            .is_err()
-        );
-        assert!(parse(&["--engine-extension", "builtin:questions"]).is_err());
-        assert!(parse(&["--engine", "native", "--engine-extension", "builtin:nope"]).is_err());
-        assert!(parse(&["--engine", "native", "--engine-extension", "/no/such/file"]).is_err());
-        assert!(parse(&["--engine", "native", "--demo", "normal"]).is_err());
-        assert!(parse(&["--engine", "native", "--pi-dir", "/srv"]).is_err());
-        assert!(parse(&["--pi-repo=/pi", "--engine", "native"]).is_err());
-    }
-
-    #[test]
-    fn the_native_namespace_names_the_engine_data_directory() {
-        let a = parse(&["--engine", "native", "--data-dir", "/tmp/a"]).unwrap();
-        let b = parse(&["--engine", "native", "--data-dir", "/tmp/b"]).unwrap();
-        let pi = parse(&["--data-dir", "/tmp/a"]).unwrap();
-        assert_eq!(
-            namespace(&a),
-            format!("native:{:x}", stable_id("/tmp/a/engine"))
-        );
-        assert_ne!(namespace(&a), namespace(&b));
-        assert!(namespace(&pi).starts_with("pi:"));
-        assert_ne!(
-            namespace(&a),
-            namespace(&pi),
-            "the engines never share desktop data"
-        );
-    }
-
-    #[test]
-    fn a_native_import_copies_from_the_namespace_the_pi_engine_uses() {
-        let native = parse(&["--engine", "native", "--data-dir", "/tmp/a"]).unwrap();
-        let pi = parse(&["--data-dir", "/tmp/a"]).unwrap();
-        assert_eq!(pi_namespace(&native), namespace(&pi));
-        assert_ne!(pi_namespace(&native), namespace(&native));
-    }
-
-    #[test]
-    fn rejects_bad_input() {
-        assert!(
-            parse(&["--demo", "nope"])
-                .unwrap_err()
-                .contains("unknown scenario")
-        );
-        assert!(parse(&["--speed", "-1"]).is_err());
-        assert!(parse(&["--speed"]).is_err());
-        assert!(parse(&["--bogus"]).is_err());
+        assert!(parse(&["--engine-extension", "builtin:nope"]).is_err());
+        assert!(parse(&["--project"]).is_err());
     }
 
     #[test]
