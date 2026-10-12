@@ -11,7 +11,32 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — installed native upgrade, rollback and archive restore
+## Current follow-up — actual installed Pi rollback and matched package sizes
+
+2026-10-12, following **`d112c77`**, protocol 12 / schema 9 unchanged. Built the real
+pinned production Pi package and a native package with an identical application binary.
+The new opt-in headless workflow passes Pi coding → native import/continuation → complete
+closed desktop/native profile archive restoration → guarded Pi rollback → explicit release
+and Pi coding → retained native branch reopen. Drafts, source bytes, restored file modes,
+ownership refusal in both core and adapter, exact provider context and real tool effects
+are asserted. No user installation, profile or account was changed.
+
+Matched package reductions are **44.17% installed** and **50.69% archive**, meeting both
+provisional targets; the current common app binary still includes both adapters. Actual
+Pi and native package install/probe/upgrade/rollback/uninstall checks pass. The full installed
+Pi workflow suite passes 37 tests after correcting a stale unscoped-Changes fixture. CI gains the
+paired-package workflow and comparison; local execution does not establish runner success.
+
+Required checks: **1,638 passed, 0 failed, 55 ignored**, clean Clippy/all-targets and
+formatting; the new ignored cross-engine test was explicitly executed and passed. See
+[cross-engine evidence](pipkin-rust-engine-evidence/installed-pi-rollback.md) and the two
+new `fixtures/native-installed/2026-10-12-{cross-engine,package-comparison}.json` reports.
+`PKG-ENGINE-STAGE` moves from not started to observed: **444 measured, 8 observed,
+1 unverified, 51 not started**, dispositions unchanged, **0 fully qualified**. Native stays
+opt-in. Visual acceptance, remaining behavioral comparisons/performance, actual CI,
+license review and default/Pi retirement remain open. Pi extensions remain out of scope.
+
+## Prior follow-up — installed native upgrade, rollback and archive restore
 
 2026-10-12, following **`cf32a31`**, protocol 12 / schema 9 unchanged. A new regression
 confirmed that rollback activated a tampered retained binary. The installer now verifies

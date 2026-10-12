@@ -142,16 +142,24 @@ jobs:
       - name: Scripted-provider development engine qualification
         run: |
           set -o pipefail
-          cargo test -p pipkin-app --release --locked e2e -- --ignored --test-threads=1 2>&1 | tee qualification-logs/engine.log
+          cargo test -p pipkin-app --release --locked e2e -- --ignored --test-threads=1 --skip installed_pi_native_rollback_preserves_history_and_requires_ownership_release 2>&1 | tee qualification-logs/engine.log
       - name: Bundled engine and installer qualification
         run: |
           set -o pipefail
-          scripts/package.sh "$PIPKIN_PI_REPO" 2>&1 | tee qualification-logs/package.log
+          revision=$(git rev-parse HEAD)
+          if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then revision="$revision-dirty"; fi
+          PIPKIN_REVISION="$revision" scripts/package.sh "$PIPKIN_PI_REPO" 2>&1 | tee qualification-logs/package.log
           python3 scripts/test-package-docs.py dist/stage 2>&1 | tee qualification-logs/package-docs.log
           version=$(cargo pkgid -p pipkin-app | sed 's/.*[#@]//')
           package="dist/pipkin-$version-$(uname -m).tar.zst"
           scripts/verify-install.sh --full "$package" 2>&1 | tee qualification-logs/packaged-engine.log
           scripts/test-install.sh "$package" 2>&1 | tee qualification-logs/installer.log
+          scripts/package-native.sh 2>&1 | tee qualification-logs/paired-native-package.log
+          native="dist/native/pipkin-native-$version-$(uname -m).tar.zst"
+          scripts/test-native-package.sh --no-build "$native" 2>&1 | tee qualification-logs/paired-native-install.log
+          PIPKIN_PI_PACKAGE="$PWD/$package" PIPKIN_NATIVE_PACKAGE="$PWD/$native" \
+            cargo test -p pipkin-app --release --locked installed_pi_native_rollback_preserves_history_and_requires_ownership_release -- --ignored --nocapture --test-threads=1 2>&1 | tee qualification-logs/cross-engine-rollback.log
+          python3 scripts/compare-native-package.py "$package" "$native" qualification-logs/package-comparison.json
           sha256sum "$package" > qualification-logs/SHA256SUMS
           cp dist/stage/usr/lib/pipkin/engine/engine.json qualification-logs/
           cp dist/stage/usr/share/doc/pipkin/build-info.json qualification-logs/

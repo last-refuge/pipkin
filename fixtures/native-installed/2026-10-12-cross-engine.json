@@ -1,0 +1,33 @@
+{
+  "result": "passed",
+  "test": "adapters::pi::e2e::installed_pi_native_rollback_preserves_history_and_requires_ownership_release",
+  "scope": "Headless real core, both adapters, desktop SQLite storage and actual installed Pi/native engines; no window or live account. Pi \u2192 native import/continuation \u2192 complete desktop/native archive restoration \u2192 Pi read-only guard \u2192 confirmed release and Pi continuation \u2192 retained native branch reopen.",
+  "durationSeconds": 7.42,
+  "artifacts": {
+    "pi": {
+      "archiveSha256": "7d128ad3982302410dec1d6ec9a16e7ec42a9606537b327e1774a026c7a962e8",
+      "app": {
+        "version": "0.0.1",
+        "revision": "d112c774d540e3280b267676e13ce59f6c19e878",
+        "dirty": "true",
+        "binarySha256": "ba43e882a836dc6ad9008d5329a133c7ffa18d078876076a83ae0d188315dfff"
+      }
+    },
+    "native": {
+      "archiveSha256": "be6a7c3c9006cec05207cf124989154ff00fcdfed2f29708181f0dd4691c4b3c",
+      "app": {
+        "version": "0.0.1",
+        "revision": "d112c774d540e3280b267676e13ce59f6c19e878",
+        "dirty": "true",
+        "binarySha256": "ba43e882a836dc6ad9008d5329a133c7ffa18d078876076a83ae0d188315dfff"
+      }
+    }
+  },
+  "testInputsSha256": {
+    "crates/pipkin-app/src/adapters/pi/e2e.rs": "b916fe4e60dc4f190a984378cf0c8c7a9b13b606c006b86093a3fd96cd24663f",
+    "crates/pipkin-app/src/adapters/native/e2e.rs": "37a7c1faeda4e07ad66eca8b4500a06678765b855c5e9599851b2c9783e86469",
+    "packaging/install.sh": "41dfe1beaf20a7ba3a724445f6731ae1d377cc3e35c13433b2258a54dbcca908"
+  },
+  "environment": "cleared; scratch HOME; explicit Cargo/Rustup caches; custom local HTTP provider; no inherited provider credentials/proxies",
+  "command": "PIPKIN_PI_REPO=PINNED_ENGINE PIPKIN_PI_PACKAGE=PI_ARCHIVE PIPKIN_NATIVE_PACKAGE=NATIVE_ARCHIVE cargo test -p pipkin-app installed_pi_native_rollback_preserves_history_and_requires_ownership_release -- --ignored --nocapture"
+}

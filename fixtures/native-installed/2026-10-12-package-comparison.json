@@ -1,0 +1,141 @@
+{
+  "method": "GNU du -sb of extracted usr/ on the same filesystem; original tar.zst byte lengths; identical unstripped app binary",
+  "platform": "Linux x86_64",
+  "pi": {
+    "archiveSha256": "7d128ad3982302410dec1d6ec9a16e7ec42a9606537b327e1774a026c7a962e8",
+    "archiveBytes": 157994870,
+    "installedApparentBytes": 661543156,
+    "app": {
+      "version": "0.0.1",
+      "revision": "d112c774d540e3280b267676e13ce59f6c19e878",
+      "dirty": "true",
+      "binarySha256": "ba43e882a836dc6ad9008d5329a133c7ffa18d078876076a83ae0d188315dfff"
+    },
+    "buildInfo": {
+      "formatVersion": 1,
+      "app": {
+        "version": "0.0.1",
+        "revision": "d112c774d540e3280b267676e13ce59f6c19e878",
+        "dirty": "true",
+        "binarySha256": "ba43e882a836dc6ad9008d5329a133c7ffa18d078876076a83ae0d188315dfff"
+      },
+      "compatibility": {
+        "protocol": 8,
+        "schema": 8,
+        "nodeMinimum": "22.19"
+      },
+      "engine": {
+        "revision": "d2a311097cbcf669e699479587332ae3988a49d0",
+        "development": false,
+        "productionPruneSucceeded": true,
+        "modelDataManifestSha256": "b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05",
+        "stagedLockSha256": "aad6e878fa237f4b92645408c8de1b596ef9246a1f2fcabd47a0ac8563c0102b"
+      },
+      "inputs": {
+        "cargoLockSha256": "e51ef4eebee96ac4f9a30e3a4fdf22021e0d2cd75ff81d7a640a57d85a81a778",
+        "engineSourceLockSha256": "aad6e878fa237f4b92645408c8de1b596ef9246a1f2fcabd47a0ac8563c0102b",
+        "modelDataArchiveSha256": "2be5f68d90695e71372c01ccbd08d5728b93691e07c45918846997c8949bcabb",
+        "rustToolchainSha256": "2ad6f15416572b4836585087f1d4abc53b8fa2dbd616f8dacfaa587ed6714228",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+        "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+        "node": "v26.8.1",
+        "npm": "11.19.0",
+        "python": "Python 3.14.7",
+        "platform": "linux",
+        "architecture": "x64",
+        "customRustFlags": false
+      }
+    },
+    "npmPackages": 155,
+    "files": 19651,
+    "symlinks": 29,
+    "fileAndSymlinkBytes": 661543156,
+    "engine": {
+      "name": "pi",
+      "version": "d2a311097cbcf669e699479587332ae3988a49d0",
+      "sourceRevision": "d2a311097cbcf669e699479587332ae3988a49d0",
+      "pipkinAuthBridgeSha256": "370dbef417d1cdeb68239f0d283d4dceb36f5ed539e500e0ba041238aad94e3a",
+      "pipkinSubagentsSha256": "9fb846e55a931d829e2ca25bde08ae98d2f128c14ceb6f1bc033b0a2e6fb3664",
+      "modelDataManifestSha256": "b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05",
+      "productionPruneSucceeded": true,
+      "development": false,
+      "protocol": 8,
+      "minClient": "0.0.1",
+      "builtAt": "2026-10-12T10:48:35Z",
+      "requiresBundledNode": true
+    },
+    "runtime": {
+      "formatVersion": 1,
+      "version": "22.23.3",
+      "target": "x86_64-unknown-linux-gnu",
+      "buildTools": false,
+      "archive": "node-v22.23.3-linux-x64.tar.gz",
+      "archiveSha256": "1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af",
+      "source": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.gz",
+      "binarySha256": "fde6a4bf8d0562f7751d1a2d6cb9b417c4cfe107bbcb0aa3e9a24e125e348f48",
+      "licenseSha256": "c738ae413cf561f174e34f6961f8ca458aae2369a73640dda6234c629b98bcc4",
+      "limitations": "Pinned HTTPS/checksum inputs, not independent signature authentication or security audit. Full Node/dependency LICENSE retained."
+    }
+  },
+  "native": {
+    "archiveSha256": "be6a7c3c9006cec05207cf124989154ff00fcdfed2f29708181f0dd4691c4b3c",
+    "archiveBytes": 77902093,
+    "installedApparentBytes": 369345042,
+    "app": {
+      "version": "0.0.1",
+      "revision": "d112c774d540e3280b267676e13ce59f6c19e878",
+      "dirty": "true",
+      "binarySha256": "ba43e882a836dc6ad9008d5329a133c7ffa18d078876076a83ae0d188315dfff"
+    },
+    "buildInfo": {
+      "formatVersion": 1,
+      "kind": "native-engine-candidate",
+      "app": {
+        "version": "0.0.1",
+        "revision": "d112c774d540e3280b267676e13ce59f6c19e878",
+        "dirty": "true",
+        "binarySha256": "ba43e882a836dc6ad9008d5329a133c7ffa18d078876076a83ae0d188315dfff"
+      },
+      "compatibility": {
+        "engine": "native",
+        "engineSelector": "--engine native",
+        "engineProtocol": 12,
+        "engineSchema": 9,
+        "desktopSchema": 8,
+        "nodeMinimum": null
+      },
+      "engine": {
+        "kind": "native",
+        "builtIntoBinary": true,
+        "version": "0.0.1",
+        "sourceRevision": "d112c774d540e3280b267676e13ce59f6c19e878",
+        "bundledNode": false,
+        "piEngine": false
+      },
+      "inputs": {
+        "cargoLockSha256": "e51ef4eebee96ac4f9a30e3a4fdf22021e0d2cd75ff81d7a640a57d85a81a778",
+        "rustToolchainSha256": "2ad6f15416572b4836585087f1d4abc53b8fa2dbd616f8dacfaa587ed6714228",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+        "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+        "python": "Python 3.14.7",
+        "node": null,
+        "npm": null,
+        "platform": "linux",
+        "architecture": "x86_64",
+        "customRustFlags": false
+      }
+    },
+    "npmPackages": 0,
+    "files": 1142,
+    "symlinks": 0,
+    "fileAndSymlinkBytes": 369345042
+  },
+  "installedReductionPercent": 44.16916891208833,
+  "archiveReductionPercent": 50.69327693994114,
+  "targets": {
+    "installedReductionPercent": 40,
+    "archiveReductionPercent": 25
+  },
+  "targetsMet": true,
+  "limits": "Current transitional app includes both adapters/engines in both packages. This compares runtime payload removal, not historical app revisions or final post-retirement binary size. Not distribution portability or complete licensing qualification."
+}

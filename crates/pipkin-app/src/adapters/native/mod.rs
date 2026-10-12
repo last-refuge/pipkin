@@ -2481,4 +2481,4 @@ pub fn engine_log_path(desktop_data_dir: &Path) -> PathBuf {
 mod tests;
 
 #[cfg(test)]
-mod e2e;
+pub(crate) mod e2e;

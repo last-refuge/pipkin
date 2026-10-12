@@ -2955,3 +2955,75 @@ fn removal_of_the_open_running_conversation_updates_desktop_even_without_live_ev
         h.stop();
     }
 }
+
+/// Companion to the opt-in real installed Pi/native rollback workflow. The worker is the
+/// packaged executable, while this harness exercises the same core/controller effects as UI.
+pub(crate) fn installed_migration_roundtrip(
+    program: &Path,
+    root: &Path,
+    db: &Path,
+    agent: &Path,
+    conversation: ConversationId,
+    import: bool,
+) {
+    use super::supervisor::WorkerSpec;
+    let data = root.join("native-data");
+    let config = root.join("native-config");
+    let home = root.join("native-home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut worker =
+        WorkerSpec::engine(&data, &config, &[], false, &root.join("native.log")).unwrap();
+    // A packaged worker with a scratch HOME and no ambient provider credentials/proxies.
+    let mut args = vec![
+        "-i".into(),
+        format!("HOME={}", home.display()).into(),
+        "PATH=/usr/bin:/bin".into(),
+        program.as_os_str().to_owned(),
+    ];
+    args.extend(worker.args);
+    worker.args = args;
+    worker.program = "/usr/bin/env".into();
+    let native = NativeConfig::new(HostSpec::Child(worker), data.display().to_string())
+        .with_import_source(Some(agent));
+    let mut h = Harness::start_with(native, db);
+    h.until("installed native worker connected", |s| {
+        s.connection.is_ready()
+    });
+    h.state.import_available = true;
+    if import {
+        for kind in [ImportKind::Credentials, ImportKind::Conversations] {
+            h.dispatch(Command::ImportFromPi(kind));
+            h.until("installed import offer", |s| {
+                matches!(s.import, ImportFlow::Offered(_))
+            });
+            h.dispatch(Command::ConfirmImport);
+            h.until("installed import finished", |s| {
+                s.import == ImportFlow::Idle
+            });
+        }
+    }
+    h.until("imported conversation listed", |s| {
+        s.conversation(conversation).is_some()
+    });
+    h.dispatch(Command::SelectConversation(conversation));
+    h.until("installed native history opened", |s| {
+        s.current().is_some_and(|c| c.opened)
+    });
+    assert!(h.user_messages().contains(&"Pi baseline prompt".into()));
+    if import {
+        assert_eq!(h.state.current().unwrap().draft.text, "unsent Pi draft");
+        assert!(h.storage.native_owner(conversation).unwrap().is_some());
+        h.dispatch(Command::SetModel("stub/scripted".into()));
+        h.send("Native-only prompt");
+        h.until("installed native continuation completed", |s| {
+            is_idle(s)
+                && assistant_texts(s).last().map(String::as_str) == Some("Native-only continuation")
+        });
+    }
+    assert!(h.user_messages().contains(&"Native-only prompt".into()));
+    assert!(!h.user_messages().contains(&"Pi resumed prompt".into()));
+    assert!(h.state.current().unwrap().items.iter().any(|i| {
+        i.native_only && matches!(&i.kind, ItemKind::Assistant { text, .. } if text == "Native-only continuation")
+    }));
+    h.stop();
+}

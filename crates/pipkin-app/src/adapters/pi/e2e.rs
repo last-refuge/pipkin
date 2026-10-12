@@ -123,7 +123,7 @@ impl Harness {
         Harness::start_in(config, db, NAMESPACE)
     }
 
-    fn start_in(config: PiConfig, db: &Path, namespace: &str) -> Harness {
+    fn start_in(mut config: PiConfig, db: &Path, namespace: &str) -> Harness {
         let storage = Arc::new(Storage::open(db, namespace).expect("storage"));
         let loaded = storage.load_all().expect("load");
         let mut state = AppState::new(
@@ -139,6 +139,8 @@ impl Harness {
         state.can_create = true;
         state.set_request_prefix(unique("e2e"));
         state.set_connection(Connection::Connecting);
+        crate::controller::restore_ownership(&storage, &mut state);
+        config.owned_elsewhere = Some(crate::controller::ownership_check(&storage));
         for path in &loaded.projects {
             state.restore_project(path);
         }
@@ -631,7 +633,14 @@ fn the_engine_starts_serves_and_stops_without_leaving_processes() {
 #[test]
 #[ignore = "needs a real Pi engine: set PIPKIN_PI_REPO"]
 fn workspace_scan_failure_keeps_the_last_diff_and_retry_recovers_without_a_prompt() {
-    let fx = Fixture::start(nothing);
+    let fx = Fixture::start(|_, n| match n {
+        0 => Reply::Tool {
+            lead: None,
+            name: "write".into(),
+            args: json!({ "path": "notes.txt", "content": "one\ntwo\n" }),
+        },
+        _ => Reply::Text("Written.".into()),
+    });
     init_project(&fx.project);
     let mut h = Harness::start(
         direct_config(&fx.server_dir, &fx.server_id),
@@ -641,10 +650,20 @@ fn workspace_scan_failure_keeps_the_last_diff_and_retry_recovers_without_a_promp
     assert!(h.state.current().unwrap().changes.is_empty());
     std::fs::write(fx.project.join("notes.txt"), "one\ntwo\n").unwrap();
     h.dispatch(Command::RefreshChanges);
-    h.until("a successful project scan", |s| {
+    h.until("an unrelated edit stays outside the conversation", |s| {
         s.current()
-            .is_some_and(|c| c.changes_state == ChangesState::Ready && c.changes.len() == 1)
+            .is_some_and(|c| c.changes_state == ChangesState::Ready && c.changes.is_empty())
     });
+    assert!(fx.provider.requests().is_empty());
+    h.send("write the notes");
+    h.until("a successful project scan", |s| {
+        s.current().is_some_and(|c| {
+            c.run == RunState::Idle
+                && c.changes_state == ChangesState::Ready
+                && c.changes.len() == 1
+        })
+    });
+    let asked = fx.provider.requests().len();
     let snapshot = h.state.current().unwrap().changes.clone();
     let selection = h.state.current().unwrap().selected_change;
     let moved = fx.root.join("moved-project");
@@ -676,8 +695,9 @@ fn workspace_scan_failure_keeps_the_last_diff_and_retry_recovers_without_a_promp
             .is_some_and(|c| c.changes_state == ChangesState::NotARepository)
     });
     assert!(h.state.current().unwrap().changes.is_empty());
-    assert!(
-        fx.provider.requests().is_empty(),
+    assert_eq!(
+        fx.provider.requests().len(),
+        asked,
         "scanning must not send a prompt"
     );
 }
@@ -2943,4 +2963,266 @@ fn many_prompts_in_one_conversation_do_not_grow_memory_or_open_files() {
     );
     h.storage.shutdown();
     h.backend.shutdown();
+}
+
+#[test]
+#[ignore = "needs PIPKIN_PI_PACKAGE, PIPKIN_NATIVE_PACKAGE and PIPKIN_PI_REPO; two real Linux archives"]
+fn installed_pi_native_rollback_preserves_history_and_requires_ownership_release() {
+    use pipkin_core::{NATIVE_OWNED_NOTICE, ReleaseFlow};
+    let mut p = prepare(|_, n| match n {
+        0 | 2 | 4 => Reply::Tool {
+            lead: None,
+            name: "write".into(),
+            args: json!({"path": (["pi-before.txt", "native-only.txt", "pi-after.txt"][n / 2]), "content": "real installed tool effect\n"}),
+        },
+        1 => Reply::Text("Pi baseline".into()),
+        3 => Reply::Text("Native-only continuation".into()),
+        5 => Reply::Text("Pi resumed".into()),
+        _ => panic!("unexpected extra provider request {n}"),
+    });
+    let prefix = p.root.join("prefix with spaces");
+    let home = p.root.join("home");
+    std::fs::create_dir(&home).unwrap();
+    for (name, variable) in [
+        ("pi-package", "PIPKIN_PI_PACKAGE"),
+        ("native-package", "PIPKIN_NATIVE_PACKAGE"),
+    ] {
+        let archive = std::env::var(variable).expect(variable);
+        let dir = p.root.join(name);
+        std::fs::create_dir(&dir).unwrap();
+        assert!(
+            Process::new("tar")
+                .args(["--zstd", "-xf", &archive, "-C"])
+                .arg(&dir)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    let install = |package: &str, rollback: bool| {
+        let mut command = Process::new(p.root.join(package).join("install.sh"));
+        command
+            .args(["--prefix"])
+            .arg(&prefix)
+            .env_clear()
+            .env("HOME", &home)
+            .env("PATH", "/usr/bin:/bin");
+        if rollback {
+            command.arg("--rollback");
+        }
+        let result = command.output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    };
+    let launcher =
+        || std::fs::read_to_string(prefix.join("share/applications/pipkin.desktop")).unwrap();
+    install("pi-package", false);
+    assert!(launcher().contains(&format!("Exec=\"{}/bin/pipkin\"\n", prefix.display())));
+    p.config.pi_repo = prefix.join("lib/pipkin/current/usr/lib/pipkin/engine");
+    p.config
+        .env
+        .push(("HOME".into(), home.display().to_string()));
+    let agent = p.config.agent_dir.clone().unwrap();
+    let mut host = EngineHost::new(p.config.clone());
+    host.ensure_running().expect("installed Pi starts");
+    let db = p.root.join("app.sqlite3");
+    let mut pi = Harness::start(direct_config(&p.server_dir, &p.server_id), &db);
+    pi.open_new_conversation(&p.project);
+    let conversation = pi.state.current().unwrap().id;
+    pi.send("Pi baseline prompt");
+    pi.until("Pi baseline completed", |s| {
+        s.current().is_some_and(|c| c.run == RunState::Idle)
+            && assistant_texts(s).last().map(String::as_str) == Some("Pi baseline")
+    });
+    pi.dispatch(Command::EditDraft("unsent Pi draft".into()));
+    pi.dispatch(Command::FlushDraft(conversation));
+    pi.stop();
+    host.stop();
+    let sessions = agent.join("experimental/sessions");
+    let original: Vec<_> = std::fs::read_dir(&sessions)
+        .unwrap()
+        .flatten()
+        .map(|d| d.path().join("session.sqlite"))
+        .filter(|p| p.is_file())
+        .map(|path| {
+            let hash = std::fs::read(&path).unwrap();
+            (path, hash)
+        })
+        .collect();
+    assert_eq!(original.len(), 1);
+    install("native-package", false);
+    assert!(launcher().contains(" --engine native\n"));
+    let native_binary = std::fs::canonicalize(prefix.join("bin/pipkin")).unwrap();
+    crate::adapters::native::e2e::installed_migration_roundtrip(
+        &native_binary,
+        &p.root,
+        &db,
+        &agent,
+        conversation,
+        true,
+    );
+    // Restore the complete closed desktop + native profile, not just a transcript cache.
+    // Project files and the Pi source are deliberately outside this archive.
+    fn manifest(path: &Path) -> Vec<(PathBuf, u32, Vec<u8>)> {
+        let meta = std::fs::symlink_metadata(path).unwrap();
+        assert!(!meta.is_symlink());
+        let mut rows = vec![(
+            path.to_owned(),
+            meta.permissions().mode(),
+            if meta.is_file() {
+                std::fs::read(path).unwrap()
+            } else {
+                vec![]
+            },
+        )];
+        if meta.is_dir() {
+            for entry in std::fs::read_dir(path).unwrap().flatten() {
+                rows.extend(manifest(&entry.path()));
+            }
+        }
+        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        rows
+    }
+    assert!(
+        !p.root.join("app.sqlite3-wal").exists(),
+        "desktop must be closed before archive"
+    );
+    let profile = ["app.sqlite3", "native-data", "native-config"];
+    let before: Vec<_> = profile
+        .iter()
+        .flat_map(|name| manifest(&p.root.join(name)))
+        .collect();
+    let archive = p.root.join("complete-native-profile.tar");
+    assert!(
+        Process::new("tar")
+            .args(["--create", "--file"])
+            .arg(&archive)
+            .arg("--directory")
+            .arg(&p.root)
+            .args(profile)
+            .status()
+            .unwrap()
+            .success()
+    );
+    std::fs::set_permissions(&archive, std::fs::Permissions::from_mode(0o600)).unwrap();
+    for name in profile {
+        std::fs::rename(p.root.join(name), p.root.join(format!("preserved-{name}"))).unwrap();
+    }
+    assert!(
+        Process::new("tar")
+            .args(["--extract", "--preserve-permissions", "--file"])
+            .arg(&archive)
+            .arg("--directory")
+            .arg(&p.root)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let after: Vec<_> = profile
+        .iter()
+        .flat_map(|name| manifest(&p.root.join(name)))
+        .collect();
+    assert_eq!(
+        before, after,
+        "all desktop/native archive bytes and permissions must survive"
+    );
+    for (path, hash) in &original {
+        assert_eq!(
+            &std::fs::read(path).unwrap(),
+            hash,
+            "native import/continuation rewrote Pi history"
+        );
+    }
+    assert_eq!(p.provider.requests().len(), 4);
+    install("native-package", true);
+    assert!(launcher().contains(&format!("Exec=\"{}/bin/pipkin\"\n", prefix.display())));
+    host.ensure_running()
+        .expect("rolled-back installed Pi starts");
+    let mut pi = Harness::start(direct_config(&p.server_dir, &p.server_id), &db);
+    pi.until("rolled-back Pi connects", |s| s.connection.is_ready());
+    pi.dispatch(Command::SelectConversation(conversation));
+    pi.until("rolled-back Pi opens source history", |s| {
+        s.current().is_some_and(|c| c.opened)
+    });
+    assert_eq!(
+        pi.state.read_only_reason(conversation).as_deref(),
+        Some(NATIVE_OWNED_NOTICE)
+    );
+    assert_eq!(pi.state.current().unwrap().draft.text, "unsent Pi draft");
+    assert!(!pi.user_messages().contains(&"Native-only prompt".into()));
+    pi.send("blocked while native owns it");
+    assert_eq!(pi.state.notice.as_deref(), Some(NATIVE_OWNED_NOTICE));
+    assert_eq!(p.provider.requests().len(), 4);
+    let bypass_op = pipkin_core::OperationId(9001);
+    pi.backend.request(pipkin_core::BackendRequest::Submit {
+        conversation,
+        generation: pi.state.current().unwrap().generation,
+        op: bypass_op,
+        request: RequestId("blocked-at-real-pi-boundary".into()),
+        text: "This must not reach Pi".into(),
+        attachments: vec![],
+        model: None,
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        assert!(
+            Instant::now() < deadline,
+            "real Pi adapter did not reject native-owned work"
+        );
+        if let Ok(event) = pi.events.try_recv() {
+            if event.op == Some(bypass_op) {
+                assert_eq!(
+                    event.kind,
+                    pipkin_core::EventKind::Rejected {
+                        reason: NATIVE_OWNED_NOTICE.into()
+                    }
+                );
+                break;
+            }
+            let outcome = pi.state.apply_event(event);
+            pi.exec(outcome);
+        } else {
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+    assert_eq!(p.provider.requests().len(), 4);
+    pi.dispatch(Command::ReleaseToPi);
+    assert!(matches!(pi.state.release, ReleaseFlow::Confirming(id) if id == conversation));
+    assert!(pi.storage.native_owner(conversation).unwrap().is_some());
+    pi.dispatch(Command::ConfirmRelease);
+    assert!(pi.storage.native_owner(conversation).unwrap().is_none());
+    pi.send("Pi resumed prompt");
+    pi.until("rolled-back Pi continues after explicit release", |s| {
+        s.current().is_some_and(|c| c.run == RunState::Idle)
+            && assistant_texts(s).last().map(String::as_str) == Some("Pi resumed")
+    });
+    assert_eq!(p.provider.requests().len(), 6);
+    let requests = p.provider.requests();
+    let users = |i: usize| user_texts(&requests[i]);
+    assert_eq!(users(2), ["Pi baseline prompt", "Native-only prompt"]);
+    assert_eq!(users(4), ["Pi baseline prompt", "Pi resumed prompt"]);
+    pi.stop();
+    host.stop();
+    for name in ["pi-before.txt", "native-only.txt", "pi-after.txt"] {
+        assert_eq!(
+            std::fs::read_to_string(p.project.join(name)).unwrap(),
+            "real installed tool effect\n"
+        );
+    }
+    // Pi's later turn never overwrites the retained native branch; no implicit sync on reopen.
+    crate::adapters::native::e2e::installed_migration_roundtrip(
+        &native_binary,
+        &p.root,
+        &db,
+        &agent,
+        conversation,
+        false,
+    );
+    assert_eq!(p.provider.requests().len(), 6);
+    install("native-package", true);
+    assert!(launcher().contains(" --engine native\n"));
 }
