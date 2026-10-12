@@ -27,3 +27,25 @@ pub const MAX_RETAINED_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_SUBAGENT_ROWS: u32 = 4096;
 /// Longest task excerpt carried in a subagent row.
 pub const SUBAGENT_TASK_EXCERPT_CHARS: usize = 160;
+/// Most live (non-archived) tasks in one plan.
+pub const MAX_PLAN_TASKS: usize = 500;
+/// Most tasks (live plus archived) returned in one plan view.
+pub const MAX_PLAN_VIEW_TASKS: usize = 2000;
+/// Most operations in one plan batch.
+pub const MAX_PLAN_OPS: usize = 100;
+/// Longest task title (UTF-16 units).
+pub const MAX_TASK_TITLE_CHARS: usize = 200;
+/// Longest task detail.
+pub const MAX_TASK_DETAIL_CHARS: usize = 4000;
+/// Longest task completion criteria.
+pub const MAX_TASK_CRITERIA_CHARS: usize = 2000;
+/// Longest skip/cancel/reopen reason.
+pub const MAX_TASK_REASON_CHARS: usize = 1000;
+/// Longest owner reference.
+pub const MAX_TASK_OWNER_CHARS: usize = 200;
+/// Most dependencies of one task.
+pub const MAX_TASK_DEPENDENCIES: usize = 50;
+/// Most evidence items on one task.
+pub const MAX_TASK_EVIDENCE: usize = 20;
+/// Longest evidence kind, reference or note.
+pub const MAX_EVIDENCE_CHARS: usize = 500;

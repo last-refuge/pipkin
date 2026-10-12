@@ -1,5 +1,26 @@
 # Scorecard
 
+## Persistent plans, PLAN-1 (2026-10-12)
+
+The native engine now owns a per-session plan ([plans.md](plans.md)): schema 11 tables, the
+`plan_update`/`plan_read` tools, `UpdatePlan`/`Plan` calls, `PlanChanged` events, `plan` in
+snapshots and a `plan` system section. Protocol 13.
+
+- **Measured (automated).** Domain tests cover stable ids, in-batch refs, atomic rejection,
+  revision conflicts, self/missing/cyclic dependencies, the dependency rule and waived
+  (skipped) work, reasons for skip/cancel/reopen, stale completions and their clearing,
+  archival and read-only archived tasks, reorder, parent cycles, bounds, evidence and
+  rendering. Engine tests cover the model's batch reaching the snapshot, the published
+  change and the next request's `plan` section; rejected batches as tool errors that change
+  nothing; `plan_read`; client idempotency by key and `conflict` on stale revisions; store
+  replay under a key; restart persistence; a child's separate plan; removal of plan rows;
+  the capability and schema version. Existing schema-upgrade tests pass with version 11.
+  The repository gate passed on this change.
+- **Observed.** Nothing native: there is no plan UI yet (PLAN-2).
+- **Unverified.** A process kill between a committed batch and its tool result; prompt
+  cache behaviour on real providers with a changing `plan` section; large-plan paging in a
+  UI. Not a release qualification.
+
 ## Model-visible questions, ASK-1 (2026-10-12)
 
 The native engine now offers root sessions a built-in `ask_user_question` tool routed through

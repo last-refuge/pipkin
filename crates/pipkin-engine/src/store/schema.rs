@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 11;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -267,7 +267,42 @@ WHERE e.partial=0 AND json_extract(e.body, '$.message.role')='assistant'
 INSERT OR IGNORE INTO tool_call_ids SELECT session, call_id FROM tool_calls;
 INSERT OR IGNORE INTO tool_call_ids SELECT session, call_id FROM tool_outputs;
 "#;
-const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9, V10];
+// Version 11 adds plans (one per session): task bodies, a change log and idempotent receipts.
+const V11: &str = r#"
+CREATE TABLE plans (
+    session TEXT PRIMARY KEY REFERENCES sessions(id),
+    revision INTEGER NOT NULL DEFAULT 0,
+    next_task INTEGER NOT NULL DEFAULT 1,
+    updated_at INTEGER NOT NULL
+) STRICT;
+CREATE TABLE plan_tasks (
+    session TEXT NOT NULL REFERENCES sessions(id),
+    id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    body TEXT NOT NULL CHECK (json_valid(body)),
+    archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+    status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'blocked', 'completed', 'skipped', 'cancelled')),
+    PRIMARY KEY (session, id)
+) STRICT;
+CREATE INDEX plan_tasks_order ON plan_tasks(session, archived, position);
+CREATE TABLE plan_events (
+    session TEXT NOT NULL REFERENCES sessions(id),
+    seq INTEGER NOT NULL,
+    at_ms INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    task INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    data TEXT NOT NULL CHECK (json_valid(data)),
+    PRIMARY KEY (session, seq)
+) STRICT;
+CREATE TABLE plan_receipts (
+    session TEXT NOT NULL REFERENCES sessions(id),
+    key TEXT NOT NULL,
+    body TEXT NOT NULL CHECK (json_valid(body)),
+    PRIMARY KEY (session, key)
+) STRICT;
+"#;
+const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

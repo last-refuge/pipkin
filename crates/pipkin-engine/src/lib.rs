@@ -12,6 +12,7 @@ pub mod endpoint;
 pub mod extensions;
 pub mod host;
 pub mod import;
+pub mod plans;
 pub mod provider;
 pub mod runtime;
 pub mod store;

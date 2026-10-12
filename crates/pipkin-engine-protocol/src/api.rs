@@ -257,6 +257,22 @@ pub enum Call {
     Subagents {
         session: SessionId,
     },
+    /// The session's plan; `include_archived` adds archived tasks (bounded).
+    Plan {
+        session: SessionId,
+        #[serde(default)]
+        include_archived: bool,
+    },
+    /// Apply a batch of plan operations atomically. `request` is the client's idempotency
+    /// key: the same key returns the recorded receipt (or rejection) without re-applying.
+    UpdatePlan {
+        session: SessionId,
+        request: String,
+        ops: Vec<PlanOp>,
+        /// Reject the batch unless the plan is at this revision.
+        #[serde(default)]
+        expected_revision: Option<u64>,
+    },
     SubagentHistory {
         session: SessionId,
         child: u64,
@@ -421,6 +437,8 @@ pub enum Reply {
     Models(ModelsView),
     ToolOutput(ToolOutputView),
     Subagents(SubagentsView),
+    Plan(PlanView),
+    PlanUpdated(PlanReceipt),
     Auth(AuthSnapshot),
     Thinking(ThinkingView),
     ImportReport(ImportReport),
@@ -480,6 +498,10 @@ pub enum SessionChange {
     },
     SubagentsChanged {
         subagents: SubagentsView,
+    },
+    /// The plan was changed (by the model or a client); live tasks only.
+    PlanChanged {
+        plan: PlanView,
     },
     /// A child session's history changed (the selected child's viewer re-reads its page).
     ChildChanged {

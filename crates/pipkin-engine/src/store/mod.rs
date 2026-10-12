@@ -15,6 +15,7 @@
 pub mod compactions;
 mod generation;
 mod outbox;
+mod plans;
 pub(crate) mod prompt_result;
 pub(crate) mod removal;
 mod schema;

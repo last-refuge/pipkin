@@ -39,6 +39,7 @@ pub struct Mirror {
     pub thinking: ThinkingView,
     pub ui: UiView,
     pub subagents: Option<SubagentsView>,
+    pub plan: pipkin_engine_protocol::PlanView,
     /// Streamed output of running tool calls, by call id.
     pub progress: HashMap<String, String>,
     /// The snapshot's revision. Committed changes at or below it are already in the snapshot.
@@ -59,6 +60,7 @@ impl Mirror {
             thinking: snapshot.thinking,
             ui: snapshot.ui,
             subagents: snapshot.subagents,
+            plan: snapshot.plan,
             progress: HashMap::new(),
             floor: snapshot.revision,
         }
@@ -169,6 +171,10 @@ impl Mirror {
                 self.has_older = has_older;
                 Touched::HasOlder(has_older)
             }
+            SessionChange::PlanChanged { plan } => {
+                self.plan = plan;
+                Touched::Nothing
+            }
             SessionChange::SummaryChanged { .. } => Touched::Nothing,
         }
     }
@@ -251,6 +257,7 @@ mod tests {
             thinking: Default::default(),
             ui: Default::default(),
             subagents: None,
+            plan: pipkin_engine_protocol::PlanView::default(),
         }
     }
 

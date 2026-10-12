@@ -164,7 +164,8 @@ fn the_persons_choice_reaches_the_model_exactly() {
         .map(|t| t.name.clone())
         .collect();
     assert_eq!(names.iter().filter(|n| *n == TOOL).count(), 1);
-    assert_eq!(names.last().map(String::as_str), Some(TOOL));
+    let subagent = names.iter().position(|n| n == "subagent").unwrap();
+    assert_eq!(names.get(subagent + 1).map(String::as_str), Some(TOOL));
 }
 
 #[test]

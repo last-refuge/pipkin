@@ -19,6 +19,7 @@ pub use view::*;
 
 /// Wire protocol version. Bump on any incompatible change to [`api`], [`content`] or [`view`].
 // Version 12 carries native-history provenance in snapshots and history pages.
-pub const PROTOCOL_VERSION: u32 = 12;
+// Version 13 adds plans: `plan` in snapshots, `PlanChanged`, `Plan`/`UpdatePlan` calls.
+pub const PROTOCOL_VERSION: u32 = 13;
 
 pub mod delivery;

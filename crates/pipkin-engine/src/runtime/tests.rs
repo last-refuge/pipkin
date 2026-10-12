@@ -743,7 +743,9 @@ fn the_system_prompt_carries_project_instructions_and_stays_byte_stable() {
             "edit",
             "bash",
             "subagent",
-            "ask_user_question"
+            "ask_user_question",
+            "plan_update",
+            "plan_read"
         ]
     );
     assert_eq!(reqs[0].thinking, crate::provider::ThinkingLevel::Medium);

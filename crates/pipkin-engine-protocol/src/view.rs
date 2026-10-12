@@ -352,6 +352,9 @@ pub struct SessionSnapshot {
     pub thinking: ThinkingView,
     pub ui: UiView,
     pub subagents: Option<SubagentsView>,
+    /// The session's plan (live tasks). Empty when it has none.
+    #[serde(default)]
+    pub plan: PlanView,
 }
 
 /// Credential kinds are distinct identities: an API key never stands in for a subscription.
@@ -652,7 +655,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 12);
+        assert_eq!(crate::PROTOCOL_VERSION, 13);
         let release = Call::ReleaseSession {
             session: "s1".into(),
         };
@@ -751,4 +754,253 @@ mod import_tests {
             ],
         }));
     }
+}
+
+// ------------------------------------------------------------------------------- plans
+
+/// The state of one plan task.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskStatus {
+    Pending,
+    Active,
+    Blocked,
+    Completed,
+    Skipped,
+    Cancelled,
+}
+
+impl TaskStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskStatus::Pending => "pending",
+            TaskStatus::Active => "active",
+            TaskStatus::Blocked => "blocked",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Skipped => "skipped",
+            TaskStatus::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<TaskStatus> {
+        Some(match s {
+            "pending" => TaskStatus::Pending,
+            "active" => TaskStatus::Active,
+            "blocked" => TaskStatus::Blocked,
+            "completed" => TaskStatus::Completed,
+            "skipped" => TaskStatus::Skipped,
+            "cancelled" => TaskStatus::Cancelled,
+            _ => return None,
+        })
+    }
+
+    /// Completed, skipped or cancelled: the task is finished one way or another.
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            TaskStatus::Completed | TaskStatus::Skipped | TaskStatus::Cancelled
+        )
+    }
+
+    /// A dependency in this state no longer holds its dependents back: completed work, or
+    /// work explicitly waived by skipping it. Cancelled work never satisfies a dependent.
+    pub fn satisfies_dependents(self) -> bool {
+        matches!(self, TaskStatus::Completed | TaskStatus::Skipped)
+    }
+
+    /// A reason must accompany this status.
+    pub fn needs_reason(self) -> bool {
+        matches!(self, TaskStatus::Skipped | TaskStatus::Cancelled)
+    }
+}
+
+/// A piece of evidence attached to a task: what kind of thing it is, a reference to it
+/// (a tool call id, a command and its exit status, an artifact path or hash, a workspace
+/// revision, or a labelled manual observation) and an optional note.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskEvidence {
+    pub kind: String,
+    pub reference: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One task of a plan, as stored and as shown.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanTaskView {
+    /// Stable within the plan; never reused.
+    pub id: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<u64>,
+    pub title: String,
+    #[serde(default)]
+    pub detail: String,
+    pub status: TaskStatus,
+    /// Why it was skipped, cancelled or reopened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub depends_on: Vec<u64>,
+    /// What must hold for the task to count as done.
+    #[serde(default)]
+    pub criteria: String,
+    #[serde(default)]
+    pub evidence: Vec<TaskEvidence>,
+    /// A reference to whatever is doing the work (for example a subagent child or a job).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub archived: bool,
+    /// A completion whose basis changed since: a dependency was reopened, or the criteria
+    /// were revised after completion. Cleared when the task is completed again.
+    #[serde(default)]
+    pub stale: bool,
+    /// The plan revision of the task's last change.
+    pub revision: u64,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at_ms: Option<i64>,
+}
+
+/// Task counts by status among live (non-archived) tasks, plus the archived count. These are
+/// task counts, not a prediction of time or of the outcome.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanCounts {
+    pub pending: u32,
+    pub active: u32,
+    pub blocked: u32,
+    pub completed: u32,
+    pub skipped: u32,
+    pub cancelled: u32,
+    pub archived: u32,
+}
+
+impl PlanCounts {
+    pub fn live(&self) -> u32 {
+        self.pending + self.active + self.blocked + self.completed + self.skipped + self.cancelled
+    }
+
+    pub fn open(&self) -> u32 {
+        self.pending + self.active + self.blocked
+    }
+}
+
+/// A session's plan: its tasks in order and its revision.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanView {
+    pub revision: u64,
+    /// Live tasks in display order; archived tasks too when requested.
+    pub tasks: Vec<PlanTaskView>,
+    pub counts: PlanCounts,
+    /// Some archived tasks were left out of `tasks` to stay within bounds.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+/// A task named by an operation: an existing task's id, or the `ref` of a task created
+/// earlier in the same batch.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum TaskRef {
+    Id(u64),
+    New(String),
+}
+
+/// One mutation of a plan. A batch is applied atomically: any rejected operation changes
+/// nothing.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum PlanOp {
+    Create {
+        /// A name later operations in the same batch can use for this task.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        r#ref: Option<String>,
+        title: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        criteria: Option<String>,
+        #[serde(default, alias = "depends_on", skip_serializing_if = "Vec::is_empty")]
+        depends_on: Vec<TaskRef>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<TaskRef>,
+        /// `pending` unless given; a task is never created finished.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<TaskStatus>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner: Option<String>,
+    },
+    Update {
+        task: TaskRef,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        criteria: Option<String>,
+        /// Replaces the dependency list.
+        #[serde(default, alias = "depends_on", skip_serializing_if = "Option::is_none")]
+        depends_on: Option<Vec<TaskRef>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<TaskRef>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<TaskStatus>,
+        /// Required when skipping, cancelling or reopening.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner: Option<String>,
+        #[serde(default, alias = "add_evidence", skip_serializing_if = "Vec::is_empty")]
+        add_evidence: Vec<TaskEvidence>,
+        #[serde(
+            default,
+            alias = "clear_evidence",
+            skip_serializing_if = "std::ops::Not::not"
+        )]
+        clear_evidence: bool,
+    },
+    /// Move a live task after another live task, or to the front.
+    Reorder {
+        task: TaskRef,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<TaskRef>,
+    },
+    /// Archive a finished task. It stays inspectable and still satisfies dependents.
+    Archive { task: TaskRef },
+    /// Archive every finished live task.
+    ArchiveFinished,
+}
+
+/// What an accepted batch did. Recorded with the mutation so a replayed batch returns the
+/// same receipt.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanReceipt {
+    /// The plan revision after the batch.
+    pub revision: u64,
+    /// Ids of created tasks by their `ref` (or `#<op index>` when the operation had none).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub created: std::collections::BTreeMap<String, u64>,
+    /// Every task the batch created or changed, in id order.
+    #[serde(default)]
+    pub changed: Vec<u64>,
+}
+
+/// Why a batch was rejected. Nothing was changed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanRejected {
+    /// `conflict` for a revision mismatch, `invalid` otherwise.
+    pub code: crate::ErrorCode,
+    /// The offending operation's index, when one operation is to blame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op: Option<usize>,
+    pub message: String,
+    /// The plan revision at the time of the rejection.
+    pub revision: u64,
 }

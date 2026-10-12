@@ -20,6 +20,7 @@ pub mod diff;
 pub mod edit;
 mod files;
 pub mod path;
+pub mod plan;
 pub mod read;
 pub mod schema;
 pub mod text;
@@ -191,6 +192,30 @@ pub trait ToolHost: Send + Sync {
         Box::pin(async {
             ask::AskOutcome::Unavailable("no presentation can answer questions".into())
         })
+    }
+
+    /// Apply a plan batch under the call's idempotency key.
+    fn plan_update<'a>(
+        &'a self,
+        _call_id: &'a str,
+        _ops: Vec<pipkin_engine_protocol::PlanOp>,
+        _expected_revision: Option<u64>,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<pipkin_engine_protocol::PlanReceipt, pipkin_engine_protocol::PlanRejected>,
+            String,
+        >,
+    > {
+        Box::pin(async { Err("No plan service is configured".into()) })
+    }
+
+    /// The session's plan.
+    fn plan_read<'a>(
+        &'a self,
+        _include_archived: bool,
+    ) -> BoxFuture<'a, Result<pipkin_engine_protocol::PlanView, String>> {
+        Box::pin(async { Err("No plan service is configured".into()) })
     }
 }
 

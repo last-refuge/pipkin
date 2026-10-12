@@ -110,6 +110,32 @@ impl ToolHost for Host {
     ) -> BoxFuture<'a, crate::tools::ask::AskOutcome> {
         Box::pin(async move { self.shared.ask_user(&self.parent, question, cancel).await })
     }
+
+    fn plan_update<'a>(
+        &'a self,
+        call_id: &'a str,
+        ops: Vec<PlanOp>,
+        expected_revision: Option<u64>,
+    ) -> BoxFuture<'a, Result<Result<PlanReceipt, PlanRejected>, String>> {
+        Box::pin(async move {
+            self.shared
+                .update_plan(
+                    &self.parent,
+                    &format!("call:{call_id}"),
+                    &ops,
+                    expected_revision,
+                )
+                .map_err(|e| e.message)
+        })
+    }
+
+    fn plan_read<'a>(&'a self, include_archived: bool) -> BoxFuture<'a, Result<PlanView, String>> {
+        Box::pin(async move {
+            self.shared
+                .plan_view(&self.parent, include_archived)
+                .map_err(|e| e.message)
+        })
+    }
 }
 
 /// Map a child run's state to the directory status strings the desktop understands

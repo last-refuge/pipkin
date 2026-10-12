@@ -69,6 +69,7 @@ impl Shared {
                 .map(|s| s.questions.view())
                 .unwrap_or_default(),
             subagents,
+            plan: self.store.read(|c| Store::plan_view(c, session, false))?,
         })
     }
 }

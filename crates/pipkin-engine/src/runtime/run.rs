@@ -531,7 +531,12 @@ impl Shared {
         };
         let tools = self.tools_for(&row);
         let specs: Vec<ToolSpec> = tools.iter().map(|t| t.spec()).collect();
-        let desired = self.system_sections(sess, &row, &specs, &settings);
+        let mut desired = self.system_sections(sess, &row, &specs, &settings);
+        // The plan summary is a positional section: it changes between turns without
+        // touching the cached prompt resources, and is patched like any other section.
+        if let Some(plan) = self.plan_section(&sess.id) {
+            desired.insert("plan".into(), serde_json::Value::String(plan));
+        }
         let declarations = specs
             .iter()
             .map(pipkin_engine_protocol::ToolDeclaration::from)

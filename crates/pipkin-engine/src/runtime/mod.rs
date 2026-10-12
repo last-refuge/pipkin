@@ -8,6 +8,7 @@ mod glue;
 mod import;
 mod lifecycle;
 pub mod models;
+mod plans;
 mod plugins;
 mod removal;
 mod run;
@@ -146,6 +147,8 @@ impl Shared {
             }
             tools.push(self.ask_tool());
         }
+        // Every session has its own plan (a child's plan is separate from its parent's).
+        tools.extend(self.plan_tools());
         tools
     }
 
@@ -156,6 +159,9 @@ impl Shared {
         match name {
             "subagent" => Some(self.subagent_tool()),
             crate::tools::ask::ASK_USER_QUESTION => Some(self.ask_tool()),
+            // Receipts by call id make a rerun return the recorded outcome; reads are pure.
+            crate::tools::plan::PLAN_UPDATE => Some(Arc::new(crate::tools::plan::PlanUpdateTool)),
+            crate::tools::plan::PLAN_READ => Some(Arc::new(crate::tools::plan::PlanReadTool)),
             _ => None,
         }
     }
@@ -591,6 +597,7 @@ async fn dispatch_with_cancel(
                     "subagents".into(),
                     "questions".into(),
                     "askUserQuestion".into(),
+                    "plans".into(),
                     "compaction".into(),
                     "toolOutput".into(),
                 ],
@@ -778,6 +785,32 @@ async fn dispatch_with_cancel(
             Ok(Reply::Ok)
         }
         Call::Subagents { session } => Ok(Reply::Subagents(shared.subagents_view(&session)?)),
+        Call::Plan {
+            session,
+            include_archived,
+        } => Ok(Reply::Plan(shared.plan_view(&session, include_archived)?)),
+        Call::UpdatePlan {
+            session,
+            request,
+            ops,
+            expected_revision,
+        } => {
+            if request.is_empty() || request.len() > limits::MAX_KEY_BYTES {
+                return Err(ProtoError::new(
+                    ErrorCode::Invalid,
+                    "request key must be 1 to 256 bytes",
+                ));
+            }
+            match shared.update_plan(
+                &session,
+                &format!("client:{request}"),
+                &ops,
+                expected_revision,
+            )? {
+                Ok(receipt) => Ok(Reply::PlanUpdated(receipt)),
+                Err(rejected) => Err(ProtoError::new(rejected.code, rejected.message)),
+            }
+        }
         Call::SubagentHistory {
             session,
             child,
@@ -1081,6 +1114,8 @@ mod ask_tests;
 mod fault_tests;
 #[cfg(test)]
 mod generation_reference_tests;
+#[cfg(test)]
+mod plan_tests;
 #[cfg(test)]
 mod queue_reference_tests;
 #[cfg(test)]
