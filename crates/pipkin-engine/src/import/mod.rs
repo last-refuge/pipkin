@@ -381,6 +381,24 @@ fn inspect(store: &Store, id: &str, path: &Path, server_dir: &Path) -> Discovere
         status: SessionStatus::Importable,
         detail: None,
     };
+    match store.removal_state(id) {
+        Ok(Some(_)) => {
+            found.status = SessionStatus::Blocked {
+                reasons: vec![
+                    "This native conversation was removed; its source and backup are preserved."
+                        .into(),
+                ],
+            };
+            return found;
+        }
+        Ok(None) => {}
+        Err(e) => {
+            found.status = SessionStatus::Blocked {
+                reasons: vec![format!("the native store could not be read ({e})")],
+            };
+            return found;
+        }
+    }
     match store.imported(ENGINE, id) {
         Ok(Some(native)) => {
             found.status = SessionStatus::AlreadyImported { native };
@@ -467,6 +485,11 @@ pub fn import_session(
 ) -> Result<ImportOutcome, ImportError> {
     if !is_session_id(session_id) {
         return Err(ImportError::InvalidId(session_id.to_owned()));
+    }
+    if store.removal_state(session_id)?.is_some() {
+        return Err(ImportError::Blocked(vec![
+            "This native conversation was removed; its source and backup are preserved.".into(),
+        ]));
     }
     if let Some((native, manifest)) = read_import(store, session_id)? {
         return Ok(ImportOutcome {

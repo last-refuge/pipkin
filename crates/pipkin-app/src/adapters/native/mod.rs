@@ -921,9 +921,7 @@ impl Live {
         match event {
             Event::ResyncRequired => self.catch_up(worker, true),
             Event::SessionsChanged => {
-                if self.refresh_sessions().is_ok() {
-                    (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
-                }
+                self.resync(worker);
             }
             Event::ModelsChanged => {
                 self.refresh_models(worker, None);
@@ -1166,6 +1164,36 @@ impl Live {
     fn resync(&mut self, worker: &mut Worker) -> bool {
         if self.refresh_sessions().is_err() {
             return false;
+        }
+        // A durable removal invalidates the catalog even if its live event was missed.
+        // Drop local attachment/run state so an absent conversation cannot keep catch-up
+        // or a cancelled operation pending forever.
+        let removed_runs: Vec<_> = worker
+            .runs
+            .iter()
+            .filter(|(_, run)| !self.index.contains_key(&run.conversation))
+            .map(|(op, run)| (*op, run.clone()))
+            .collect();
+        for (op, run) in removed_runs {
+            worker.runs.remove(&op);
+            worker.emit_op(
+                run.conversation,
+                run.generation,
+                op,
+                EventKind::Failed {
+                    message: "This conversation was removed from the engine.".into(),
+                },
+            );
+        }
+        worker
+            .queue_unknown
+            .retain(|req| self.index.contains_key(&req.conversation));
+        if self
+            .current
+            .as_ref()
+            .is_some_and(|c| !self.index.contains_key(&c.conversation))
+        {
+            self.current = None;
         }
         (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
         if let Some((conversation, generation, child)) = self

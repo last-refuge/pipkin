@@ -18,6 +18,9 @@ impl Shared {
             let changed = sess.changed.notified();
             tokio::pin!(changed);
             changed.as_mut().enable();
+            if sess.removed.is_cancelled() {
+                return Err(crate::store::StoreError::Removed.into());
+            }
             if self.stopping.is_cancelled() {
                 return Err(ProtoError::new(
                     ErrorCode::ShuttingDown,

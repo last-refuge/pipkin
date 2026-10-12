@@ -336,12 +336,11 @@ impl AppState {
         self.projects = merge_projects(boot.projects, &self.bookmarks);
         self.models = boot.models;
         self.now = self.now.max(boot.now);
-        // The engine's list is the truth: a conversation known only from a saved copy stays
-        // only if the engine lists it.
+        // The engine's complete catalog is authoritative for both cached and live
+        // conversations. Removal must also discard a currently attached conversation.
         let listed: std::collections::HashSet<ConversationId> =
             boot.conversations.iter().map(|c| c.0).collect();
-        self.conversations
-            .retain(|c| !c.cached_only || listed.contains(&c.id));
+        self.conversations.retain(|c| listed.contains(&c.id));
         for c in &mut self.conversations {
             if listed.contains(&c.id) {
                 c.cached_only = false;

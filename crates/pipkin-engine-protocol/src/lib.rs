@@ -18,7 +18,7 @@ pub use content::*;
 pub use view::*;
 
 /// Wire protocol version. Bump on any incompatible change to [`api`], [`content`] or [`view`].
-// Version 10 adds server-side thinking-level cycling.
-pub const PROTOCOL_VERSION: u32 = 10;
+// Version 11 adds durable root-session removal.
+pub const PROTOCOL_VERSION: u32 = 11;
 
 pub mod delivery;

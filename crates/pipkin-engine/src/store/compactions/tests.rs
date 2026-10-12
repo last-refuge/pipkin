@@ -273,13 +273,16 @@ fn v5_upgrade_preserves_history_and_makes_a_private_backup_before_compaction_jou
                 partial: false,
             },
         )?;
-        c.execute_batch("DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 5;")?;
+        c.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 5;")?;
         Ok(())
     })
     .unwrap();
     drop(s);
     let s = Store::open(dir.path()).unwrap();
-    assert_eq!(s.read(super::super::schema::version).unwrap(), 8);
+    assert_eq!(
+        s.read(super::super::schema::version).unwrap(),
+        crate::store::SCHEMA_VERSION
+    );
     assert!(s.read(|c| Store::entry_in(c, "s", 1)).unwrap().is_some());
     assert!(s.pending_compaction_ids().unwrap().is_empty());
     let backup_path = dir.path().join("engine.sqlite.v5.bak");
@@ -309,13 +312,16 @@ fn v6_activation_upgrade_preserves_pending_jobs_and_private_backup() {
     session(&s, "s");
     let job = admit(&s, "pending-at-activation", CompactionScope::Manual);
     s.read(|c| {
-        c.execute_batch("DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP INDEX compactions_recovery; PRAGMA user_version = 6")?;
+        c.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP INDEX compactions_recovery; PRAGMA user_version = 6")?;
         Ok(())
     })
     .unwrap();
     drop(s);
     let s = Store::open(dir.path()).unwrap();
-    assert_eq!(s.read(super::super::schema::version).unwrap(), 8);
+    assert_eq!(
+        s.read(super::super::schema::version).unwrap(),
+        crate::store::SCHEMA_VERSION
+    );
     assert_eq!(read(&s, job.id), job);
     let backup = dir.path().join("engine.sqlite.v6.bak");
     let c =

@@ -16,6 +16,7 @@ pub mod compactions;
 mod generation;
 mod outbox;
 pub(crate) mod prompt_result;
+pub(crate) mod removal;
 mod schema;
 mod writes;
 pub use generation::GenerationState;
@@ -42,6 +43,7 @@ pub enum StoreError {
     Corrupt(String),
     /// A test asked for this write to fail.
     Injected,
+    Removed,
 }
 
 impl std::fmt::Display for StoreError {
@@ -59,6 +61,7 @@ impl std::fmt::Display for StoreError {
             StoreError::Io(e) => write!(f, "i/o: {e}"),
             StoreError::Corrupt(why) => write!(f, "corrupt engine data: {why}"),
             StoreError::Injected => f.write_str("injected storage failure"),
+            StoreError::Removed => f.write_str("session removal is committed"),
         }
     }
 }
@@ -73,7 +76,14 @@ impl From<rusqlite::Error> for StoreError {
 
 impl From<StoreError> for ProtoError {
     fn from(e: StoreError) -> Self {
-        ProtoError::new(ErrorCode::Storage, e.to_string())
+        ProtoError::new(
+            if matches!(e, StoreError::Removed) {
+                ErrorCode::NotFound
+            } else {
+                ErrorCode::Storage
+            },
+            e.to_string(),
+        )
     }
 }
 
@@ -581,6 +591,15 @@ impl Store {
     ) -> Result<(SessionRow, bool)> {
         self.tx(|tx| {
             if let Some(key) = key
+                && tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM session_removals WHERE create_key = ?1)",
+                    [key],
+                    |r| r.get::<_, bool>(0),
+                )?
+            {
+                return Err(StoreError::Removed);
+            }
+            if let Some(key) = key
                 && let Some(existing) = tx
                     .query_row(
                         "SELECT * FROM sessions WHERE create_key = ?1",
@@ -666,6 +685,7 @@ impl Store {
 
     pub fn set_session_field(&self, session: &str, field: SessionField) -> Result<u64> {
         self.tx(|tx| {
+            Self::assert_session_live(tx, session)?;
             match &field {
                 SessionField::Title(t) => tx.execute(
                     "UPDATE sessions SET title = ?2 WHERE id = ?1",
@@ -1521,6 +1541,7 @@ impl Store {
     }
 
     pub fn kv_set(tx: &Connection, session: &str, key: &str, value: &str) -> Result<()> {
+        Self::assert_session_live(tx, session)?;
         tx.execute(
             "INSERT INTO kv(session, key, value) VALUES (?1, ?2, ?3)
              ON CONFLICT(session, key) DO UPDATE SET value = excluded.value",

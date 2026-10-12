@@ -152,6 +152,11 @@ pub enum Call {
         session: SessionId,
         title: String,
     },
+    /// Stop and remove a root and its children. The committed intent survives caller
+    /// cancellation/restart. Repeating the same removed id succeeds without recreating it.
+    RemoveSession {
+        session: SessionId,
+    },
     /// Attach this client to the session (idempotent until ReleaseSession/disconnect).
     OpenSession {
         session: SessionId,

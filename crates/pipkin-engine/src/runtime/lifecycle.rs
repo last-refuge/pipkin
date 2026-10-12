@@ -20,9 +20,11 @@ const EXTENSION_GRACE: Duration = Duration::from_secs(2);
 #[derive(Default)]
 pub(super) struct Sessions {
     pub live: HashMap<String, Managed>,
-    retiring: HashMap<String, Arc<CancellationToken>>,
+    pub(super) retiring: HashMap<String, Arc<CancellationToken>>,
     /// Weak ownership keeps cached instructions alive only while a root or child is live.
-    prompt_resources: HashMap<String, std::sync::Weak<std::sync::Mutex<super::glue::Resources>>>,
+    pub(super) prompt_resources:
+        HashMap<String, std::sync::Weak<std::sync::Mutex<super::glue::Resources>>>,
+    pub(super) removing: HashSet<String>,
 }
 
 pub(super) struct Managed {
@@ -36,11 +38,20 @@ impl Shared {
     pub fn session(&self, id: &str) -> Result<Arc<SessionRt>, ProtoError> {
         let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = sessions.live.get(id) {
+            if entry.rt.removed.is_cancelled() {
+                return Err(crate::store::StoreError::Removed.into());
+            }
             return Ok(entry.rt.clone());
         }
         let row = self.store.session(id)?.ok_or_else(|| {
             ProtoError::new(ErrorCode::NotFound, format!("Session {id} does not exist"))
         })?;
+        if sessions
+            .removing
+            .contains(row.root.as_deref().unwrap_or(id))
+        {
+            return Err(crate::store::StoreError::Removed.into());
+        }
         let (extension_profile, pinned) = if row.parent.is_none() {
             crate::extensions::profiles::resolve(&self.store, id)?
         } else {
@@ -83,6 +94,7 @@ impl Shared {
                 },
             )));
             let mut rt = SessionRt::new(id, questions);
+            rt.root_id = row.root.clone().unwrap_or_else(|| id.to_owned());
             rt.prompt_resources = prompt_resources;
             rt.predecessor = predecessor;
             rt.extension_profile = extension_profile;

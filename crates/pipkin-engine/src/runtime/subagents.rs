@@ -119,6 +119,7 @@ impl Shared {
         // Create (or find) the child and its task mapping atomically.
         let task_row: TaskRow = tokio::task::block_in_place(|| {
             self.store.tx(|tx| {
+                Store::assert_session_live(tx, parent)?;
                 if let Some(existing) = Store::task_for_call(tx, parent, call_id)? {
                     return Ok(existing);
                 }
@@ -168,9 +169,13 @@ impl Shared {
             }
             tokio::select! {
                 _ = cancel.cancelled() => {
+                    if sess.removed.is_cancelled() { return Err("The conversation was removed".into()); }
                     let _ = self.stop(&child).await;
                     // Wait briefly for the child to settle as stopped.
-                    let _ = tokio::time::timeout(std::time::Duration::from_secs(10), settled.recv()).await;
+                    tokio::select! {
+                        _ = sess.removed.cancelled() => return Err("The conversation was removed".into()),
+                        _ = tokio::time::timeout(std::time::Duration::from_secs(10), settled.recv()) => {}
+                    }
                     self.set_task_status(&root, &child, "aborted", None);
                     return Err(format!("Subagent {} failed: aborted", task_row.child));
                 }

@@ -1458,3 +1458,92 @@ fn sigkill_after_summary_submission_recovers_queued_write_without_resummarizing(
     assert_eq!(stub.bodies().len(), 7);
     w.close();
 }
+
+/// Removal must stop external effects before dropping their recovery records, including
+/// when SIGKILL lands on either side of the database deletion transaction.
+#[test]
+fn removal_reaps_live_tools_and_recovers_both_durable_crash_boundaries() {
+    for point in [None, Some("removal_intent"), Some("removal_deleted")] {
+        let stub = Stub::start(|n, _| {
+            tool_plan(
+                n,
+                "bash",
+                json!({"command": "echo started >> started.txt; sleep 30; echo forbidden > finished.txt"}),
+            )
+        });
+        let p = Profile::new(&stub.url());
+        let mut w = Worker::start(&p, point);
+        let s = w.create(&p.project);
+        w.prompt(&s, "job", "start a long tool").unwrap().unwrap();
+        let deadline = Instant::now() + WAIT;
+        while !p.project.join("started.txt").exists() {
+            assert!(Instant::now() < deadline, "tool did not start: {point:?}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let Reply::Events(page) = w.ok(Call::CatchUp {
+            after: 0,
+            limit: 256,
+        }) else {
+            panic!()
+        };
+        let cursor = page.head;
+        let result = w.call(Call::RemoveSession { session: s.clone() });
+        if point.is_some() {
+            assert!(result.is_none(), "must die at {point:?}: {result:?}");
+            w.reap_killed();
+        } else {
+            assert_eq!(result, Some(Ok(Reply::Ok)));
+            no_processes_left(&s);
+            w.close();
+        }
+        let mut w = Worker::start(&p, None);
+        assert_eq!(w.ok(Call::RemoveSession { session: s.clone() }), Reply::Ok);
+        assert_eq!(
+            w.ok(Call::ListSessions),
+            Reply::Sessions { sessions: vec![] }
+        );
+        assert_eq!(
+            w.call(Call::OpenSession {
+                session: s.clone(),
+                window: None
+            })
+            .unwrap()
+            .unwrap_err()
+            .code,
+            ErrorCode::NotFound
+        );
+        assert_eq!(
+            w.call(Call::CreateSession {
+                cwd: p.project.display().to_string(),
+                request: "c1".into()
+            })
+            .unwrap()
+            .unwrap_err()
+            .code,
+            ErrorCode::NotFound
+        );
+        no_processes_left(&s);
+        assert_eq!(
+            stub.bodies().len(),
+            1,
+            "deleted work must not recover: {point:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(p.project.join("started.txt")).unwrap(),
+            "started\n"
+        );
+        assert!(!p.project.join("finished.txt").exists());
+        w.close();
+        let store = pipkin_engine::store::Store::open(&p.data).unwrap();
+        store.integrity_check().unwrap();
+        assert!(store.all_sessions().unwrap().is_empty());
+        assert!(
+            store
+                .catch_up(cursor, 256)
+                .unwrap()
+                .events
+                .iter()
+                .any(|e| e.session == s)
+        );
+    }
+}

@@ -82,6 +82,19 @@ impl Shared {
         id: u64,
         external: &CancellationToken,
     ) -> Result<Compacted, String> {
+        tokio::select! {
+            biased;
+            _ = sess.removed.cancelled() => Err("Session removal is committed".into()),
+            result = self.execute_compaction_live(sess, id, external) => result,
+        }
+    }
+
+    async fn execute_compaction_live(
+        self: &Arc<Self>,
+        sess: &Arc<SessionRt>,
+        id: u64,
+        external: &CancellationToken,
+    ) -> Result<Compacted, String> {
         // Waiting callers retain only an identity. Do not hold a permit or decoded prompt
         // while waiting for another executor of this same operation.
         loop {

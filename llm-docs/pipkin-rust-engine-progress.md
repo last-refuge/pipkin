@@ -11,7 +11,43 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — thinking cycling and atomic model configuration
+## Current follow-up — durable root and child removal
+
+Following **`dfbca07`**, implemented `RemoveSession` with protocol **11** / schema **9**.
+Removal commits an intent before stopping work, rejects new admissions, cancels live root/
+child runs and foreground/background compactions, and wakes queued prompt waiters. Cleanup
+outlives caller disconnect and atomically drops session-owned records and import mappings
+with deletion invalidations. Eight concurrent cleanup jobs are allowed; capacity refusal
+commits nothing. Repeated calls succeed without resurrecting old create/import identities.
+Startup reaps orphaned Linux tool processes before deleting their recovery records.
+
+Seven runtime tests cover lifecycle/races/faults/capacity. Real engine-process tests exercise
+running shell teardown and SIGKILL after intent and after deletion. Headless desktop tests
+verify live and dropped notifications, removal of an open running conversation, restart and
+subsequent coding work. Rich imported history/profile/source/backup bytes remain unchanged;
+schema-8 migration creates a readable pre-migration backup. The core catalog now also drops
+missing live conversations, fixing stale selection after deletion.
+See [session removal evidence](pipkin-rust-engine-evidence/session-removal.md).
+
+Required checks: **1502 passed, 0 failed, 53 ignored**; Clippy and formatting clean.
+Logs: `/tmp/pipkin-removal-workspace2.log`, `/tmp/pipkin-removal-clippy2.log`,
+`/tmp/pipkin-removal-fmt.log`. The first workspace run found five historical migration
+fixture failures (schema-9 objects left behind in synthetic old databases and hardcoded
+schema-8 assertions); corrected fixtures retain their backup/data assertions. Initial
+child-wait, sandbox, writer-lock and test-target corrections are recorded in the evidence.
+No test failure was waived.
+
+SVC-MGMT-REMOVE moves PA → NC. Recomputed inventory: **504 rows, 488 non-OS;
+NC 413, NE 26, NP 37, PA 11, BL 0, LB 1, OS 16; 436 measured, 7 observed,
+8 unverified, 53 not started; 0 fully qualified**. Native remains opt-in.
+
+Next: close provider identity/OAuth reachability and prompt identity/documentation audits,
+then remaining sustained reliability/performance, installed migration/coding workflows,
+packaging/platform and release qualification. Pi/Node removal is still gated on that
+acceptance. Pi extensions remain out of scope. Removal does not claim secure erasure or
+non-Linux orphan process qualification; source backups and desktop draft/cache data remain.
+
+## Prior follow-up — thinking cycling and atomic model configuration
 
 Following **`5917287`**, implemented the built-in Models service's missing cycle operation.
 `CycleThinking` advances/wraps through supported levels and matches the reference for

@@ -15,8 +15,9 @@ reference-derived output exists.
   `b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05` (archive
   `2be5f68d90695e71372c01ccbd08d5728b93691e07c45918846997c8949bcabb`), plus the Pipkin desktop
   at app base `75f5c35`. Frozen reference fixtures: `fixtures/pi-sessions/` (8 scenarios, RE-02).
-- **Current follow-up:** thinking cycling and atomic model configuration on top of `5917287`
-  (2026-10-11), protocol 10 / schema 8; see [cycle evidence](pipkin-rust-engine-evidence/model-cycle.md).
+- **Current follow-up:** durable root/child removal on top of `dfbca07`
+  (2026-10-11), protocol 11 / schema 9; see [removal evidence](pipkin-rust-engine-evidence/session-removal.md).
+  Prior model/thinking configuration: [cycle evidence](pipkin-rust-engine-evidence/model-cycle.md).
   Prior prompt-resource fix: [resource/provider evidence](pipkin-rust-engine-evidence/prompt-resource-provider-audit.md).
   Catalog refresh/offline implementation: [catalog evidence](pipkin-rust-engine-evidence/remote-catalog.md).
 - **Historical broad code reconciliation:** `e4c3a8c` (2026-10-11), including the Claude lifecycle
@@ -211,10 +212,10 @@ of all 504 capabilities.
 
 | Disposition (target) | Rows |
 | --- | --- |
-| `NC` native implementation of the same contract | 412 |
+| `NC` native implementation of the same contract | 413 |
 | `NE` native equivalent | 26 |
 | `NP` not present in the baseline (evidence in row) | 37 |
-| `PA` pending audit | 12 |
+| `PA` pending audit | 11 |
 | `BL` blocked | 0 |
 | `LB` legacy bridge only | 1 |
 | `RC` reserved for Codex — not implemented or qualified | 0 |
@@ -234,11 +235,11 @@ the row evidence for history; no package execution is claimed.
 
 | Evidence | Rows |
 | --- | --- |
-| measured | 435 |
+| measured | 436 |
 | observed | 7 |
 | failed | 0 |
 | unverified (code exists, no test) | 8 |
-| not started (implementation absent or excluded; see row evidence) | 54 |
+| not started (implementation absent or excluded; see row evidence) | 53 |
 
 | Section | Rows | NC | NE | NP | PA | BL | LB | RC | OS | measured | observed | failed | unverified | not started |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -248,7 +249,7 @@ the row evidence for history; no package execution is claimed.
 | 4 Provider ids (P03) | 43 | 41 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 42 | 0 | 0 | 0 | 1 |
 | 5 Provider config (P03/P19) | 14 | 11 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 12 | 0 | 0 | 0 | 2 |
 | 6 Credentials / OAuth (P04) | 59 | 49 | 1 | 1 | 8 | 0 | 0 | 0 | 0 | 56 | 0 | 0 | 2 | 1 |
-| 7 Service API / transport | 48 | 38 | 0 | 5 | 1 | 0 | 0 | 0 | 4 | 39 | 0 | 0 | 0 | 9 |
+| 7 Service API / transport | 48 | 39 | 0 | 5 | 0 | 0 | 0 | 0 | 4 | 40 | 0 | 0 | 0 | 8 |
 | 8 Durable / queue / Stop (P05–P08) | 43 | 41 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 42 | 0 | 0 | 0 | 1 |
 | 9 Subagents (P09/P10) | 17 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16 | 0 | 0 | 1 | 0 |
 | 10 Attachments / models / usage (P11) | 9 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 8 | 0 | 0 | 1 | 0 |
@@ -260,7 +261,7 @@ the row evidence for history; no package execution is claimed.
 | 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 53 | 1 | 0 | 1 | 5 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
 | 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 6 | 0 | 0 | 6 |
-| **Total** | 504 | 412 | 26 | 37 | 12 | 0 | 1 | 0 | 16 | 435 | 7 | 0 | 8 | 54 |
+| **Total** | 504 | 413 | 26 | 37 | 11 | 0 | 1 | 0 | 16 | 436 | 7 | 0 | 8 | 53 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
 whenever rows change. Release gates: native beta needs every mandatory row implemented; native
@@ -567,7 +568,7 @@ is the differential target; Chord replicated-state op streams are not reproduced
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | SVC-DIR-STATE | svc/sessions.ts:21-30; svc/server.ts:39-54 | `pi.session-directory` replicated `{revision, sessions[{serverId, sessionId, createdAt, cwd}]}` | rt::sessions_are_created_once_per_key_and_listed | Opus · `Call::ListSessions`, `Event::SessionsChanged` | meta.json → sessions | Same session list after create/remove/restart | — | NC | measured: rt::sessions_are_created_once_per_key_and_listed, nmap::the_catalog_groups_by_working_directory_with_a_fallback, nt::the_catalog_models_and_sign_in_arrive_before_ready; no differential |
 | SVC-MGMT-CREATE | svc/server.ts:97-102; ce/server.ts:76-89,417-420 | `create({id?, cwd?})`; cwd must be absolute existing dir (realpath); id regex; duplicate error; no worker start | rt::sessions_are_created_once_per_key_and_listed; st::create_is_idempotent_under_its_key | Opus · `Call::CreateSession` (idempotent request key) | session id map in import_map | Same validation errors; native adds idempotent key (I-01-related) | — | NC | measured: rt::sessions_are_created_once_per_key_and_listed, st::create_is_idempotent_under_its_key; cwd validation texts not compared; no differential |
-| SVC-MGMT-REMOVE | svc/server.ts:97-102; ce/server.ts:431-435; ce/client-runtime.ts:203-206 | `remove(id)`: release attachments, stop worker, remove session storage/profile, refresh directory | source audit; [required lifecycle work](pipkin-rust-engine-evidence/model-cycle.md) | Codex · E/runtime/store (no native Call yet) | original import source and backups must be preserved | Confirmed built-in service exposed to non-interactive clients despite no desktop delete button | — | PA | not started: native root/child removal lifecycle, admission barrier, teardown, atomic persistent cleanup/invalidation and restart/race tests required; remains a core gap |
+| SVC-MGMT-REMOVE | svc/server.ts:97-102; ce/server.ts:431-435; ce/client-runtime.ts:203-206 | `remove(id)`: release attachments, stop worker, remove session storage/profile, refresh directory | runtime::removal::tests; cp::removal_reaps_live_tools_and_recovers_both_durable_crash_boundaries; ne2e::removal_of_the_open_running_conversation_updates_desktop_even_without_live_events; [evidence](pipkin-rust-engine-evidence/session-removal.md) | Codex · E/runtime/removal.rs, E/store/removal.rs | original import source, profiles and backups preserved byte-for-byte | Durable root/subtree intent, admission barrier, cancellation, bounded cleanup, replay protection and atomic invalidation; no desktop delete button | Linux crash/process checks; headless desktop | NC | measured: seven runtime lifecycle tests, real tool/SIGKILL tests at both durable boundaries, live/dropped-event desktop recovery, imported-state preservation and v8 migration backup; full reference lifecycle differential and rendered-window acceptance remain unqualified |
 | SVC-MGMT-ATTACH | svc/server.ts:109-112; session-router.ts:160-197 | `attach(id)` mints attachmentId, opens/spawns worker, sends attachment envelope | ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away; ne2e::a_prompt_streams_settles_and_reopens_with_the_same_history | Opus · `Call::OpenSession` (snapshot + window + per-client attachment) | n/a | Switching sessions yields equal visible state | — | NC | measured: ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away, ne2e::a_prompt_streams_settles_and_reopens_with_the_same_history; no differential  life::disconnect_grace_can_be_readopted_and_cloned_senders_hold_the_client covers shared ownership and reconnect grace. |
 | SVC-MGMT-DETACH | svc/server.ts:113-117 | `detach()` releases attachment; detaching never cancels runs | ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away | Codex · `Call::ReleaseSession`, E/runtime/lifecycle.rs | n/a | Background run continues | — | NC | measured: ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away (background run continues); life::detach_keeps_the_active_run_and_follow_up_until_both_settle, life::attachments_are_client_owned_and_retirement_closes_the_provider_affinity_id, life::idle_release_is_retired_by_the_running_engine_without_manual_sweeps; explicit per-client attachment release now retires idle resources; no differential |
 | SVC-PLUGINS-PREPARE | svc/plugins.ts:4-12; ce/server.ts:453-469,573-602 | `prepareSession({sessionId, packagePaths})` builds/selects facet packages, persists selection, checks worker conflict | e2e::an_extension_in_the_engine_asks_three_questions_and_the_answers_reach_it | legacy (Pi) | plugin profile JSON preserved | see EXT-* | — | OS | not started (BL: TypeScript facet packages need Node; legacy bridge only); native PrepareExtensions validates/persists native selections with conflict checks (profile evidence), but does not build or execute TypeScript packages; excluded from release gates by owner on 2026-10-11 (previous disposition: BL); retained evidence does not claim Pi package compatibility |

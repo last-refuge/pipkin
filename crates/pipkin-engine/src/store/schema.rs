@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 8;
+pub const SCHEMA_VERSION: u32 = 9;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -233,7 +233,23 @@ AND json_extract(e.body, '$.message.stopReason') = 'toolUse'
 AND EXISTS (SELECT 1 FROM entries n WHERE n.session = e.session AND n.run = e.run
     AND n.id > e.id AND json_extract(n.body, '$.message.role') IN ('assistant', 'user'));
 "#;
-const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8];
+const V9: &str = r#"
+CREATE TABLE session_removals (
+    root TEXT PRIMARY KEY,
+    create_key TEXT UNIQUE,
+    requested_at INTEGER NOT NULL,
+    complete INTEGER NOT NULL DEFAULT 0 CHECK (complete IN (0, 1))
+) STRICT;
+CREATE TRIGGER event_session_delete AFTER DELETE ON sessions BEGIN
+    INSERT INTO event_outbox(session, revision) VALUES (OLD.id, OLD.revision + 1);
+END;
+CREATE TRIGGER removed_session_insert BEFORE INSERT ON sessions
+WHEN EXISTS (SELECT 1 FROM session_removals WHERE root = NEW.id OR root = NEW.root
+    OR (NEW.create_key IS NOT NULL AND create_key = NEW.create_key)) BEGIN
+    SELECT RAISE(ABORT, 'session removal is committed');
+END;
+"#;
+const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

@@ -35,6 +35,8 @@ pub struct Settled {
 
 pub struct SessionRt {
     pub id: String,
+    pub(super) root_id: String,
+    pub(super) removed: CancellationToken,
     /// Selection pinned before this lifetime was acquired. Never changed while active.
     pub(super) extension_profile: Vec<ExtensionSpec>,
     pub(super) profile_pin_pending: std::sync::atomic::AtomicBool,
@@ -73,6 +75,8 @@ impl SessionRt {
             manual_compactions: Mutex::new(Default::default()),
             active_compactions: Mutex::new(Default::default()),
             id: id.to_owned(),
+            root_id: id.to_owned(),
+            removed: CancellationToken::new(),
             lock: tokio::sync::Mutex::new(()),
             active: Mutex::new(None),
             failed: Mutex::new(None),
@@ -184,9 +188,13 @@ impl Shared {
         }
         // Keep transaction order and live publication order identical across concurrent runs.
         let _publication = self.publication.lock().unwrap_or_else(|e| e.into_inner());
+        if sess.removed.is_cancelled() {
+            return Err(crate::store::StoreError::Removed.into());
+        }
         let id = sess.id.clone();
         let result = tokio::task::block_in_place(|| {
             self.store.tx(|tx| {
+                Store::assert_session_live(tx, &id)?;
                 let (value, changes) = f(tx)?;
                 let revision = if changes.is_empty() {
                     0
@@ -209,6 +217,7 @@ impl Shared {
                 }
                 Ok(value)
             }
+            Err(store::StoreError::Removed) => Err(store::StoreError::Removed.into()),
             Err(e) => {
                 self.storage_failure(sess, &e.to_string());
                 Err(e.into())

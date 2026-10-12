@@ -2618,3 +2618,60 @@ fn shutdown_releases_a_native_worker_waiting_for_desktop_bytes() {
     wait_without_ui("producer released", || h.backend.events.stats().2 == 0);
     h.storage.shutdown();
 }
+
+#[test]
+fn removal_of_the_open_running_conversation_updates_desktop_even_without_live_events() {
+    for drop_events in [false, true] {
+        let gate = Gate::new();
+        let g = gate.clone();
+        let fx = Fixture::start(move |_, _| {
+            Reply::Gated(g.clone(), Box::new(Reply::Text("late".into())))
+        });
+        let db = fx.root.join("app.sqlite3");
+        let mut h = Harness::start(&fx, &db);
+        h.open_new_conversation(&fx.project);
+        let conversation = h.state.current().unwrap().id;
+        h.send("keep running until deleted");
+        h.until_asked(&fx, 1);
+        h.until("running", is_running);
+        fx.faults.drop_events.store(drop_events, Ordering::SeqCst);
+        let engine = fx.engine();
+        let session = engine.shared().store.root_sessions().unwrap()[0].id.clone();
+        let connection = engine.connect("removal-control");
+        let call = Call::RemoveSession { session };
+        connection
+            .send(ClientFrame {
+                id: 1,
+                lane: call.lane(),
+                call,
+            })
+            .unwrap();
+        loop {
+            if let ServerFrame::Reply { id: 1, result } = connection.recv_timeout(WAIT).unwrap() {
+                assert_eq!(result, Ok(pipkin_engine_protocol::Reply::Ok));
+                break;
+            }
+        }
+        h.until("deleted conversation disappears", |s| {
+            s.conversation(conversation).is_none() && s.selected.is_none()
+        });
+        assert!(h.state.connection.is_ready());
+        gate.open();
+        assert_eq!(fx.requests().len(), 1);
+        drop(connection);
+        drop(engine);
+        h.stop();
+        fx.faults.drop_events.store(false, Ordering::SeqCst);
+        fx.restart_engine();
+        let mut h = Harness::start(&fx, &db);
+        h.until("restart catalog excludes cached deletion", |s| {
+            s.connection.is_ready() && s.conversations.is_empty()
+        });
+        h.open_new_conversation(&fx.project);
+        h.send("new work after deletion");
+        h.until("new work completes", |s| {
+            is_idle(s) && assistant_texts(s) == ["late"]
+        });
+        h.stop();
+    }
+}

@@ -65,7 +65,7 @@ enum Step {
 impl Shared {
     /// Start executing `run` in the background.
     pub fn spawn_run(self: &Arc<Self>, sess: Arc<SessionRt>, run: u64) {
-        let cancel = CancellationToken::new();
+        let cancel = sess.removed.child_token();
         {
             let mut active = sess.active.lock().unwrap_or_else(|e| e.into_inner());
             if active.as_ref().is_some_and(|a| a.run == run) {

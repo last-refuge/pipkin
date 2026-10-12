@@ -571,7 +571,7 @@ fn a_v1_database_is_backed_up_before_adding_durable_retry_state() {
         .unwrap();
         // Reconstruct the actual v1 schema, retaining a nonempty history/catalog.
         s.tx(|tx| {
-            tx.execute_batch("DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE generation_state; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 1;")?;
+            tx.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE generation_state; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 1;")?;
             Ok(())
         })
         .unwrap();
@@ -702,7 +702,7 @@ fn a_v2_database_is_backed_up_before_adding_the_outbox() {
         let s = Store::open(tmp.path()).unwrap();
         session(&s, "existing");
         s.tx(|tx| {
-            tx.execute_batch("DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 2;")?;
+            tx.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 2;")?;
             Ok(())
         }).unwrap();
     }
@@ -732,7 +732,7 @@ fn a_v3_database_is_backed_up_before_positional_system_bodies_are_written() {
         let s = Store::open(dir.path()).unwrap();
         session(&s, "old");
         s.tx(|tx| {
-            tx.execute_batch("DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 3")?;
+            tx.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 3")?;
             Ok(())
         })
         .unwrap();
@@ -781,7 +781,7 @@ fn a_v4_database_is_backed_up_before_pinned_extension_profiles_are_written() {
         session(&s, "existing");
         s.tx(|tx| {
             Store::kv_set(tx, "existing", "opaque-state", "retained bytes")?;
-            tx.execute_batch("DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 4")?;
+            tx.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 4")?;
             Ok(())
         })
         .unwrap();
@@ -816,4 +816,48 @@ fn a_v4_database_is_backed_up_before_pinned_extension_profiles_are_written() {
             .unwrap(),
         0
     );
+}
+
+#[test]
+fn a_v8_database_is_backed_up_before_removal_receipts_and_delete_events() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let s = Store::open(dir.path()).unwrap();
+        session(&s, "existing");
+        s.tx(|tx| {
+            Store::kv_set(tx, "existing", "opaque-state", "retained bytes")?;
+            tx.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; PRAGMA user_version = 8")?;
+            Ok(())
+        }).unwrap();
+    }
+    let s = Store::open(dir.path()).unwrap();
+    assert_eq!(s.read(schema::version).unwrap(), SCHEMA_VERSION);
+    assert_eq!(
+        s.kv_get("existing", "opaque-state").unwrap().as_deref(),
+        Some("retained bytes")
+    );
+    s.begin_removal("existing").unwrap();
+    s.finish_removal("existing").unwrap();
+    assert!(s.session("existing").unwrap().is_none());
+    let backup = Connection::open_with_flags(
+        dir.path().join("engine.sqlite.v8.bak"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    assert_eq!(schema::version(&backup).unwrap(), 8);
+    assert_eq!(
+        backup
+            .query_row(
+                "SELECT value FROM kv WHERE session='existing' AND key='opaque-state'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+        "retained bytes"
+    );
+    assert_eq!(
+        s.catch_up(0, 10).unwrap().events.last().unwrap().session,
+        "existing"
+    );
+    s.integrity_check().unwrap();
 }

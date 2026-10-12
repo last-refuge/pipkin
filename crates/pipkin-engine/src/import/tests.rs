@@ -1826,3 +1826,40 @@ fn imported_profiles_pin_empty_instead_of_inheriting_native_extensions() {
         );
     }
 }
+
+#[test]
+fn removal_of_an_import_preserves_original_history_profiles_and_backups() {
+    let agent = Agent::new();
+    plugin_profile(
+        &agent,
+        "historical",
+        None,
+        json!(["/plugins/old-selection"]),
+    );
+    drop(rich_session(&agent));
+    let before = snapshot(&agent.root);
+    let store = Store::memory().unwrap();
+    let imported = import(&agent, &store, ROOT).unwrap();
+    let backup = snapshot(&agent.backups());
+    store.begin_removal(ROOT).unwrap();
+    store.finish_removal(ROOT).unwrap();
+    assert!(store.session(ROOT).unwrap().is_none());
+    for child in imported.children {
+        assert!(store.session(&child).unwrap().is_none());
+    }
+    assert!(store.imported(ENGINE, ROOT).unwrap().is_none());
+    assert_eq!(snapshot(&agent.root), before);
+    assert_eq!(snapshot(&agent.backups()), backup);
+    // Replaying an old import cannot resurrect a deleted identity or overwrite its backup.
+    assert!(matches!(
+        import(&agent, &store, ROOT),
+        Err(ImportError::Blocked(_))
+    ));
+    assert!(matches!(
+        discover(&agent.root, &agent.root.join("server"), &store).sessions[0].status,
+        SessionStatus::Blocked { .. }
+    ));
+    assert_eq!(snapshot(&agent.root), before);
+    assert_eq!(snapshot(&agent.backups()), backup);
+    store.integrity_check().unwrap();
+}

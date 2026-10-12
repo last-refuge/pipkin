@@ -8,6 +8,7 @@ mod import;
 mod lifecycle;
 pub mod models;
 mod plugins;
+mod removal;
 mod run;
 mod session;
 mod subagents;
@@ -52,6 +53,7 @@ pub struct Shared {
     stopping: tokio_util::sync::CancellationToken,
     prompt_waits: Arc<Semaphore>,
     compaction_slots: Arc<Semaphore>,
+    removal_slots: Arc<Semaphore>,
     compaction_recovery: tokio::sync::Notify,
     clients: Mutex<HashMap<u64, crate::delivery::Delivery>>,
     cursors: Mutex<HashMap<u64, (u64, u64)>>,
@@ -197,6 +199,17 @@ impl EngineHandle {
         tools: Vec<Arc<dyn Tool>>,
     ) -> Result<EngineHandle, String> {
         let store = Store::open(&config.data_dir).map_err(|e| e.to_string())?;
+        // No worker exists yet. Complete committed removals before recovering any work.
+        for root in store.pending_removals().map_err(|e| e.to_string())? {
+            // Reap tool processes orphaned by a crash before deleting their durable ids.
+            for (session, call) in store
+                .removal_tool_intents(&root)
+                .map_err(|e| e.to_string())?
+            {
+                faults::kill_tool_processes(&faults::tool_call_token(&session, &call));
+            }
+            store.finish_removal(&root).map_err(|e| e.to_string())?;
+        }
         crate::extensions::profiles::initialize(
             &store,
             &config.extensions,
@@ -232,6 +245,7 @@ impl EngineHandle {
             stopping: tokio_util::sync::CancellationToken::new(),
             prompt_waits: Arc::new(Semaphore::new(64)),
             compaction_slots: Arc::new(Semaphore::new(8)),
+            removal_slots: Arc::new(Semaphore::new(8)),
             compaction_recovery: tokio::sync::Notify::new(),
             clients: Mutex::new(HashMap::new()),
             sessions: Mutex::new(lifecycle::Sessions::default()),
@@ -544,6 +558,7 @@ async fn dispatch_with_cancel(
                     "waitForPrompt".into(),
                     "cancelRequest".into(),
                     "cycleThinking".into(),
+                    "removeSession".into(),
                     "subagents".into(),
                     "questions".into(),
                     "compaction".into(),
@@ -578,6 +593,7 @@ async fn dispatch_with_cancel(
             sessions: shared.summaries()?,
         }),
         Call::CreateSession { cwd, request } => shared.create_session(&cwd, &request),
+        Call::RemoveSession { session } => shared.remove_session(&session).await,
         Call::RenameSession { session, title } => {
             shared.session(&session)?;
             let title = title.trim().to_owned();
