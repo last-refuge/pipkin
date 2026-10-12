@@ -1,0 +1,179 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "packages/ai/src/auth/oauth/github-copilot.ts": "72b771b1aacb75707eb5b89eff4999762301f75d0fec0cbc22aa9b9e279fa9ba"
+  },
+  "nowMs": 1791720000000,
+  "timeZone": "UTC",
+  "scope": "Original retry helper with fake fetch, clock and sleep; elapsed timeout/cancellation require native real-time tests.",
+  "cases": [
+    {
+      "header": null,
+      "requests": 3,
+      "delays": [
+        500,
+        1000
+      ],
+      "status": 429
+    },
+    {
+      "header": "",
+      "requests": 3,
+      "delays": [
+        500,
+        1000
+      ],
+      "status": 429
+    },
+    {
+      "header": "0",
+      "requests": 3,
+      "delays": [
+        0,
+        0
+      ],
+      "status": 429
+    },
+    {
+      "header": "-1",
+      "requests": 3,
+      "delays": [
+        0,
+        0
+      ],
+      "status": 429
+    },
+    {
+      "header": "0.125",
+      "requests": 3,
+      "delays": [
+        125,
+        125
+      ],
+      "status": 429
+    },
+    {
+      "header": "+.5",
+      "requests": 3,
+      "delays": [
+        500,
+        500
+      ],
+      "status": 429
+    },
+    {
+      "header": "1e-2",
+      "requests": 3,
+      "delays": [
+        10,
+        10
+      ],
+      "status": 429
+    },
+    {
+      "header": "0 trailing",
+      "requests": 3,
+      "delays": [
+        0,
+        0
+      ],
+      "status": 429
+    },
+    {
+      "header": "0x20",
+      "requests": 3,
+      "delays": [
+        0,
+        0
+      ],
+      "status": 429
+    },
+    {
+      "header": "1e",
+      "requests": 3,
+      "delays": [
+        1000,
+        1000
+      ],
+      "status": 429
+    },
+    {
+      "header": "Infinity",
+      "requests": 1,
+      "delays": [],
+      "status": 429
+    },
+    {
+      "header": "-Infinity",
+      "requests": 1,
+      "delays": [],
+      "status": 429
+    },
+    {
+      "header": "NaN",
+      "requests": 1,
+      "delays": [],
+      "status": 429
+    },
+    {
+      "header": "1e999",
+      "requests": 1,
+      "delays": [],
+      "status": 429
+    },
+    {
+      "header": "1e250",
+      "requests": 1,
+      "delays": [],
+      "status": 429
+    },
+    {
+      "header": "5000",
+      "requests": 1,
+      "delays": [],
+      "status": 429
+    },
+    {
+      "header": "not a date",
+      "requests": 1,
+      "delays": [],
+      "status": 429
+    },
+    {
+      "header": "Sun, 11 Oct 2026 12:00:01 GMT",
+      "requests": 3,
+      "delays": [
+        1000,
+        0
+      ],
+      "status": 429
+    },
+    {
+      "header": "Sun, 11 Oct 2026 11:59:00 GMT",
+      "requests": 3,
+      "delays": [
+        0,
+        0
+      ],
+      "status": 429
+    },
+    {
+      "header": "Sunday, 11-Oct-26 12:00:01 GMT",
+      "requests": 3,
+      "delays": [
+        1000,
+        0
+      ],
+      "status": 429
+    },
+    {
+      "header": "Sun Oct 11 12:00:01 2026",
+      "requests": 3,
+      "delays": [
+        1000,
+        0
+      ],
+      "status": 429
+    }
+  ]
+}

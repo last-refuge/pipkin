@@ -183,8 +183,40 @@ fn parse_catalog(
     Ok(Catalog { available, policy })
 }
 
-/// Reference `fetchWithRateLimitRetry`: 5 s per attempt, retry 429 with `retry-after` or
-/// `500 * 2^n` ms while within the budget.
+/// Match Number.parseFloat's numeric prefix before trying an HTTP date. Invalid and
+/// non-finite delays stop retrying; unrepresentable finite delays exceed every retry budget.
+fn retry_after(raw: &str, now_ms: i64) -> Option<Duration> {
+    static PREFIX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"^[+-]?(?:Infinity|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)",
+        )
+        .unwrap()
+    });
+    let raw = raw.trim();
+    let seconds = if let Some(number) = PREFIX.find(raw) {
+        number.as_str().parse::<f64>().ok()?
+    } else {
+        let date = chrono::DateTime::parse_from_rfc2822(raw)
+            .map(|date| date.timestamp_millis())
+            .or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(raw, "%A, %d-%b-%y %H:%M:%S GMT")
+                    .map(|date| date.and_utc().timestamp_millis())
+            })
+            .or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(raw, "%a %b %e %H:%M:%S %Y")
+                    .map(|date| date.and_utc().timestamp_millis())
+            })
+            .ok()?;
+        date.saturating_sub(now_ms) as f64 / 1000.0
+    };
+    if !seconds.is_finite() {
+        return None;
+    }
+    Duration::try_from_secs_f64(seconds.max(0.0)).ok()
+}
+
+/// Reference fetchWithRateLimitRetry: five seconds per attempt and one overall login
+/// retry budget. Refresh passes zero retries and retains only the per-attempt timeout.
 async fn send_with_rate_limit_retry(
     ctx: &FlowCtx,
     build: impl Fn() -> reqwest::RequestBuilder,
@@ -192,28 +224,70 @@ async fn send_with_rate_limit_retry(
     budget: Duration,
     cancel: Option<&tokio_util::sync::CancellationToken>,
 ) -> Result<Resp, String> {
-    let deadline = tokio::time::Instant::now() + budget;
-    let mut retry = 0;
-    loop {
-        let resp = send(build().timeout(Duration::from_secs(5)), cancel).await?;
-        if resp.status != 429 || retry >= max_retries {
-            return Ok(resp);
-        }
-        let mut delay = ctx
-            .endpoints
-            .retry_delay(Duration::from_millis(500 * 2u64.pow(retry)), 1 << retry);
-        if let Some(ra) = resp.header("retry-after") {
-            match ra.trim().parse::<f64>() {
-                Ok(secs) => delay = Duration::from_secs_f64(secs.max(0.0)),
-                Err(_) => return Ok(resp),
+    let deadline =
+        (max_retries > 0 && !budget.is_zero()).then(|| tokio::time::Instant::now() + budget);
+    let work = async {
+        let mut retry = 0;
+        loop {
+            let resp = build()
+                .timeout(Duration::from_secs(5))
+                .send()
+                .await
+                .map_err(|error| crate::provider::http::transport_error(&error))?;
+            if resp.status().as_u16() != 429 || retry >= max_retries {
+                return read_response(resp).await;
             }
+            let fallback = ctx
+                .endpoints
+                .retry_delay(Duration::from_millis(500 * 2u64.pow(retry)), 1 << retry);
+            let delay = match resp
+                .headers()
+                .get("retry-after")
+                .and_then(|value| value.to_str().ok())
+                .filter(|value| !value.is_empty())
+            {
+                Some(value) => match retry_after(value, crate::util::now_ms()) {
+                    Some(delay) => delay,
+                    None => return read_response(resp).await,
+                },
+                None => fallback,
+            };
+            if deadline.is_some_and(|deadline| {
+                delay >= deadline.saturating_duration_since(tokio::time::Instant::now())
+            }) {
+                return read_response(resp).await;
+            }
+            // Discard the rate-limit body before retrying (it need not terminate).
+            drop(resp);
+            tokio::time::sleep(delay).await;
+            retry += 1;
         }
-        if max_retries == 0 || tokio::time::Instant::now() + delay >= deadline {
-            return Ok(resp);
+    };
+    let bounded = async {
+        match deadline {
+            Some(deadline) => tokio::time::timeout_at(deadline, work)
+                .await
+                .map_err(|_| "Copilot login retry budget expired".to_owned())?,
+            None => work.await,
         }
-        tokio::time::sleep(delay).await;
-        retry += 1;
+    };
+    match cancel {
+        Some(cancel) => tokio::select! {
+            biased;
+            _ = cancel.cancelled() => Err(super::CANCELLED.into()),
+            result = bounded => result,
+        },
+        None => bounded.await,
     }
+}
+
+async fn read_response(response: reqwest::Response) -> Result<Resp, String> {
+    let status = response.status().as_u16();
+    let text = response
+        .text()
+        .await
+        .map_err(|error| crate::provider::http::transport_error(&error))?;
+    Ok(Resp { status, text })
 }
 
 async fn fetch_models(
@@ -564,3 +638,6 @@ mod tests {
         assert!(parse_catalog(&serde_json::json!({}), true, &known).is_err());
     }
 }
+
+#[cfg(test)]
+mod retry_tests;

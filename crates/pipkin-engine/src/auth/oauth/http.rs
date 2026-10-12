@@ -9,7 +9,6 @@ use super::CANCELLED;
 pub struct Resp {
     pub status: u16,
     pub text: String,
-    pub headers: reqwest::header::HeaderMap,
 }
 
 impl Resp {
@@ -29,10 +28,6 @@ impl Resp {
             _ => Value::Object(Default::default()),
         }
     }
-
-    pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.get(name).and_then(|v| v.to_str().ok())
-    }
 }
 
 /// Send and read the whole body. Cancellation wins with "Login cancelled".
@@ -43,16 +38,11 @@ pub async fn send(rb: RequestBuilder, cancel: Option<&CancellationToken>) -> Res
             .await
             .map_err(|e| crate::provider::http::transport_error(&e))?;
         let status = resp.status().as_u16();
-        let headers = resp.headers().clone();
         let text = resp
             .text()
             .await
             .map_err(|e| crate::provider::http::transport_error(&e))?;
-        Ok(Resp {
-            status,
-            text,
-            headers,
-        })
+        Ok(Resp { status, text })
     };
     match cancel {
         Some(c) => tokio::select! {
