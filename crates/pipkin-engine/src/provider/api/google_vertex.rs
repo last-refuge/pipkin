@@ -211,11 +211,15 @@ async fn run(ctx: StreamCtx<'_>) -> Message {
             headers.set_default("authorization", format!("Bearer {token}"));
         }
         VertexAuth::Adc => {
-            let explicit = setting(req, None, &["GOOGLE_APPLICATION_CREDENTIALS"]);
-            let Some(path) = google_auth::credentials_path(req, explicit) else {
-                return ctx.failed(ctx.emitter(), google_auth::NO_CREDENTIALS);
-            };
-            let token = match google_auth::access_token(&ctx, &path).await {
+            let explicit = setting(
+                req,
+                None,
+                &[
+                    "GOOGLE_APPLICATION_CREDENTIALS",
+                    "google_application_credentials",
+                ],
+            );
+            let token = match google_auth::resolve(&ctx, explicit).await {
                 Ok(t) => t,
                 Err(e) => return ctx.failed(ctx.emitter(), e),
             };
@@ -335,6 +339,87 @@ mod tests {
             error_message: Some(e), .. } if e.starts_with("Vertex AI requires a project ID"))
         );
         assert_eq!(server.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn metadata_and_impersonation_credentials_reach_vertex_streams() {
+        for impersonated in [false, true] {
+            let server = MockServer::start(|req, _| {
+                if req.path.starts_with("/computeMetadata/") {
+                    MockResponse::json(200, &json!({"access_token":"metadata-token", "expires_in":3600}))
+                        .with_header("Metadata-Flavor", "Google")
+                } else if req.path == "/token" {
+                    MockResponse::json(200, &json!({"access_token":"source-token", "expires_in":3600}))
+                } else if req.path.ends_with(":generateAccessToken") {
+                    MockResponse::json(200, &json!({"accessToken":"impersonated-token", "expireTime":"2099-01-01T00:00:00Z"}))
+                } else {
+                    MockResponse::sse(vec![OK.into()])
+                }
+            }).await;
+            let dir = tempfile::tempdir().unwrap();
+            let mut req = request(vertex("gemini-2.5-pro", &format!("{}/vx", server.url)));
+            req.credential = if impersonated {
+                Credential::None
+            } else {
+                Credential::ApiKey(GCP_VERTEX_CREDENTIALS_MARKER.into())
+            };
+            req.env.clear();
+            req.options
+                .insert(crate::provider::ISOLATED_ENV.into(), json!(true));
+            req.options.insert("project".into(), json!("project"));
+            req.options.insert("location".into(), json!("us-central1"));
+            req.env
+                .insert("HOME".into(), dir.path().display().to_string());
+            req.env
+                .insert("GCE_METADATA_HOST".into(), server.url.clone());
+            req.env
+                .insert("GOOGLE_CLOUD_QUOTA_PROJECT".into(), "billing".into());
+            if impersonated {
+                let reference: Value = serde_json::from_str(include_str!(
+                    "../../../../../fixtures/native-google-adc/reference.json"
+                ))
+                .unwrap();
+                let mut document = reference["cases"][0]["document"].clone();
+                document["endpoint"] = json!(server.url);
+                let file = dir.path().join("adc.json");
+                std::fs::write(&file, document.to_string()).unwrap();
+                req.env.insert(
+                    "GOOGLE_APPLICATION_CREDENTIALS".into(),
+                    file.display().to_string(),
+                );
+                req.options.insert(
+                    "googleTokenUrl".into(),
+                    json!(format!("{}/token", server.url)),
+                );
+            }
+            for _ in 0..2 {
+                let message = run_req(&req).await;
+                assert!(
+                    matches!(
+                        message,
+                        Message::Assistant {
+                            stop_reason: StopReason::Stop,
+                            ..
+                        }
+                    ),
+                    "{message:?}"
+                );
+            }
+            let requests = server.requests();
+            assert_eq!(requests.len(), if impersonated { 4 } else { 3 });
+            for model in &requests[requests.len() - 2..] {
+                assert_eq!(
+                    model.header("authorization"),
+                    Some(if impersonated {
+                        "Bearer impersonated-token"
+                    } else {
+                        "Bearer metadata-token"
+                    })
+                );
+                assert_eq!(model.header("x-goog-user-project"), Some("billing"));
+                assert!(model.path.starts_with("/vx/"));
+            }
+        }
     }
 
     #[tokio::test]

@@ -14,27 +14,25 @@
 //! Tokens are cached per credentials file and token endpoint until five minutes before expiry.
 //! `quota_project_id` becomes the `x-goog-user-project` header. The token endpoint can be
 //! overridden with the `googleTokenUrl` request option (tests point it at a local mock).
-//! Not ported: external-account (workload identity pool) and impersonated credential files, and
-//! the GCE/Cloud Run metadata-server fallback when no file exists.
+//! ADC discovery, impersonated credentials and metadata-server fallback are in `google_adc`.
+//! External-account federation remains separate follow-up work.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
-use super::common::opt_str;
-use crate::provider::{ProviderRequest, StreamCtx, http};
+use crate::provider::{ProviderRequest, http};
+
+#[path = "google_adc.rs"]
+mod adc;
+pub(crate) use adc::resolve;
 
 pub(crate) const CLOUD_PLATFORM_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
 pub(crate) const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const JWT_BEARER_GRANT: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
-/// Refresh this long before the token expires (google-auth-library `eagerRefreshThresholdMillis`).
-const EAGER_REFRESH: Duration = Duration::from_secs(5 * 60);
 const TOKEN_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const NO_CREDENTIALS: &str = "Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.";
 
@@ -58,16 +56,6 @@ enum CredentialsFile {
         refresh_token: String,
         quota_project: Option<String>,
     },
-}
-
-struct Cached {
-    token: AccessToken,
-    expires: Instant,
-}
-
-fn cache() -> &'static Mutex<HashMap<String, Cached>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Cached>>> = OnceLock::new();
-    CACHE.get_or_init(Mutex::default)
 }
 
 /// The credentials file to use: `GOOGLE_APPLICATION_CREDENTIALS`, else the gcloud ADC file.
@@ -209,7 +197,8 @@ fn grant(file: &CredentialsFile) -> Result<Vec<(&'static str, String)>, String> 
 }
 
 async fn exchange(
-    ctx: &StreamCtx<'_>,
+    http: &reqwest::Client,
+    cancel: &tokio_util::sync::CancellationToken,
     token_url: &str,
     file: &CredentialsFile,
 ) -> Result<(String, Duration), String> {
@@ -220,23 +209,33 @@ async fn exchange(
         }
         form.finish()
     };
-    let send = ctx
-        .http
+    let send = http
         .post(token_url)
         .header("content-type", "application/x-www-form-urlencoded")
         .header("accept", "application/json")
         .timeout(TOKEN_REQUEST_TIMEOUT)
         .body(body)
         .send();
-    let resp = tokio::select! {
-        _ = ctx.cancel.cancelled() => return Err("Request aborted".into()),
+    let mut resp = tokio::select! {
+        _ = cancel.cancelled() => return Err("Request aborted".into()),
         r = send => r.map_err(|e| http::transport_error(&e))?,
     };
     let status = resp.status();
-    let text = tokio::select! {
-        _ = ctx.cancel.cancelled() => return Err("Request aborted".into()),
-        t = resp.text() => t.map_err(|e| http::transport_error(&e))?,
-    };
+    let mut bytes = Vec::new();
+    loop {
+        let chunk = tokio::select! {
+            _ = cancel.cancelled() => return Err("Request aborted".into()),
+            chunk = resp.chunk() => chunk.map_err(|e| http::transport_error(&e))?,
+        };
+        let Some(chunk) = chunk else {
+            break;
+        };
+        if bytes.len().saturating_add(chunk.len()) > 1024 * 1024 {
+            return Err("Google token response is too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let text = String::from_utf8_lossy(&bytes);
     let parsed: Option<Value> = serde_json::from_str(&text).ok();
     if !status.is_success() {
         if let Some(error) = parsed
@@ -264,50 +263,6 @@ async fn exchange(
         .and_then(Value::as_u64)
         .unwrap_or(3600);
     Ok((token.to_owned(), Duration::from_secs(expires_in)))
-}
-
-/// An access token for the credentials file at `path`, from the cache or a fresh exchange.
-pub(crate) async fn access_token(ctx: &StreamCtx<'_>, path: &Path) -> Result<AccessToken, String> {
-    let token_url = opt_str(ctx.req, "googleTokenUrl").unwrap_or(GOOGLE_TOKEN_URL);
-    let key = format!("{}\n{token_url}", path.display());
-    let mut cache = tokio::select! {
-        _ = ctx.cancel.cancelled() => return Err("Request aborted".into()),
-        guard = cache().lock() => guard,
-    };
-    if let Some(cached) = cache.get(&key)
-        && Instant::now() + EAGER_REFRESH < cached.expires
-    {
-        return Ok(cached.token.clone());
-    }
-    let text = match tokio::fs::read_to_string(path).await {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(NO_CREDENTIALS.into()),
-        Err(e) => {
-            return Err(format!(
-                "Could not read Google credentials at {}: {e}",
-                path.display()
-            ));
-        }
-    };
-    let file = parse_credentials(&text)?;
-    let started = Instant::now();
-    let (token, lifetime) = exchange(ctx, token_url, &file).await?;
-    let quota_project = match &file {
-        CredentialsFile::ServiceAccount { quota_project, .. }
-        | CredentialsFile::AuthorizedUser { quota_project, .. } => quota_project.clone(),
-    };
-    let token = AccessToken {
-        token,
-        quota_project,
-    };
-    cache.insert(
-        key,
-        Cached {
-            token: token.clone(),
-            expires: started + lifetime,
-        },
-    );
-    Ok(token)
 }
 
 #[cfg(test)]

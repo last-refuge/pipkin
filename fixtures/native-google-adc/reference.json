@@ -1,0 +1,132 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "google-auth-library": {
+      "version": "10.6.2",
+      "integrity": "sha512-e27Z6EThmVNNvtYASwQxose/G57rkRuaRbQyxM2bvYLLX/GqWZ5chWq2EBoUchJbCc57eC9ArzO5wMsEmWftCw==",
+      "hashes": {
+        "build/src/auth/googleauth.js": "206721dbc822433cf069bba86aa3b60702f4ca9d74b628666d7eab3dba1a3016",
+        "build/src/auth/impersonated.js": "61fa238327d1197f7fc22f733f7a342280190bf084da6b002b56587263e4a1ce",
+        "build/src/auth/computeclient.js": "daf665758158bbb211056070f194536441a717310bac858edd0d1847bb195c95",
+        "build/src/auth/refreshclient.js": "189cac7b9a2f1d8ce024f6323d65ba04642e2bf8361137cffb45dda59ca63089"
+      }
+    },
+    "gcp-metadata": {
+      "version": "8.1.2",
+      "integrity": "sha512-zV/5HKTfCeKWnxG0Dmrw51hEWFGfcF2xiXqcA3+J90WDuP0SvoiSO5ORvcBsifmx/FoIjgQN3oNOGaQ5PhLFkg==",
+      "hashes": {
+        "build/src/index.js": "d804f162e0bcdffc926e7365af3445a0d483317c128ca7ea7044aced86ab9e27"
+      }
+    }
+  },
+  "scope": "Executed SDK impersonation with synthetic transporter; Compute with synthetic metadata supplier, not live GCE discovery",
+  "cases": [
+    {
+      "document": {
+        "type": "impersonated_service_account",
+        "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/target@project.iam.gserviceaccount.com:generateAccessToken",
+        "source_credentials": {
+          "type": "authorized_user",
+          "client_id": "client",
+          "client_secret": "secret",
+          "refresh_token": "refresh",
+          "quota_project_id": "source-billing"
+        },
+        "delegates": [],
+        "quota_project_id": "target-billing",
+        "lifetime": 1800
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://oauth2.googleapis.com/token",
+          "authorization": null,
+          "quota": null,
+          "body": {
+            "refresh_token": "refresh",
+            "client_id": "client",
+            "client_secret": "secret",
+            "grant_type": "refresh_token"
+          }
+        },
+        {
+          "method": "POST",
+          "url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/target@project.iam.gserviceaccount.com:generateAccessToken",
+          "authorization": "Bearer source-token",
+          "quota": "source-billing",
+          "body": {
+            "delegates": [],
+            "scope": [
+              "https://www.googleapis.com/auth/cloud-platform"
+            ],
+            "lifetime": "1800s"
+          }
+        }
+      ],
+      "token": "impersonated-token",
+      "quota": "target-billing"
+    },
+    {
+      "document": {
+        "type": "impersonated_service_account",
+        "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/target@project.iam.gserviceaccount.com:generateAccessToken",
+        "source_credentials": {
+          "type": "authorized_user",
+          "client_id": "client",
+          "client_secret": "secret",
+          "refresh_token": "refresh",
+          "quota_project_id": "source-billing"
+        },
+        "delegates": [
+          "delegate@project.iam.gserviceaccount.com"
+        ],
+        "quota_project_id": "target-billing",
+        "lifetime": 1800
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://oauth2.googleapis.com/token",
+          "authorization": null,
+          "quota": null,
+          "body": {
+            "refresh_token": "refresh",
+            "client_id": "client",
+            "client_secret": "secret",
+            "grant_type": "refresh_token"
+          }
+        },
+        {
+          "method": "POST",
+          "url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/target@project.iam.gserviceaccount.com:generateAccessToken",
+          "authorization": "Bearer source-token",
+          "quota": "source-billing",
+          "body": {
+            "delegates": [
+              "delegate@project.iam.gserviceaccount.com"
+            ],
+            "scope": [
+              "https://www.googleapis.com/auth/cloud-platform"
+            ],
+            "lifetime": "1800s"
+          }
+        }
+      ],
+      "token": "impersonated-token",
+      "quota": "target-billing"
+    },
+    {
+      "name": "metadata",
+      "calls": [
+        {
+          "property": "service-accounts/default/token",
+          "params": {
+            "scopes": "https://www.googleapis.com/auth/cloud-platform"
+          }
+        }
+      ],
+      "token": "metadata-token"
+    }
+  ],
+  "universeError": "Universe domain googleapis.com in source credentials does not match different.example universe domain set for impersonated credentials."
+}

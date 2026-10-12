@@ -11,7 +11,38 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — AWS login-session credentials
+## Current follow-up — Google metadata and impersonated credentials
+
+2026-10-12, following **`8abc540`**. Native Vertex now supports impersonated-service-account
+ADC files and metadata-server credentials. Executed SDK comparisons cover source grants,
+IAM delegates/scope/lifetime and source/target billing. Metadata checks verify scope and
+flavor headers, detection controls and bounded responses. Two actual local Vertex streams
+for each new path verify bearer/quota forwarding and cached reuse. See
+[Google ADC evidence](pipkin-rust-engine-evidence/google-adc.md).
+
+The token cache now includes parsed credential contents and configuration, so replacing a
+file cannot reuse its previous identity. Independent bounded refresh owners avoid blocking
+unrelated identities; cancellation stops only the waiter. Nested impersonation validates
+inherited universe domains before exchanging source credentials. No model history is cloned
+into an authentication task. Initial new-test failures came from a missing model ID in the
+fixture; after correction the checks passed. Eight tests were added.
+
+Final required checks: **1574 passed, 0 failed, 53 ignored**, clean Clippy and formatting.
+Logs: `/tmp/pipkin-google-adc-workspace2.log`, `/tmp/pipkin-google-adc-clippy2.log`,
+`/tmp/pipkin-google-adc-fmt2.log`. The earlier workspace run also passed; the final rerun
+includes inherited-universe validation. Protocol 11 / schema 9 unchanged.
+
+Inventory remains **504 rows, 488 non-OS; NC 412, NE 38, NP 37, PA 0, BL 0, LB 1,
+OS 16; 444 measured, 7 observed, 1 unverified, 52 not started; 0 fully qualified**.
+Real GCE/Cloud Run acceptance is unverified. Metadata ADC uses the existing configured
+ADC marker when no file is present; provider discovery still matches Pi's file/key checks.
+
+Next: external-account federation/source types and external-account authorized-user ADC,
+remaining proxy/configuration and credential-cache/retry checks, sustained workloads and
+release/CI/platform qualification. Native remains opt-in. Unrelated owner plan/worktree
+changes remain untouched.
+
+## Previous follow-up — AWS login-session credentials
 
 2026-10-12, following **`fe4a15a`**. Native Bedrock now resolves the separate AWS CLI
 `login_session` cache, generates verified P-256 DPoP refresh proofs, atomically saves rotated

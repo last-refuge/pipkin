@@ -17,6 +17,10 @@ engine and is available without a Pi installation or network access.
 - Bedrock also supports the separate `login_session` profiles created by `aws login`.
   It reads the AWS login cache, refreshes temporary credentials with signed proofs, and
   saves rotated tokens. `AWS_LOGIN_CACHE_DIRECTORY` overrides the default cache directory.
+- Vertex AI supports service-account, authorized-user and impersonated-service-account ADC
+  files. Its ADC mode can also use Google metadata credentials when no default file exists;
+  the `gcp-vertex-credentials` key marker selects ADC without a local file. Configure the
+  Google project and location as usual. `GOOGLE_CLOUD_QUOTA_PROJECT` overrides ADC billing.
 - The engine configuration directory holds `auth.json`, `models.json` and `settings.json`.
   The desktop's `--engine-config-dir` and `--engine-data-dir` select engine configuration
   and history; `--data-dir` selects desktop drafts/cache. Do not expose stored credentials.
