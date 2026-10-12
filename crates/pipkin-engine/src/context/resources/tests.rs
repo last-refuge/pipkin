@@ -61,7 +61,14 @@ fn context_files_are_global_first_then_root_most_to_cwd_one_per_dir() {
                 agent.join("AGENTS.override.md"),
                 "global override".to_string()
             ),
-            (root.join("CLAUDE.MD"), "root upper-case claude".to_string()),
+            (
+                root.join(if root.join("CLAUDE.md").exists() {
+                    "CLAUDE.md"
+                } else {
+                    "CLAUDE.MD"
+                }),
+                "root upper-case claude".to_string(),
+            ),
             (cwd.join("AGENTS.md"), "project instructions".to_string()),
             (
                 nested.join("AGENTS.override.md"),

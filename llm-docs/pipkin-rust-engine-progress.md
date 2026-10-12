@@ -11,7 +11,29 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — sustained compaction and native profile/platform checks
+## Current follow-up — concrete hosted failures and direct cutover path
+
+2026-10-12, following **`0c8c3f5`**. All committed migration work is pushed to
+`origin/codex/native-engine-qualification`; push each completed batch from here.
+The user explicitly requests urgency and a streamlined finish. Reuse existing successful
+proofs, fix concrete failures, and proceed to supported-platform cutover. Additional soak
+exploration and broader experimental-platform acceptance are outside this execution queue.
+
+Hosted Linux engine checks passed; package/install and full qualification remain running.
+The first experimental macOS build reports nine failures. Accepted-socket blocking mode
+and case-insensitive config alias discovery are corrected, with a delayed-Hello regression;
+two platform-specific test assumptions are repaired. Full local checks pass: **1,657 passed,
+zero failed, 56 ignored**, clean Clippy/all-targets and formatting. Corrected macOS run remains
+pending. [Evidence and exact run identities](pipkin-rust-engine-evidence/hosted-qualification.md).
+The manual macOS workflow now supports native-only iteration without rebuilding legacy Pi.
+
+Ledger: **446 measured, 10 observed, 1 failed (experimental macOS), 1 unverified,
+46 not started; 0 fully qualified**. Immediate queue: finish supported Linux CI, close the
+explicit remaining ledger checks using existing fixtures, document introduced versus inherited
+notice findings, remove transitional Pi coupling/default/build/runtime paths, and verify the
+final installed native-only candidate. Preserve unrelated owner drafts/worktrees.
+
+## Prior follow-up — sustained compaction and native profile/platform checks
 
 2026-10-12, following **`ca8c89b`**; no production code or schema change. The mixed
 benchmark adds an opt-in size-aware usage mode. Pilot restart and full 720-turn uninterrupted

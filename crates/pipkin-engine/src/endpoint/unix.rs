@@ -417,6 +417,9 @@ fn hello(stream: &mut UnixStream) -> io::Result<ClientFrame> {
 }
 
 fn serve(engine: Arc<EngineHandle>, mut stream: UnixStream) -> io::Result<()> {
+    // BSD sockets can inherit the nonblocking listener flag. Each connection uses its
+    // own blocking reader/writer threads, with bounded handshake and write deadlines.
+    stream.set_nonblocking(false)?;
     stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
     let first = hello(&mut stream)?;
     let (sender, receiver) = engine.connect_external("external").split();

@@ -237,9 +237,8 @@ async fn drains_large_stdout_and_stderr_without_deadlock() {
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
-/// Whether `pid` is still a live (not zombie) `sleep`, judged from `/proc` alone so a reaped or
-/// reused pid never counts.
-#[cfg(unix)]
+/// Whether `pid` is still a live (not zombie) `sleep`.
+#[cfg(target_os = "linux")]
 fn alive(pid: i32) -> bool {
     std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
         let Some((head, rest)) = stat.split_once(") ") else {
@@ -247,6 +246,26 @@ fn alive(pid: i32) -> bool {
         };
         head.ends_with("(sleep") && !rest.starts_with('Z') && !rest.starts_with('X')
     })
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn alive(pid: i32) -> bool {
+    let output = std::process::Command::new("/bin/ps")
+        .args(["-p", &pid.to_string(), "-o", "stat=", "-o", "comm="])
+        .output()
+        .expect("query the owned sleep process");
+    if !output.status.success() {
+        return false;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut fields = text.split_whitespace();
+    let state = fields.next().unwrap_or_default();
+    let command = fields.next().unwrap_or_default();
+    !state.starts_with('Z')
+        && !state.starts_with('X')
+        && std::path::Path::new(command)
+            .file_name()
+            .is_some_and(|n| n == "sleep")
 }
 
 /// Cancellation kills the whole process group: a backgrounded grandchild `sleep` is gone, and

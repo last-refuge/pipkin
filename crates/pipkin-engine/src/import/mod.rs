@@ -323,6 +323,14 @@ pub fn discover(agent_dir: &Path, server_dir: &Path, store: &Store) -> Discovery
             .push(inspect(store, &name, &path, server_dir));
     }
 
+    // On case-insensitive filesystems, exists("AGENTS.MD") can alias AGENTS.md.
+    // Preserve real directory entries, including distinct case variants on Linux.
+    let actual_names = std::fs::read_dir(agent_dir).ok().map(|entries| {
+        entries
+            .filter_map(Result::ok)
+            .map(|e| e.file_name())
+            .collect::<std::collections::HashSet<_>>()
+    });
     for name in [
         "models.json",
         "models-store.json",
@@ -335,6 +343,12 @@ pub fn discover(agent_dir: &Path, server_dir: &Path, store: &Store) -> Discovery
         "skills",
         "prompts",
     ] {
+        if actual_names
+            .as_ref()
+            .is_some_and(|names| !names.contains(std::ffi::OsStr::new(name)))
+        {
+            continue;
+        }
         let path = agent_dir.join(name);
         if let Ok(meta) = std::fs::metadata(&path) {
             report.config.push(ConfigItem {
@@ -777,6 +791,14 @@ pub fn credential_entries(agent_dir: &Path) -> Result<Map<String, Value>, String
 /// are listed file by file (symlinks are followed; depth is bounded).
 pub fn config_files(agent_dir: &Path) -> Vec<(PathBuf, PathBuf)> {
     let mut out = Vec::new();
+    // On case-insensitive filesystems, exists("AGENTS.MD") can alias AGENTS.md.
+    // Preserve real directory entries, including distinct case variants on Linux.
+    let actual_names = std::fs::read_dir(agent_dir).ok().map(|entries| {
+        entries
+            .filter_map(Result::ok)
+            .map(|e| e.file_name())
+            .collect::<std::collections::HashSet<_>>()
+    });
     for name in [
         "models.json",
         "models-store.json",
@@ -787,6 +809,12 @@ pub fn config_files(agent_dir: &Path) -> Vec<(PathBuf, PathBuf)> {
         "CLAUDE.md",
         "CLAUDE.MD",
     ] {
+        if actual_names
+            .as_ref()
+            .is_some_and(|names| !names.contains(std::ffi::OsStr::new(name)))
+        {
+            continue;
+        }
         let path = agent_dir.join(name);
         if std::fs::metadata(&path).is_ok_and(|m| m.is_file()) {
             out.push((path, PathBuf::from(name)));

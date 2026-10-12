@@ -430,3 +430,30 @@ fn failed_bind_scope_releases_the_lock_even_while_a_fork_copy_remains() {
     assert!(Server::start(fx.engine.clone(), &fx.path).is_err());
     drop(server);
 }
+
+#[test]
+fn a_nonblocking_accepted_socket_waits_for_hello_and_later_calls() {
+    let fx = Fixture::new(Scripted::new(|_, _| R::Text("done".into())), false);
+    let (server, mut client) = UnixStream::pair().unwrap();
+    server.set_nonblocking(true).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let engine = fx.engine.clone();
+    let worker = thread::spawn(move || serve(engine, server));
+    thread::sleep(Duration::from_millis(50));
+    assert!(matches!(
+        call(
+            &mut client,
+            Call::Hello {
+                protocol: PROTOCOL_VERSION,
+                client: "delayed".into()
+            }
+        ),
+        Ok(Reply::Welcome(_))
+    ));
+    thread::sleep(Duration::from_millis(50));
+    fx.create(&mut client);
+    drop(client);
+    worker.join().unwrap().unwrap();
+}
