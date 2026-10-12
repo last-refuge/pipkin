@@ -1182,7 +1182,7 @@ fn a_replace_edit_blocks_the_session() {
 }
 
 #[test]
-fn an_unknown_kind_with_model_messages_or_a_fork_blocks_the_session() {
+fn an_unknown_kind_with_model_messages_blocks_even_inherited_fork_history() {
     let agent = Agent::new();
     let mut l = agent.session("odd-1");
     l.conversation(json!({"id": 1}));
@@ -1196,8 +1196,16 @@ fn an_unknown_kind_with_model_messages_or_a_fork_blocks_the_session() {
         reasons.iter().any(|r| r.contains("app.inject")),
         "{reasons:?}"
     );
-    assert!(reasons.iter().any(|r| r.contains("fork")), "{reasons:?}");
+    assert!(
+        reasons
+            .iter()
+            .all(|r| !r.contains("forked history is not imported")),
+        "{reasons:?}"
+    );
 }
+
+#[path = "fork_tests.rs"]
+mod fork_tests;
 
 #[test]
 fn in_flight_work_blocks_the_session() {

@@ -11,7 +11,38 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — Anthropic workload identity federation
+## Current follow-up — fork migration and installed coding
+
+Following **`c508954`**, forked Pi histories now import with their visible ancestor cutoffs,
+branch documents, independent native roots and separate subagent ownership preserved. Five
+new tests compare executed Pi SQLite/context results, atomic failure/retry, malformed ancestry,
+usage grouping and native continuation of seven contexts after restart. All 40 import tests
+pass. See [fork/import evidence](pipkin-rust-engine-evidence/fork-import.md).
+
+Required checks: **1548 passed, 0 failed, 53 ignored**; Clippy, formatting and diff checks clean.
+Logs: `/tmp/pipkin-fork-workspace2.log`, `/tmp/pipkin-fork-clippy2.log`,
+`/tmp/pipkin-fork-fmt2.log`. Protocol 11 / schema 9 unchanged.
+
+The expanded installed-package check imports a fork, executes real write/edit/bash/read tools
+through a local HTTP provider, restarts, verifies durable replay without repeating effects,
+and continues again. The final native-only candidate passes with Node/npm/Pi trap shims.
+Archive SHA-256: `7eabb9dcbe0f9f74da4cf7459d079cc70fcdd4ca45a8a38b873376b0e43d4f58`.
+Package logs: `/tmp/pipkin-fork-package-build2.log`, `/tmp/pipkin-fork-package-checks2.log`.
+This dirty candidate identifies `c508954`; it is not a clean release or GUI/live-provider
+qualification. Stale Claude-unavailable diagnostic text is corrected.
+
+An independent native CI job now builds without Pi provisioning or Node setup and runs these
+installed checks. YAML validation passes locally; the GitHub runner result is unverified.
+PKG-CI therefore moves from not started to unverified. Inventory: **504 rows, 488 non-OS;
+NC 412, NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed,
+1 unverified, 52 not started; 0 fully qualified**. FORK keeps its NP branch-creation
+disposition while its required import support now has executed-reference evidence.
+
+Next: remaining provider/configuration and unsupported-history gaps, sustained desktop/tool
+workloads, clean release comparisons and platform/CI acceptance. Native remains opt-in.
+Unrelated owner plan/worktree changes remain untouched.
+
+## Previous follow-up — Anthropic workload identity federation
 
 Following **`d211c03`**, the native Anthropic adapter now exchanges projected identity tokens,
 caches and refreshes the resulting bearer credentials, invalidates rejected tokens, and
@@ -957,7 +988,8 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
    are now preserved and tested, including imported system context. Plugin-profile import protection
    and durable retry waits/counts are implemented. Constrained/grammar tool
    support is now implemented with focused differential/runtime evidence. TypeScript execution
-   and remaining unsupported-history conversion (replacement edits/forks) remain open.
+   and remaining unsupported-history conversion (replacement edits) remain open. Fork imports
+   are now implemented with executed-reference and installed-workflow evidence above.
 2. **Transport and compatibility:** durable invalidation replay and bounded engine/reader delivery
    now have passing recovery/pressure evidence. External Unix attachment and serialize-once event fan-out are implemented;
    provider progress and native frontend event backlogs are bounded, with oversized frontend events admitted alone; Stop bypasses frontend delivery waits. Lifecycle/catalog and normal-request admission remain separate work. TypeScript facets, sticky profiles,

@@ -6,9 +6,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use pipkin_engine_protocol::{Entry, EntryKind, ImageInput, InputMode, Origin, RunOutcome, Usage};
 use serde_json::{Map, Value, json};
 
-use super::ENGINE;
 use super::context::{self, SUMMARY_PREFIX, SUMMARY_SUFFIX};
 use super::legacy::{DocScope, Legacy, LegacyEntry};
+use super::{ENGINE, forks};
 use crate::store::fingerprint;
 
 /// The refusal for unfinished work (the plan never turns queued/placed work into native work).
@@ -304,16 +304,23 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
         },
     );
     for (&id, record) in &legacy.conversations {
-        if record.get("parent").is_some_and(|p| !p.is_null()) {
-            reasons.push(format!(
-                "conversation {id} is a fork; forked history is not imported"
-            ));
-            continue;
-        }
         if id == ROOT_CONVERSATION_ID {
+            if record.get("parent").is_some_and(|p| !p.is_null()) {
+                reasons.push("the root conversation cannot have fork ancestry".into());
+            }
             continue;
         }
         match record.get("owner").filter(|o| !o.is_null()) {
+            None if record.get("parent").is_some_and(|p| !p.is_null()) => {
+                conversations.insert(
+                    id,
+                    ConversationPlan {
+                        native: child_session_id(source, id),
+                        parent: None,
+                        call: None,
+                    },
+                );
+            }
             None => reasons.push(format!(
                 "conversation {id} is an ownerless extra conversation; its role is not mapped"
             )),
@@ -345,6 +352,26 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
                     "conversation {id} is owned by unmapped conversation {}",
                     call.owner
                 )),
+            }
+        }
+    }
+
+    // Ownership, not fork ancestry, determines the root used for task control and usage.
+    let mut roots = HashMap::new();
+    for &id in conversations.keys() {
+        let mut current = id;
+        let mut seen = BTreeSet::new();
+        while let Some(c) = conversations.get(&current) {
+            if !seen.insert(current) {
+                reasons.push(format!("conversation {id} has cyclic task ownership"));
+                break;
+            }
+            match &c.call {
+                Some(call) => current = call.owner,
+                None => {
+                    roots.insert(id, c.native.clone());
+                    break;
+                }
             }
         }
     }
@@ -408,7 +435,6 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
     }
 
     // ------------------------------------------------------------ entries
-    let mut by_conversation: BTreeMap<i64, Vec<&LegacyEntry>> = BTreeMap::new();
     for entry in &legacy.entries {
         if !conversations.contains_key(&entry.conversation) {
             if !legacy.conversations.contains_key(&entry.conversation) {
@@ -419,10 +445,6 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
             }
             continue;
         }
-        by_conversation
-            .entry(entry.conversation)
-            .or_default()
-            .push(entry);
     }
 
     // Input submissions by their user entry.
@@ -444,7 +466,13 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
     let mut sessions: Vec<PlannedSession> = Vec::new();
 
     for (&conv, conversation) in &conversations {
-        let entries = by_conversation.get(&conv).cloned().unwrap_or_default();
+        let entries = match forks::visible_entries(legacy, conv) {
+            Ok(entries) => entries,
+            Err(why) => {
+                reasons.push(why);
+                continue;
+            }
+        };
         let ids: BTreeSet<i64> = entries.iter().map(|e| e.id).collect();
         let mut at = meta.created_at;
         let mut planned: Vec<Entry> = Vec::with_capacity(entries.len());
@@ -452,7 +480,10 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
         let mut kv: Vec<(String, String)> = Vec::new();
 
         for e in &entries {
-            *kind_counts.entry(e.kind().to_owned()).or_default() += 1;
+            // Manifest source counts exclude copies inherited by forks.
+            if e.conversation == conv {
+                *kind_counts.entry(e.kind().to_owned()).or_default() += 1;
+            }
             let model: &[Value] = e.model().map(Vec::as_slice).unwrap_or(&[]);
             let edits: &[Value] = e.edits().map(Vec::as_slice).unwrap_or(&[]);
             let mut omit_targets: Vec<u64> = Vec::new();
@@ -522,7 +553,7 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
                                 Some(EntryKind::Message {
                                     message,
                                     mode: InputMode::Prompt,
-                                    request: if kind == "pi.user" {
+                                    request: if kind == "pi.user" && e.conversation == conv {
                                         request_of_entry.get(&e.id).cloned()
                                     } else {
                                         None
@@ -812,7 +843,10 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
             thinking,
             subagents_enabled: subagents_enabled(agent),
             parent: conversation.parent.clone(),
-            root: (!is_root).then(|| source.to_owned()),
+            root: conversation
+                .call
+                .as_ref()
+                .and_then(|_| roots.get(&conv).cloned()),
             retired: retired.into_iter().collect(),
             entries: planned,
             kv,
@@ -914,7 +948,7 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
 
     // ------------------------------------------------------------ subagent tasks
     let mut tasks = Vec::new();
-    let mut child_number = 0u64;
+    let mut child_numbers: HashMap<String, u64> = HashMap::new();
     for (&conv, conversation) in &conversations {
         let Some(call) = &conversation.call else {
             continue;
@@ -922,7 +956,11 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
         let Some(parent) = &conversation.parent else {
             continue;
         };
-        child_number += 1;
+        let Some(root) = roots.get(&conv) else {
+            continue;
+        };
+        let child_number = child_numbers.entry(root.clone()).or_default();
+        *child_number += 1;
         let task = legacy
             .tasks
             .get(&call.task_id)
@@ -950,8 +988,8 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
         });
         let child = sessions.iter().find(|s| s.conversation == conv);
         tasks.push(PlannedTask {
-            root: source.to_owned(),
-            child: child_number,
+            root: root.clone(),
+            child: *child_number,
             parent_session: parent.clone(),
             parent_call: call.call_id.clone(),
             child_session: conversation.native.clone(),
@@ -983,6 +1021,10 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
     for (conv, c) in &conversations {
         ids.insert(conv.to_string(), Value::String(c.native.clone()));
     }
+    normalized_entries.sort_unstable();
+    normalized_entries.dedup();
+    raw_entries.sort_unstable();
+    raw_entries.dedup();
     let summary = json!({
         "conversations": ids,
         "counts": {
@@ -998,6 +1040,8 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
             "documents": legacy.documents.len(),
             "retiredDocuments": legacy.retired_documents,
             "conversations": conversations.len(),
+            "forks": legacy.conversations.values().filter(|c| c.get("parent").is_some_and(|p| !p.is_null())).count(),
+            "materializedEntries": sessions.iter().map(|s| s.entries.len()).sum::<usize>(),
         },
         "entryIds": "kept; native ids continue above kv entry_floor",
         "normalizedEntries": normalized_entries,
@@ -1008,6 +1052,7 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
             "request modes are not recorded by the source; imported requests are recorded as prompt",
             "compaction tokens_before is not recorded by the source; imported as 0",
             "documents are imported at their latest value; rewindable pi.agent history is not imported",
+            "forks materialize visible ancestor entries through inclusive cutoffs; branch documents remain independent and pi.conversation preserves ancestry; task ownership alone determines native subagent roots",
         ],
     });
     Ok(Plan {

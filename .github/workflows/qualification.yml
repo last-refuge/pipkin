@@ -15,6 +15,63 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  native-qualification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_INCREMENTAL: "0"
+      RUST_BACKTRACE: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake pkg-config zstd jq binutils python3 \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libfreetype-dev \
+            libvulkan-dev libegl1-mesa-dev libssl-dev libasound2-dev libdbus-1-dev \
+            libxcb1-dev libxcb-xkb-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxcb-randr0-dev libxcb-render-util0-dev
+      - name: Install the repository Rust toolchain
+        run: |
+          toolchain=$(awk -F '"' '/^channel =/ {print $2}' rust-toolchain.toml)
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+      - name: Reject Node, npm and Pi in native build commands
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-shims"
+          for tool in node npm npx pi; do
+            printf '#!/bin/sh\necho "unexpected native dependency: %s" >&2\ntouch "%s/native-forbidden-invocations"\nexit 93\n' \
+              "$tool" "$RUNNER_TEMP" > "$RUNNER_TEMP/native-shims/$tool"
+            chmod +x "$RUNNER_TEMP/native-shims/$tool"
+          done
+          echo "$RUNNER_TEMP/native-shims" >> "$GITHUB_PATH"
+      - name: Build and qualify the installed native candidate
+        run: |
+          mkdir -p qualification-logs
+          set -o pipefail
+          scripts/package-native.sh 2>&1 | tee qualification-logs/native-package.log
+          version=$(cargo pkgid -p pipkin-app | sed 's/.*[#@]//')
+          package="dist/native/pipkin-native-$version-$(uname -m).tar.zst"
+          scripts/test-native-package.sh --no-build "$package" 2>&1 | tee qualification-logs/native-installed.log
+          test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
+          sha256sum "$package" > qualification-logs/SHA256SUMS
+          cp dist/native/stage/usr/lib/pipkin/native-engine.json qualification-logs/
+          cp dist/native/stage/usr/share/doc/pipkin/build-info.json qualification-logs/
+          cp dist/native/stage/usr/share/doc/pipkin/third-party/inventory.json qualification-logs/license-inventory.json
+          cp dist/native/stage/usr/share/doc/pipkin/runtime-inventory.json qualification-logs/
+          git rev-parse HEAD > qualification-logs/app-revision.txt
+      - name: Retain native qualification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-qualification-${{ github.sha }}
+          path: qualification-logs/
+          if-no-files-found: warn
+          retention-days: 30
+
   scripted-qualification:
     runs-on: ubuntu-24.04
     timeout-minutes: 60

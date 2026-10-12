@@ -514,10 +514,7 @@ pub fn native_report(input: &NativeReportInput) -> String {
             "default per-user directories, separate from Pi's ~/.pi"
         }
     ));
-    line(
-        "note: history written by the native engine is native-only; Pi does not read it. Claude subscription sign-in is not available with the native engine yet."
-            .into(),
-    );
+    line("note: history written by the native engine is native-only; Pi does not read it.".into());
     for text in display_lines(input.wayland_display, &input.display_vars) {
         line(text);
     }

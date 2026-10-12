@@ -2,7 +2,7 @@
 //! what the next provider request would see.
 //!
 //! The reference side ports `durable/src/harness/context.ts` (`deriveContext`, `selectActive`,
-//! `orderToolResults`) for an unforked conversation. The native side mirrors
+//! `orderToolResults`) for a conversation's materialized visible history. The native side mirrors
 //! [`Store::context_entries`](crate::store::Store::context_entries) followed by the documented
 //! context-builder rules (retired entries leave the context; a compaction contributes its
 //! wrapped summary; a reset its handoff). Positional system messages are compared and replayed
@@ -143,7 +143,7 @@ pub fn order_tool_results(messages: Vec<Value>) -> Vec<Value> {
     ordered
 }
 
-/// The reference model context (including system messages) of one unforked conversation whose
+/// The reference model context (including system messages) of one conversation whose visible
 /// entries are given in id order. Messages are normalized with [`normalize_message`].
 pub fn reference_messages(entries: &[&LegacyEntry]) -> Result<Vec<Value>, String> {
     let head = entries.iter().rev().find(|e| e.head().is_some());

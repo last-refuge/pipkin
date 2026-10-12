@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build (release), package and install the native-engine candidate into a scratch prefix, then run
 # the installed binary with a bare environment. Asserts the package carries no Node/npm/Pi payload,
-# that nothing calls node/npm/pi, and that Pi stays the default engine.
+# that installed migration/coding/restart works without node/npm/pi, and that Pi stays default.
 #
 #   scripts/test-native-package.sh                 build + package + install + checks
 #   scripts/test-native-package.sh --no-build TAR  reuse an existing native archive
@@ -85,6 +85,8 @@ check "native engine directories are separate from Pi's" "echo \"\$diag\" | grep
 check "the probe left no engine data in the real profile" "[ ! -e '$root/home/.local/share/pipkin/engine' ]"
 diag_shim=$(cd "$root" && run "$prefix/bin/pipkin" --diagnose --probe --engine native 2>&1) || true
 check "with node/npm/pi shims first on PATH the probe still passes" "echo \"\$diag_shim\" | grep -q 'engine probe: OK'"
+check "installed native migration, coding tools and restart work" \
+  "run python3 '$here/scripts/test-installed-native-workflow.py' '$prefix/bin/pipkin' '$here/fixtures/native-fork-import'"
 check "nothing invoked node, npm, npx or pi" "[ -z \"\$(ls '$root' | grep '^used-')\" ]"
 set +e
 default=$(cd "$root" && bare "$prefix/bin/pipkin" --diagnose 2>&1); default_code=$?

@@ -1,0 +1,586 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "scope": "Executed Pi SQLite storage, fork document copying, and context derivation; synthetic settled histories",
+  "sources": {
+    "packages/durable/src/storage/sqlite/node.ts": "d3f058870a0a016359a64767fcfa33946c1e0f38b6ff5b7cf076eae5a0f78786",
+    "packages/durable/src/harness/context.ts": "c79961dc4090bc1a6765ac82099e7ec477d737f047189e9cefc94673a8c377c4",
+    "packages/durable/src/session/forks.ts": "9cb7549b66cd29510c0654ce999474f2941c4efa59410cf93faa6d268c83d6e9",
+    "packages/durable/src/ids.ts": "bbeede57cfc771208d6d333ea1d29a03690be8c039479841572570decfbaf228",
+    "packages/durable/src/errors.ts": "6801e6f7c801d4c160a04ec80ccd27bd97e1a5522fbecb9dd40c560dcde2dfb6",
+    "packages/durable/src/storage/sqlite/storage.ts": "8d785bdfc19b33dc66191e86f350354e38cc781c83885dca9f43e3d2044cfeb3",
+    "packages/durable/src/storage/sqlite/migrations.ts": "df78a6a5bb39b237f98f348c4b37e19bc7aa1a3d253b5b5d34b12746800f8f61"
+  },
+  "sqliteSha256": "5e74641cf2db93a083793d9dd354e30fe238ca537797c4497123e15ac6aa66f3",
+  "conversations": [
+    {
+      "id": 1
+    },
+    {
+      "id": 10,
+      "parent": {
+        "conversationId": 1,
+        "at": 4
+      }
+    },
+    {
+      "id": 20,
+      "parent": {
+        "conversationId": 10,
+        "at": 3
+      }
+    },
+    {
+      "id": 30,
+      "parent": {
+        "conversationId": 10,
+        "at": 13
+      }
+    },
+    {
+      "id": 40,
+      "parent": {
+        "conversationId": 30,
+        "at": 32
+      }
+    },
+    {
+      "id": 50,
+      "parent": {
+        "conversationId": 40,
+        "at": 42
+      }
+    },
+    {
+      "id": 60,
+      "parent": {
+        "conversationId": 40,
+        "at": 42
+      }
+    }
+  ],
+  "entries": [
+    {
+      "id": 3,
+      "conversationId": 1,
+      "kind": "pi.user",
+      "model": [
+        {
+          "role": "user",
+          "content": "shared start",
+          "timestamp": 3
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "conversationId": 1,
+      "kind": "pi.assistant",
+      "model": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "read-one",
+              "name": "read",
+              "arguments": {
+                "path": "a.rs"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "test",
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 2,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 4
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "conversationId": 1,
+      "kind": "pi.tool-result",
+      "model": [
+        {
+          "role": "toolResult",
+          "toolCallId": "read-one",
+          "toolName": "read",
+          "content": "parent-only result",
+          "isError": false,
+          "timestamp": 11
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "conversationId": 1,
+      "kind": "pi.user",
+      "model": [
+        {
+          "role": "user",
+          "content": "parent after fork",
+          "timestamp": 12
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "conversationId": 10,
+      "kind": "pi.user",
+      "model": [
+        {
+          "role": "user",
+          "content": "branch after missing tool result",
+          "timestamp": 13
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "conversationId": 20,
+      "kind": "pi.user",
+      "model": [
+        {
+          "role": "user",
+          "content": "nested rewind to ancestor",
+          "timestamp": 21
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "conversationId": 30,
+      "kind": "pi.cancelled-input",
+      "edits": [
+        {
+          "target": 3,
+          "action": "omit"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "conversationId": 30,
+      "kind": "pi.user",
+      "model": [
+        {
+          "role": "user",
+          "content": "nested omission",
+          "timestamp": 32
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "conversationId": 40,
+      "kind": "pi.compaction",
+      "head": 32,
+      "model": [
+        {
+          "role": "user",
+          "content": "The conversation history before this point was compacted into the following summary:\n\n<summary>\nbranch summary\n</summary>",
+          "timestamp": 41
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "conversationId": 40,
+      "kind": "pi.user",
+      "model": [
+        {
+          "role": "user",
+          "content": "after compaction",
+          "timestamp": 42
+        }
+      ]
+    },
+    {
+      "id": 51,
+      "conversationId": 50,
+      "kind": "pi.reset",
+      "head": 51,
+      "model": [
+        {
+          "role": "user",
+          "content": "reset handoff",
+          "timestamp": 51
+        }
+      ]
+    },
+    {
+      "id": 52,
+      "conversationId": 50,
+      "kind": "pi.user",
+      "model": [
+        {
+          "role": "user",
+          "content": "after reset",
+          "timestamp": 52
+        }
+      ]
+    }
+  ],
+  "documents": [
+    {
+      "record": {
+        "id": 2,
+        "kind": "pi.agent",
+        "scope": {
+          "kind": "conversation",
+          "conversationId": 1
+        },
+        "history": "rewindable",
+        "fork": "asOf",
+        "createdAt": 2
+      },
+      "version": 1,
+      "value": {
+        "model": {
+          "provider": "openai",
+          "modelId": "after"
+        },
+        "thinkingLevel": "high"
+      }
+    },
+    {
+      "record": {
+        "id": 5,
+        "kind": "pi.agent",
+        "scope": {
+          "kind": "conversation",
+          "conversationId": 10
+        },
+        "history": "rewindable",
+        "fork": "asOf",
+        "createdAt": 6
+      },
+      "version": 1,
+      "value": {
+        "model": {
+          "provider": "openai",
+          "modelId": "before"
+        },
+        "thinkingLevel": "low"
+      }
+    }
+  ],
+  "expected": [
+    {
+      "id": 1,
+      "visibleIds": [
+        3,
+        4,
+        11,
+        12
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "shared start",
+          "timestamp": 3
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "read-one",
+              "name": "read",
+              "arguments": {
+                "path": "a.rs"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "test",
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 2,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 4
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "read-one",
+          "toolName": "read",
+          "content": "parent-only result",
+          "isError": false,
+          "timestamp": 11
+        },
+        {
+          "role": "user",
+          "content": "parent after fork",
+          "timestamp": 12
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "visibleIds": [
+        3,
+        4,
+        13
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "shared start",
+          "timestamp": 3
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "read-one",
+              "name": "read",
+              "arguments": {
+                "path": "a.rs"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "test",
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 2,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 4
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "read-one",
+          "toolName": "read",
+          "content": [
+            {
+              "type": "text",
+              "text": "Tool result unavailable: history ends before this call completed."
+            }
+          ],
+          "isError": true,
+          "details": {
+            "reason": "missing_result"
+          },
+          "timestamp": 4
+        },
+        {
+          "role": "user",
+          "content": "branch after missing tool result",
+          "timestamp": 13
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "visibleIds": [
+        3,
+        21
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "shared start",
+          "timestamp": 3
+        },
+        {
+          "role": "user",
+          "content": "nested rewind to ancestor",
+          "timestamp": 21
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "visibleIds": [
+        3,
+        4,
+        13,
+        31,
+        32
+      ],
+      "messages": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "read-one",
+              "name": "read",
+              "arguments": {
+                "path": "a.rs"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "test",
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 2,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 4
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "read-one",
+          "toolName": "read",
+          "content": [
+            {
+              "type": "text",
+              "text": "Tool result unavailable: history ends before this call completed."
+            }
+          ],
+          "isError": true,
+          "details": {
+            "reason": "missing_result"
+          },
+          "timestamp": 4
+        },
+        {
+          "role": "user",
+          "content": "branch after missing tool result",
+          "timestamp": 13
+        },
+        {
+          "role": "user",
+          "content": "nested omission",
+          "timestamp": 32
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "visibleIds": [
+        3,
+        4,
+        13,
+        31,
+        32,
+        41,
+        42
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "The conversation history before this point was compacted into the following summary:\n\n<summary>\nbranch summary\n</summary>",
+          "timestamp": 41
+        },
+        {
+          "role": "user",
+          "content": "nested omission",
+          "timestamp": 32
+        },
+        {
+          "role": "user",
+          "content": "after compaction",
+          "timestamp": 42
+        }
+      ]
+    },
+    {
+      "id": 50,
+      "visibleIds": [
+        3,
+        4,
+        13,
+        31,
+        32,
+        41,
+        42,
+        51,
+        52
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "reset handoff",
+          "timestamp": 51
+        },
+        {
+          "role": "user",
+          "content": "after reset",
+          "timestamp": 52
+        }
+      ]
+    },
+    {
+      "id": 60,
+      "visibleIds": [
+        3,
+        4,
+        13,
+        31,
+        32,
+        41,
+        42
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "The conversation history before this point was compacted into the following summary:\n\n<summary>\nbranch summary\n</summary>",
+          "timestamp": 41
+        },
+        {
+          "role": "user",
+          "content": "nested omission",
+          "timestamp": 32
+        },
+        {
+          "role": "user",
+          "content": "after compaction",
+          "timestamp": 42
+        }
+      ]
+    }
+  ]
+}

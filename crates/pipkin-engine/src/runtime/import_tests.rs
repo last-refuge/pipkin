@@ -138,6 +138,101 @@ fn project_history(m: &Value) -> (String, String) {
 
 type Projected = (String, String, Vec<String>);
 
+#[test]
+fn fork_import_lists_independent_branches_and_continues_after_restart() {
+    let fx = Fixture::new();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/native-fork-import");
+    let reference: Value =
+        serde_json::from_slice(&std::fs::read(source.join("reference.json")).unwrap()).unwrap();
+    let agent = fx.dir.path().join("agent");
+    let dest = agent.join("experimental/sessions/forks");
+    std::fs::create_dir_all(&dest).unwrap();
+    for name in ["session.sqlite", "meta.json"] {
+        std::fs::copy(source.join(name), dest.join(name)).unwrap();
+    }
+    // Keep fixture paths synthetic in the committed source; use an actual isolated project
+    // for native resource loading and continuation.
+    std::fs::write(
+        dest.join("meta.json"),
+        json!({"createdAt":1700000000000_i64,"cwd":fx.project}).to_string(),
+    )
+    .unwrap();
+    let provider = Scripted::echo("branch continued");
+    let mut e = fx.start(&provider);
+    assert!(matches!(
+        report(&mut e, &agent).sessions[0].status,
+        ImportSessionStatus::Importable
+    ));
+    let result = import(&mut e, &agent, &["forks".into()]);
+    assert!(matches!(
+        outcome(&result, "forks"),
+        ImportSessionOutcome::Imported { children: 6, .. }
+    ));
+    e.handle.shutdown(Duration::from_secs(5));
+    drop(e);
+    let mut e = fx.start(&provider);
+    let Ok(Reply::Sessions { sessions }) = e.call(Call::ListSessions) else {
+        panic!()
+    };
+    assert_eq!(
+        sessions.len(),
+        7,
+        "all ownerless branches are listed as roots"
+    );
+    for branch in reference["expected"].as_array().unwrap() {
+        let conv = branch["id"].as_i64().unwrap();
+        let id = if conv == 1 {
+            "forks".to_owned()
+        } else {
+            format!("forks:c{conv}")
+        };
+        assert!(sessions.iter().any(|s| s.id == id));
+        let before = full_history(&mut e, &id);
+        assert_eq!(
+            json!(before.iter().map(|e| e.id).collect::<Vec<_>>()),
+            branch["visibleIds"]
+        );
+        e.call(Call::SetModel {
+            session: id.clone(),
+            model: "scripted/scripted".into(),
+        })
+        .unwrap();
+        let key = format!("fork-continue-{conv}");
+        e.prompt(&id, &key, "continue this branch").unwrap();
+        assert_eq!(e.settled(&key), RunOutcome::Completed);
+        let expected: Vec<Projected> = branch["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                let mut m = m.clone();
+                if let Some(Value::String(text)) = m.get("content") {
+                    m["content"] = json!([{"type":"text","text":text}]);
+                }
+                project_native(&serde_json::from_value(m).unwrap())
+            })
+            .collect();
+        let requests = provider.requests();
+        let sent: Vec<Projected> = requests
+            .last()
+            .unwrap()
+            .messages
+            .iter()
+            .filter(|m| !matches!(m, Message::System(_)))
+            .map(project_native)
+            .collect();
+        assert_eq!(
+            sent[..sent.len() - 1],
+            expected,
+            "{id}: actual provider request preserves branch context"
+        );
+        assert_eq!(sent.last().unwrap().1, "continue this branch");
+        assert!(
+            full_history(&mut e, &id).last().unwrap().id > *before.last().map(|e| &e.id).unwrap()
+        );
+    }
+}
+
 /// The reference's newest tool-carrying request whose first message is `first` (the root
 /// conversation's opening prompt), without its system/developer message.
 fn last_reference_request(id: &str, first: &Projected) -> Option<Vec<Projected>> {

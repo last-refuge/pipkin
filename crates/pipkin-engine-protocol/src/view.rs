@@ -504,7 +504,7 @@ pub struct ImportReport {
 pub enum ImportSessionOutcome {
     Imported {
         native: SessionId,
-        /// Native child sessions created for subagent conversations.
+        /// Additional native sessions created for subagent and forked conversations.
         children: u32,
         /// Source history entries.
         entries: u64,

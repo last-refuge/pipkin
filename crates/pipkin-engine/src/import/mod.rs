@@ -10,8 +10,9 @@
 //! copy with the SQLite backup API into `backup_dir/<id>/`, checks it, reads only the copy, and
 //! writes every native record inside ONE store transaction together with its `import_map`
 //! row, so a failure leaves nothing behind and a rerun is a no-op that returns the mapping.
-//! Sessions whose semantics the native engine cannot represent without guessing (forks,
-//! `replace` context edits, unknown entry kinds that affect the model context, in-flight
+//! Fork histories are materialized at their inclusive ancestry cutoffs, preserving branch
+//! documents and provenance. Sessions whose semantics the native engine cannot represent
+//! without guessing (`replace` context edits, unknown entry kinds that affect the model context, in-flight
 //! work) are refused with their reasons.
 //!
 //! Credentials and configuration are never imported implicitly: [`credential_entries`] and
@@ -19,6 +20,7 @@
 
 mod context;
 mod delta;
+mod forks;
 mod legacy;
 mod plan;
 mod plugins;
@@ -105,7 +107,7 @@ pub struct DiscoveryReport {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImportOutcome {
     pub native_session: String,
-    /// Native child sessions created for subagent conversations.
+    /// Additional native sessions created for subagent and forked conversations.
     pub children: Vec<String>,
     /// True when an earlier import is returned and nothing was written.
     pub already_imported: bool,

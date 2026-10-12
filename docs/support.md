@@ -77,6 +77,13 @@ Imported conversations start with an empty native extension profile, regardless 
 Unreadable or oversized profile files, or profiles changing during the copy, still block import to protect source
 state. Close Pi before importing. Pipkin never changes source profiles or executes their package paths.
 
+Pi forked histories import with the inherited history visible at each branch's cutoff.
+An ownerless branch becomes an independent native conversation; subagent branches retain
+their task ownership. Settings already copied by Pi at the fork point remain branch-specific.
+The import manifest retains the original ancestry, source entry counts and materialized
+native entry counts. The original database and documents remain in the backup. Import
+does not add a command to create new forks in Pipkin.
+
 Ownership: a conversation is written by exactly one engine. When an import finishes, Pipkin records in its own
 database (`pipkin.sqlite3`, table `conversation_owners`; never in the Pi profile or the engine's data) that the
 built-in engine now owns each conversation it imported, in the same transaction as the desktop-data copy. Sessions
