@@ -681,7 +681,7 @@ async fn dispatch_with_cancel(
         } => {
             let sess = shared.session(&session)?;
             match shared
-                .compact(&sess, None, instructions.as_deref(), cancel)
+                .compact_manual(&sess, instructions.as_deref(), cancel)
                 .await
             {
                 Ok(compaction::Compacted::Done(_)) => Ok(Reply::Ok),
@@ -1009,3 +1009,5 @@ mod tests;
 
 #[cfg(test)]
 mod cancel_tests;
+#[cfg(test)]
+mod compaction_tests;

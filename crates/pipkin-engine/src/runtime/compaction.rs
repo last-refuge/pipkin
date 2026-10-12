@@ -32,7 +32,49 @@ pub enum Compacted {
     Nothing(String),
 }
 
+/// Remove exactly this foreground operation on success, failure or future cancellation.
+struct ManualCompaction {
+    session: Arc<SessionRt>,
+    id: u64,
+    cancel: CancellationToken,
+}
+
+impl Drop for ManualCompaction {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        self.session
+            .manual_compactions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.id);
+    }
+}
+
 impl Shared {
+    pub(super) async fn compact_manual(
+        self: &Arc<Self>,
+        sess: &Arc<SessionRt>,
+        instructions: Option<&str>,
+        request_cancel: &CancellationToken,
+    ) -> Result<Compacted, String> {
+        let operation = {
+            let _lock = sess.lock.lock().await;
+            let id = sess.next_manual_compaction.fetch_add(1, Ordering::Relaxed);
+            let cancel = request_cancel.child_token();
+            sess.manual_compactions
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(id, cancel.clone());
+            ManualCompaction {
+                session: sess.clone(),
+                id,
+                cancel,
+            }
+        };
+        self.compact(sess, None, instructions, &operation.cancel)
+            .await
+    }
+
     /// Summarize the session's context now. `run` attributes the entry to a run (blocking
     /// compactions inside a run); `None` for manual and background ones.
     pub async fn compact(
@@ -42,6 +84,9 @@ impl Shared {
         instructions: Option<&str>,
         cancel: &CancellationToken,
     ) -> Result<Compacted, String> {
+        if cancel.is_cancelled() {
+            return Err("Compaction aborted.".into());
+        }
         let prepared = match self.prepare(sess).await {
             Ok(p) => p,
             Err(Some(outcome)) => {
@@ -114,6 +159,12 @@ impl Shared {
                 }
             }
         };
+        // Serialize the commit with Stop. If the summary won the lock it is completed;
+        // if Stop won it, even a provider returning a late success cannot move the head.
+        let _lock = sess.lock.lock().await;
+        if cancel.is_cancelled() {
+            return Err("Compaction aborted.".into());
+        }
         let session = sess.id.clone();
         self.commit(sess, |tx| {
             // A newer compaction that already keeps less than this one makes it stale.

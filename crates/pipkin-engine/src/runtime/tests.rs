@@ -67,7 +67,7 @@ impl Fixture {
 pub struct Engine {
     pub handle: EngineHandle,
     pub conn: Connection,
-    next: u64,
+    pub(super) next: u64,
     pub events: Vec<Event>,
 }
 

@@ -11,6 +11,28 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
+## Current follow-up — Stop and compaction lifecycle
+
+Request cancellation is committed as **`7c27693`**. Stop now reaches every manual
+compaction even when no coding run is active; per-operation drop guards clean up the
+registration, and summary commit is serialized with Stop and rechecks cancellation.
+Threshold background compaction retains its independent scope. Tests cover concurrent
+manual compactions, subsequent reuse, background survival without restoring the stopped
+instruction, Stop after completion, and unstarted sequential tools. See
+[lifecycle evidence](pipkin-rust-engine-evidence/stop-compaction-lifecycle.md).
+
+Final required checks: **1439 passed, 0 failed, 53 ignored**, Clippy and formatting clean.
+Logs: `/tmp/pipkin-stop-compaction-final-{workspace,clippy,fmt}.log`. The first workspace run
+failed a new test that incorrectly assumed built-ins were sequential; the corrected fixture
+explicitly declares its test tool sequential, with no production scheduling change.
+
+Source audit confirmed a further required gap: Pi persists compaction selection and retry
+checkpoints, while native compaction futures are volatile. New row **CTX-CHECKPOINT** records
+this explicitly. Next batch: durable compaction operations/checkpoints, restart/Stop recovery,
+retry deadlines and summary placement. This is built-in context management, not extensions.
+Current inventory: **504 rows, 489 non-OS; NC 404, NE 25, NP 30, PA 29, BL 0, LB 1, OS 15**;
+**430 measured, 7 observed, 8 unverified, 59 not started; 0 qualified**. Native remains opt-in.
+
 ## Current follow-up — connection-scoped request cancellation
 
 The inactive-profile migration is committed as **`03b7e5e`**. The Pi timeout-path audit
