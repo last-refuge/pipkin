@@ -205,13 +205,13 @@ pub struct QueueEntryView {
     pub images: u32,
 }
 
-/// The committed per-session usage ledger.
+/// Committed usage for a conversation and its descendants, grouped by original source.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageView {
     /// By `provider/model`.
     pub models: Vec<(String, Usage)>,
-    /// By tool name (subagent work is attributed to its tool).
+    /// By tool name when a tool reports its own usage. Child model usage stays in `models`.
     pub tools: Vec<(String, Usage)>,
 }
 

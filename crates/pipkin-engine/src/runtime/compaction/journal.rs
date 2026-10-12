@@ -467,6 +467,9 @@ impl Shared {
             }
             if let Message::Assistant { usage, .. } = &response.message {
                 Store::add_usage(tx, &sess.id, "model", &request.model, usage)?;
+                changes.push(SessionChange::UsageChanged {
+                    usage: Store::usage_in(tx, &sess.id)?,
+                });
             }
             Ok(((), changes))
         })

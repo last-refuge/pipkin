@@ -1052,3 +1052,6 @@ mod tests;
 mod cancel_tests;
 #[cfg(test)]
 mod compaction_tests;
+
+#[cfg(test)]
+mod subagent_accounting_tests;

@@ -1485,30 +1485,49 @@ impl Store {
     }
 
     pub fn usage(&self, session: &str) -> Result<UsageView> {
-        self.read(|c| {
-            let mut stmt = c.prepare_cached(
-                "SELECT bucket, key, value FROM usage WHERE session = ?1 ORDER BY bucket, key",
-            )?;
-            let rows = stmt
-                .query_map([session], |r| {
-                    Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                    ))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            let mut view = UsageView::default();
-            for (bucket, key, raw) in rows {
-                let usage: Usage = parse_json(&raw, "usage")?;
-                if bucket == "tool" {
-                    view.tools.push((key, usage));
-                } else {
-                    view.models.push((key, usage));
-                }
+        self.read(|c| Self::usage_in(c, session))
+    }
+
+    /// Sum committed usage across this conversation tree without copying child spend into
+    /// the parent ledger. Keeps original model/tool identities and cannot double-count replay.
+    pub(crate) fn usage_in(c: &Connection, session: &str) -> Result<UsageView> {
+        let mut stmt = c.prepare_cached(
+            "WITH RECURSIVE tree(id) AS (
+                 SELECT ?1 UNION SELECT s.id FROM sessions s JOIN tree t ON s.parent = t.id
+             ) SELECT u.bucket, u.key, u.value FROM usage u JOIN tree t ON u.session = t.id
+             ORDER BY u.bucket, u.key, u.session",
+        )?;
+        let mut rows = stmt.query([session])?;
+        let mut buckets = std::collections::BTreeMap::<(String, String), Usage>::new();
+        while let Some(row) = rows.next()? {
+            let key = (row.get(0)?, row.get(1)?);
+            let raw: String = row.get(2)?;
+            let usage: Usage = parse_json(&raw, "usage")?;
+            buckets.entry(key).or_default().add(&usage);
+        }
+        let mut view = UsageView::default();
+        for ((bucket, key), usage) in buckets {
+            if bucket == "tool" {
+                view.tools.push((key, usage));
+            } else {
+                view.models.push((key, usage));
             }
-            Ok(view)
-        })
+        }
+        Ok(view)
+    }
+
+    /// Ancestor views change when a child records spend. The caller bumps their revisions
+    /// in the same transaction, so durable invalidation and live publication agree.
+    pub(crate) fn usage_ancestors(c: &Connection, session: &str) -> Result<Vec<String>> {
+        let mut stmt = c.prepare_cached(
+            "WITH RECURSIVE ancestors(id, parent) AS (
+                SELECT id, parent FROM sessions WHERE id = ?1
+                UNION SELECT s.id, s.parent FROM sessions s JOIN ancestors a ON s.id = a.parent
+             ) SELECT id FROM ancestors WHERE id != ?1 ORDER BY id",
+        )?;
+        Ok(stmt
+            .query_map([session], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     // ------------------------------------------------------------------ kv (extension state)

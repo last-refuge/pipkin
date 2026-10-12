@@ -41,7 +41,7 @@ Both are corrected. No failed requirement was waived.
 ## Gaps identified during this batch
 
 The Radius catalog gap below is subsequently implemented and tested in
-[radius-catalog.md](radius-catalog.md). Copilot login retry parsing remains open.
+[radius-catalog.md](radius-catalog.md). Copilot login retry parsing is subsequently fixed and tested in [copilot-login-retries.md](copilot-login-retries.md).
 
 Reference `packages/ai/src/providers/radius.ts` restores independent persisted model metadata,
 migrates legacy OAuth `gatewayConfig`, and refreshes authenticated `{gateway}/v1/config`.

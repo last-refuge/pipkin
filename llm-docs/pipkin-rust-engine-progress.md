@@ -11,7 +11,38 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — private Radius catalogs
+## Current follow-up — Copilot retry bounds and subagent accounting
+
+Following **`4a0601f`**, Copilot login retries now handle numeric prefixes and HTTP dates,
+reject non-finite delays without panics, discard stalled 429 bodies, and honor cancellation
+and one total retry budget. Five new tests include 21 executed-reference first-delay cases
+and real local HTTP timing/retry checks. Zero-retry token refresh remains unchanged.
+See [Copilot retry evidence](pipkin-rust-engine-evidence/copilot-login-retries.md).
+
+Subagent tests reproduced omitted child spend (15 displayed versus 45 committed). Root
+usage views now aggregate descendant ledgers by their original model/tool identities. Child
+usage and ancestor revisions/invalidation commit atomically, then publish live parent usage;
+compaction uses the same update path. Tests cover saturated parent/child scheduling, live
+aggregate totals, replay/restart, independent roots, and injected rollback/recovery. Rich
+import assertions verify unchanged own ledgers plus correct group totals. The previous
+ledger claim that children were already attributed to a subagent tool bucket was false.
+See [subagent evidence](pipkin-rust-engine-evidence/subagent-accounting.md).
+
+Required checks: **1526 passed, 0 failed, 53 ignored**; Clippy and formatting clean.
+Logs: `/tmp/pipkin-retry-usage-workspace2.log`, `/tmp/pipkin-retry-usage-clippy2.log`,
+`/tmp/pipkin-retry-usage-fmt2.log`. The first workspace run exposed the old root-only import
+assertion; earlier targeted failures/fixture corrections are recorded in the evidence.
+No failed behavior was waived. Both fixes were validated in the same working tree.
+
+Inventory: **504 rows, 488 non-OS; NC 413, NE 37, NP 37, PA 0, BL 0, LB 1, OS 16;
+440 measured, 7 observed, 4 unverified, 53 not started; 0 fully qualified**.
+SUB-PERMITS and USE-TOTAL now have measured evidence. Next: throwing prompt-section
+applicability, interrupted partial tool output recovery, WebSocket connection timeout, and
+native desktop editor/terminal flags. Partial measured-row gaps and sustained/installed/
+packaging/platform qualification still require work before native-default/Pi retirement.
+Unrelated owner plan/worktree files remain untouched; native remains opt-in.
+
+## Prior follow-up — private Radius catalogs
 
 Following **`73979ae`**, default/custom Radius gateways support authenticated discovery and
 independent durable catalogs. Empty custom gateways can discover their first models. Local

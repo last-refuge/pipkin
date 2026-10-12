@@ -425,7 +425,7 @@ impl Shared {
             {
                 Store::add_usage(tx, &session, "model", &usage_key, usage)?;
                 changes.push(SessionChange::UsageChanged {
-                    usage: usage_in(tx, &session)?,
+                    usage: Store::usage_in(tx, &session)?,
                 });
             }
             Ok(((), changes))
@@ -958,31 +958,6 @@ fn choose(
     }
     out.sort_by_key(|r| r.queue_entry);
     out
-}
-
-fn usage_in(c: &rusqlite::Connection, session: &str) -> crate::store::Result<UsageView> {
-    let mut stmt = c.prepare_cached(
-        "SELECT bucket, key, value FROM usage WHERE session = ?1 ORDER BY bucket, key",
-    )?;
-    let rows = stmt
-        .query_map([session], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    let mut view = UsageView::default();
-    for (bucket, key, raw) in rows {
-        let usage: Usage = serde_json::from_str(&raw).unwrap_or_default();
-        if bucket == "tool" {
-            view.tools.push((key, usage));
-        } else {
-            view.models.push((key, usage));
-        }
-    }
-    Ok(view)
 }
 
 fn contract_of(tool: &Arc<dyn Tool>) -> Value {

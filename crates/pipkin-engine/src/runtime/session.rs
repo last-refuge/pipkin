@@ -201,11 +201,22 @@ impl Shared {
                 } else {
                     Store::bump(tx, &id, now_ms())?
                 };
-                Ok((value, changes, revision))
+                let mut ancestor_usage = Vec::new();
+                if changes
+                    .iter()
+                    .any(|change| matches!(change, SessionChange::UsageChanged { .. }))
+                {
+                    for ancestor in Store::usage_ancestors(tx, &id)? {
+                        let usage = Store::usage_in(tx, &ancestor)?;
+                        let revision = Store::bump(tx, &ancestor, now_ms())?;
+                        ancestor_usage.push((ancestor, revision, usage));
+                    }
+                }
+                Ok((value, changes, revision, ancestor_usage))
             })
         });
         match result {
-            Ok((value, changes, revision)) => {
+            Ok((value, changes, revision, ancestor_usage)) => {
                 super::faults::crash_point("after_state_commit_before_delivery");
                 sess.changed.notify_waiters();
                 for change in changes {
@@ -213,6 +224,13 @@ impl Shared {
                         session: id.clone(),
                         revision,
                         change,
+                    });
+                }
+                for (session, revision, usage) in ancestor_usage {
+                    self.publish(Event::Session {
+                        session,
+                        revision,
+                        change: SessionChange::UsageChanged { usage },
                     });
                 }
                 Ok(value)

@@ -992,15 +992,22 @@ fn imports_a_rich_session_losslessly_with_the_same_effective_context() {
     assert!(store.queue(ROOT).unwrap().is_empty());
     assert!(store.open_run(ROOT).unwrap().is_none());
 
-    // Usage from the base + deltas.
+    // Preserve each imported ledger exactly; the public root view aggregates its child.
+    let own: Value = store.read(|c| {
+        let raw: String = c.query_row("SELECT value FROM usage WHERE session = ?1 AND bucket = 'model' AND key = 'anthropic/claude-test'",[ROOT],|row|row.get(0))?;
+        Ok(serde_json::from_str(&raw).unwrap())
+    }).unwrap();
+    assert_eq!(own["input"], 30);
+    assert_eq!(own["totalTokens"], 43);
+    assert_eq!(own["cost"]["total"], 0.25);
     let usage = store.usage(ROOT).unwrap();
     assert_eq!(usage.models.len(), 1);
     assert_eq!(usage.models[0].0, "anthropic/claude-test");
-    assert_eq!(usage.models[0].1.input, 30);
+    assert_eq!(usage.models[0].1.input, 34);
     assert_eq!(usage.models[0].1.cache_write_1h, Some(6));
     assert_eq!(usage.models[0].1.reasoning, Some(2));
-    assert_eq!(usage.models[0].1.total_tokens, 43);
-    assert_eq!(usage.models[0].1.cost.total, 0.25);
+    assert_eq!(usage.models[0].1.total_tokens, 51);
+    assert_eq!(usage.models[0].1.cost.total, 0.26);
     assert_eq!(usage.tools[0].0, "subagent");
     assert_eq!(usage.tools[0].1.output, 3);
     assert_eq!(store.usage(&child).unwrap().models[0].1.input, 4);
