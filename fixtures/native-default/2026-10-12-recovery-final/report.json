@@ -28,6 +28,8 @@
   "noPiNodeInvocations": true,
   "hostedLinuxRun": 38266456562,
   "hostedMacOSRun": 38266459911,
-  "hostedStatusAtRecording": "in_progress_or_queued",
-  "dependencyAudit": "engine and core have no transitive GPUI/UI/app/pi-client dependency; workspace has no pi-client"
+  "hostedStatusAtRecording": "macos_passed_linux_fixture_race_failed",
+  "dependencyAudit": "engine and core have no transitive GPUI/UI/app/pi-client dependency; workspace has no pi-client",
+  "hostedMacOSResult": "passed",
+  "hostedLinuxResult": "failed: fixture commit detached Git maintenance removed maintenance.lock during snapshot; production code unchanged by correction"
 }

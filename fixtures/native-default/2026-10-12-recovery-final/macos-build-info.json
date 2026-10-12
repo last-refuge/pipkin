@@ -1,0 +1,46 @@
+{
+  "formatVersion": 1,
+  "experimental": true,
+  "app": {
+    "version": "0.0.1",
+    "revision": "4b42079e88474450f47409f11cae1ea227270fa3",
+    "dirty": false,
+    "preBundleSigningBinarySha256": "bd5f8963e7eb8dd803b6d0fdb9cf69433f37546658c916bfc6098e76c5b57290",
+    "target": "aarch64-apple-darwin",
+    "binarySha256": "4864a742d989aa836464402b9e2177f39ce0e10835a255941bc431d448921f9f"
+  },
+  "engine": {
+    "formatVersion": 1,
+    "engine": "native",
+    "appVersion": "0.0.1",
+    "engineVersion": "0.0.1",
+    "engineProtocol": 12,
+    "engineSchema": 10,
+    "desktopSchema": 8,
+    "builtIntoBinary": true
+  },
+  "nodeRuntime": null,
+  "signing": "Ad-hoc signed completed app bundle; no Developer ID or notarization. Not publisher authentication or Gatekeeper acceptance.",
+  "directMachODependencies": [
+    "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/ApplicationServices (compatibility version 1.0.0, current version 65.0.0)",
+    "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 3502.1.255)",
+    "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo (compatibility version 1.2.0, current version 1.5.0)",
+    "/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit (compatibility version 45.0.0, current version 2575.60.5)",
+    "/System/Library/Frameworks/CoreText.framework/Versions/A/CoreText (compatibility version 1.0.0, current version 844.5.0)",
+    "/System/Library/Frameworks/Carbon.framework/Versions/A/Carbon (compatibility version 2.0.0, current version 170.0.0)",
+    "/System/Library/Frameworks/Security.framework/Versions/A/Security (compatibility version 1.0.0, current version 61439.120.27)",
+    "/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 3502.1.255)",
+    "/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)",
+    "/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)",
+    "/System/Library/Frameworks/QuartzCore.framework/Versions/A/QuartzCore (compatibility version 1.2.0, current version 1.11.0)",
+    "/System/Library/Frameworks/UserNotifications.framework/Versions/A/UserNotifications (compatibility version 1.0.0, current version 1.0.0)",
+    "/System/Library/Frameworks/CoreLocation.framework/Versions/A/CoreLocation (compatibility version 1.0.0, current version 2964.0.4)",
+    "/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics (compatibility version 64.0.0, current version 1889.5.3)",
+    "/System/Library/Frameworks/OpenGL.framework/Versions/A/OpenGL (compatibility version 1.0.0, current version 1.0.0)",
+    "/System/Library/Frameworks/Metal.framework/Versions/A/Metal (compatibility version 1.0.0, current version 368.12.0)",
+    "/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)",
+    "/System/Library/Frameworks/ColorSync.framework/Versions/A/ColorSync (compatibility version 1.0.0, current version 3777.4.1)",
+    "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)"
+  ],
+  "limitations": "Build artifact, not native acceptance. Dependency notices are evidence, not legal clearance."
+}

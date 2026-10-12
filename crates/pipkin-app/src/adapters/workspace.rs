@@ -437,6 +437,12 @@ mod tests {
                 "user.email=t@example.com",
                 "-c",
                 "commit.gpgsign=false",
+                // Fixture commits must not leave detached maintenance changing .git
+                // while the read-only collector's before/after snapshots run.
+                "-c",
+                "maintenance.auto=false",
+                "-c",
+                "gc.auto=0",
             ])
             .args(args)
             .current_dir(dir)

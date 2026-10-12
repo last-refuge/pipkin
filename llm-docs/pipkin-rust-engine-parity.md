@@ -344,7 +344,7 @@ Test citations are `<prefix>::<function>`; a prefix names one file:
 
 Owner: **Opus** = main implementation; **Codex** = reserved final integration.
 
-## Current status summary (2026-10-11)
+## Historical status summary (2026-10-11; superseded by current follow-up)
 
 WebSocket connection timeout and disabled-timeout cancellation now have real stalled-handshake
 tests plus runtime settings forwarding. Native editor/terminal flags drive real launch effects
@@ -481,13 +481,19 @@ submission identities remain open. TypeScript facet execution remains blocked; P
 the default. No row is fully qualified. Owner scope update: extension compatibility is now
 excluded (OS), so those gaps no longer block cutover; general engine qualification still does.
 
-504 inventory rows; **488 non-OS rows**, 16 explicitly excluded. **Rows passed: 0** (nothing passes before qualification). Comparisons
-against reference-derived output include Codex SSE goldens, reference-captured tool goldens
-and import equivalence fixtures. These are not qualification differentials of native generation
-against a reference trace. Many measured rows cover only part of their contract; read the row
-evidence and gaps. Aggregate counts below are recomputed from the current row labels, including
-changes made by the original implementation after its earlier summary. This is not a fresh audit
-of all 504 capabilities.
+## Current capability accounting
+
+504 inventory rows: **451 required NC/NE capabilities**, 37 capabilities absent from the
+baseline (NP), and 16 explicit owner scope exclusions (OS). All required capabilities have
+measured or observed evidence; exclusions are not counted as implemented features. Final
+candidate acceptance still requires the hosted checks in the
+[completion audit](pipkin-rust-engine-evidence/final-cutover-audit.md).
+
+Evidence includes executed Pi/native generation, context, queue and model-scope comparisons,
+frozen tool/provider captures, native fault/recovery tests and installed migration/coding.
+Comparisons are finite; each row retains its reference basis and coverage limits. Measured
+and observed labels are evidence categories, not a claim of exhaustive provider or platform
+qualification. Historical status summaries above describe their recorded intermediate states.
 
 | Disposition (target) | Rows |
 | --- | --- |

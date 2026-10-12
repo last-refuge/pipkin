@@ -75,3 +75,24 @@ The final audit subsequently found and fixed offline saved-conversation reattach
 `4b42079`. Linux [38266456562](https://github.com/last-refuge/pipkin/actions/runs/38266456562)
 and macOS [38266459911](https://github.com/last-refuge/pipkin/actions/runs/38266459911)
 qualify that production fix. Do not substitute the prior green run for their outcomes.
+
+## Recovery candidate outcomes and fixture correction
+
+macOS [38266459911](https://github.com/last-refuge/pipkin/actions/runs/38266459911)
+on **`4b42079` passed**, including engine/worker/adapter checks, release compilation,
+native app/ZIP packaging and extracted signature/diagnostic verification. This is automated
+experimental-platform evidence; interactive macOS acceptance remains unverified.
+
+Linux [38265023304](https://github.com/last-refuge/pipkin/actions/runs/38265023304)
+on the earlier `cc8931c` candidate passed. Final Linux
+[38266456562](https://github.com/last-refuge/pipkin/actions/runs/38266456562) failed in
+`adapters::workspace::tests::collecting_never_modifies_the_repository`: the before snapshot
+contained `.git/objects/maintenance.lock`, which detached Git maintenance from the fixture's
+setup commit removed before the after snapshot. All other files' lengths/mtimes agreed.
+The failure precedes packaging and is retained, not counted as a successful qualification.
+
+The fixture Git helper now disables automatic maintenance and garbage collection for setup
+commands. The collector and full repository snapshot assertion are unchanged; no production
+code changes. Local required checks pass: **1,446/0/9 ignored**, clean Clippy/fmt.
+A new Linux run must pass before completion. The
+successful final macOS run and clean local recovery package retain the same production code.

@@ -11,7 +11,18 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — recovery fix packaged and remotely backed up
+## Current follow-up — final macOS passed; Linux fixture race corrected
+
+Final macOS **38266459911** on `4b42079` passed all checks and native app/ZIP packaging.
+Linux **38266456562** failed before packaging because detached Git maintenance from a fixture
+commit removed a temporary lock during a no-mutation snapshot assertion. Fixture setup now
+disables automatic maintenance/GC; production collector behavior and the full assertion stay
+unchanged. Required local checks pass again: **1,446 passed, zero failed, nine ignored**,
+clean Clippy and formatting. Replacement Linux qualification remains pending. The clean
+installed `4b42079` package and successful macOS result cover the unchanged production code.
+See [hosted evidence](pipkin-rust-engine-evidence/hosted-qualification.md).
+
+## Prior follow-up — recovery fix packaged and remotely backed up
 
 **`4b42079`** is pushed. Clean-source local package identity is dirty=false, and installed
 coding/migration/restart/upgrade/rollback/complete archive restoration all pass against the
@@ -2044,7 +2055,7 @@ Retained evidence: `fixtures/native-bench/2026-10-11/`, `fixtures/native-bench/2
 `llm-docs/pipkin-rust-engine-evidence/`. Keep private account/session material out of committed
 evidence (the walkthrough's uncropped first capture stayed in a scratchpad and is not evidence).
 
-## 7. Current blockers
+## 7. Historical handoff blockers (superseded by current follow-up)
 
 1. **Correctness and migration gaps:** positional system patches and reasoning/1h-cache counters
    are now preserved and tested, including imported system context. Plugin-profile import protection
@@ -2066,7 +2077,7 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
    transfer is implemented and resolved. A known missing baseline behavior is required work,
    not automatically a request to waive parity.
 
-## 8. Next implementation batches
+## 8. Historical next implementation batches
 
 1. Completed this batch: plugin-profile import fails closed; retry count/deadline survive restart,
    with failure injection, actual SIGKILL and desktop ownership regression tests.

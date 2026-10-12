@@ -1,0 +1,22 @@
+/Users/runner/work/pipkin/pipkin/dist/macos/Pipkin.app: replacing existing signature
+/Users/runner/work/pipkin/pipkin/dist/macos/Pipkin.app: valid on disk
+/Users/runner/work/pipkin/pipkin/dist/macos/Pipkin.app: satisfies its Designated Requirement
+/Users/runner/work/pipkin/pipkin/dist/macos/verify-macos-lk63gjv9/Pipkin.app: valid on disk
+/Users/runner/work/pipkin/pipkin/dist/macos/verify-macos-lk63gjv9/Pipkin.app: satisfies its Designated Requirement
+Pipkin 0.0.1 (desktop schema 8) with --engine native
+app source: 4b42079e88474450f47409f11cae1ea227270fa3 (dirty: false)
+binary: /Users/runner/work/pipkin/pipkin/dist/macos/verify-macos-lk63gjv9/Pipkin.app/Contents/MacOS/pipkin
+engine: native (built into this binary) 0.0.1 (protocol 12, schema 10)
+engine runtime: `pipkin --engine-worker`; no Node, npm or Pi engine is used
+installed as: native candidate (/Users/runner/work/pipkin/pipkin/dist/macos/verify-macos-lk63gjv9/Pipkin.app/Contents/lib/pipkin/native-engine.json)
+data directory: ~/app-data
+database: none yet (created on first run)
+engine data directory: ~/app-data/engine (not created yet)
+engine config directory: ~/app-data/engine-config (not created yet)
+engine isolation: everything under the explicit data directory (--data-dir or PIPKIN_DATA)
+note: history written by the native engine is native-only; Pi does not read it.
+display: macOS native (display not probed)
+engine probe: OK (hello: protocol 12, engine 0.0.1 revision 4b42079e88474450f47409f11cae1ea227270fa3, schema 10; sessions in a fresh profile: 0; stopped cleanly in 0.2s)
+/Users/runner/work/pipkin/pipkin/dist/macos/verify-macos-lk63gjv9/Pipkin.app: valid on disk
+/Users/runner/work/pipkin/pipkin/dist/macos/verify-macos-lk63gjv9/Pipkin.app: satisfies its Designated Requirement
+local macOS app: /Users/runner/work/pipkin/pipkin/dist/macos/Pipkin.app; verified ZIP pipkin-0.0.1-aarch64-apple-darwin-experimental.zip
