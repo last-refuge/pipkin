@@ -476,8 +476,16 @@ impl Shared {
             .compaction
             .for_model(&model.key())
             .map_err(|detail| Some(RunOutcome::ModelError { detail }))?;
+        let timeout = settings
+            .idle_timeout()
+            .map_err(|detail| Some(RunOutcome::ModelError { detail }))?;
         // Network settings may have changed since the last request.
         let (net, http) = self.refresh_net_snapshot();
+        if let Some(detail) = &net.validation_error {
+            return Err(Some(RunOutcome::ModelError {
+                detail: detail.clone(),
+            }));
+        }
         let proxy = net.proxy.clone();
         if let Err(detail) = unusable_proxy(&proxy, &model.base_url) {
             return Err(Some(RunOutcome::ModelError { detail }));
@@ -583,9 +591,7 @@ impl Shared {
             credential: auth.credential,
             headers: auth.headers,
             base_url: auth.base_url,
-            timeout: settings
-                .idle_timeout()
-                .unwrap_or(Duration::from_secs(i32::MAX as u64)),
+            timeout: timeout.unwrap_or(Duration::from_secs(i32::MAX as u64)),
             env: auth.env,
             options,
         };

@@ -909,6 +909,101 @@ fn the_request_timeout_follows_provider_timeout_then_http_idle_timeout() {
 }
 
 #[test]
+fn new_signin_attempts_refresh_http_timeout_settings_before_opening_authorization() {
+    let fx = Fixture::new();
+    let mut e = fx.start(&Scripted::echo("unused"));
+    write_settings(&fx, &json!({"httpIdleTimeoutMs":null}));
+    for call in [
+        Call::AuthStart {
+            provider: "anthropic".into(),
+        },
+        Call::AuthReuse {
+            provider: "anthropic".into(),
+        },
+    ] {
+        let error = e.call(call).unwrap_err();
+        assert_eq!(error.code, ErrorCode::Invalid);
+        assert_eq!(error.message, "Invalid httpIdleTimeoutMs setting: null");
+    }
+    match e.call(Call::AuthState).unwrap() {
+        Reply::Auth(state) => assert!(state.attempt.is_none()),
+        _ => panic!("expected auth state"),
+    }
+    write_settings(&fx, &json!({"httpIdleTimeoutMs":0}));
+    let attempt = match e
+        .call(Call::AuthStart {
+            provider: "anthropic".into(),
+        })
+        .unwrap()
+    {
+        Reply::Auth(state) => state.attempt.expect("started without restarting engine"),
+        _ => panic!("expected auth state"),
+    };
+    e.call(Call::AuthCancel { attempt }).unwrap();
+    assert_eq!(
+        e.handle.shared().refresh_net_snapshot().0.validation_error,
+        None
+    );
+}
+
+#[test]
+fn invalid_http_timeout_refuses_generation_until_live_global_and_project_settings_are_repaired() {
+    let fx = Fixture::new();
+    let provider = Scripted::echo("ok");
+    let mut e = fx.start(&provider);
+    let session = e.create(&fx.project, "timeout validation");
+    e.prompt(&session, "valid", "hello").unwrap();
+    assert_eq!(e.settled("valid"), RunOutcome::Completed);
+    write_settings(
+        &fx,
+        &json!({"httpIdleTimeoutMs":null,"retry":{"provider":{"timeoutMs":7000}}}),
+    );
+    let project = fx.project.join(".pi/settings.json");
+    std::fs::create_dir_all(project.parent().unwrap()).unwrap();
+    std::fs::write(&project, json!({"httpIdleTimeoutMs":500}).to_string()).unwrap();
+    e.prompt(&session, "invalid-global", "must not dispatch")
+        .unwrap();
+    assert_eq!(
+        e.settled("invalid-global"),
+        RunOutcome::ModelError {
+            detail: "Invalid httpIdleTimeoutMs setting: null".into()
+        }
+    );
+    assert_eq!(
+        provider.requests().len(),
+        1,
+        "provider override cannot hide invalid global dispatcher settings"
+    );
+    write_settings(&fx, &json!({"httpIdleTimeoutMs":1500}));
+    e.prompt(&session, "repaired-global", "continue").unwrap();
+    assert_eq!(e.settled("repaired-global"), RunOutcome::Completed);
+    assert_eq!(
+        provider.requests().last().unwrap().timeout,
+        Duration::from_millis(500)
+    );
+    let (net, _) = e.handle.shared().refresh_net_snapshot();
+    assert_eq!(net.idle, Some(Duration::from_millis(1500)));
+    assert_eq!(net.validation_error, None);
+    std::fs::write(&project, json!({"httpIdleTimeoutMs":-9}).to_string()).unwrap();
+    e.prompt(&session, "invalid-project", "must not dispatch")
+        .unwrap();
+    assert_eq!(
+        e.settled("invalid-project"),
+        RunOutcome::ModelError {
+            detail: "Invalid httpIdleTimeoutMs setting: -9".into()
+        }
+    );
+    assert_eq!(provider.requests().len(), 2);
+    std::fs::write(
+        &project,
+        json!({"httpIdleTimeoutMs":"disabled"}).to_string(),
+    )
+    .unwrap();
+    e.prompt(&session, "repaired-project", "continue").unwrap();
+    assert_eq!(e.settled("repaired-project"), RunOutcome::Completed);
+}
+
+#[test]
 fn radius_discovery_supports_a_real_tool_turn_and_cached_resume_without_catalog_network() {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};

@@ -1,0 +1,482 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "node": "v26.8.1",
+  "sourceSha256": "535c679f41f769d9129ffec5521508241162c9dfe0a9c7782157b193eb0e5664",
+  "textSha256": "bb323f9607c499115b532021f4f0163c6df04d834aee9c32c3c77b273bd2d7c6",
+  "retrySha256": "9fd3268543035cb93ae3a572b4b16ba2ba76a5d76a2ae691e45968d3442c3d71",
+  "dispatcherSha256": "d64922c476d11b90555b8f23cab92ce1f4f83174cb750c125a96d8d4374744e2",
+  "scope": "Actual SettingsManager and original timeout parser; global and project-merged getters; import paths rewritten, unused I/O/network dependencies throw if called",
+  "cases": [
+    {
+      "name": "absent",
+      "global": {
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 300000
+      },
+      "dispatcher": {
+        "ms": 300000
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "zero",
+      "global": {
+        "httpIdleTimeoutMs": 0,
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 0
+      },
+      "dispatcher": {
+        "ms": 0
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "disabled",
+      "global": {
+        "httpIdleTimeoutMs": "disabled",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 0
+      },
+      "dispatcher": {
+        "ms": 0
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "case-space",
+      "global": {
+        "httpIdleTimeoutMs": " DISABLED ",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 0
+      },
+      "dispatcher": {
+        "ms": 0
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "fraction",
+      "global": {
+        "httpIdleTimeoutMs": 1500.9,
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 1500
+      },
+      "dispatcher": {
+        "ms": 1500
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "negative-zero",
+      "global": {
+        "httpIdleTimeoutMs": "-0",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 0
+      },
+      "dispatcher": {
+        "ms": 0
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "hex",
+      "global": {
+        "httpIdleTimeoutMs": "0x10",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 16
+      },
+      "dispatcher": {
+        "ms": 16
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "octal",
+      "global": {
+        "httpIdleTimeoutMs": "0o10",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 8
+      },
+      "dispatcher": {
+        "ms": 8
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "binary",
+      "global": {
+        "httpIdleTimeoutMs": "0b10",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 2
+      },
+      "dispatcher": {
+        "ms": 2
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "scientific",
+      "global": {
+        "httpIdleTimeoutMs": "1e3",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 1000
+      },
+      "dispatcher": {
+        "ms": 1000
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "sub-millisecond",
+      "global": {
+        "httpIdleTimeoutMs": ".5",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 0
+      },
+      "dispatcher": {
+        "ms": 0
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "signed",
+      "global": {
+        "httpIdleTimeoutMs": "+17",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 17
+      },
+      "dispatcher": {
+        "ms": 17
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "negative-fraction",
+      "global": {
+        "httpIdleTimeoutMs": "-.5",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: -.5"
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: -.5"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "bom",
+      "global": {
+        "httpIdleTimeoutMs": " ﻿500 ",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 500
+      },
+      "dispatcher": {
+        "ms": 500
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "non-js-whitespace",
+      "global": {
+        "httpIdleTimeoutMs": "500",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: 500"
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: 500"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "empty",
+      "global": {
+        "httpIdleTimeoutMs": "",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: "
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: "
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "whitespace",
+      "global": {
+        "httpIdleTimeoutMs": "   ",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting:    "
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting:    "
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "infinity",
+      "global": {
+        "httpIdleTimeoutMs": "Infinity",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: Infinity"
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: Infinity"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "nan",
+      "global": {
+        "httpIdleTimeoutMs": "NaN",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: NaN"
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: NaN"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "text",
+      "global": {
+        "httpIdleTimeoutMs": "oops",
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: oops"
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: oops"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "negative",
+      "global": {
+        "httpIdleTimeoutMs": -5,
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: -5"
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: -5"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "null",
+      "global": {
+        "httpIdleTimeoutMs": null,
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: null"
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: null"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "false",
+      "global": {
+        "httpIdleTimeoutMs": false,
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: false"
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: false"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "array",
+      "global": {
+        "httpIdleTimeoutMs": [],
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: "
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: "
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "object",
+      "global": {
+        "httpIdleTimeoutMs": {},
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: [object Object]"
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: [object Object]"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "true",
+      "global": {
+        "httpIdleTimeoutMs": true,
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: true"
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: true"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "number-array",
+      "global": {
+        "httpIdleTimeoutMs": [
+          5
+        ],
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: 5"
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: 5"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "safe-large",
+      "global": {
+        "httpIdleTimeoutMs": 9007199254740991,
+        "defaultProvider": "kept-provider"
+      },
+      "project": {},
+      "effective": {
+        "ms": 9007199254740991
+      },
+      "dispatcher": {
+        "ms": 9007199254740991
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "project-null",
+      "global": {
+        "httpIdleTimeoutMs": 1000,
+        "defaultProvider": "kept-provider"
+      },
+      "project": {
+        "httpIdleTimeoutMs": null
+      },
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: null"
+      },
+      "dispatcher": {
+        "ms": 1000
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "project-repair",
+      "global": {
+        "httpIdleTimeoutMs": -5,
+        "defaultProvider": "kept-provider"
+      },
+      "project": {
+        "httpIdleTimeoutMs": 2500
+      },
+      "effective": {
+        "ms": 2500
+      },
+      "dispatcher": {
+        "error": "Invalid httpIdleTimeoutMs setting: -5"
+      },
+      "defaultProvider": "kept-provider"
+    },
+    {
+      "name": "project-invalid",
+      "global": {
+        "defaultProvider": "kept-provider"
+      },
+      "project": {
+        "httpIdleTimeoutMs": "oops"
+      },
+      "effective": {
+        "error": "Invalid httpIdleTimeoutMs setting: oops"
+      },
+      "dispatcher": {
+        "ms": 300000
+      },
+      "defaultProvider": "kept-provider"
+    }
+  ]
+}

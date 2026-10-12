@@ -728,6 +728,9 @@ impl OpenAICodexResponses {
         let timeout = (!req.timeout.is_zero()).then_some(req.timeout);
         let transport = opts.transport.as_str();
 
+        if let Some(error) = ctx.net.and_then(|net| net.validation_error.as_ref()) {
+            return setup_failure(error.clone());
+        }
         let websocket_disabled =
             transport != "sse" && ws::is_fallback_active(&self.ws, cache_session);
         if websocket_disabled {

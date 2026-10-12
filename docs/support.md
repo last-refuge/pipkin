@@ -58,6 +58,14 @@ Importing from Pi is explicit, from the command palette, and only in native mode
   credential store without overwriting anything already set up there. Supported Anthropic subscription (OAuth)
   credentials retain their credential kind; they never become API keys.
 
+`httpIdleTimeoutMs` controls the native shared HTTP header/body idle timeout in global
+`settings.json`; zero or `"disabled"` disables it. Invalid values, including explicit `null`,
+report a configuration error before affected network requests. Correct the file and retry;
+new model requests, model refreshes and sign-in attempts reload network settings. In-flight
+operations keep their existing snapshot. Project settings can set the provider request timeout,
+and `retry.provider.timeoutMs` takes precedence there; neither overrides an invalid global
+shared-HTTP setting.
+
 Native model refresh restores cached public catalogs from `~/.config/pipkin/engine/models-store.json`
 and revalidates configured built-in providers against the public catalog service. Local `models.json`
 overrides still apply. A refresh failure keeps the usable catalog and reports a warning. Set `PI_OFFLINE`

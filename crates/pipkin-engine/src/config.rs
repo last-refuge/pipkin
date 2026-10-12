@@ -342,11 +342,19 @@ pub struct Settings {
     pub skills: Vec<String>,
     pub http_proxy: Option<String>,
     /// Milliseconds; `0` disables the idle timeout.
+    #[serde(deserialize_with = "present_value")]
     pub http_idle_timeout_ms: Option<Value>,
     pub shell_path: Option<String>,
     pub enabled_models: Option<Vec<String>>,
     #[serde(flatten)]
     pub other: Map<String, Value>,
+}
+
+// Preserve explicit null as a supplied value for getters that reject it.
+fn present_value<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(deserializer).map(Some)
 }
 
 // Explicit project nulls replace the global value. Getters using `??` then take their
@@ -423,23 +431,22 @@ impl Settings {
         }
     }
 
-    /// Reference `getHttpIdleTimeoutMs`: `httpIdleTimeoutMs` (default 300 s; `0` or
-    /// `"disabled"` disables it, `None`). A value the reference would reject keeps the default.
-    pub fn http_idle_timeout(&self) -> Option<std::time::Duration> {
-        let ms = self
-            .http_idle_timeout_ms
-            .as_ref()
-            .and_then(parse_timeout_ms)
-            .unwrap_or(DEFAULT_HTTP_IDLE_TIMEOUT_MS);
-        (ms > 0).then(|| std::time::Duration::from_millis(ms))
+    /// Reference `getHttpIdleTimeoutMs`: absent defaults to 300 seconds; zero/disabled
+    /// returns None. A supplied invalid value (including null) is an error.
+    pub fn http_idle_timeout(&self) -> Result<Option<std::time::Duration>, String> {
+        let ms = match self.http_idle_timeout_ms.as_ref() {
+            None => DEFAULT_HTTP_IDLE_TIMEOUT_MS,
+            Some(value) => parse_timeout_ms(value).ok_or_else(|| {
+                format!("Invalid httpIdleTimeoutMs setting: {}", setting_text(value))
+            })?,
+        };
+        Ok((ms > 0).then(|| std::time::Duration::from_millis(ms)))
     }
 
-    /// The provider request timeout (reference durable `stream.timeoutMs`,
-    /// `harness-setup.ts:28-31`): `retry.provider.timeoutMs`, else the HTTP idle timeout. `None`
-    /// means disabled.
-    pub fn idle_timeout(&self) -> Option<std::time::Duration> {
+    /// The provider timeout: retry.provider.timeoutMs overrides the session HTTP timeout.
+    pub fn idle_timeout(&self) -> Result<Option<std::time::Duration>, String> {
         match self.retry.provider.timeout_ms {
-            Some(ms) => (ms > 0).then(|| std::time::Duration::from_millis(ms)),
+            Some(ms) => Ok((ms > 0).then(|| std::time::Duration::from_millis(ms))),
             None => self.http_idle_timeout(),
         }
     }
@@ -592,13 +599,13 @@ pub fn parse_timeout_ms(value: &Value) -> Option<u64> {
     let number = |f: f64| (f.is_finite() && f >= 0.0).then(|| f.floor() as u64);
     match value {
         Value::String(s) => {
-            let t = s.trim();
+            let t = s.trim_matches(crate::tools::text::is_js_whitespace);
             if t.eq_ignore_ascii_case("disabled") {
                 Some(0)
             } else if t.is_empty() {
                 None
             } else {
-                t.parse::<f64>().ok().and_then(number)
+                crate::tools::text::js_parse_number(t).and_then(number)
             }
         }
         Value::Number(n) => n.as_f64().and_then(number),
@@ -689,7 +696,10 @@ mod tests {
         assert_eq!(s.steering_mode, QueueDelivery::All);
         assert_eq!(s.retry.provider.max_retry_delay_ms, 5);
         assert_eq!(s.retry.max_retries, 3);
-        assert_eq!(s.idle_timeout(), Some(std::time::Duration::from_secs(300)));
+        assert_eq!(
+            s.idle_timeout().unwrap(),
+            Some(std::time::Duration::from_secs(300))
+        );
     }
 
     #[test]
@@ -838,7 +848,7 @@ mod tests {
 
     #[test]
     fn http_idle_timeout_parses_like_the_reference_and_the_provider_timeout_wins() {
-        let secs = |s: &Settings| s.http_idle_timeout().map(|d| d.as_millis());
+        let secs = |s: &Settings| s.http_idle_timeout().unwrap().map(|d| d.as_millis());
         assert_eq!(secs(&load_global("{}")), Some(300_000));
         assert_eq!(secs(&load_global(r#"{"httpIdleTimeoutMs": 0}"#)), None);
         assert_eq!(
@@ -854,17 +864,79 @@ mod tests {
             Some(1500)
         );
         assert_eq!(
-            secs(&load_global(r#"{"httpIdleTimeoutMs": -5}"#)),
-            Some(300_000)
+            load_global(r#"{"httpIdleTimeoutMs": -5}"#).http_idle_timeout(),
+            Err("Invalid httpIdleTimeoutMs setting: -5".into())
         );
         let s =
             load_global(r#"{"httpIdleTimeoutMs": 0, "retry": {"provider": {"timeoutMs": 7000}}}"#);
-        assert_eq!(s.idle_timeout(), Some(std::time::Duration::from_secs(7)));
-        assert_eq!(s.http_idle_timeout(), None);
+        assert_eq!(
+            s.idle_timeout().unwrap(),
+            Some(std::time::Duration::from_secs(7))
+        );
+        assert_eq!(s.http_idle_timeout().unwrap(), None);
         let s = load_global(r#"{"httpIdleTimeoutMs": 60000}"#);
-        assert_eq!(s.idle_timeout(), Some(std::time::Duration::from_secs(60)));
+        assert_eq!(
+            s.idle_timeout().unwrap(),
+            Some(std::time::Duration::from_secs(60))
+        );
         let s = load_global(r#"{"httpIdleTimeoutMs": "disabled"}"#);
-        assert_eq!(s.idle_timeout(), None);
+        assert_eq!(s.idle_timeout().unwrap(), None);
+    }
+
+    #[test]
+    fn timeout_settings_match_executed_reference_getters_and_global_dispatcher_policy() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../fixtures/native-timeout-settings/reference.json"
+        ))
+        .unwrap();
+        let compare = |result: Result<Option<std::time::Duration>, String>,
+                       expected: &Value,
+                       name: &Value| {
+            match result {
+                Ok(duration) => assert_eq!(
+                    duration.map_or(0, |d| d.as_millis() as u64),
+                    expected["ms"].as_u64().unwrap(),
+                    "{name}"
+                ),
+                Err(error) => assert_eq!(error, expected["error"].as_str().unwrap(), "{name}"),
+            }
+        };
+        for case in fixture["cases"].as_array().unwrap() {
+            let dir = tempfile::tempdir().unwrap();
+            let cwd = dir.path().join("project");
+            std::fs::create_dir_all(cwd.join(".pi")).unwrap();
+            std::fs::write(dir.path().join("settings.json"), case["global"].to_string()).unwrap();
+            std::fs::write(cwd.join(".pi/settings.json"), case["project"].to_string()).unwrap();
+            let (settings, warnings) = Settings::load(dir.path(), Some(&cwd));
+            assert!(warnings.is_empty(), "{}: {warnings:?}", case["name"]);
+            assert_eq!(
+                settings.default_provider.as_deref(),
+                case["defaultProvider"].as_str()
+            );
+            compare(
+                settings.http_idle_timeout(),
+                &case["effective"],
+                &case["name"],
+            );
+            let global = Settings::load(dir.path(), None).0;
+            compare(
+                global.http_idle_timeout(),
+                &case["dispatcher"],
+                &case["name"],
+            );
+            let net = crate::provider::http::NetSettings::new(&Env::default(), &global);
+            let dispatch = net.validation_error.map_or(Ok(net.idle), Err);
+            compare(dispatch, &case["dispatcher"], &case["name"]);
+        }
+        let settings: Settings = serde_json::from_value(
+            serde_json::json!({"httpIdleTimeoutMs":null,"retry":{"provider":{"timeoutMs":7000}}}),
+        )
+        .unwrap();
+        assert!(settings.http_idle_timeout().is_err());
+        assert_eq!(
+            settings.idle_timeout().unwrap(),
+            Some(std::time::Duration::from_secs(7))
+        );
     }
 
     #[test]

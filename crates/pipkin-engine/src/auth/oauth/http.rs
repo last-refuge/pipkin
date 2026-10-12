@@ -129,4 +129,55 @@ mod tests {
         }
         assert!(target.requests().is_empty());
     }
+    #[tokio::test]
+    async fn invalid_http_timeout_blocks_login_and_shared_requests_until_rebuilt() {
+        use crate::{
+            config::{Env, Settings},
+            provider::{
+                http,
+                mock::{MockResponse, MockServer},
+            },
+        };
+        let server =
+            MockServer::start(|_, _| MockResponse::json(200, &serde_json::json!({"ok":true})))
+                .await;
+        let settings: Settings =
+            serde_json::from_value(serde_json::json!({"httpIdleTimeoutMs":null})).unwrap();
+        let net = http::NetSettings::new(&Env::default(), &settings);
+        let client = http::client_with(&net);
+        let error = client.get(&server.url).send().await.unwrap_err();
+        assert!(error.is_builder());
+        let expected = "Invalid httpIdleTimeoutMs setting: null";
+        assert_eq!(http::transport_error(&error), expected);
+        assert_eq!(
+            super::send(
+                super::post_form(&client, &server.url, &[("code", "synthetic")]),
+                None
+            )
+            .await
+            .err()
+            .unwrap(),
+            expected
+        );
+        assert!(server.requests().is_empty());
+        let repaired = http::client_with(&http::NetSettings::new(
+            &Env::default(),
+            &Settings::default(),
+        ));
+        assert!(
+            super::send(
+                super::post_form(&repaired, &server.url, &[("code", "synthetic")]),
+                None
+            )
+            .await
+            .unwrap()
+            .ok()
+        );
+        assert_eq!(server.requests().len(), 1);
+        assert_eq!(
+            http::transport_error(&client.get(&server.url).send().await.unwrap_err()),
+            expected,
+            "an old snapshot stays invalid"
+        );
+    }
 }

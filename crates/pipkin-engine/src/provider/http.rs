@@ -36,6 +36,8 @@ pub struct NetSettings {
     /// Reference `httpIdleTimeoutMs` as the dispatcher's header/body idle timeout: no bytes
     /// for this long on a connection fails the read. `None` disables it.
     pub idle: Option<Duration>,
+    /// A supplied invalid network setting refuses requests until the next valid snapshot.
+    pub validation_error: Option<String>,
     /// Local test CAs, never an insecure TLS mode.
     #[cfg(test)]
     pub test_roots: Vec<Vec<u8>>,
@@ -45,10 +47,15 @@ impl NetSettings {
     /// From the engine environment and the global settings (`httpProxy` is global-only in the
     /// reference, `main.ts:594,871`).
     pub fn new(env: &crate::config::Env, global: &crate::config::Settings) -> NetSettings {
+        let (idle, validation_error) = match global.http_idle_timeout() {
+            Ok(idle) => (idle, None),
+            Err(error) => (None, Some(error)),
+        };
         NetSettings {
             proxy: ProxyConfig::from_env(env, global.http_proxy.as_deref()),
             extra_roots: super::trust::ExtraRoots::from_env(env),
-            idle: global.http_idle_timeout(),
+            idle,
+            validation_error,
             #[cfg(test)]
             test_roots: vec![],
         }
@@ -80,16 +87,20 @@ fn builder(net: &NetSettings) -> reqwest::ClientBuilder {
         .connect_timeout(Duration::from_secs(30))
         .pool_idle_timeout(Duration::from_secs(90))
         .no_proxy();
-    if !net.proxy.is_empty() {
+    if net.validation_error.is_some() || !net.proxy.is_empty() {
         for warning in net.proxy.warnings() {
             log::warn!("proxy configuration: {warning}");
         }
         let validation = net.proxy.clone();
+        let error = net.validation_error.clone();
         builder = builder.request_validator(move |url| {
+            if let Some(error) = &error {
+                return Err(NetworkConfigurationError(error.clone()));
+            }
             validation
                 .proxy_for(url)
                 .map(|_| ())
-                .map_err(ProxyConfigurationError)
+                .map_err(NetworkConfigurationError)
         });
         let proxy = net.proxy.clone();
         // The same immutable policy rejects errors before dispatch, including redirects.
@@ -119,15 +130,15 @@ pub fn format_error(status: Option<StatusCode>, body: &str, message: &str) -> St
 }
 
 #[derive(Debug)]
-struct ProxyConfigurationError(String);
+struct NetworkConfigurationError(String);
 
-impl std::fmt::Display for ProxyConfigurationError {
+impl std::fmt::Display for NetworkConfigurationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
 }
 
-impl std::error::Error for ProxyConfigurationError {}
+impl std::error::Error for NetworkConfigurationError {}
 
 /// A transport error's text, including its cause chain (so "timed out", "connection refused"
 /// and similar reach the retry classifier).
@@ -135,7 +146,7 @@ pub fn transport_error(e: &reqwest::Error) -> String {
     let mut text = e.to_string();
     let mut source = std::error::Error::source(e);
     while let Some(s) = source {
-        if let Some(proxy) = s.downcast_ref::<ProxyConfigurationError>() {
+        if let Some(proxy) = s.downcast_ref::<NetworkConfigurationError>() {
             return proxy.to_string();
         }
         text.push_str(": ");
@@ -312,6 +323,7 @@ mod tests {
         NetSettings {
             proxy: ProxyConfig::from_env(&env, None),
             idle,
+            validation_error: None,
             test_roots: vec![],
             extra_roots: Default::default(),
         }

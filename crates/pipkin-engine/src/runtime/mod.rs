@@ -87,6 +87,14 @@ impl Shared {
         net.clone()
     }
 
+    /// Refresh file-backed network configuration off the async worker before a new operation.
+    async fn refresh_net_async(self: &Arc<Self>) -> Result<NetSettings, ProtoError> {
+        let shared = self.clone();
+        tokio::task::spawn_blocking(move || shared.refresh_net_snapshot().0)
+            .await
+            .map_err(|e| ProtoError::new(ErrorCode::Internal, e.to_string()))
+    }
+
     /// The proxy configuration currently in effect.
     pub fn proxy_config(&self) -> crate::provider::proxy::ProxyConfig {
         self.net
@@ -691,13 +699,7 @@ async fn dispatch_with_cancel(
             )))
         }
         Call::RefreshModels => {
-            let refresh = shared.clone();
-            tokio::task::spawn_blocking(move || {
-                // Network settings (proxy, idle timeout) are re-read too.
-                refresh.refresh_net();
-            })
-            .await
-            .map_err(|e| ProtoError::new(ErrorCode::Internal, e.to_string()))?;
+            shared.refresh_net_async().await?;
             shared.auth.refresh_models(cancel).await;
             shared.publish(Event::ModelsChanged);
             Ok(Reply::Ok)
@@ -770,10 +772,16 @@ async fn dispatch_with_cancel(
         }
         Call::AuthState => Ok(Reply::Auth(shared.auth.snapshot(client))),
         Call::AuthStart { provider } => {
+            if let Some(error) = shared.refresh_net_async().await?.validation_error {
+                return Err(ProtoError::new(ErrorCode::Invalid, error));
+            }
             shared.auth.start(client, &provider).await?;
             Ok(Reply::Auth(shared.auth.snapshot(client)))
         }
         Call::AuthReuse { provider } => {
+            if let Some(error) = shared.refresh_net_async().await?.validation_error {
+                return Err(ProtoError::new(ErrorCode::Invalid, error));
+            }
             shared.auth.reuse(client, &provider).await?;
             Ok(Reply::Auth(shared.auth.snapshot(client)))
         }

@@ -1420,3 +1420,39 @@ async fn an_unsupported_proxy_fails_the_websocket_request_with_the_reference_mes
         )
     );
 }
+
+#[tokio::test]
+async fn invalid_http_timeout_refuses_websocket_before_connect_or_fallback() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let req = base_request(
+        &format!("http://{}", listener.local_addr().unwrap()),
+        vec![],
+    );
+    let settings: crate::config::Settings =
+        serde_json::from_value(json!({"httpIdleTimeoutMs":null})).unwrap();
+    let net = http::NetSettings::new(&crate::config::Env::default(), &settings);
+    let http = http::client_with(&net);
+    let adapter = OpenAICodexResponses::default();
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let exchange = adapter
+        .stream(StreamCtx {
+            net: Some(&net),
+            req: &req,
+            http: &http,
+            events: Some(tx.into()),
+            cancel: CancellationToken::new(),
+        })
+        .await;
+    assert_eq!(
+        stop_and_error(&exchange),
+        (
+            StopReason::Error,
+            Some("Invalid httpIdleTimeoutMs setting: null".into())
+        )
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), listener.accept())
+            .await
+            .is_err()
+    );
+}

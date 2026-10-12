@@ -11,7 +11,31 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — compaction validation and project null replacement
+## Current follow-up — HTTP timeout validation and live sign-in repair
+
+2026-10-12, following **`2eec3e1`**. Supplied invalid HTTP timeouts now report the
+reference error instead of silently falling back to 300 seconds. Explicit null remains
+invalid; numeric strings follow JavaScript Number syntax and whitespace. The shared global
+network snapshot refuses affected HTTP/OAuth/WebSocket requests before network dispatch,
+and generation/compaction refuse invalid global settings before credential resolution.
+New sign-in attempts refresh network settings off the async workers. Correcting the file
+allows a new attempt without restarting; in-flight operations retain their captured snapshot.
+
+**31 executed reference cases** compare exact values/errors and global/project precedence.
+Five new tests cover parser behavior, live runtime and sign-in repair, shared HTTP/OAuth
+and WebSocket refusal. Final focused run: **26 passed**. Required workspace checks:
+**1631 passed, 0 failed, 53 ignored**, clean Clippy (all targets) and formatting.
+See [timeout evidence](pipkin-rust-engine-evidence/http-timeout-validation.md) for logs,
+the initial test compile correction, source provenance and explicit qualification bounds.
+Native deliberately remains available for repair rather than failing startup.
+
+Protocol 11 / schema 9 unchanged. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**. Native remains opt-in. Other settings/model-scope gaps,
+per-adapter timeout/credential retry comparisons, trust scope, rollback history labels,
+sustained workloads and release/CI/platform qualification remain open. Owner changes preserved.
+
+## Previous follow-up — compaction validation and project null replacement
 
 2026-10-12, following **`cf5043a`**. Malformed compaction token settings no longer discard
 the whole native settings file. Ordinary settings and the selected model's override are

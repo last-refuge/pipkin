@@ -62,7 +62,7 @@ pub fn js_json_number(value: &serde_json::Number) -> String {
     js_number(value.as_f64().unwrap_or(f64::NAN))
 }
 
-fn is_js_whitespace(c: char) -> bool {
+pub(crate) fn is_js_whitespace(c: char) -> bool {
     matches!(
         c,
         '\u{9}' | '\u{a}' | '\u{b}' | '\u{c}' | '\u{d}' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'

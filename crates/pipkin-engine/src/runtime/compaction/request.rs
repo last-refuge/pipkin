@@ -28,6 +28,9 @@ impl Shared {
             .get(&model.api)
             .ok_or_else(|| format!("No adapter for API {}", model.api))?;
         let (net, http) = self.refresh_net_snapshot();
+        if let Some(error) = &net.validation_error {
+            return Err(error.clone());
+        }
         let proxy = net.proxy.clone();
         super::super::run::unusable_proxy(&proxy, &model.base_url)?;
         let auth = self
