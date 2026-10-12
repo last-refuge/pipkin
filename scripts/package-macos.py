@@ -80,6 +80,7 @@ def main():
     shutil.copytree(ROOT / 'assets/fonts', resources / 'font-notices', ignore=shutil.ignore_patterns('*.ttf', '*.otf'))
     for source in ['LICENSE', 'SECURITY.md', 'assets/PROVENANCE.md']:
         shutil.copy2(ROOT / source, resources / Path(source).name)
+    shutil.copy2(ROOT / 'packaging/upstream-notices/anthropic-sdk/LICENSE', resources / 'anthropic-sdk-MIT-LICENSE')
     shutil.copy2(ROOT / 'docs/macos-first-pass.md', out / 'README.md')
     shutil.copy2(ROOT / 'docs/macos-first-pass.md', resources / 'README.md')
     with (app / 'Info.plist').open('wb') as stream:

@@ -11,7 +11,35 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — prompt, WebSocket connection and launcher checks
+## Current follow-up — Anthropic workload identity federation
+
+Following **`d211c03`**, the native Anthropic adapter now exchanges projected identity tokens,
+caches and refreshes the resulting bearer credentials, invalidates rejected tokens, and
+preserves explicit credential precedence. Nine tests cover local exchange, concurrency,
+cancellation, rotation, error handling, native engine restart and comparisons against the
+executed pinned SDK. See [federation evidence](pipkin-rust-engine-evidence/anthropic-federation.md).
+This is separate from the existing Claude subscription integration.
+
+Required checks: **1543 passed, 0 failed, 53 ignored**; Clippy, formatting and diff checks clean.
+Logs: `/tmp/pipkin-federation-workspace.log`, `/tmp/pipkin-federation-clippy.log`,
+`/tmp/pipkin-federation-fmt.log`. Protocol 11 / schema 9 unchanged.
+
+A fresh Linux native-only package built and passed installation, worker handshake/session
+listing, diagnostics, notice retention and uninstall/data-preservation checks with a bare
+PATH and failing Node/npm/Pi shims. This is a dirty candidate based on `d211c03`, not a clean
+release qualification or installed coding-turn test. Package SHA-256:
+`c4396027491f5cd6ee84eb64f7b5878516fd77c8ff9412af460e20dfc3a9a0f6`.
+Logs: `/tmp/pipkin-federation-package-build.log`, `/tmp/pipkin-federation-package-checks.log`.
+The probe exposed stale diagnostic text claiming native Claude subscription is unavailable
+(`crates/pipkin-app/src/install.rs`); correcting that remains follow-up work.
+
+Inventory counts and qualification status are unchanged: **504 rows, 488 non-OS;
+NC 412, NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed,
+0 unverified, 53 not started; 0 fully qualified**. The federation row previously measured
+only refusal; it now has working implementation evidence. Remaining partial-row gaps and
+sustained/installed/migration/platform qualification still block default cutover and Pi removal.
+
+## Previous follow-up — prompt, WebSocket connection and launcher checks
 
 Following **`af059d5`**, five new tests close the three remaining explicitly unverified row
 claims. A real stalled WebSocket handshake exercises configured timeout, SSE fallback and

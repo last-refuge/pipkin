@@ -47,15 +47,25 @@ pub fn idle_timeout(req: &ProviderRequest, when_zero: Duration) -> Duration {
 pub async fn post_json(
     ctx: &StreamCtx<'_>,
     url: &str,
+    headers: HeaderMap,
+    body: &Value,
+) -> Result<reqwest::Response, String> {
+    post_json_observing(ctx, url, headers, body, |_| {}).await
+}
+
+pub(crate) async fn post_json_observing(
+    ctx: &StreamCtx<'_>,
+    url: &str,
     mut headers: HeaderMap,
     body: &Value,
+    observe: impl Fn(reqwest::StatusCode),
 ) -> Result<reqwest::Response, String> {
     if !headers.contains_key(CONTENT_TYPE) {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     }
     let bytes = serde_json::to_vec(body).map_err(|e| e.to_string())?;
     let (retries, max_delay) = retry_policy(ctx.req);
-    let send = http::send(
+    let send = http::send_observing(
         || {
             ctx.http
                 .post(url)
@@ -65,6 +75,7 @@ pub async fn post_json(
         retries,
         max_delay,
         &ctx.cancel,
+        observe,
     );
     if ctx.req.timeout.is_zero() {
         return send.await;

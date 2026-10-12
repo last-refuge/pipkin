@@ -52,6 +52,7 @@ for size in 128 256 512; do
 done
 install -Dm644 LICENSE "$stage/usr/share/licenses/pipkin/LICENSE"
 install -Dm644 packaging/upstream-notices/pi/LICENSE "$stage/usr/share/licenses/pipkin/pi-MIT-LICENSE"
+install -Dm644 packaging/upstream-notices/anthropic-sdk/LICENSE "$stage/usr/share/licenses/pipkin/anthropic-sdk-MIT-LICENSE"
 install -Dm644 assets/icons/LICENSE "$stage/usr/share/licenses/pipkin/icons-LICENSE"
 for f in Poppins-OFL.txt Lilex-OFL.txt IBMPlexSans-LICENSE.txt; do
   install -Dm644 "assets/fonts/$f" "$stage/usr/share/licenses/pipkin/$f"

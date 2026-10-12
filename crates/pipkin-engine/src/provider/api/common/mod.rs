@@ -46,6 +46,7 @@ use serde_json::Value;
 use crate::provider::ProviderRequest;
 
 pub use self::headers::{Headers, build_headers, has_configured_header, has_header, header_map};
+pub(crate) use self::http::post_json_observing;
 pub use self::http::{
     NO_TIMEOUT, idle_timeout, pi_user_agent, post_json, retry_policy, truncate_error_text,
 };

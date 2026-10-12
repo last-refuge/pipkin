@@ -28,7 +28,8 @@ use super::common::schema::{resolve_strict, tool_parameters};
 use super::common::{
     Headers, adjust_max_tokens_for_thinking, base_max_tokens, clamp_max_tokens_to_context,
     clamp_thinking_budget_to_answer_room, has_configured_header, idle_timeout, opt, opt_str,
-    parse_json_with_repair, post_json, reasoning_effort, sanitize_tool_call_id, transform_messages,
+    parse_json_with_repair, post_json_observing, reasoning_effort, sanitize_tool_call_id,
+    transform_messages,
 };
 use crate::provider::http::{self, ReadError};
 use crate::provider::model::ModelCost;
@@ -114,10 +115,16 @@ const MESSAGE_EVENTS: &[&str] = &[
     "content_block_stop",
 ];
 
-pub struct AnthropicMessages;
+#[path = "anthropic_federation.rs"]
+mod federation;
+
+#[derive(Default)]
+pub struct AnthropicMessages {
+    federation: federation::Cache,
+}
 
 pub fn adapter() -> Arc<dyn ApiAdapter> {
-    Arc::new(AnthropicMessages)
+    Arc::new(AnthropicMessages::default())
 }
 
 impl ApiAdapter for AnthropicMessages {
@@ -126,7 +133,7 @@ impl ApiAdapter for AnthropicMessages {
     }
 
     fn stream<'a>(&'a self, ctx: StreamCtx<'a>) -> BoxFuture<'a, Message> {
-        Box::pin(run(ctx))
+        Box::pin(run(&self.federation, ctx))
     }
 }
 
@@ -182,6 +189,7 @@ enum Auth {
     ApiKey(String),
     Bearer(String),
     Subscription(String),
+    Federation,
     /// Configured headers carry auth.
     Headers,
 }
@@ -209,13 +217,7 @@ fn resolve_auth(req: &ProviderRequest) -> Result<Auth, String> {
         Credential::ApiKey(k) if !k.is_empty() => Ok(key(k)),
         Credential::Bearer(t) if !t.is_empty() => Ok(Auth::Bearer(t.clone())),
         _ if has_request_auth_header(req) => Ok(Auth::Headers),
-        _ if provider == "anthropic"
-            && ["ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID", "ANTHROPIC_IDENTITY_TOKEN_FILE"]
-                .iter()
-                .all(|v| req.env_var(v).is_some()) =>
-        {
-            Err("Anthropic workload identity federation (ANTHROPIC_FEDERATION_RULE_ID) is not implemented in this engine".into())
-        }
+        _ if federation::Config::from_request(req).is_some() => Ok(Auth::Federation),
         _ => Err(format!("No API key for provider: {provider}")),
     }
 }
@@ -838,7 +840,7 @@ fn build_headers(req: &ProviderRequest, c: &Compat, auth: &Auth, betas: &[String
             h.set("user-agent", format!("claude-cli/{CLAUDE_CODE_VERSION}"));
             h.set("x-app", "cli");
         }
-        Auth::Headers => {}
+        Auth::Headers | Auth::Federation => {}
     }
     if req.model.provider == "github-copilot" {
         h.merge(&req.model.headers);
@@ -1170,28 +1172,59 @@ impl AnthropicStream {
     }
 }
 
-async fn run(ctx: StreamCtx<'_>) -> Message {
+async fn run(cache: &federation::Cache, ctx: StreamCtx<'_>) -> Message {
     let req = ctx.req;
     let mut e = ctx.emitter();
     let c = compat(&req.model);
-    let auth = match resolve_auth(req) {
+    let mut auth = match resolve_auth(req) {
         Ok(a) => a,
         Err(err) => return ctx.failed(e, err),
+    };
+    let federation = if auth == Auth::Federation {
+        match cache
+            .get(
+                federation::Config::from_request(req).expect("resolved federation"),
+                &ctx,
+            )
+            .await
+        {
+            Ok(token) => {
+                auth = Auth::Bearer(token.value.clone());
+                Some(token)
+            }
+            Err(error) => return ctx.failed(e, error),
+        }
+    } else {
+        None
     };
     let thinking = plan_thinking(req, &c);
     if c.supports_mid_convo_effort {
         let level = thinking.effort.clone().unwrap_or_else(|| "high".into());
         e.message_extra("providerThinkingLevel", Value::String(level));
     }
-    let (body, betas) = match build_params(req, &c, &thinking) {
+    let (body, mut betas) = match build_params(req, &c, &thinking) {
         Ok(p) => p,
         Err(err) => return ctx.failed(e, err),
     };
+    if federation.is_some()
+        && !betas.iter().any(|b| {
+            b.split(',')
+                .any(|part| part.trim() == federation::OAUTH_BETA)
+        })
+    {
+        betas.push(federation::OAUTH_BETA.into());
+    }
     let headers = match build_headers(req, &c, &auth, &betas).to_header_map() {
         Ok(h) => h,
         Err(err) => return ctx.failed(e, err),
     };
-    let resp = match post_json(&ctx, &request_url(req), headers, &body).await {
+    let resp = match post_json_observing(&ctx, &request_url(req), headers, &body, |status| {
+        if let Some(token) = &federation {
+            token.observe(status);
+        }
+    })
+    .await
+    {
         Ok(r) => r,
         Err(err) => return ctx.failed(e, err),
     };
@@ -1272,7 +1305,7 @@ mod tests {
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 
-    fn claude(provider: &str, compat: Value) -> Model {
+    pub(super) fn claude(provider: &str, compat: Value) -> Model {
         model(json!({
             "id": "claude-test", "name": "Claude Test", "api": "anthropic-messages",
             "provider": provider, "baseUrl": "https://api.anthropic.com", "reasoning": true,
@@ -1380,7 +1413,7 @@ mod tests {
         r
     }
 
-    fn simple_reply(text: &str) -> String {
+    pub(super) fn simple_reply(text: &str) -> String {
         sse(&[
             json!({"type": "message_start", "message": {"id": "msg_x", "model": "claude-test",
                 "usage": {"input_tokens": 5, "output_tokens": 1}}}),
@@ -1392,7 +1425,7 @@ mod tests {
         ])
     }
 
-    fn error_text(m: &Message) -> String {
+    pub(super) fn error_text(m: &Message) -> String {
         match m {
             Message::Assistant {
                 stop_reason: StopReason::Error,

@@ -1,0 +1,90 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sdkVersion": "0.129.0",
+  "sdkIntegrity": "sha512-MH7LB20kNpGLUpPTe2OG5XvL/KhX8HUO9XyBaFjgFk6TLS4Xjt0VPIuMKywe7POKKPslX+QxSlVok9e+8kG5Nw==",
+  "sources": {
+    "src/lib/credentials/oidc-federation.ts": "287232a2cc19ff9ea7c290c4ea61da37f343b4f566cdc143a6cedd92d06be7fa",
+    "lib/credentials/oidc-federation.mjs": "076aedf8993c689ea2898b75f15518b6ff2ee79012420dc6281b45b0cf114146",
+    "src/lib/credentials/identity-token.ts": "1a8638b780ea4d2c69fb1318aae4d614aca78d76e7076b192dbc2785c46c5728",
+    "lib/credentials/identity-token.mjs": "d1d433dd7ca51d7b9e423e41debf8a14da1200f82bb302ec5b53f9ec965427b8",
+    "src/lib/credentials/token-cache.ts": "2e985548d4484df50f1bc4cbb1976ab668bdc974ff4b1a75b8bb1c0cbbf6574a",
+    "lib/credentials/token-cache.mjs": "0fc4caef05b3e656188c2991dde2de560ababdd868d91c75e8c2364d5176191c",
+    "src/lib/credentials/types.ts": "3c87338ff9f83cb56413a7fb125db5a2dd8e1b95c05cf92f82f33d6baf3ca277",
+    "lib/credentials/types.mjs": "611b406723f6c5965b1ec832c7aff49850cac8f6b3bf0c0eb2b8711f52772394"
+  },
+  "scope": "Original SDK federation provider, file source and TokenCache; fake fetch and clock, no live credentials or provider calls",
+  "wire": [
+    {
+      "url": "http://127.0.0.1:1234/v1/oauth/token",
+      "method": "POST",
+      "headers": {
+        "Content-Type": "application/json",
+        "anthropic-beta": "oauth-2025-04-20,oidc-federation-2026-04-01",
+        "User-Agent": "anthropic-sdk-typescript/0.129.0 oidcFederationProvider"
+      },
+      "body": {
+        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion": "assertion-one",
+        "federation_rule_id": "rule",
+        "organization_id": "org"
+      },
+      "token": {
+        "token": "captured-token",
+        "expiresAt": 1700003600
+      }
+    },
+    {
+      "url": "http://127.0.0.1:1234/v1/oauth/token",
+      "method": "POST",
+      "headers": {
+        "Content-Type": "application/json",
+        "anthropic-beta": "oauth-2025-04-20,oidc-federation-2026-04-01",
+        "User-Agent": "anthropic-sdk-typescript/0.129.0 oidcFederationProvider"
+      },
+      "body": {
+        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion": "assertion-one",
+        "federation_rule_id": "rule",
+        "organization_id": "org",
+        "service_account_id": "service",
+        "workspace_id": "workspace-a"
+      },
+      "token": {
+        "token": "captured-token",
+        "expiresAt": 1700003600
+      }
+    }
+  ],
+  "cacheCases": [
+    {
+      "label": "initial",
+      "token": "token-1",
+      "calls": 1
+    },
+    {
+      "label": "cached",
+      "token": "token-1",
+      "calls": 1
+    },
+    {
+      "label": "advisory",
+      "token": "token-1",
+      "calls": 2
+    },
+    {
+      "label": "after-advisory",
+      "token": "token-2",
+      "calls": 2
+    },
+    {
+      "label": "invalidated",
+      "token": "token-3",
+      "calls": 3
+    },
+    {
+      "label": "mandatory",
+      "token": "token-4",
+      "calls": 4
+    }
+  ]
+}

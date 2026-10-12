@@ -904,3 +904,78 @@ fn radius_discovery_supports_a_real_tool_turn_and_cached_resume_without_catalog_
     assert!(scripted.requests().is_empty());
     reopened.handle.shutdown(Duration::from_secs(1));
 }
+
+#[test]
+fn federation_environment_supports_native_turns_and_reexchange_after_engine_restart() {
+    let http_runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = http_runtime.block_on(MockServer::start(|r, _| {
+        if r.path == "/v1/oauth/token" {
+            MockResponse::json(200, &json!({"access_token":r.json()["assertion"], "expires_in":3600, "token_type":"Bearer"}))
+        } else {
+            MockResponse::sse(vec![
+                json!({"type":"message_start","message":{"id":"m","model":"scripted","usage":{"input_tokens":1,"output_tokens":0}}}),
+                json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+                json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"federated answer"}}),
+                json!({"type":"content_block_stop","index":0}),
+                json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}),
+                json!({"type":"message_stop"})
+            ].into_iter().map(|event| format!("event: {}\ndata: {event}\n\n", event["type"].as_str().unwrap())).collect())
+        }
+    }));
+    let fx = Fixture::new();
+    let mut config = fx.config();
+    let identity = fx.dir.path().join("identity-token");
+    std::fs::write(&identity, "initial-assertion").unwrap();
+    let mut model = crate::provider::scripted::model();
+    model.provider = "anthropic".into();
+    model.api = "anthropic-messages".into();
+    model.base_url = server.url.clone();
+    config.default_model = Some(model.key());
+    config.extra_models.push(model);
+    config.env = Env::isolated(
+        [
+            ("ANTHROPIC_FEDERATION_RULE_ID".into(), "rule".into()),
+            ("ANTHROPIC_ORGANIZATION_ID".into(), "org".into()),
+            (
+                "ANTHROPIC_IDENTITY_TOKEN_FILE".into(),
+                identity.display().to_string(),
+            ),
+        ]
+        .into(),
+    );
+    let scripted = Scripted::echo("must not be used");
+    let mut e = fx.start_config(&scripted, config.clone());
+    let session = e.create(&fx.project, "federation");
+    for key in ["first", "second"] {
+        e.prompt(&session, key, "hello").unwrap();
+        assert_eq!(e.settled(key), RunOutcome::Completed);
+    }
+    assert_eq!(
+        server
+            .requests()
+            .iter()
+            .filter(|r| r.path == "/v1/oauth/token")
+            .count(),
+        1
+    );
+    e.handle.shutdown(Duration::from_secs(1));
+    drop(e);
+    std::fs::write(&identity, "rotated-after-restart").unwrap();
+    let mut e = fx.start_config(&scripted, config);
+    e.prompt(&session, "reopened", "continue").unwrap();
+    assert_eq!(e.settled("reopened"), RunOutcome::Completed);
+    let requests = server.requests();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r.path == "/v1/oauth/token")
+            .count(),
+        2
+    );
+    assert_eq!(
+        requests.last().unwrap().header("authorization"),
+        Some("Bearer rotated-after-restart")
+    );
+    assert!(scripted.requests().is_empty());
+    e.handle.shutdown(Duration::from_secs(1));
+}

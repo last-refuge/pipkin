@@ -58,6 +58,15 @@ overrides still apply. A refresh failure keeps the usable catalog and reports a 
 this does not disable ordinary coding requests to a selected provider. Builds and startup do not
 require a live catalog service. Radius continues using its credential-dependent gateway catalog.
 
+Anthropic workload identity federation uses `ANTHROPIC_FEDERATION_RULE_ID`,
+`ANTHROPIC_ORGANIZATION_ID`, and `ANTHROPIC_IDENTITY_TOKEN_FILE`. Optional
+`ANTHROPIC_SERVICE_ACCOUNT_ID` and `ANTHROPIC_WORKSPACE_ID` select the service account and
+workspace. The engine rereads the identity-token file when exchanging an expiring token;
+projected-token file rotation is supported. Configure an HTTPS Anthropic endpoint (loopback
+HTTP is allowed for local development). Explicit API keys, bearer tokens, subscription
+credentials and configured auth headers keep their existing precedence. Federation tokens
+are cached in memory, independently of Claude subscription sign-in.
+
 Conversation import preserves Pi's plugin selections from `$PI_SERVER_DIR`, or `~/.pi/server` by default.
 For a custom coordination directory, launch native Pipkin with `PI_SERVER_DIR=/absolute/path`; protocol clients
 can supply `serverDir` on both import discovery and import execution. The agent directory alone does not contain

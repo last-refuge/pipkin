@@ -36,6 +36,8 @@ check "installed help is the current source documentation" \
   "python3 '$here/scripts/test-package-docs.py' '$root/pkg' --native >/dev/null"
 check "native Pi source port includes the exact upstream MIT notice" \
   "cmp '$here/packaging/upstream-notices/pi/LICENSE' '$root/pkg/usr/share/licenses/pipkin/pi-MIT-LICENSE'"
+check "native federation source port includes the exact Anthropic SDK notice" \
+  "cmp '$here/packaging/upstream-notices/anthropic-sdk/LICENSE' '$root/pkg/usr/share/licenses/pipkin/anthropic-sdk-MIT-LICENSE'"
 check "license inventory lists Rust packages only" \
   "python3 -I -c 'import json,sys; r=json.load(open(sys.argv[1])); e={p[\"ecosystem\"] for p in r[\"packages\"]}; assert e=={\"rust\"}, e' '$root/pkg/usr/share/doc/pipkin/third-party/inventory.json'"
 check "runtime inventory names the built-in engine and no Node" \

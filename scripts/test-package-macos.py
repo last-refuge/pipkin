@@ -25,6 +25,7 @@ with tempfile.TemporaryDirectory(prefix='pipkin-mac-bundle-test-') as temporary:
     files = {'Cargo.toml': '[workspace.package]\nversion = "0.0.1"\n',
              'target/release/pipkin': 'fixture binary', 'LICENSE': 'MIT fixture',
              'SECURITY.md': 'security fixture', 'assets/PROVENANCE.md': 'asset fixture',
+             'packaging/upstream-notices/anthropic-sdk/LICENSE': 'Anthropic SDK MIT fixture',
              'packaging/pipkin.icns': 'fixture app icon',
              'packaging/dmg-background.tiff': 'fixture instructional background',
              'packaging/dmg-layout.json': json.dumps({'canvas': [800, 520], 'windowOrigin': [100, 100],
@@ -136,6 +137,7 @@ with tempfile.TemporaryDirectory(prefix='pipkin-mac-bundle-test-') as temporary:
             assert (contents / 'Resources/pipkin.icns').read_text() == 'fixture app icon'
             assert (contents / 'Resources/third-party/sources/mpl/src/lib.rs').read_text() == 'exact source'
             assert (contents / 'Resources/font-notices/example-OFL.txt').exists()
+            assert (contents / 'Resources/anthropic-sdk-MIT-LICENSE').read_text() == 'Anthropic SDK MIT fixture'
             embedded = json.loads((contents / 'Resources/build-info.json').read_text())
             assert 'binarySha256' not in embedded['app']  # No self-referential signature hash.
             assert embedded['app']['preBundleSigningBinarySha256'] == module.sha256(root / 'target/release/pipkin')

@@ -138,12 +138,26 @@ pub async fn send(
     max_delay: Duration,
     cancel: &CancellationToken,
 ) -> Result<Response, String> {
+    send_observing(build, retries, max_delay, cancel, |_| {}).await
+}
+
+/// Observe response status before retries or error-body consumption (credential invalidation).
+pub(crate) async fn send_observing(
+    build: impl Fn() -> RequestBuilder,
+    retries: u32,
+    max_delay: Duration,
+    cancel: &CancellationToken,
+    observe: impl Fn(StatusCode),
+) -> Result<Response, String> {
     let mut attempt = 0u32;
     loop {
         let result = tokio::select! {
             _ = cancel.cancelled() => return Err("Request aborted".into()),
             r = build().send() => r,
         };
+        if let Ok(response) = &result {
+            observe(response.status());
+        }
         let (retry, error, wait) = match result {
             Ok(resp) if resp.status().is_success() => return Ok(resp),
             Ok(resp) => {

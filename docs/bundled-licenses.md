@@ -82,6 +82,13 @@ The notice is retained in `packaging/upstream-notices/pi/LICENSE`; native packag
 as `usr/share/licenses/pipkin/pi-MIT-LICENSE`. This source attribution remains necessary even
 though the native package contains no Pi or Node runtime.
 
+Anthropic workload identity federation also ports the token-exchange and cache contract from
+`@anthropic-ai/sdk` **0.129.0**, the version pinned by that Pi revision (copyright 2023
+Anthropic, PBC.; MIT). Its exact package notice is retained at
+`packaging/upstream-notices/anthropic-sdk/LICENSE`. Linux packages install it as
+`usr/share/licenses/pipkin/anthropic-sdk-MIT-LICENSE`; the experimental macOS bundle includes
+`Contents/Resources/anthropic-sdk-MIT-LICENSE`. No JavaScript SDK runtime is added to native.
+
 ## Native runtime inspection
 
 Packages also carry `usr/share/doc/pipkin/runtime-inventory.json`, generated using **readelf without executing any
