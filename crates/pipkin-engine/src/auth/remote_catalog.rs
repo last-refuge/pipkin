@@ -330,6 +330,12 @@ async fn fetch(
                 response = Some(r);
                 break;
             }
+            Err(error) if error.is_builder() => {
+                return Err(format!(
+                    "Could not refresh the model catalog for {provider}: {}",
+                    crate::provider::http::transport_error(&error)
+                ));
+            }
             Err(_) if attempt < 2 => continue,
             Err(_) => {
                 return Err(format!(

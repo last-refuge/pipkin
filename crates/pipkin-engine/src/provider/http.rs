@@ -55,11 +55,6 @@ impl NetSettings {
     }
 }
 
-/// Where a request whose configured proxy is unusable (SOCKS, PAC, malformed) is sent: a
-/// reserved name that never resolves (RFC 6761), so the request fails instead of silently
-/// bypassing the proxy. Model requests are refused earlier with the reference message.
-const UNUSABLE_PROXY: &str = "http://unusable-proxy.invalid:9";
-
 /// The engine client: explicit proxy selection (reqwest's ambient lookup is off) and the idle
 /// timeout as a per-read timeout.
 pub fn client_with(net: &NetSettings) -> reqwest::Client {
@@ -89,12 +84,17 @@ fn builder(net: &NetSettings) -> reqwest::ClientBuilder {
         for warning in net.proxy.warnings() {
             log::warn!("proxy configuration: {warning}");
         }
+        let validation = net.proxy.clone();
+        builder = builder.request_validator(move |url| {
+            validation
+                .proxy_for(url)
+                .map(|_| ())
+                .map_err(ProxyConfigurationError)
+        });
         let proxy = net.proxy.clone();
+        // The same immutable policy rejects errors before dispatch, including redirects.
         builder = builder.proxy(reqwest::Proxy::custom(move |url| {
-            match proxy.proxy_for(url) {
-                Ok(p) => p,
-                Err(_) => Some(reqwest::Url::parse(UNUSABLE_PROXY).expect("valid URL")),
-            }
+            proxy.proxy_for(url).ok().flatten()
         }));
     }
     if let Some(idle) = net.idle {
@@ -118,12 +118,26 @@ pub fn format_error(status: Option<StatusCode>, body: &str, message: &str) -> St
     }
 }
 
+#[derive(Debug)]
+struct ProxyConfigurationError(String);
+
+impl std::fmt::Display for ProxyConfigurationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ProxyConfigurationError {}
+
 /// A transport error's text, including its cause chain (so "timed out", "connection refused"
 /// and similar reach the retry classifier).
 pub fn transport_error(e: &reqwest::Error) -> String {
     let mut text = e.to_string();
     let mut source = std::error::Error::source(e);
     while let Some(s) = source {
+        if let Some(proxy) = s.downcast_ref::<ProxyConfigurationError>() {
+            return proxy.to_string();
+        }
         text.push_str(": ");
         text.push_str(&s.to_string());
         source = s.source();
@@ -208,7 +222,7 @@ pub(crate) async fn send_observing(
                     wait,
                 )
             }
-            Err(e) => (true, transport_error(&e), None),
+            Err(e) => (!e.is_builder(), transport_error(&e), None),
         };
         if !retry || attempt >= retries {
             return Err(error);
@@ -532,12 +546,123 @@ mod tests {
     #[tokio::test]
     async fn an_unusable_proxy_fails_the_request_instead_of_bypassing_it() {
         let target = MockServer::start(|_, _| ok()).await;
-        for proxy in ["socks5://127.0.0.1:1080", "http://[bad"] {
-            let client = client_with(&net(&[("HTTP_PROXY", proxy)], None));
-            let result = client.get(format!("{}/x", target.url)).send().await;
-            assert!(result.is_err(), "{proxy}");
+        for proxy in [
+            "socks5://127.0.0.1:1080",
+            "pac+http://wpad/proxy.pac",
+            "http://secret:password@[bad",
+        ] {
+            let settings = net(&[("HTTP_PROXY", proxy)], None);
+            let url = format!("{}/x", target.url);
+            let expected = settings
+                .proxy
+                .proxy_for(&url::Url::parse(&url).unwrap())
+                .unwrap_err();
+            let client = client_with(&settings);
+            let error = client.get(&url).send().await.unwrap_err();
+            assert!(error.is_builder());
+            assert_eq!(transport_error(&error), expected);
+            assert!(!transport_error(&error).contains("password"));
+            assert!(!settings.proxy.warnings().join(" ").contains("password"));
+            let attempts = std::sync::atomic::AtomicUsize::new(0);
+            let error = send(
+                || {
+                    attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    client.get(&url)
+                },
+                3,
+                MAX_RETRY_DELAY,
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error, expected);
+            assert_eq!(attempts.load(std::sync::atomic::Ordering::Relaxed), 1);
         }
         assert!(target.requests().is_empty(), "never sent directly");
+    }
+
+    #[tokio::test]
+    async fn proxy_validation_follows_redirects_and_no_proxy_exclusions() {
+        let target = MockServer::start(|_, _| ok()).await;
+        let destination = target.url.replace("127.0.0.1", "localhost");
+        let redirect = MockServer::start(move |_, _| {
+            let mut response = MockResponse::json(302, &serde_json::json!({}));
+            response
+                .headers
+                .push(("location".into(), destination.clone()));
+            response
+        })
+        .await;
+        let settings = net(
+            &[
+                ("HTTP_PROXY", "socks5://127.0.0.1:1080"),
+                ("NO_PROXY", "127.0.0.1"),
+            ],
+            None,
+        );
+        let client = client_with(&settings);
+        client.get(&target.url).send().await.unwrap();
+        let error = client.get(&redirect.url).send().await.unwrap_err();
+        assert_eq!(
+            transport_error(&error),
+            format!(
+                "{} Got socks5:",
+                super::super::proxy::UNSUPPORTED_PROXY_PROTOCOL_MESSAGE
+            )
+        );
+        assert_eq!(redirect.requests().len(), 1);
+        assert_eq!(
+            target.requests().len(),
+            1,
+            "redirect never bypasses invalid proxy"
+        );
+    }
+
+    #[tokio::test]
+    async fn request_validation_applies_to_reused_connections() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = vec![];
+            loop {
+                request.push(stream.read_u8().await.unwrap());
+                if request.ends_with(b"\r\n\r\n") {
+                    break;
+                }
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+                .await
+                .unwrap();
+            let mut byte = [0];
+            // A denied second request must not write on the pooled connection.
+            tokio::time::timeout(Duration::from_millis(200), stream.read(&mut byte)).await
+        });
+        let allowed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let validation = allowed.clone();
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .request_validator(move |_| {
+                if validation.load(std::sync::atomic::Ordering::Relaxed) {
+                    Ok(())
+                } else {
+                    Err("denied")
+                }
+            })
+            .build()
+            .unwrap();
+        assert_eq!(
+            client.get(&url).send().await.unwrap().text().await.unwrap(),
+            "OK"
+        );
+        allowed.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(client.get(&url).send().await.unwrap_err().is_builder());
+        assert!(
+            server.await.unwrap().is_err(),
+            "pooled socket receives no second request"
+        );
     }
 
     #[tokio::test]

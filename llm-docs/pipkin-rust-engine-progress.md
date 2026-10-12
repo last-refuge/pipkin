@@ -11,7 +11,34 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — plain HTTP CONNECT proxy parity
+## Current follow-up — invalid proxy diagnostics before dispatch
+
+2026-10-12, following **`367e389`**. The shared client now validates proxy policy before every
+HTTP/1 or HTTP/2 dispatch, including redirects and pooled connections. The reserved DNS
+failure route is removed. Login and credential requests receive the actual proxy error;
+catalog refresh reports it explicitly; shared sending does not retry configuration errors.
+NO_PROXY and scheme selection remain intact. Malformed proxy errors omit raw URLs to avoid
+exposing embedded credentials. The opt-in vendor hook keeps other consumers unchanged and
+explicitly refuses experimental HTTP/3 builds that cannot enforce it.
+
+Eight actual pinned Pi resolver executions compare routing and unsupported-protocol errors.
+Five additional native tests cover those cases, redirect/NO_PROXY policy, pooled dispatch,
+OAuth code submission and catalog diagnostics; the previous invalid-proxy test now also
+asserts exact errors, credential redaction and one attempt. The corrected focused suite
+passed **26 tests**; final workspace checks **1622 tests, 0 failed, 53 ignored**, with clean
+Clippy and formatting. Vendor integrity/tamper and license inventory fixture checks pass.
+The initial private-module test compile error and sandbox capture restriction are recorded in
+[validation evidence](pipkin-rust-engine-evidence/proxy-validation.md). Logs:
+`/tmp/pipkin-proxy-validation-workspace.log`, `/tmp/pipkin-proxy-validation-clippy.log`,
+`/tmp/pipkin-proxy-validation-fmt.log`. No installed package or GitHub CI execution claimed.
+
+Protocol 11 / schema 9 unchanged. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**. Native remains opt-in. Credential SDK retries,
+OS/Node-specific trust scope, remaining settings/migration, sustained workloads and clean
+release/CI/platform qualification remain open. Owner plan/worktree changes are preserved.
+
+## Previous follow-up — plain HTTP CONNECT proxy parity
 
 2026-10-12, following **`bdc7a26`**. Native now tunnels HTTP origins through HTTP/HTTPS
 proxies with CONNECT, matching pinned Pi's undici configuration. An additive, default-off

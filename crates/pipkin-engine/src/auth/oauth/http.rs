@@ -89,3 +89,44 @@ pub fn with_query(base: &str, pairs: &[(&str, &str)]) -> Result<String, String> 
     }
     Ok(url.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn oauth_reports_invalid_proxy_before_sending_authorization_code() {
+        use crate::provider::{
+            http,
+            mock::{MockResponse, MockServer},
+            proxy::ProxyConfig,
+        };
+        let target =
+            MockServer::start(|_, _| MockResponse::json(200, &serde_json::json!({}))).await;
+        for proxy in [
+            "socks5://127.0.0.1:1080",
+            "pac+http://wpad/proxy.pac",
+            "http://[bad",
+        ] {
+            let settings = http::NetSettings {
+                proxy: ProxyConfig::from_lookup(
+                    |key| (key == "HTTP_PROXY").then(|| proxy.into()),
+                    None,
+                ),
+                ..Default::default()
+            };
+            let expected = settings
+                .proxy
+                .proxy_for(&url::Url::parse(&target.url).unwrap())
+                .unwrap_err();
+            let client = http::client_with(&settings);
+            let error = super::send(
+                super::post_form(&client, &target.url, &[("code", "synthetic-secret")]),
+                None,
+            )
+            .await
+            .err()
+            .unwrap();
+            assert_eq!(error, expected);
+        }
+        assert!(target.requests().is_empty());
+    }
+}

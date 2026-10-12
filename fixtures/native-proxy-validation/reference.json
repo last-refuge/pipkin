@@ -1,0 +1,78 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "node": "v26.8.1",
+  "sourceHashes": {
+    "packages/ai/src/utils/node-http-proxy.ts": "a13ab6556d127e6fb097147b209c68e47aed8e724e2774e7dd7df21ff91d9d5b",
+    "packages/ai/src/utils/provider-env.ts": "3829251ae0674cef7ca09800cee9f46d4e305770129b72b822ea2f6f85efe675"
+  },
+  "scope": "Executed pinned resolver directly; no network requests or complete application execution",
+  "cases": [
+    {
+      "name": "socks",
+      "target": "http://provider.test/",
+      "env": {
+        "HTTP_PROXY": "socks5://127.0.0.1:1080"
+      },
+      "error": "Unsupported proxy protocol. SOCKS and PAC proxy URLs are not supported; use an HTTP or HTTPS proxy URL. Got socks5:"
+    },
+    {
+      "name": "pac",
+      "target": "https://provider.test/",
+      "env": {
+        "HTTPS_PROXY": "pac+http://wpad/proxy.pac"
+      },
+      "error": "Unsupported proxy protocol. SOCKS and PAC proxy URLs are not supported; use an HTTP or HTTPS proxy URL. Got pac+http:"
+    },
+    {
+      "name": "malformed",
+      "target": "http://provider.test/",
+      "env": {
+        "HTTP_PROXY": "http://[bad"
+      },
+      "error": "Invalid proxy URL \"http://[bad\": Invalid URL"
+    },
+    {
+      "name": "excluded-invalid",
+      "target": "http://provider.test/",
+      "env": {
+        "HTTP_PROXY": "socks5://127.0.0.1:1080",
+        "NO_PROXY": "provider.test"
+      },
+      "proxy": null
+    },
+    {
+      "name": "excluded-port",
+      "target": "http://provider.test:80/",
+      "env": {
+        "HTTP_PROXY": "socks5://127.0.0.1:1080",
+        "NO_PROXY": "provider.test:80"
+      },
+      "proxy": null
+    },
+    {
+      "name": "wrong-port",
+      "target": "http://provider.test:81/",
+      "env": {
+        "HTTP_PROXY": "socks5://127.0.0.1:1080",
+        "NO_PROXY": "provider.test:80"
+      },
+      "error": "Unsupported proxy protocol. SOCKS and PAC proxy URLs are not supported; use an HTTP or HTTPS proxy URL. Got socks5:"
+    },
+    {
+      "name": "other-scheme",
+      "target": "https://provider.test/",
+      "env": {
+        "HTTP_PROXY": "socks5://127.0.0.1:1080"
+      },
+      "proxy": null
+    },
+    {
+      "name": "valid",
+      "target": "https://provider.test/",
+      "env": {
+        "HTTPS_PROXY": "http://localhost:8080"
+      },
+      "proxy": "http://localhost:8080/"
+    }
+  ]
+}

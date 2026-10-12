@@ -134,28 +134,71 @@
 --- a/src/async_impl/client.rs
 +++ b/src/async_impl/client.rs
 @@ -1,3 +1,5 @@
-+// Modified by Pipkin: opt-in CONNECT tunnels for HTTP origins.
++// Modified by Pipkin: opt-in HTTP CONNECT tunnels and request validation.
 +// See PIPKIN-PATCH.md at this crate's root.
  #[cfg(any(feature = "native-tls", feature = "__rustls",))]
  use std::any::Any;
  use std::future::Future;
-@@ -179,6 +181,7 @@
+@@ -136,9 +138,12 @@
+     }
+ }
+ 
++type RequestValidator = Arc<dyn Fn(&Url) -> Result<(), BoxError> + Send + Sync>;
++
+ #[derive(Clone)]
+ struct HyperService {
+     hyper: HyperClient,
++    request_validator: Option<RequestValidator>,
+ }
+ 
+ impl Service<hyper::Request<crate::async_impl::body::Body>> for HyperService {
+@@ -151,6 +156,15 @@
+     }
+ 
+     fn call(&mut self, req: hyper::Request<crate::async_impl::body::Body>) -> Self::Future {
++        // Check every request, including pooled connections and redirects, before any I/O.
++        if let Some(validate) = &self.request_validator {
++            let result = Url::parse(&req.uri().to_string())
++                .map_err(crate::error::builder)
++                .and_then(|url| validate(&url).map_err(crate::error::builder));
++            if let Err(error) = result {
++                return Box::pin(async move { Err(error) });
++            }
++        }
+         let clone = self.hyper.clone();
+         let mut inner = std::mem::replace(&mut self.hyper, clone);
+         Box::pin(async move { inner.call(req).await.map_err(crate::error::request) })
+@@ -179,6 +193,8 @@
      #[cfg(any(feature = "native-tls", feature = "__rustls"))]
      identity: Option<Identity>,
      proxies: Vec<ProxyMatcher>,
 +    http_proxy_tunnel: bool,
++    request_validator: Option<RequestValidator>,
      auto_sys_proxy: bool,
      redirect_policy: redirect::Policy,
      retry_policy: crate::retry::Builder,
-@@ -306,6 +309,7 @@
+@@ -306,6 +322,8 @@
                  #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
                  tcp_user_timeout: Some(Duration::from_secs(30)),
                  proxies: Vec::new(),
 +                http_proxy_tunnel: false,
++                request_validator: None,
                  auto_sys_proxy: true,
                  redirect_policy: redirect::Policy::default(),
                  retry_policy: crate::retry::Builder::default(),
-@@ -1005,7 +1009,9 @@
+@@ -409,6 +427,11 @@
+     /// This method fails if a TLS backend cannot be initialized, or the resolver
+     /// cannot load the system configuration.
+     pub fn build(self) -> crate::Result<Client> {
++        // The optional HTTP/3 service has a separate dispatch path.
++        #[cfg(feature = "http3")]
++        if self.config.request_validator.is_some() {
++            return Err(crate::error::builder("request validation is unavailable with HTTP/3"));
++        }
+         let config = self.config;
+ 
+         if let Some(err) = config.error {
+@@ -1005,9 +1028,12 @@
              Some(format!("{:?}", &config.redirect_policy))
          };
  
@@ -165,8 +208,11 @@
 +        );
          let hyper_service = HyperService {
              hyper: hyper_client,
++            request_validator: config.request_validator,
          };
-@@ -1092,8 +1098,9 @@
+ 
+         let redirect_policy = {
+@@ -1092,8 +1118,9 @@
                  total_timeout: RequestConfig::new(config.timeout),
                  hyper,
                  proxies,
@@ -178,10 +224,26 @@
                  https_only: config.https_only,
                  redirect_policy_desc,
              }),
-@@ -1406,6 +1413,15 @@
+@@ -1404,7 +1431,30 @@
+         self
+     }
  
++    /// Validate every HTTP/1 or HTTP/2 request URL before dispatch, including redirects.
++    ///
++    /// The callback must be fast and must not perform I/O. Errors are builder errors,
++    /// carrying the callback's error as their source. Disabled by default. Clients using
++    /// this option cannot be built when the experimental HTTP/3 feature is enabled.
++    pub fn request_validator<F, E>(mut self, validate: F) -> ClientBuilder
++    where
++        F: Fn(&Url) -> Result<(), E> + Send + Sync + 'static,
++        E: Into<Box<dyn std::error::Error + Send + Sync>>,
++    {
++        self.config.request_validator = Some(Arc::new(move |url| validate(url).map_err(Into::into)));
++        self
++    }
++
      // Proxy options
- 
++
 +    /// Use CONNECT tunnels for HTTP origins as well as HTTPS origins.
 +    ///
 +    /// Disabled by default. When enabled, proxy authentication and custom proxy
@@ -190,7 +252,6 @@
 +        self.config.http_proxy_tunnel = enabled;
 +        self
 +    }
-+
+ 
      /// Add a `Proxy` to the list of proxies the `Client` will use.
      ///
-     /// # Note

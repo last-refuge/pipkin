@@ -5,7 +5,7 @@ Base: the complete crates.io `reqwest` 0.12.28 archive, SHA-256
 Pipkin's original Cargo.lock checksum. MIT and Apache-2.0 notices are retained unchanged.
 This is a locally maintained additive patch; it is not an upstream release.
 
-The sole behavior option is `ClientBuilder::http_proxy_tunnel(bool)`, disabled by default.
+The CONNECT behavior option is `ClientBuilder::http_proxy_tunnel(bool)`, disabled by default.
 Pipkin's engine enables it to match pinned Pi/undici's `proxyTunnel: true`:
 
 - Use the existing hyper-util CONNECT implementation for HTTP origins through HTTP or HTTPS
@@ -16,6 +16,14 @@ Pipkin's engine enables it to match pinned Pi/undici's `proxyTunnel: true`:
   origin request inside the tunnel. Direct traffic and callers without the option are unchanged.
 - Preserve existing TLS verification, proxy TLS separation, deadlines, redirect handling,
   response streaming and connection pooling. No extra process or local proxy service is added.
+
+A second optional builder method, `request_validator`, runs a caller's URL policy before
+every HTTP/1 or HTTP/2 dispatch, including redirects and pooled requests. Validation errors
+are builder errors with the original typed cause. No I/O occurs before validation. It is
+disabled by default; the experimental HTTP/3 feature rejects clients opting into validation
+because its separate service path does not implement this hook. Pipkin uses this for its
+immutable proxy policy so login/credential/catalog requests receive explicit errors without
+reserved-name DNS lookups or direct fallback. The callback must be quick and perform no I/O.
 
 Only `src/async_impl/client.rs` and `src/connect.rs` differ from the registry archive, plus
 this provenance note. The reviewable diff is `../reqwest-http-tunnel.patch`. The sibling

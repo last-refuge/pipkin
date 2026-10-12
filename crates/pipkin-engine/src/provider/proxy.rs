@@ -116,8 +116,7 @@ impl ProxyConfig {
         if !proxy.contains("://") {
             proxy = format!("{protocol}://{proxy}");
         }
-        let url = Url::parse(&proxy)
-            .map_err(|e| format!("Invalid proxy URL {}: {e}", serde_json::json!(proxy)))?;
+        let url = Url::parse(&proxy).map_err(|e| format!("Invalid proxy URL: {e}"))?;
         if url.scheme() != "http" && url.scheme() != "https" {
             return Err(format!(
                 "{UNSUPPORTED_PROXY_PROTOCOL_MESSAGE} Got {}:",
@@ -373,7 +372,7 @@ mod tests {
         assert!(
             bad.proxy_for(&Url::parse("https://api.test/").unwrap())
                 .unwrap_err()
-                .starts_with("Invalid proxy URL \"http://[bad\"")
+                .starts_with("Invalid proxy URL:")
         );
         assert_eq!(c.warnings().len(), 1);
         assert!(
@@ -381,6 +380,39 @@ mod tests {
                 .warnings()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn proxy_validation_matches_executed_reference_resolver() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/native-proxy-validation/reference.json"
+        ))
+        .unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let vars: HashMap<String, String> =
+                serde_json::from_value(case["env"].clone()).unwrap();
+            let result = ProxyConfig::from_map(&vars)
+                .proxy_for(&Url::parse(case["target"].as_str().unwrap()).unwrap());
+            if case["name"] == "malformed" {
+                // Native omits the raw proxy URL, which can contain credentials.
+                assert!(
+                    case["error"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with("Invalid proxy URL")
+                );
+                assert!(result.unwrap_err().starts_with("Invalid proxy URL:"));
+            } else if let Some(error) = case["error"].as_str() {
+                assert_eq!(result.unwrap_err(), error, "{}", case["name"]);
+            } else {
+                assert_eq!(
+                    serde_json::to_value(result.unwrap().map(|url| url.to_string())).unwrap(),
+                    case["proxy"],
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
     }
 
     #[test]

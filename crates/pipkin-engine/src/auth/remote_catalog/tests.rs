@@ -566,3 +566,34 @@ async fn cancelling_while_another_process_holds_the_cache_lock_does_not_publish_
     auth.refresh_models(&CancellationToken::new()).await;
     assert!(auth.catalog().find("openai/catalog-test").is_some());
 }
+
+#[tokio::test]
+async fn catalog_reports_invalid_proxy_configuration() {
+    use crate::provider::{http, proxy::ProxyConfig};
+    let server = MockServer::start(|_, _| response(&catalog())).await;
+    let net = http::NetSettings {
+        proxy: ProxyConfig::from_lookup(
+            |key| (key == "HTTP_PROXY").then(|| "socks5://localhost:1080".into()),
+            None,
+        ),
+        ..Default::default()
+    };
+    let client = http::client_with(&net);
+    let error = fetch(
+        &client,
+        &server.url,
+        "openai",
+        None,
+        0,
+        &CancellationToken::new(),
+        Duration::from_secs(1),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(
+        error.contains(crate::provider::proxy::UNSUPPORTED_PROXY_PROTOCOL_MESSAGE),
+        "{error}"
+    );
+    assert!(server.requests().is_empty());
+}

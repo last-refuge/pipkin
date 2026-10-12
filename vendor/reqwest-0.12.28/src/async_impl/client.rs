@@ -1,4 +1,4 @@
-// Modified by Pipkin: opt-in CONNECT tunnels for HTTP origins.
+// Modified by Pipkin: opt-in HTTP CONNECT tunnels and request validation.
 // See PIPKIN-PATCH.md at this crate's root.
 #[cfg(any(feature = "native-tls", feature = "__rustls",))]
 use std::any::Any;
@@ -138,9 +138,12 @@ impl Default for Accepts {
     }
 }
 
+type RequestValidator = Arc<dyn Fn(&Url) -> Result<(), BoxError> + Send + Sync>;
+
 #[derive(Clone)]
 struct HyperService {
     hyper: HyperClient,
+    request_validator: Option<RequestValidator>,
 }
 
 impl Service<hyper::Request<crate::async_impl::body::Body>> for HyperService {
@@ -153,6 +156,15 @@ impl Service<hyper::Request<crate::async_impl::body::Body>> for HyperService {
     }
 
     fn call(&mut self, req: hyper::Request<crate::async_impl::body::Body>) -> Self::Future {
+        // Check every request, including pooled connections and redirects, before any I/O.
+        if let Some(validate) = &self.request_validator {
+            let result = Url::parse(&req.uri().to_string())
+                .map_err(crate::error::builder)
+                .and_then(|url| validate(&url).map_err(crate::error::builder));
+            if let Err(error) = result {
+                return Box::pin(async move { Err(error) });
+            }
+        }
         let clone = self.hyper.clone();
         let mut inner = std::mem::replace(&mut self.hyper, clone);
         Box::pin(async move { inner.call(req).await.map_err(crate::error::request) })
@@ -182,6 +194,7 @@ struct Config {
     identity: Option<Identity>,
     proxies: Vec<ProxyMatcher>,
     http_proxy_tunnel: bool,
+    request_validator: Option<RequestValidator>,
     auto_sys_proxy: bool,
     redirect_policy: redirect::Policy,
     retry_policy: crate::retry::Builder,
@@ -310,6 +323,7 @@ impl ClientBuilder {
                 tcp_user_timeout: Some(Duration::from_secs(30)),
                 proxies: Vec::new(),
                 http_proxy_tunnel: false,
+                request_validator: None,
                 auto_sys_proxy: true,
                 redirect_policy: redirect::Policy::default(),
                 retry_policy: crate::retry::Builder::default(),
@@ -413,6 +427,11 @@ impl ClientBuilder {
     /// This method fails if a TLS backend cannot be initialized, or the resolver
     /// cannot load the system configuration.
     pub fn build(self) -> crate::Result<Client> {
+        // The optional HTTP/3 service has a separate dispatch path.
+        #[cfg(feature = "http3")]
+        if self.config.request_validator.is_some() {
+            return Err(crate::error::builder("request validation is unavailable with HTTP/3"));
+        }
         let config = self.config;
 
         if let Some(err) = config.error {
@@ -1014,6 +1033,7 @@ impl ClientBuilder {
         );
         let hyper_service = HyperService {
             hyper: hyper_client,
+            request_validator: config.request_validator,
         };
 
         let redirect_policy = {
@@ -1408,6 +1428,20 @@ impl ClientBuilder {
     // XXX: accept an `impl retry::IntoPolicy` instead?
     pub fn retry(mut self, policy: crate::retry::Builder) -> ClientBuilder {
         self.config.retry_policy = policy;
+        self
+    }
+
+    /// Validate every HTTP/1 or HTTP/2 request URL before dispatch, including redirects.
+    ///
+    /// The callback must be fast and must not perform I/O. Errors are builder errors,
+    /// carrying the callback's error as their source. Disabled by default. Clients using
+    /// this option cannot be built when the experimental HTTP/3 feature is enabled.
+    pub fn request_validator<F, E>(mut self, validate: F) -> ClientBuilder
+    where
+        F: Fn(&Url) -> Result<(), E> + Send + Sync + 'static,
+        E: Into<Box<dyn std::error::Error + Send + Sync>>,
+    {
+        self.config.request_validator = Some(Arc::new(move |url| validate(url).map_err(Into::into)));
         self
     }
 

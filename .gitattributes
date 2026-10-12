@@ -1,2 +1,5 @@
 # Patch source embeds leading diff markers before upstream tab indentation.
 packaging/pi-onboarding.patch -whitespace
+
+# Unified patches represent blank context lines with one required space.
+vendor/reqwest-http-tunnel.patch whitespace=-blank-at-eol
