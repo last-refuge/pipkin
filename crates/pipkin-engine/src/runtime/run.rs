@@ -801,11 +801,12 @@ impl Shared {
         // An intent committed before a restart: the effect may have happened.
         let prior = self.store.tool_call(&session, call_id)?;
         let Some(tool) = tool.or_else(|| {
-            // A replay-safe subagent call may recover even when new calls are disabled.
+            // A replay-safe call may recover even when new calls of its tool are no longer
+            // offered (subagents disabled); its own tool recovers it, never another.
             prior
                 .as_ref()
                 .filter(|p| p.replay_safe && self.replay_allowed(p))
-                .map(|_| self.subagent_tool())
+                .and_then(|p| self.recoverable_tool(&p.name))
         }) else {
             let result = tools::unavailable(name);
             self.record_tool_result(sess, run, call_id, name, &result, ToolState::Done)?;
@@ -867,19 +868,19 @@ impl Shared {
         Ok(())
     }
 
-    /// Recovery authority for a replay-safe call: the recorded contract must equal the current
+    /// Recovery authority for a replay-safe call: the tool must be one that recovers its own
+    /// calls ([`Shared::recoverable_tool`]) and the recorded contract must equal the current
     /// tool's (name, description, parameters, replay).
     pub fn replay_allowed(&self, call: &crate::store::ToolCallRow) -> bool {
-        if call.name != "subagent" {
+        let Some(tool) = self.recoverable_tool(&call.name) else {
             return false;
-        }
+        };
         let recorded = self
             .store
             .kv_get(&call.session, &format!("tool_contract:{}", call.call_id))
             .ok()
             .flatten();
-        let current =
-            serde_json::to_string(&contract_of(&self.subagent_tool())).expect("serializes");
+        let current = serde_json::to_string(&contract_of(&tool)).expect("serializes");
         recorded.as_deref() == Some(current.as_str())
     }
 

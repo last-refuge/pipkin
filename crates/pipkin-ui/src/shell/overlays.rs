@@ -450,7 +450,7 @@ impl Workspace {
             .key_context("Overlay")
             .track_focus(&self.menu_focus)
             .role(Role::Dialog)
-            .aria_label(format!("Question from an extension: {}", q.title))
+            .aria_label(format!("Question: {}", q.title))
             .w(px(520.0 * t.scale.max(1.0)))
             .max_w_full()
             .p(px(14.0))

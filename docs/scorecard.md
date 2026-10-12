@@ -1,5 +1,25 @@
 # Scorecard
 
+## Model-visible questions, ASK-1 (2026-10-12)
+
+The native engine now offers root sessions a built-in `ask_user_question` tool routed through
+the existing session question host ([ask-user-question.md](ask-user-question.md)). This entry
+records the automated boundary only.
+
+- **Measured (automated).** Engine tests cover: the person's choice, free text and the
+  *Other* follow-up reaching the next model request verbatim; refusal of a wrong or stale
+  answer id; declining as a non-error `unanswered` result; Stop withdrawing the question and
+  aborting the call; an engine restart re-asking the open question under a new id with one
+  result and no second model turn; no connected client failing the call as `unavailable`;
+  children not being offered the tool; the `askUserQuestion` capability. Unit tests cover
+  the result contract, argument bounds and schema validation. The repository gate
+  (`cargo test --workspace`, Clippy, fmt) passed on this change; see the commit for counts.
+- **Observed.** Nothing native yet: the desktop renders these questions with its existing
+  select/input dialog, which was previously observed for extension questions only.
+- **Unverified.** Native keyboard-only completion, IME composition in the *Other* text
+  field, narrow layouts, screen-reader interaction and a background conversation's question
+  being noticed without reopening it. Not a release qualification.
+
 ## Latest recorded automated qualification (2026-10-06)
 
 The owner reports heavy daily-use beta, including building Pipkin itself and using it on other projects.

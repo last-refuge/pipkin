@@ -1,6 +1,7 @@
 //! The engine runtime: one tokio runtime, the store, the catalog/auth layer, per-session
 //! execution, and client connections.
 
+mod ask;
 mod compaction;
 pub mod faults;
 mod glue;
@@ -133,14 +134,30 @@ impl Shared {
         self.handle.spawn(future);
     }
 
-    /// Tools offered to a session's model: the coding tools, plus `subagent` for root sessions
-    /// that have it enabled (children never delegate further).
+    /// Tools offered to a session's model: the coding tools, plus, for root sessions,
+    /// `subagent` when enabled (children never delegate further) and `ask_user_question`
+    /// (children have no presentation of their own to ask). The order is stable between
+    /// requests.
     pub fn tools_for(&self, row: &SessionRow) -> Vec<Arc<dyn Tool>> {
         let mut tools = self.tools.clone();
-        if row.parent.is_none() && row.subagents_enabled {
-            tools.push(self.subagent_tool());
+        if row.parent.is_none() {
+            if row.subagents_enabled {
+                tools.push(self.subagent_tool());
+            }
+            tools.push(self.ask_tool());
         }
         tools
+    }
+
+    /// The current tool that may recover an interrupted replay-safe call by name. Only tools
+    /// whose rerun is safe by construction are listed; every other interrupted call is
+    /// recorded as interrupted, never rerun.
+    pub fn recoverable_tool(&self, name: &str) -> Option<Arc<dyn Tool>> {
+        match name {
+            "subagent" => Some(self.subagent_tool()),
+            crate::tools::ask::ASK_USER_QUESTION => Some(self.ask_tool()),
+            _ => None,
+        }
     }
 
     /// The system prompt, kept byte-identical between turns unless its inputs change.
@@ -573,6 +590,7 @@ async fn dispatch_with_cancel(
                     "removeSession".into(),
                     "subagents".into(),
                     "questions".into(),
+                    "askUserQuestion".into(),
                     "compaction".into(),
                     "toolOutput".into(),
                 ],
@@ -1057,6 +1075,8 @@ pub fn registry_with(extra: Arc<dyn ApiAdapter>) -> Registry {
     r
 }
 
+#[cfg(test)]
+mod ask_tests;
 #[cfg(test)]
 mod fault_tests;
 #[cfg(test)]

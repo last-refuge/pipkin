@@ -101,6 +101,15 @@ impl ToolHost for Host {
                 .await
         })
     }
+
+    fn ask<'a>(
+        &'a self,
+        _call_id: &'a str,
+        question: crate::extensions::questions::Question,
+        cancel: CancellationToken,
+    ) -> BoxFuture<'a, crate::tools::ask::AskOutcome> {
+        Box::pin(async move { self.shared.ask_user(&self.parent, question, cancel).await })
+    }
 }
 
 /// Map a child run's state to the directory status strings the desktop understands

@@ -2,6 +2,7 @@
 //! (`packages/durable/test/*.test.ts`); the golden JSON files hold outputs captured from the
 //! reference implementation itself.
 
+mod ask;
 mod bash;
 mod edit;
 mod output;

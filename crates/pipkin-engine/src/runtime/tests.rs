@@ -735,7 +735,17 @@ fn the_system_prompt_carries_project_instructions_and_stays_byte_stable() {
     assert!(reqs[0].system.contains("- read: Read file contents"));
     assert_eq!(reqs[0].system, reqs[1].system, "byte-stable between turns");
     let names: Vec<_> = reqs[0].tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["read", "write", "edit", "bash", "subagent"]);
+    assert_eq!(
+        names,
+        [
+            "read",
+            "write",
+            "edit",
+            "bash",
+            "subagent",
+            "ask_user_question"
+        ]
+    );
     assert_eq!(reqs[0].thinking, crate::provider::ThinkingLevel::Medium);
 }
 

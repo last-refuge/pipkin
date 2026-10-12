@@ -14,6 +14,7 @@
 //! the whole window each time) to the session's `progress` callback: the first change after a
 //! quiet period at once, then at most every 100 ms and no faster than ~100 KiB/s of new text.
 
+pub mod ask;
 pub mod bash;
 pub mod diff;
 pub mod edit;
@@ -178,6 +179,19 @@ pub trait ToolHost: Send + Sync {
         task: &'a str,
         cancel: CancellationToken,
     ) -> BoxFuture<'a, Result<(String, Value), String>>;
+
+    /// Ask the person `question` on behalf of the call and wait for what they submit. The
+    /// default host has no presentation to ask.
+    fn ask<'a>(
+        &'a self,
+        _call_id: &'a str,
+        _question: crate::extensions::questions::Question,
+        _cancel: CancellationToken,
+    ) -> BoxFuture<'a, ask::AskOutcome> {
+        Box::pin(async {
+            ask::AskOutcome::Unavailable("no presentation can answer questions".into())
+        })
+    }
 }
 
 /// Serializes writes/edits to the same canonical path across sessions in this process.

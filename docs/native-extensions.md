@@ -27,6 +27,11 @@ The reference facets cannot add any of the following, and native extensions cann
 
 The desktop only shows the questions, notices and status lines.
 
+The engine's own built-in `ask_user_question` tool (see [ask-user-question.md](ask-user-question.md))
+lets the *model* ask the person through the same question host, under the same rules and
+the same `AnswerQuestion` / `CancelQuestion` calls. It is a first-party tool, not an
+extension facility.
+
 ## The question rules
 
 `QuestionHost` follows the question and refusal behavior of `ui-requests-provider.ts`. Runtime identities are scoped to a session lifetime as described below.
