@@ -11,7 +11,34 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — Google external file/URL and authorized-user credentials
+## Current follow-up — Google executable credential helpers
+
+2026-10-12, following **`d721b3a`**. Native ADC now executes explicitly enabled Google
+credential helpers, preserves the SDK's command/environment and output-cache contracts,
+and supports OIDC/SAML responses. The per-identity cache includes helper environment;
+caller cancellation does not abandon the owned exchange. Configured helper timeouts up to
+120 seconds have their own allowance, and Unix timeout/error cleanup kills the helper group.
+See [helper evidence](pipkin-rust-engine-evidence/google-executable.md).
+
+Five new tests compare thirteen executed SDK cases and command parsing, check environment
+isolation, shared refresh, redacted/bounded output, a real five-second descendant timeout
+and recovery, and a real 31-second successful exchange. Vertex's existing external-account
+test now also completes two streams using an actual helper and cached bearer/quota headers.
+An initial compile visibility error was fixed; an initial filter matched zero tests and was
+not counted. The corrected Google suite passed **39 tests**.
+
+Required checks: **1586 passed, 0 failed, 53 ignored**, clean Clippy and formatting.
+Logs: `/tmp/pipkin-google-executable-tests2.log`, `/tmp/pipkin-google-executable-workspace.log`,
+`/tmp/pipkin-google-executable-clippy2.log`, `/tmp/pipkin-google-executable-fmt.log`.
+Protocol 11 / schema 9 unchanged. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**. Process checks were measured on Linux, not other OSes.
+
+Next: AWS and certificate federation sources, broader credential retry/cache and configuration
+review, sustained workloads and release/CI/platform qualification. Native remains opt-in.
+The owner plan, native-capabilities plan and Claude worktrees remain untouched.
+
+## Previous follow-up — Google external file/URL and authorized-user credentials
 
 2026-10-12, following **`28b0e4d`**. Native Vertex now supports external-account file/URL
 subject suppliers, workforce STS billing, optional service-account impersonation and external

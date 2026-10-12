@@ -1,0 +1,488 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "version": "10.6.2",
+  "integrity": "sha512-e27Z6EThmVNNvtYASwQxose/G57rkRuaRbQyxM2bvYLLX/GqWZ5chWq2EBoUchJbCc57eC9ArzO5wMsEmWftCw==",
+  "hashes": {
+    "pluggable-auth-client": "9f0e1b93d7bd9a9d7989a2ef8c1a8ae75b82ad04e54da86d40bf88144e9d3f86",
+    "pluggable-auth-handler": "aafa525c53e918d155a6abbb57e90524c0e2579903f28396cbd99931ac64f34e",
+    "executable-response": "44f9505eac008b33963e95c88ee7de52753d77acd61dac186773e23e35809311",
+    "baseexternalclient": "f1082f6d5c3a35ee95614bfb8a7f79c2782c4964652b75e46719586b308dcba9"
+  },
+  "scope": "Executed local SDK helpers and output-cache reads; synthetic credentials only; no cloud service",
+  "script": "printf '%s\\n' \"$GOOGLE_EXTERNAL_ACCOUNT_AUDIENCE\" \"$GOOGLE_EXTERNAL_ACCOUNT_TOKEN_TYPE\" \"$GOOGLE_EXTERNAL_ACCOUNT_INTERACTIVE\" \"$GOOGLE_EXTERNAL_ACCOUNT_OUTPUT_FILE\" \"$GOOGLE_EXTERNAL_ACCOUNT_IMPERSONATED_EMAIL\" \"$PIPKIN_HELPER_CUSTOM\" > \"$2\"\nif [ \"$3\" = timeout ]; then /bin/sleep 8; fi\nif [ \"$3\" = stderr ]; then /bin/cat \"$1\" >&2; else /bin/cat \"$1\"; fi\nif [ \"$3\" = fail ]; then exit 9; fi\n",
+  "cases": [
+    {
+      "name": "oidc",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" oidc",
+            "timeout_millis": 5000
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "id_token": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": null,
+      "outcome": {
+        "token": "helper-token"
+      },
+      "env": [
+        "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "urn:ietf:params:oauth:token-type:id_token",
+        "0",
+        "",
+        "helper@example",
+        "custom-value"
+      ]
+    },
+    {
+      "name": "jwt",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" jwt",
+            "timeout_millis": 5000
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "id_token": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": null,
+      "outcome": {
+        "token": "helper-token"
+      },
+      "env": [
+        "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "urn:ietf:params:oauth:token-type:jwt",
+        "0",
+        "",
+        "helper@example",
+        "custom-value"
+      ]
+    },
+    {
+      "name": "saml",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:saml2",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" saml",
+            "timeout_millis": 5000
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:saml2",
+        "saml_response": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": null,
+      "outcome": {
+        "token": "helper-token"
+      },
+      "env": [
+        "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "urn:ietf:params:oauth:token-type:saml2",
+        "0",
+        "",
+        "helper@example",
+        "custom-value"
+      ]
+    },
+    {
+      "name": "cached",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" cached",
+            "timeout_millis": 5000,
+            "output_file": "$TEMP/output"
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "id_token": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": "{\"version\":1,\"success\":true,\"token_type\":\"urn:ietf:params:oauth:token-type:id_token\",\"id_token\":\"cached-token\",\"expiration_time\":4070908800}",
+      "outcome": {
+        "token": "cached-token"
+      },
+      "env": null
+    },
+    {
+      "name": "expired-cache",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" expired-cache",
+            "timeout_millis": 5000,
+            "output_file": "$TEMP/output"
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "id_token": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": "{\"version\":1,\"success\":true,\"token_type\":\"urn:ietf:params:oauth:token-type:id_token\",\"id_token\":\"helper-token\",\"expiration_time\":1}",
+      "outcome": {
+        "token": "helper-token"
+      },
+      "env": [
+        "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "urn:ietf:params:oauth:token-type:id_token",
+        "0",
+        "$TEMP/output",
+        "helper@example",
+        "custom-value"
+      ]
+    },
+    {
+      "name": "failure-cache",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" failure-cache",
+            "timeout_millis": 5000,
+            "output_file": "$TEMP/output"
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "id_token": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": "{\"version\":1,\"success\":false,\"code\":\"denied\",\"message\":\"synthetic failure\"}",
+      "outcome": {
+        "token": "helper-token"
+      },
+      "env": [
+        "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "urn:ietf:params:oauth:token-type:id_token",
+        "0",
+        "$TEMP/output",
+        "helper@example",
+        "custom-value"
+      ]
+    },
+    {
+      "name": "malformed-cache",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" malformed-cache",
+            "timeout_millis": 5000,
+            "output_file": "$TEMP/output"
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "id_token": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": "{bad",
+      "outcome": {
+        "error": true,
+        "errorType": "ExecutableResponseError"
+      },
+      "env": null
+    },
+    {
+      "name": "missing-expiry",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" missing-expiry",
+            "timeout_millis": 5000,
+            "output_file": "$TEMP/output"
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "id_token": "helper-token"
+      },
+      "cache": "{\"version\":1,\"success\":true,\"token_type\":\"urn:ietf:params:oauth:token-type:id_token\",\"id_token\":\"cached-token\"}",
+      "outcome": {
+        "error": true,
+        "errorType": "InvalidExpirationTimeFieldError"
+      },
+      "env": null
+    },
+    {
+      "name": "future-version",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" future-version",
+            "timeout_millis": 5000
+          }
+        }
+      },
+      "response": {
+        "version": 2,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "id_token": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": null,
+      "outcome": {
+        "error": true,
+        "errorType": "Error"
+      },
+      "env": [
+        "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "urn:ietf:params:oauth:token-type:id_token",
+        "0",
+        "",
+        "helper@example",
+        "custom-value"
+      ]
+    },
+    {
+      "name": "stderr",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" stderr",
+            "timeout_millis": 5000
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "id_token": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": null,
+      "outcome": {
+        "token": "helper-token"
+      },
+      "env": [
+        "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "urn:ietf:params:oauth:token-type:id_token",
+        "0",
+        "",
+        "helper@example",
+        "custom-value"
+      ]
+    },
+    {
+      "name": "fail",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" fail",
+            "timeout_millis": 5000
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "id_token": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": null,
+      "outcome": {
+        "error": true,
+        "errorType": "ExecutableError"
+      },
+      "env": [
+        "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "urn:ietf:params:oauth:token-type:id_token",
+        "0",
+        "",
+        "helper@example",
+        "custom-value"
+      ]
+    },
+    {
+      "name": "denied",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" denied",
+            "timeout_millis": 5000
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "id_token": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": null,
+      "outcome": {
+        "error": true,
+        "errorType": "Error"
+      },
+      "env": null
+    },
+    {
+      "name": "timeout",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "token_url": "https://sts.example/v1/token",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/helper@example:generateAccessToken",
+        "credential_source": {
+          "executable": {
+            "command": "/bin/sh \"$TEMP/helper.sh\" \"$TEMP/reply\" \"$TEMP/env\" timeout",
+            "timeout_millis": 5000
+          }
+        }
+      },
+      "response": {
+        "version": 1,
+        "success": true,
+        "token_type": "urn:ietf:params:oauth:token-type:id_token",
+        "id_token": "helper-token",
+        "expiration_time": 4070908800
+      },
+      "cache": null,
+      "outcome": {
+        "error": true,
+        "errorType": "Error"
+      },
+      "env": [
+        "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "urn:ietf:params:oauth:token-type:id_token",
+        "0",
+        "",
+        "helper@example",
+        "custom-value"
+      ]
+    }
+  ],
+  "parsing": [
+    {
+      "command": "/helper \"two words\" plain",
+      "args": [
+        "/helper",
+        "two words",
+        "plain"
+      ]
+    },
+    {
+      "command": "/helper 'two words' $HOME | cat",
+      "args": [
+        "/helper",
+        "'two",
+        "words'",
+        "$HOME",
+        "|",
+        "cat"
+      ]
+    },
+    {
+      "command": "\"/path with spaces/helper\" \"\" x\"y z\"",
+      "args": [
+        "/path with spaces/helper",
+        "",
+        "x\"y z\""
+      ]
+    },
+    {
+      "command": "/helper \"unterminated",
+      "args": [
+        "/helper",
+        "unterminated"
+      ]
+    }
+  ]
+}

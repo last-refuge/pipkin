@@ -1,5 +1,10 @@
 //! File/URL external identities and external authorized-user credentials → Google STS.
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
+
+#[path = "google_executable.rs"]
+mod executable;
+pub(super) use executable::execution_context;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
 
@@ -69,16 +74,15 @@ pub(super) fn validate(doc: &Value) -> Result<(), String> {
         }
     }
     let source = option(doc, "credential_source");
-    for (key, label) in [
-        ("environment_id", "AWS"),
-        ("executable", "executable"),
-        ("certificate", "certificate"),
-    ] {
+    for (key, label) in [("environment_id", "AWS"), ("certificate", "certificate")] {
         if !option(source, key).is_null() {
             return Err(format!(
                 "Google external {label} credential sources are not yet implemented"
             ));
         }
+    }
+    if !option(source, "executable").is_null() {
+        return executable::validate(option(source, "executable"));
     }
     if string(source, "file").is_some() == string(source, "url").is_some() {
         return Err("Google credential_source needs exactly one file or URL".into());
@@ -204,6 +208,7 @@ pub(super) async fn exchange(
     http: &reqwest::Client,
     doc: &Value,
     state: &mut State,
+    environment: &BTreeMap<String, String>,
 ) -> Result<Token, String> {
     if doc["type"] == "external_account_authorized_user" {
         let key = crate::provider::api::aws_auth::sha256_hex(doc.to_string().as_bytes());
@@ -228,7 +233,12 @@ pub(super) async fn exchange(
         }
         return Ok(token);
     }
-    let subject = subject(http, option(doc, "credential_source")).await?;
+    let source = option(doc, "credential_source");
+    let subject = if !option(source, "executable").is_null() {
+        executable::subject(doc, environment).await?
+    } else {
+        subject(http, source).await?
+    };
     let mut fields = vec![
         (
             "grant_type",

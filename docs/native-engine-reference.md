@@ -23,6 +23,9 @@ engine and is available without a Pi installation or network access.
   Google project and location as usual. `GOOGLE_CLOUD_QUOTA_PROJECT` overrides ADC billing.
 - Vertex ADC also supports external-account file/URL subject tokens, workforce billing,
   optional service-account impersonation, and external-account authorized-user refresh.
+  Executable ADC helpers require `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1`; their
+  configured command runs directly with Google's noninteractive environment. OIDC/SAML
+  responses and helper-managed output caches are supported, with 5–120 second timeouts.
 - The engine configuration directory holds `auth.json`, `models.json` and `settings.json`.
   The desktop's `--engine-config-dir` and `--engine-data-dir` select engine configuration
   and history; `--data-dir` selects desktop drafts/cache. Do not expose stored credentials.

@@ -171,6 +171,7 @@ fn exchange<'a>(
     token_url: &'a str,
     depth: usize,
     state: &'a mut State,
+    environment: &'a std::collections::BTreeMap<String, String>,
 ) -> BoxFuture<'a, Result<Token, String>> {
     Box::pin(async move {
         if depth > 8 {
@@ -180,7 +181,7 @@ fn exchange<'a>(
             doc["type"].as_str(),
             Some("external_account" | "external_account_authorized_user")
         ) {
-            return external::exchange(http, doc, state).await;
+            return external::exchange(http, doc, state, environment).await;
         }
         if doc["type"] != "impersonated_service_account" {
             let parsed = super::parse_credentials(&doc.to_string())?;
@@ -189,7 +190,8 @@ fn exchange<'a>(
                 .map(|(t, d)| (t, Some(d)));
         }
         let source = &doc["source_credentials"];
-        let (source_token, _) = exchange(http, source, token_url, depth + 1, state).await?;
+        let (source_token, _) =
+            exchange(http, source, token_url, depth + 1, state, environment).await?;
         let principal = principal(doc)?;
         let base = super::field(doc, "endpoint")
             .unwrap_or_else(|| format!("https://iamcredentials.{}", universe(source)));
@@ -364,15 +366,16 @@ pub(crate) async fn resolve(
     let token_url = opt_str(ctx.req, "googleTokenUrl")
         .unwrap_or(GOOGLE_TOKEN_URL)
         .to_owned();
+    let (environment, budget) = external::execution_context(ctx.req, document.as_ref());
     let key = crate::provider::api::aws_auth::sha256_hex(
-        json!([path, document, metadata, quota, token_url])
+        json!([path, document, metadata, quota, token_url, environment])
             .to_string()
             .as_bytes(),
     );
     let slot = slot(key)?;
     let http = ctx.http.clone();
     let mut owner = tokio::spawn(async move {
-        tokio::time::timeout(BUDGET, async {
+        tokio::time::timeout(budget, async {
             let mut state = slot.lock().await;
             if let Some(c) = state.cached.as_ref().filter(|c| {
                 c.expires
@@ -382,7 +385,7 @@ pub(crate) async fn resolve(
             }
             let started = Instant::now();
             let (token, lifetime) = match document {
-                Some(doc) => exchange(&http, &doc, &token_url, 0, &mut state).await?,
+                Some(doc) => exchange(&http, &doc, &token_url, 0, &mut state, &environment).await?,
                 None => {
                     let (t, d) = self::metadata(&http, metadata.as_deref().unwrap()).await?;
                     (t, Some(d))

@@ -343,7 +343,11 @@ mod tests {
 
     #[tokio::test]
     async fn external_account_credentials_authenticate_vertex_streams() {
-        for authorized_user in [false, true] {
+        for kind in ["file", "user", "executable"] {
+            if kind == "executable" && !cfg!(unix) {
+                continue;
+            }
+            let authorized_user = kind == "user";
             let server = MockServer::start(|req, _| {
                 if req.path.starts_with("/v1/token") || req.path.starts_with("/v1/oauthtoken") {
                     MockResponse::json(200, &json!({"access_token":"federated-token", "expires_in":3600, "refresh_token":"rotated"}))
@@ -372,11 +376,21 @@ mod tests {
                 std::fs::write(&subject, "subject-token").unwrap();
                 document["credential_source"]["file"] = json!(subject.display().to_string());
             }
+            if kind == "executable" {
+                let helper = dir.path().join("helper.sh");
+                std::fs::write(&helper, "printf '%s' '{\"version\":1,\"success\":true,\"token_type\":\"urn:ietf:params:oauth:token-type:jwt\",\"id_token\":\"executable-subject\"}'\n").unwrap();
+                document["credential_source"] =
+                    json!({"executable":{"command":format!("/bin/sh \"{}\"", helper.display())}});
+            }
             let path = dir.path().join("adc.json");
             std::fs::write(&path, document.to_string()).unwrap();
             let mut req = request(vertex("gemini-2.5-pro", &format!("{}/vx", server.url)));
             req.credential = Credential::None;
             req.env.clear();
+            req.env.insert(
+                "GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES".into(),
+                "1".into(),
+            );
             req.options
                 .insert(crate::provider::ISOLATED_ENV.into(), json!(true));
             req.options.insert("project".into(), json!("project"));
@@ -400,6 +414,16 @@ mod tests {
             }
             let requests = server.requests();
             assert_eq!(requests.len(), 3);
+            if kind == "executable" {
+                let form: std::collections::HashMap<_, _> =
+                    url::form_urlencoded::parse(&requests[0].body)
+                        .into_owned()
+                        .collect();
+                assert_eq!(
+                    form.get("subject_token").map(String::as_str),
+                    Some("executable-subject")
+                );
+            }
             for model in &requests[1..] {
                 assert_eq!(
                     model.header("authorization"),
