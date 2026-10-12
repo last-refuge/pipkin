@@ -1,0 +1,9 @@
+{
+  "appPid": 4076822,
+  "enginePid": 4076812,
+  "workspace": 3,
+  "binarySha256": "5c99dcbfbd4673e3dc5619c868fa6bbc27343f754050fb0dfc8400c0f0154bd2",
+  "sourceProfile": "synthetic 1500-turn desktop soak; copied after clean shutdown",
+  "WAYLAND_DISPLAY": "unset",
+  "XDG_SESSION_TYPE": "x11"
+}

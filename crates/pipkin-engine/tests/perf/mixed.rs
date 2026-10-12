@@ -13,6 +13,31 @@ const SESSIONS: usize = 8;
 const REPLY_BYTES: usize = 64 * 1024;
 const TOOL_BYTES: usize = 1024 * 1024;
 
+// Exercise realistic growth/threshold behavior without pretending to use a provider tokenizer.
+// Every request reports an explicit byte/4 estimate; original fixed-usage runs stay comparable.
+const COMPACTION_SUMMARY: &str = "## Goal\nContinue the mixed workload.\n## Progress\nEarlier turns and real tool effects completed.\n## Next Steps\nProcess the newest mixed-turn instruction exactly once.";
+
+fn with_sized_usage(mut plan: Plan, body: &Value, output_tokens: usize) -> Plan {
+    let input_tokens = serde_json::to_vec(&body["messages"])
+        .unwrap()
+        .len()
+        .div_ceil(4);
+    for part in &mut plan.pieces {
+        let Some(raw) = part.data.strip_prefix("data: ") else {
+            continue;
+        };
+        let Ok(mut chunk) = serde_json::from_str::<Value>(raw.trim()) else {
+            continue;
+        };
+        if chunk.get("usage").is_some() {
+            chunk["usage"] = json!({"prompt_tokens":input_tokens,
+                "completion_tokens":output_tokens,"total_tokens":input_tokens+output_tokens});
+            part.data = format!("data: {chunk}\n\n");
+        }
+    }
+    plan
+}
+
 fn verify_latest(e: &mut Engine, sessions: &[String], latest: &[Option<usize>]) {
     for (session, turn) in sessions.iter().zip(latest) {
         let Some(turn) = turn else { continue };
@@ -73,7 +98,32 @@ fn mixed_soak() {
     let restart_every = env_usize("PERF_MIXED_RESTART_EVERY", 240);
     assert!(turns > 0 && turns.is_multiple_of(2));
     assert!(restart_every > 0 && restart_every.is_multiple_of(2));
-    let stub = Stub::start(|n, body| {
+    let compact = std::env::var("PERF_MIXED_COMPACT").as_deref() == Ok("1");
+    let summaries = Arc::new(AtomicU64::new(0));
+    let summary_contexts = Arc::new(AtomicU64::new(0));
+    let max_request = Arc::new(AtomicU64::new(0));
+    let (summary_calls, contexts, request_peak) = (
+        summaries.clone(),
+        summary_contexts.clone(),
+        max_request.clone(),
+    );
+    let stub = Stub::start(move |n, body| {
+        if compact
+            && body["messages"][0]["content"].as_str()
+                == Some(pipkin_engine::context::compaction::SUMMARIZATION_SYSTEM_PROMPT)
+        {
+            summary_calls.fetch_add(1, Ordering::SeqCst);
+            return with_sized_usage(
+                text_plan(COMPACTION_SUMMARY),
+                body,
+                COMPACTION_SUMMARY.len().div_ceil(4),
+            );
+        }
+        let serialized = serde_json::to_string(body).unwrap();
+        request_peak.fetch_max(serialized.len() as u64, Ordering::Relaxed);
+        if compact && serialized.contains("Earlier turns and real tool effects completed.") {
+            contexts.fetch_add(1, Ordering::SeqCst);
+        }
         let content = &body["messages"]
             .as_array()
             .unwrap()
@@ -95,7 +145,8 @@ fn mixed_soak() {
             .expect("mixed prompt")
             .parse()
             .unwrap();
-        if last_role(body) == "tool" {
+        let final_reply = last_role(body) == "tool";
+        let plan = if final_reply {
             marked_plan(64, 1024, Duration::from_millis(10), turn as u64 * 64)
         } else {
             tool_plan(
@@ -104,9 +155,31 @@ fn mixed_soak() {
                     "printf '{turn}\\n' >> invocations.log; head -c {TOOL_BYTES} /dev/zero | tr '\\000' x; printf '\\nfinished-{turn}\\n'"
                 ),
             )
+        };
+        if compact {
+            with_sized_usage(plan, body, if final_reply { REPLY_BYTES / 4 } else { 64 })
+        } else {
+            plan
         }
     });
     let p = Profile::new("mixed", &stub.base_url());
+    if compact {
+        let path = p.config.join("models.json");
+        let mut models: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        models["providers"]["stub"]["models"][0]["contextWindow"] = json!(65536);
+        models["providers"]["stub"]["models"][0]["maxTokens"] = json!(16384);
+        std::fs::write(path, models.to_string()).unwrap();
+        std::fs::write(
+            p.config.join("settings.json"),
+            json!({
+                "compaction":{"enabled":true,"keepRecentTokens":16384,
+                    "reserveTokens":8192,"backgroundTokens":0},
+                "retry":{"enabled":false}
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
     let spills = p.root.join("spills");
     std::fs::create_dir(&spills).unwrap();
     let spill_dir = spills.to_str().unwrap();
@@ -219,7 +292,10 @@ fn mixed_soak() {
     e = spawn();
     e.hello();
     verify_latest(&mut e, &sessions, &latest);
-    assert_eq!(stub.state.count.load(Ordering::SeqCst), (turns * 2) as u64);
+    assert_eq!(
+        stub.state.count.load(Ordering::SeqCst),
+        (turns * 2) as u64 + summaries.load(Ordering::SeqCst)
+    );
     let final_reopen = mem_sample(e.pid);
     let _ = e.shutdown();
     stop.store(true, Ordering::SeqCst);
@@ -270,6 +346,33 @@ fn mixed_soak() {
     );
     assert_eq!(count("SELECT count(*) FROM runs WHERE state!='settled'"), 0);
     assert_eq!(count("SELECT count(*) FROM entry_chunks"), 0);
+    let compactions =
+        count("SELECT count(*) FROM entries WHERE json_extract(body, '$.kind')='compaction'");
+    if compact {
+        assert!(
+            compactions >= SESSIONS as u64 * 2,
+            "expected repeated compaction in every session"
+        );
+        assert_eq!(
+            compactions,
+            summaries.load(Ordering::SeqCst),
+            "summary lost or duplicated"
+        );
+        assert!(
+            summary_contexts.load(Ordering::SeqCst) >= compactions,
+            "summaries must reach subsequent model contexts"
+        );
+        assert!(
+            max_request.load(Ordering::Relaxed) < 1024 * 1024,
+            "projected model requests must stay bounded despite retained full history"
+        );
+        assert_eq!(
+            count(
+                "SELECT count(DISTINCT session) FROM entries WHERE json_extract(body, '$.kind')='compaction'"
+            ),
+            SESSIONS as u64
+        );
+    }
     // Validate every stored final reply, not just the latest window after a restart.
     let mut answers = vec![false; turns];
     let mut stmt = conn.prepare("SELECT r.key, e.body FROM requests r JOIN entries e ON e.session=r.session AND e.run=r.run WHERE json_extract(e.body, '$.message.role')='assistant' AND json_extract(e.body, '$.message.stopReason')='stop'").unwrap();
@@ -359,6 +462,11 @@ fn mixed_soak() {
         "finalizedChunks":count("SELECT count(*) FROM entry_chunks"),
     });
     let mut out = header("mixed-soak");
+    out["compaction"] = json!({"sizeAwareUsage":compact,"entries":compactions,
+        "summaryRequests":summaries.load(Ordering::SeqCst),
+        "requestsContainingSummary":summary_contexts.load(Ordering::SeqCst),
+        "maxGenerationRequestBytes":max_request.load(Ordering::Relaxed),
+        "usageMethod":if compact { "serialized messages bytes / 4, rounded up; not a provider tokenizer" } else { "fixed synthetic usage" }});
     out["summary"] = json!({"turns":turns,"sessions":SESSIONS,"concurrentTurns":2,
         "replyBytesPerTurn":REPLY_BYTES,"toolBytesPerTurn":TOOL_BYTES,"replyChunkGapMs":10,
         "restarts":restarts.len()+1,"providerRequests":stub.state.count.load(Ordering::SeqCst),

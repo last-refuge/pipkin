@@ -13,6 +13,7 @@
 # default target/tmp, on the same disk as the build: keep it off tmpfs, the store fsyncs).
 #
 # PERF_MIXED_TURNS (720) and PERF_MIXED_RESTART_EVERY (240) tune the mixed workload.
+# PERF_MIXED_COMPACT=1 enables byte/4 usage estimates and repeated automatic compaction.
 # No network, no credentials: the provider is a local scripted HTTP stub inside the test
 # process, reached through a models.json custom provider.
 set -euo pipefail

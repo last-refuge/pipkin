@@ -1,0 +1,10 @@
+{
+  "startup": "observed: copied synthetic conversations render under Xwayland",
+  "shortcutInteraction": "failed: intended palette text became unrelated characters; Ctrl+Q did not exit within 20 seconds",
+  "attribution": "unresolved between synthetic input path and X11 event handling; no real-keyboard test",
+  "cleanup": "runner terminated its owned app and server; both /proc entries and owned window confirmed absent",
+  "screenshots": {
+    "palette-result.png": "533f6388ae32d7fa96e84897670d63e8caf2962e62df3c8b39f6ace3b1e013e3",
+    "start.png": "e0c1ed8f522902efb2e39db467e211f95956033ffc971e615158a943a1970b4b"
+  }
+}

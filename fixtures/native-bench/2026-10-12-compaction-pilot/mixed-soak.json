@@ -1,0 +1,221 @@
+{
+  "test": "mixed-soak",
+  "engine": "/home/jason/coding/pipkin/target/release/pipkin-engine",
+  "profile": "release",
+  "scratch": "/home/jason/coding/pipkin/target/tmp",
+  "loadavgStart": "3.46 2.26 2.54 2/3916 4066465",
+  "unixTime": 1791813345,
+  "compaction": {
+    "sizeAwareUsage": true,
+    "entries": 24,
+    "summaryRequests": 24,
+    "requestsContainingSummary": 128,
+    "maxGenerationRequestBytes": 210977,
+    "usageMethod": "serialized messages bytes / 4, rounded up; not a provider tokenizer"
+  },
+  "summary": {
+    "turns": 96,
+    "sessions": 8,
+    "concurrentTurns": 2,
+    "replyBytesPerTurn": 65536,
+    "toolBytesPerTurn": 1048576,
+    "replyChunkGapMs": 10,
+    "restarts": 2,
+    "providerRequests": 216,
+    "uniqueToolEffects": 96,
+    "verifiedFinalReplies": 96,
+    "verifiedOutputLinks": 96,
+    "verifiedCompleteSpillFiles": 96,
+    "verifiedRetainedToolOutputs": 96,
+    "spillBytes": 100664534,
+    "providerRequestBytesTotal": 29328534,
+    "initial": {
+      "rssKiB": 27080,
+      "hwmKiB": 27080,
+      "rssAnonKiB": 12900,
+      "rssFileKiB": 14180,
+      "pssKiB": 24467,
+      "pssAnonKiB": 12900,
+      "threads": 6,
+      "fds": 13,
+      "children": 0,
+      "cpuSecs": 0.01
+    },
+    "final": {
+      "rssKiB": 28224,
+      "hwmKiB": 38004,
+      "rssAnonKiB": 12672,
+      "rssFileKiB": 15552,
+      "pssKiB": 25632,
+      "pssAnonKiB": 12672,
+      "threads": 11,
+      "fds": 13,
+      "children": 0,
+      "cpuSecs": 2.13
+    },
+    "finalReopen": {
+      "rssKiB": 29076,
+      "hwmKiB": 29076,
+      "rssAnonKiB": 14808,
+      "rssFileKiB": 14268,
+      "pssKiB": 26440,
+      "pssAnonKiB": 14808,
+      "threads": 7,
+      "fds": 13,
+      "children": 0,
+      "cpuSecs": 0.04
+    },
+    "rssKiBPeakSampled50ms": 37856,
+    "maxFds": 21,
+    "maxToolDescendants": 5,
+    "batchLatencyMs": {
+      "n": 48,
+      "p50": 711.282,
+      "p95": 895.415,
+      "min": 701.742,
+      "max": 1048.085,
+      "mean": 732.693
+    },
+    "wallSecs": 36.391,
+    "lastExitMs": 13.882,
+    "dbBytes": 108503040
+  },
+  "samples": [
+    {
+      "turns": 16,
+      "epoch": 0,
+      "mem": {
+        "rssKiB": 27596,
+        "hwmKiB": 36984,
+        "rssAnonKiB": 11880,
+        "rssFileKiB": 15716,
+        "pssKiB": 24981,
+        "pssAnonKiB": 11880,
+        "threads": 11,
+        "fds": 13,
+        "children": 0,
+        "cpuSecs": 0.54
+      }
+    },
+    {
+      "turns": 32,
+      "epoch": 0,
+      "mem": {
+        "rssKiB": 27940,
+        "hwmKiB": 37060,
+        "rssAnonKiB": 12224,
+        "rssFileKiB": 15716,
+        "pssKiB": 25327,
+        "pssAnonKiB": 12224,
+        "threads": 11,
+        "fds": 13,
+        "children": 0,
+        "cpuSecs": 1.08
+      }
+    },
+    {
+      "turns": 48,
+      "epoch": 0,
+      "mem": {
+        "rssKiB": 28288,
+        "hwmKiB": 37952,
+        "rssAnonKiB": 12572,
+        "rssFileKiB": 15716,
+        "pssKiB": 25673,
+        "pssAnonKiB": 12572,
+        "threads": 11,
+        "fds": 13,
+        "children": 0,
+        "cpuSecs": 1.65
+      }
+    },
+    {
+      "turns": 64,
+      "epoch": 1,
+      "mem": {
+        "rssKiB": 27728,
+        "hwmKiB": 38004,
+        "rssAnonKiB": 12240,
+        "rssFileKiB": 15488,
+        "pssKiB": 25138,
+        "pssAnonKiB": 12240,
+        "threads": 11,
+        "fds": 13,
+        "children": 0,
+        "cpuSecs": 0.63
+      }
+    },
+    {
+      "turns": 80,
+      "epoch": 1,
+      "mem": {
+        "rssKiB": 28044,
+        "hwmKiB": 38004,
+        "rssAnonKiB": 12492,
+        "rssFileKiB": 15552,
+        "pssKiB": 25452,
+        "pssAnonKiB": 12492,
+        "threads": 11,
+        "fds": 13,
+        "children": 0,
+        "cpuSecs": 1.57
+      }
+    },
+    {
+      "turns": 96,
+      "epoch": 1,
+      "mem": {
+        "rssKiB": 28224,
+        "hwmKiB": 38004,
+        "rssAnonKiB": 12672,
+        "rssFileKiB": 15552,
+        "pssKiB": 25632,
+        "pssAnonKiB": 12672,
+        "threads": 11,
+        "fds": 13,
+        "children": 0,
+        "cpuSecs": 2.13
+      }
+    }
+  ],
+  "restarts": [
+    {
+      "afterTurns": 48,
+      "exitMs": 12.932,
+      "before": {
+        "rssKiB": 28288,
+        "hwmKiB": 37952,
+        "rssAnonKiB": 12572,
+        "rssFileKiB": 15716,
+        "pssKiB": 25673,
+        "pssAnonKiB": 12572,
+        "threads": 11,
+        "fds": 13,
+        "children": 0,
+        "cpuSecs": 1.65
+      },
+      "after": {
+        "rssKiB": 29196,
+        "hwmKiB": 29196,
+        "rssAnonKiB": 14796,
+        "rssFileKiB": 14400,
+        "pssKiB": 26606,
+        "pssAnonKiB": 14796,
+        "threads": 7,
+        "fds": 13,
+        "children": 0,
+        "cpuSecs": 0.03
+      }
+    }
+  ],
+  "database": {
+    "pageSize": 4096,
+    "pages": 26490,
+    "freePages": 28,
+    "retainedToolBytes": 100664534,
+    "entryJsonBytes": 6828542,
+    "outboxRows": 1887,
+    "finalizedChunks": 0
+  },
+  "loadavgEnd": "3.46 2.26 2.54 2/3916 4066465"
+}

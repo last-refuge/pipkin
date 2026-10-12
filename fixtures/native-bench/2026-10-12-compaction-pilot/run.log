@@ -1,0 +1,16 @@
+   Compiling pipkin-engine v0.0.1 (/home/jason/coding/pipkin/crates/pipkin-engine)
+    Finished `release` profile [optimized + debuginfo] target(s) in 23.49s
+     Running tests/perf.rs (target/release/deps/perf-8f89e4954b19e97b)
+
+running 1 test
+test mixed::mixed_soak ... mixed-soak {"turns":16,"epoch":0,"mem":{"rssKiB":27596,"hwmKiB":36984,"rssAnonKiB":11880,"rssFileKiB":15716,"pssKiB":24981,"pssAnonKiB":11880,"threads":11,"fds":13,"children":0,"cpuSecs":0.54}}
+mixed-soak {"turns":32,"epoch":0,"mem":{"rssKiB":27940,"hwmKiB":37060,"rssAnonKiB":12224,"rssFileKiB":15716,"pssKiB":25327,"pssAnonKiB":12224,"threads":11,"fds":13,"children":0,"cpuSecs":1.08}}
+mixed-soak {"turns":48,"epoch":0,"mem":{"rssKiB":28288,"hwmKiB":37952,"rssAnonKiB":12572,"rssFileKiB":15716,"pssKiB":25673,"pssAnonKiB":12572,"threads":11,"fds":13,"children":0,"cpuSecs":1.65}}
+mixed-soak {"turns":64,"epoch":1,"mem":{"rssKiB":27728,"hwmKiB":38004,"rssAnonKiB":12240,"rssFileKiB":15488,"pssKiB":25138,"pssAnonKiB":12240,"threads":11,"fds":13,"children":0,"cpuSecs":0.63}}
+mixed-soak {"turns":80,"epoch":1,"mem":{"rssKiB":28044,"hwmKiB":38004,"rssAnonKiB":12492,"rssFileKiB":15552,"pssKiB":25452,"pssAnonKiB":12492,"threads":11,"fds":13,"children":0,"cpuSecs":1.57}}
+mixed-soak {"turns":96,"epoch":1,"mem":{"rssKiB":28224,"hwmKiB":38004,"rssAnonKiB":12672,"rssFileKiB":15552,"pssKiB":25632,"pssAnonKiB":12672,"threads":11,"fds":13,"children":0,"cpuSecs":2.13}}
+wrote /tmp/pipkin-compaction-pilot/mixed-soak.json
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 36.46s
+

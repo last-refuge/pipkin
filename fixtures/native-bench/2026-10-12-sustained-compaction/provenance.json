@@ -1,0 +1,8 @@
+{
+  "baseRevision": "ca8c89b56a09a2b01907c76729c9f2c925afe989",
+  "harnessSha256": "21f50073dec4fbb73a2c4f53105b879c9bf2d8fa184d8f3235c084c6415cdbc5",
+  "runtimeChanged": false,
+  "concurrentWork": "Workspace checks overlapped the beginning; isolated Xwayland startup ran during the workload. Not an idle-machine latency comparison.",
+  "invocation": "PERF_MIXED_COMPACT=1 PERF_MIXED_TURNS=720 PERF_MIXED_RESTART_EVERY=1440 SKIP_APP=1 TESTS=mixed::mixed_soak scripts/bench-native.sh",
+  "lastHalfRssSlopeKiBPerTurn": 1.326086956521739
+}

@@ -1,0 +1,19 @@
+{
+  "pid": 4076822,
+  "class": "pipkin",
+  "mapped": true,
+  "visible": true,
+  "workspace": {
+    "id": 3,
+    "name": "3"
+  },
+  "at": [
+    1186,
+    288
+  ],
+  "size": [
+    1728,
+    1152
+  ],
+  "xwayland": true
+}

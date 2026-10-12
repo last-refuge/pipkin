@@ -11,7 +11,30 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — hosted native qualification
+## Current follow-up — sustained compaction and native profile/platform checks
+
+2026-10-12, following **`ca8c89b`**; no production code or schema change. The mixed
+benchmark adds an opt-in size-aware usage mode. Pilot restart and full 720-turn uninterrupted
+runs pass; the latter performs 232 automatic compactions and retains all 720 exact replies,
+unique effects, spill files/links and durable outputs. Worker peak **39,312 KiB**, final
+RSS **29,396 KiB**, 13 stable idle fds, zero settled descendants; generation requests stay
+below 210,978 bytes. This exercises repeated thresholds, not live tokenizer or model-summary
+quality. [Evidence](pipkin-rust-engine-evidence/sustained-compaction.md).
+
+The native inspection helper is executed and retained, replacing the historical Pi-only
+helper for scoped features. A copied synthetic profile starts and renders under verified
+Xwayland. Guarded text/shortcut behavior is wrong and Quit times out; the owned app/server
+are subsequently terminated. Only startup/rendering is observed, not interactive acceptance.
+See [profile/Xwayland evidence](pipkin-rust-engine-evidence/xwayland-profile.md).
+
+GitHub authorization is resolved. Linux run **38259320193** and experimental macOS run
+**38259324745** are in progress on `ca8c89b`; no hosted pass claimed yet. Required local
+checks: **1,656 passed, 0 failed, 56 ignored**, clean Clippy/all-targets and formatting.
+Ledger counts are **446 measured, 10 observed, 1 unverified, 47 not started;
+0 fully qualified**. Next: hosted results/fixes, final installed release qualification and
+remaining notice/reference gates, then native-default/Pi retirement. Owner changes preserved.
+
+## Prior follow-up — hosted native qualification
 
 2026-10-12, following **`19c4082`**. The Linux native packaging job now executes the
 engine/protocol tests with Node/npm/npx/Pi traps before building its installed candidate.
