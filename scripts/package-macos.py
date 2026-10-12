@@ -3,7 +3,7 @@
 import hashlib
 import importlib.util
 import json
-import os
+import re
 from pathlib import Path
 import plistlib
 import shutil
@@ -23,16 +23,6 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def check_probe_socket_budget(profile):
-    # Pi creates a longer private server socket in addition to the public UUID socket.
-    # Reserve seven PID digits so a later runner cannot silently exceed Darwin's
-    # 104-byte sun_path field (including its terminator).
-    longest = (Path(profile) / 'pipkin-probe-9999999/server' /
-               ('server-00000000-0000-4000-8000-000000000000-' + '0' * 12 + '.sock'))
-    if len(os.fsencode(longest)) >= 104:
-        raise RuntimeError('offline probe profile would exceed the macOS Pi socket-path limit')
-
-
 def main():
     if sys.platform != 'darwin':
         raise SystemExit('macOS packaging must inspect a native build on macOS')
@@ -45,15 +35,15 @@ def main():
     binary = ROOT / 'target/release/pipkin'
     stage = ROOT / 'dist/macos-notices'
     notices = stage / 'usr/share/doc/pipkin/third-party'
-    engine = stage / 'usr/lib/pipkin/engine'
-    runtime = stage / 'usr/lib/pipkin/runtime'
-    engine_info = json.loads((engine / 'engine.json').read_text())
-    runtime_info = json.loads((runtime / 'runtime.json').read_text())
-    required_revision = (ROOT / 'packaging/pi-engine-revision').read_text().strip()
-    if engine_info.get('sourceRevision') != required_revision or engine_info.get('development') is not False:
-        raise SystemExit('Mac package requires the clean pinned production engine')
-    if runtime_info['target'] != target or sha256(runtime / 'bin/node') != runtime_info['binarySha256']:
-        raise SystemExit('bundled runtime identity/target mismatch')
+    if any((stage / 'usr/lib/pipkin' / name).exists() for name in ['engine', 'runtime']):
+        raise SystemExit('native macOS packaging refuses stale Pi/Node staging')
+    identity = subprocess.check_output([str(binary), '--version'], text=True).strip()
+    match = re.fullmatch(r'pipkin ([^ ]+) \(.*engine native ([^,]+), engine protocol ([0-9]+), engine schema ([0-9]+), schema ([0-9]+)\)', identity)
+    if not match or match[1] != version:
+        raise SystemExit('binary must identify the native engine as its default and match the app version')
+    engine_info = {'formatVersion': 1, 'engine': 'native', 'appVersion': match[1],
+                   'engineVersion': match[2], 'engineProtocol': int(match[3]),
+                   'engineSchema': int(match[4]), 'desktopSchema': int(match[5])}
     if not (notices / 'inventory.json').is_file():
         raise SystemExit('target-specific dependency notices must be generated first')
     out = ROOT / 'dist/macos'
@@ -70,17 +60,17 @@ def main():
     shutil.copy2(ROOT / 'packaging/pipkin.icns', resources / 'pipkin.icns')
     components = app / 'lib/pipkin'
     components.mkdir(parents=True)
-    shutil.copytree(engine, components / 'engine', symlinks=True)
-    shutil.copytree(runtime, components / 'runtime')
-    # Existing install discovery resolves Contents/lib/pipkin/engine relative to MacOS/pipkin.
-    bundled_manifest = components / 'engine/engine.json'
-    engine_info['requiresBundledNode'] = True
-    bundled_manifest.write_text(json.dumps(engine_info, indent=2) + '\n')
+    (components / 'native-engine.json').write_text(json.dumps(engine_info, indent=2) + '\n')
     shutil.copytree(notices, resources / 'third-party')
     shutil.copytree(ROOT / 'assets/fonts', resources / 'font-notices', ignore=shutil.ignore_patterns('*.ttf', '*.otf'))
     for source in ['LICENSE', 'SECURITY.md', 'assets/PROVENANCE.md']:
         shutil.copy2(ROOT / source, resources / Path(source).name)
-    shutil.copy2(ROOT / 'packaging/upstream-notices/anthropic-sdk/LICENSE', resources / 'anthropic-sdk-MIT-LICENSE')
+    for source, name in [('pi/LICENSE', 'pi-MIT-LICENSE'),
+                         ('anthropic-sdk/LICENSE', 'anthropic-sdk-MIT-LICENSE'),
+                         ('minimatch-10.2.6/LICENSE.md', 'minimatch-BlueOak-LICENSE'),
+                         ('brace-expansion-5.0.12/LICENSE', 'brace-expansion-MIT-LICENSE')]:
+        shutil.copy2(ROOT / 'packaging/upstream-notices' / source, resources / name)
+    shutil.copy2(ROOT / 'assets/icons/LICENSE', resources / 'icons-LICENSE')
     shutil.copy2(ROOT / 'docs/macos-first-pass.md', out / 'README.md')
     shutil.copy2(ROOT / 'docs/macos-first-pass.md', resources / 'README.md')
     with (app / 'Info.plist').open('wb') as stream:
@@ -93,9 +83,8 @@ def main():
     info = {'formatVersion': 1, 'experimental': True,
             'app': {'version': version, 'revision': revision, 'dirty': dirty,
                     'preBundleSigningBinarySha256': sha256(executable), 'target': target},
-            'engine': {'bundled': True, 'requiredRevision': required_revision,
-                       'productionPruneSucceeded': engine_info.get('productionPruneSucceeded')},
-            'nodeRuntime': runtime_info,
+            'engine': dict(engine_info, builtIntoBinary=True),
+            'nodeRuntime': None,
             'signing': 'Ad-hoc signed completed app bundle; no Developer ID or notarization. Not publisher authentication or Gatekeeper acceptance.',
             'directMachODependencies': [line.strip() for line in dependencies],
             'limitations': 'Build artifact, not native acceptance. Dependency notices are evidence, not legal clearance.'}
@@ -118,18 +107,14 @@ def main():
         subprocess.run(verify + [str(restored)], check=True)
         if sha256(restored / 'Contents/MacOS/pipkin') != info['app']['binarySha256']:
             raise RuntimeError('extracted signed executable checksum mismatch')
-        if sha256(restored / 'Contents/lib/pipkin/runtime/bin/node') != runtime_info['binarySha256']:
-            raise RuntimeError('extracted Node checksum mismatch')
         if sha256(restored / 'Contents/Resources/pipkin.icns') != sha256(ROOT / 'packaging/pipkin.icns'):
             raise RuntimeError('extracted app icon checksum mismatch')
         # A real packaged CLI, not source-only tests: offline private profile, no provider calls.
         # Finder-like bare PATH excludes setup-node/Homebrew and the source checkout.
-        # A private eight-character /tmp directory leaves room for Pi's longest socket.
         # Keep HOME and TMPDIR together; never probe against the runner's real profile.
         with tempfile.TemporaryDirectory(prefix='', dir='/tmp') as profile:
-            check_probe_socket_budget(profile)
             environment = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'HOME': profile,
-                           'TMPDIR': profile, 'PI_OFFLINE': '1'}
+                           'TMPDIR': profile}
             subprocess.run([str(restored / 'Contents/MacOS/pipkin'), '--diagnose', '--probe',
                             '--data-dir', str(Path(profile) / 'app-data')], env=environment, check=True)
         subprocess.run(verify + [str(restored)], check=True)  # Engine startup must not mutate sealed resources.
@@ -207,14 +192,11 @@ def main():
             subprocess.run(verify + [str(copied)], check=True)
             if sha256(copied / 'Contents/MacOS/pipkin') != info['app']['binarySha256']:
                 raise RuntimeError('DMG-installed executable checksum mismatch')
-            if sha256(copied / 'Contents/lib/pipkin/runtime/bin/node') != runtime_info['binarySha256']:
-                raise RuntimeError('DMG-installed Node checksum mismatch')
             if sha256(copied / 'Contents/Resources/pipkin.icns') != sha256(ROOT / 'packaging/pipkin.icns'):
                 raise RuntimeError('DMG-installed app icon checksum mismatch')
             with tempfile.TemporaryDirectory(prefix='', dir='/tmp') as profile:
-                check_probe_socket_budget(profile)
                 environment = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'HOME': profile,
-                               'TMPDIR': profile, 'PI_OFFLINE': '1'}
+                               'TMPDIR': profile}
                 subprocess.run([str(copied / 'Contents/MacOS/pipkin'), '--diagnose', '--probe',
                                 '--data-dir', str(Path(profile) / 'app-data')], env=environment, check=True)
             subprocess.run(verify + [str(copied)], check=True)

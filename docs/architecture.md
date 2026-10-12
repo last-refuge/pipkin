@@ -1,6 +1,6 @@
 # Architecture
 
-Three crates, one direction of dependency: `pipkin-app → pipkin-ui → pipkin-core`.
+Desktop dependency direction: `pipkin-app → pipkin-ui → pipkin-core`.
 
 ```text
 GPUI views ──Command──▶ Model entity ──▶ AppState (pipkin-core, pure Rust)
@@ -8,7 +8,7 @@ GPUI views ──Command──▶ Model entity ──▶ AppState (pipkin-core, 
                               │◀── Effects ─────┘
                               ▼
                  controller (pipkin-app) executes effects
-                    ├─ Backend port: DemoBackend now, Pi adapter later
+                    ├─ Backend port: NativeBackend or explicit simulated DemoBackend
                     └─ Storage: SQLite, single writer thread
         BackendEvent ◀── backend ──▶ Model::apply_event (stale-guarded)
 ```
@@ -22,3 +22,8 @@ Stale-update guards: every `BackendEvent` carries `(conversation, generation, op
 Execution states (`RunState`) are separate from persistence (`SaveState`) and, later, connection state. Cancel stays `Stopping` until the backend confirms. `OutcomeUnknown` is never resent automatically; the only exits are `CheckStatus` (backend answers) or a failed resolution.
 
 Render functions do no I/O. Draft saves are debounced (500 ms) and flushed on conversation change and orderly exit; "Draft saved" is shown only after the writer acknowledges a commit.
+
+The built-in `pipkin-engine` owns providers, coding tools, durable sessions and retries;
+`pipkin-engine-protocol` defines the versioned framed boundary. The desktop normally starts the same
+binary as a private engine worker, with optional in-process and explicit native socket-host modes.
+There is no Pi client crate or Node runtime.

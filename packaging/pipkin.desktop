@@ -2,7 +2,7 @@
 Type=Application
 Name=Pipkin
 GenericName=Coding agent client
-Comment=Native desktop client for the Pi coding agent
+Comment=Native desktop client for the built-in Rust coding agent
 Exec=pipkin
 Icon=pipkin
 Terminal=false

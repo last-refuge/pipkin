@@ -5,11 +5,6 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
-    inputs:
-      native_only:
-        description: Run only native engine qualification during the Pi retirement
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -20,7 +15,7 @@ concurrency:
 
 jobs:
   native-engine:
-    # Experimental platform evidence: this does not qualify macOS desktop UX or packaging.
+    # Experimental platform evidence: this does not qualify macOS desktop UX or Gatekeeper acceptance.
     runs-on: macos-15
     timeout-minutes: 90
     env:
@@ -45,6 +40,7 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            ${{ runner.os }}-${{ runner.arch }}-native-
       - name: Prepare native dependencies and pinned toolchain
         run: |
           mkdir -p "$TMPDIR" qualification-logs
@@ -73,6 +69,27 @@ jobs:
           cargo test -p pipkin-app --locked --test engine_worker --test native_diagnose 2>&1 | tee qualification-logs/native-worker.log
           cargo test -p pipkin-app --locked adapters::native:: 2>&1 | tee qualification-logs/native-adapter.log
           test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
+      - name: Build and verify the native macOS app and ZIP
+        run: |
+          set -o pipefail
+          python3 scripts/test-package-macos.py
+          target=$(rustc -vV | awk '/^host:/ {print $2}')
+          cargo fetch --locked --target "$target" 2>&1 | tee qualification-logs/notice-inputs.log
+          PIPKIN_REVISION="$(git rev-parse HEAD)" cargo build -p pipkin-app --release --locked 2>&1 | tee qualification-logs/build.log
+          python3 scripts/write-license-inventory.py dist/macos-notices "$target" 2>&1 | tee qualification-logs/notices.log
+          python3 scripts/package-macos.py "$target" --app-only 2>&1 | tee qualification-logs/package.log
+          cp dist/macos/build-info.json dist/macos/SHA256SUMS qualification-logs/
+          test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
+      - name: Retain experimental native ZIP
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pipkin-macos-${{ runner.arch }}-${{ github.sha }}
+          path: |
+            dist/macos/*.zip
+            dist/macos/build-info.json
+            dist/macos/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
       - name: Save native Rust build cache even after failed qualification
         if: always() && steps.native-cache.outputs.cache-primary-key != '' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -87,137 +104,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: macos-native-engine-${{ github.sha }}
-          path: qualification-logs/
-          if-no-files-found: warn
-          retention-days: 30
-
-  build:
-    if: github.event_name != 'workflow_dispatch' || !inputs.native_only
-    runs-on: macos-15
-    timeout-minutes: 90
-    env:
-      CARGO_BUILD_JOBS: "3"
-      CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_DEV_DEBUG: "0"
-      CARGO_PROFILE_TEST_DEBUG: "0"
-      RUST_BACKTRACE: "1"
-      # Short, non-symlinked paths stay within Darwin's Unix socket path limit.
-      TMPDIR: /private/tmp/pipkin-ci
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - name: Prepare runner and pinned toolchain
-        run: |
-          mkdir -p "$TMPDIR" qualification-logs
-          chmod 700 "$TMPDIR"
-          toolchain=$(awk -F '"' '/^channel =/ {print $2}' rust-toolchain.toml)
-          test -n "$toolchain"
-          rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
-          uname -a > qualification-logs/runner.txt
-          rustc -vV > qualification-logs/rustc.txt
-          xcodebuild -version > qualification-logs/xcode.txt
-      - name: Native Retina background decoder and Finder layout contracts
-        run: |
-          set -o pipefail
-          python3 scripts/test-dmg-background.py 2>&1 | tee qualification-logs/dmg-background.log
-          python3 scripts/test-macos-dmg-layout.py 2>&1 | tee qualification-logs/dmg-layout.log
-          python3 scripts/test-package-macos.py 2>&1 | tee qualification-logs/package-fixtures.log
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "22.23.3"
-      - name: Provision a separate pinned engine on the disposable runner
-        run: |
-          brew install coreutils gnu-tar findutils zstd cmake pkg-config
-          echo "$(brew --prefix gnu-tar)/libexec/gnubin" >> "$GITHUB_PATH"
-          echo "$(brew --prefix findutils)/libexec/gnubin" >> "$GITHUB_PATH"
-          revision=$(<packaging/pi-engine-revision)
-          [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
-          engine="$TMPDIR/pi-engine"
-          git init "$engine"
-          git -C "$engine" fetch --depth=1 https://github.com/jasona/pi.git "$revision"
-          git -C "$engine" checkout --detach FETCH_HEAD
-          (cd "$engine" && npm ci)
-          echo "PIPKIN_PI_REPO=$engine" >> "$GITHUB_ENV"
-      - name: Restore pinned model data
-        run: |
-          scripts/stage-model-data.sh "$PIPKIN_PI_REPO"
-          scripts/check-engine-source.sh "$PIPKIN_PI_REPO"
-      - name: Core, Unix transport and native ownership tests
-        run: |
-          set -o pipefail
-          cargo test -p pipkin-core -p pi-client --locked 2>&1 | tee qualification-logs/core-transport.log
-          cargo test -p pipkin-app --locked macos_processes -- --test-threads=1 2>&1 | tee qualification-logs/ownership.log
-          cargo test -p pipkin-app --locked runtime_tests 2>&1 | tee qualification-logs/runtime-policy.log
-          cargo test -p pipkin-app --locked native_menu 2>&1 | tee qualification-logs/native-menu.log
-          cargo test -p pipkin-app --locked fresh_ids_are_distinct_canonical_protocol_uuid_v4 2>&1 | tee qualification-logs/identity.log
-          cargo test -p pipkin-app --locked managed_engine_remembers_a_portable_id 2>&1 | tee qualification-logs/managed-identity.log
-          cargo fmt --all --check
-      - name: One-command source build with private Node/npm and default subagents
-        run: |
-          set -o pipefail
-          python3 scripts/test-source-setup.py
-          # Real per-user source install, but only into a disposable HOME. Keep Rust's
-          # public toolchain/cache locations explicit so changing HOME cannot hide rustup.
-          cargo_home="${CARGO_HOME:-$HOME/.cargo}"
-          rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
-          source_home="$TMPDIR/source-home"
-          mkdir -p "$source_home"
-          HOME="$source_home" CARGO_HOME="$cargo_home" RUSTUP_HOME="$rustup_home" scripts/setup.sh --install 2>&1 | tee qualification-logs/source-setup.log
-          codesign --verify --deep --strict "$source_home/Applications/Pipkin.app"
-      - name: Build actual native app and retain dependency notices
-        run: |
-          set -o pipefail
-          cargo build -p pipkin-app --release --locked 2>&1 | tee qualification-logs/build.log
-          cargo test -p pipkin-app --release --locked the_engine_starts_serves_and_stops_without_leaving_processes -- --ignored --test-threads=1 --nocapture 2>&1 | tee qualification-logs/engine-lifecycle.log
-          cargo test -p pipkin-app --release --locked a_real_run_edits_files_shows_output_and_diff_and_reopens_the_same_history -- --ignored --test-threads=1 --nocapture 2>&1 | tee qualification-logs/engine-edit-history.log
-          target=$(rustc -vV | awk '/^host:/ {print $2}')
-          # Metadata includes workspace-unified feature dependencies not necessarily compiled
-          # by the limited smoke checks. Populate the exact locked target graph before offline audit.
-          cargo fetch --locked --target "$target" 2>&1 | tee qualification-logs/notice-inputs.log
-          stage="$PWD/dist/macos-notices/usr/lib/pipkin"
-          scripts/build-engine.sh "$PIPKIN_PI_REPO" "$stage/engine" 2>&1 | tee qualification-logs/staged-engine.log
-          python3 scripts/stage-node-runtime.py "$target" "$stage/runtime" 2>&1 | tee qualification-logs/node-runtime.log
-          python3 - "$stage/engine/engine.json" <<'PY'
-          import json, pathlib, sys
-          path = pathlib.Path(sys.argv[1])
-          manifest = json.loads(path.read_text())
-          manifest['requiresBundledNode'] = True
-          path.write_text(json.dumps(manifest, indent=2) + '\n')
-          PY
-          PIPKIN_PI_REPO="$stage/engine" cargo test -p pipkin-app --release --locked the_engine_starts_serves_and_stops_without_leaving_processes -- --ignored --test-threads=1 --nocapture 2>&1 | tee qualification-logs/bundled-lifecycle.log
-          PIPKIN_PI_REPO="$stage/engine" cargo test -p pipkin-app --release --locked a_real_run_edits_files_shows_output_and_diff_and_reopens_the_same_history -- --ignored --test-threads=1 --nocapture 2>&1 | tee qualification-logs/bundled-work.log
-          # Test the patched staged engine's OAuth transport with no provider credentials.
-          auth_root="$TMPDIR/a" # Keep the Unix socket well inside Darwin's short path limit.
-          PI_REPO="$stage/engine" PI_SERVER_ID=5f0c7b1e-2d4a-4f6b-9a3e-1c8d7e6f5a40 scripts/pi-test-server.sh "$auth_root" >qualification-logs/auth-server.log 2>&1 &
-          auth_pid=$!
-          trap 'kill "$auth_pid" 2>/dev/null || true; wait "$auth_pid" 2>/dev/null || true' EXIT
-          for i in {1..300}; do
-            [[ -S "$auth_root/server/5f0c7b1e-2d4a-4f6b-9a3e-1c8d7e6f5a40.sock" ]] && break
-            kill -0 "$auth_pid" 2>/dev/null || { cat qualification-logs/auth-server.log; exit 1; }
-            sleep .1
-          done
-          test -S "$auth_root/server/5f0c7b1e-2d4a-4f6b-9a3e-1c8d7e6f5a40.sock"
-          PIPKIN_REAL_PI_DIR="$auth_root/server" PIPKIN_REAL_PI_SERVER_ID=5f0c7b1e-2d4a-4f6b-9a3e-1c8d7e6f5a40 cargo test -p pipkin-app --release --locked real_server_provider_auth_boundary -- --ignored --test-threads=1 --nocapture 2>&1 | tee qualification-logs/oauth-transport.log
-          kill "$auth_pid" 2>/dev/null || true
-          wait "$auth_pid" 2>/dev/null || true
-          trap - EXIT
-          python3 scripts/write-license-inventory.py dist/macos-notices "$target" 2>&1 | tee qualification-logs/notices.log
-          python3 scripts/package-macos.py "$target" 2>&1 | tee qualification-logs/package.log
-          cp dist/macos/build-info.json qualification-logs/
-          cp dist/macos/SHA256SUMS qualification-logs/
-      - name: Retain experimental ZIP and DMG (ad-hoc only, not notarized or a release)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: pipkin-macos-${{ runner.arch }}-${{ github.sha }}
-          path: dist/macos/
-          if-no-files-found: error
-          retention-days: 30
-      - name: Retain build evidence even on failure
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: macos-build-evidence-${{ github.sha }}
           path: qualification-logs/
           if-no-files-found: warn
           retention-days: 30

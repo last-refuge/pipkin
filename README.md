@@ -5,12 +5,12 @@
 # Pipkin
 
 **A faster way to AI, for developers.**<br>
-A native desktop client for the [Pi](https://github.com/jasona/pi) coding agent, written in Rust with GPUI.
+A native desktop coding agent with a built-in Rust engine and GPUI interface.
 
 ![status](https://img.shields.io/badge/status-alpha-F59E0B?style=flat-square)
 ![platform](https://img.shields.io/badge/Arch%20%2F%20Omarchy-Wayland-1F2937?style=flat-square)
 ![rust](https://img.shields.io/badge/Rust-GPUI-374151?style=flat-square)
-![engine](https://img.shields.io/badge/engine-Pi%20(bundled)-080F1A?style=flat-square)
+![engine](https://img.shields.io/badge/engine-Rust%20(built--in)-080F1A?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-F59E0B?style=flat-square)
 
 <br>
@@ -25,12 +25,12 @@ A native desktop client for the [Pi](https://github.com/jasona/pi) coding agent,
 
 ## Why Pipkin
 
-Pi is a coding agent with a powerful engine. Pipkin gives it a fast, calm, native home: streaming answers,
+Pipkin combines a built-in coding engine with a fast native interface: streaming answers,
 tool calls you can read at a glance, a view of the project's working-tree changes, and a composer that saves drafts
 with visible save status. It is a real application, not a web view: one Rust binary, GPU-drawn, with its own text
 editing, selection and accessibility tree.
 
-> **Alpha.** Built and used on Arch / Omarchy (Hyprland, Wayland). It runs against a real Pi engine, and the
+> **Alpha.** Built and used on Arch / Omarchy (Hyprland, Wayland). It runs a built-in Rust engine, and the
 > install, accessibility and scaling checks that need a person at a machine are only partly done. See
 > [Status](#status) before you rely on it.
 
@@ -45,12 +45,10 @@ editing, selection and accessibility tree.
 - **Steer** a run in progress, **queue** a follow-up, **stop** it, and pick it back up after a restart. The engine
   owns the queue, so what you see is what will run.
 - Attach files by picker or by dropping them on the window; choose the model from the engine's catalog.
-- The bundled Pi engine allows native subagents by default. See child task status and a read-only transcript preview in
-  the current session's inspector; Preferences → Allow subagents blocks **new** calls without cancelling ongoing work.
-  Child history and the native UI still have [known limitations](packaging/pi-subagents/README.md).
-- Experimental Pi remote plugins can ask you questions through dialogs (choices, yes/no, text), with decline and a
-  banner if you put one aside. Stable Pi `ctx.ui.*` and terminal widgets are not bridged; see
-  [extension compatibility](docs/extensions.md).
+- Native subagents are included by default, with child status and transcript previews. Preferences → Allow
+  subagents blocks new calls without cancelling ongoing work.
+- Pi extensions are outside Pipkin's scope. Historical extension metadata is preserved during import without
+  loading extension code; see [compatibility](docs/extensions.md).
 
 **See what changed**
 - A changes pane with a diff card (line numbers, additions and removals) and a "Files changed" list with
@@ -92,11 +90,10 @@ editing, selection and accessibility tree.
 ## Install
 
 The working qualification scope is **x86_64 Arch/Omarchy, Hyprland/Wayland** with a Vulkan-capable GPU driver.
-The current package includes a private, checksum-pinned Node 22 runtime and paired Pi engine; no system Node installation or global npm changes are needed to run it. Git and the desktop/runtime libraries listed in
-[`packaging/PKGBUILD`](packaging/PKGBUILD) are still needed. Source setup bootstraps its own private Node/npm; only native build tools are prerequisites.
-Other desktops/distributions and X11 remain experimental. Each artifact's native ABI requirements depend on its
-build inputs; see [runtime inventory and limitations](docs/bundled-licenses.md#native-runtime-inspection).
-Your Pi credentials in `~/.pi/agent` are used unless an alternate agent directory is explicitly selected.
+The package contains the app and engine in one Rust binary. Building and running it requires no Pi checkout,
+Node or npm. Git and the libraries in [`packaging/PKGBUILD`](packaging/PKGBUILD) remain required.
+Other desktops/distributions and X11 remain experimental; native ABI compatibility depends on build inputs.
+Native credentials and configuration live separately from Pi; `--pi-agent-dir DIR` selects an import source.
 
 ### Build and use it from source (Mac or Linux)
 
@@ -105,21 +102,21 @@ once, then:
 
 ```sh
 git clone https://github.com/last-refuge/pipkin.git && cd pipkin
-scripts/setup.sh --run       # fetch pinned tools/engine, include subagents, build, check, launch
+scripts/setup.sh --run       # build the native app/engine, check, launch
 ```
 
 **No manual Pi checkout, patches, npm install or server startup. Subagents are included by default.**
 The launcher selects this checkout as the project so you can use Pipkin to build Pipkin.
 
 ```sh
-scripts/run.sh              # run the last successful paired build again
+scripts/run.sh              # run the last successful native build again
 scripts/setup.sh --install  # install for your user: Linux ~/.local; Mac ~/Applications/Pipkin.app
 scripts/setup.sh --check    # check prerequisites only; no downloads or installation
 ```
 
 Mac source builds support Apple Silicon/Intel. Linux source setup targets glibc x86_64 (Arch/Omarchy,
 Debian/Ubuntu/Fedora prerequisites are documented; other desktops remain experimental). The script never
-runs sudo or changes global Node/npm. Each rebuild stages immutable app/engine/runtime files, so you can
+runs sudo or installs Node/npm. Each rebuild stages an immutable native binary, so you can
 build while the old app runs; **Quit and relaunch to use the new build**. See the
 [complete source setup and self-development guide](docs/source-setup.md).
 
@@ -129,22 +126,19 @@ For a pacman-managed Arch package instead of the per-user installer, see the adv
 ### Experimental generic Linux installer
 
 ```sh
-tar --zstd -xf pipkin-<version>-x86_64.tar.zst && ./install.sh     # into ~/.local, no root needed
+tar --zstd -xf pipkin-native-<version>-x86_64.tar.zst && ./install.sh     # into ~/.local, no root needed
 ./install.sh --list            # installed versions
 ./install.sh --rollback        # go back to the previous version in one step
 ```
 
-The installer runs an offline preflight and installed-engine handshake with a colored ASCII progress display on interactive terminals; on other terminals it prints plain progress. It uses the packaged private Node and never installs global Node or runs a package manager. Missing native libraries or an unsupported distro still require the user's package manager. There is no published signed release yet. Each version is kept with its own paired engine and runtime. The installer preserves
-user-data locations; application database migrations and schema-compatible rollback require the documented backup
-procedure. Verify a download with `scripts/verify-release.sh`. Details:
-[`docs/packaging.md`](docs/packaging.md).
+The installer checks native libraries and performs an isolated offline worker handshake. It keeps versioned
+binaries and preserves application data. There is no published signed release yet. Database rollback requires
+compatible schemas or the documented backup restoration; see [packaging](docs/packaging.md).
 
 ### Advanced external engine
 
-`--pi-repo` / `--pi-dir` remain available for engine development or separately managed servers. A vanilla
-Pi checkout does **not** contain Pipkin's staged authentication/subagent patches; rebuilding only the Rust
-client cannot add those capabilities to an attached old engine. Prefer `scripts/setup.sh` / `scripts/run.sh`
-for normal source use. See [getting started](docs/getting-started.md) for advanced package preparation.
+The built-in engine supports explicitly managed native hosts; see [native attachment](docs/native-attachment.md).
+Legacy `--pi-repo`, `--pi-dir`, `--pi-server-id` and `--pi-extension` flags are retired.
 
 Provider setup, missing/expired credentials and model refresh are documented in
 [getting started](docs/getting-started.md). Data ownership, quitting, uncertain work and diagnostic privacy are in
@@ -157,7 +151,7 @@ not a public bug report.
 | You want to | Run |
 | --- | --- |
 | Talk to a real model | `scripts/run.sh` (source build), or `pipkin` / the installed Mac app; configure the provider in Pipkin |
-| Try it with no keys and no network | `scripts/try-m2.sh` (a real engine with a scripted offline provider; a prompt containing "slow" holds the run so you can steer, queue and stop it) |
+| Verify installed coding without live accounts | `scripts/test-native-package.sh` (isolated scripted provider, real tools, migration and restart) |
 | Look around with fake data | `pipkin --demo normal` (also: `followup`, `failure`, `unknown`, `stressed`, `large`, `persist-fail`) |
 | Check an installation | `pipkin --version`, `pipkin --diagnose [--probe]` |
 | Open a specific project | `--project DIR` (repeatable; the last one is selected) |
@@ -166,15 +160,15 @@ not a public bug report.
 
 ### Continuous goals
 
-Type `/goal <what to accomplish>` in the composer and press Enter. While Pipkin is open, it keeps the goal attached to that conversation and asks Pi to continue after each completed turn until Pi explicitly reports it met, blocked, or unreachable. `/goal <new goal>` replaces it; `/goal clear` removes it and stops an active goal turn. The goal strip above the composer shows its status and has a clear button.
+Type `/goal <what to accomplish>` in the composer and press Enter. While Pipkin is open, it keeps the goal attached to that conversation and asks the engine to continue after each completed turn until the engine explicitly reports it met, blocked, or unreachable. `/goal <new goal>` replaces it; `/goal clear` removes it and stops an active goal turn. The goal strip above the composer shows its status and has a clear button.
 
-If Pi does not give an unambiguous status, or a turn fails, Pipkin pauses instead of blindly continuing. Saved goals return paused after a restart so an uncertain turn is never resent automatically; re-enter `/goal <goal>` to resume. In demo mode, replies are simulated and do not execute the goal.
+If the engine does not give an unambiguous status, or a turn fails, Pipkin pauses instead of blindly continuing. Saved goals return paused after a restart so an uncertain turn is never resent automatically; re-enter `/goal <goal>` to resume. In demo mode, replies are simulated and do not execute the goal.
 
 ### Session usage
 
-Type `/session` in the composer, use **Session usage** in the command palette, or click **Usage** beside the composer to inspect the selected Pi session. Pipkin reads Pi's committed `pi.usage` ledger and shows input/output/cache tokens, total tokens, reported cost, and a model/tool breakdown. The figures are Pi's estimates, not a provider billing balance. Demo mode reports no real usage.
+Type `/session` in the composer, use **Session usage** in the command palette, or click **Usage** beside the composer to inspect the selected session. Pipkin reads the committed usage ledger and shows input/output/cache tokens, total tokens, reported cost, and a model/tool breakdown. The figures are the engine's estimates, not a provider billing balance. Demo mode reports no real usage.
 
-The Pi server currently does not expose provider account quota, remaining balance, or reset times to Pipkin. Check your provider dashboard for account limits.
+The engine currently does not expose provider account quota, remaining balance, or reset times to Pipkin. Check your provider dashboard for account limits.
 
 ### Keyboard
 
@@ -196,8 +190,7 @@ flowchart LR
     UI["pipkin-ui<br/>GPUI views, text editing,<br/>virtualised transcript"] -- Commands --> Core
     Core["pipkin-core<br/>pure state machine<br/>(no GUI, no I/O)"] -- Effects --> App
     App["pipkin-app<br/>controller, SQLite<br/>(drafts, journal, saved copies)"] --> Backend
-    Backend["Pi backend<br/>worker thread"] --- Client["pi-client<br/>framed CBOR + Chord"]
-    Client <-- local socket --> Engine["Pi engine<br/>(Node, bundled)"]
+    Backend["Native adapter"] <-- framed stdio --> Engine["pipkin-engine<br/>private worker in the same binary"]
 ```
 
 - **`pipkin-core`** holds every decision (run state, queues, availability, draft and save state) and knows nothing
@@ -207,14 +200,14 @@ flowchart LR
 - **`pipkin-app`** owns the database, the launched engine's lifecycle and the glue. It starts/restarts the engine it
   owns and stops it when you quit. A separately started external server can continue work; see
   [quitting and interrupted work](docs/support.md#quitting-and-interrupted-work).
-- **`pi-client`** speaks Pi's local protocol and checks who is on the other end of the socket before trusting it.
+- **`pipkin-engine`** runs providers, coding tools, durable sessions and queues; **`pipkin-engine-protocol`** defines its versioned desktop boundary.
 
 ## Status
 
 | Milestone | State |
 | --- | --- |
 | Real read path, first real workflow, daily-use execution and recovery | Built, tested against a real engine |
-| Complete local product (history, search, tool output, extension dialogs, offline cache) | Built; native gates partly run |
+| Complete local product (history, search, tool output, offline cache) | Built; native gates partly run |
 | Distributable alpha (bundled engine, package, diagnostics, upgrade / rollback) | Built; checked in a scratch prefix, not on a clean machine |
 | Broader release (X11, other Linux, signed releases) | Groundwork only; nothing but Arch / Omarchy is claimed |
 
@@ -237,17 +230,17 @@ what each milestone really covers, is in [`docs/rust-desktop-client-plan.md`](do
 ```sh
 cargo test --workspace && cargo clippy --workspace --all-targets && cargo fmt --all --check
 
-# against a real Pi engine (opt in; needs the Pi checkout and its dependencies)
-PIPKIN_PI_REPO=../pi-fork/pi cargo test -p pipkin-app --release e2e -- --ignored --test-threads=1
+# Build and verify installed migration, coding tools and restart without live accounts
+scripts/test-native-package.sh
 
-scripts/package.sh && scripts/verify-install.sh      # build and check an installable package
 ```
 
 ```
 crates/pipkin-core   state machine, protocol of commands/effects (no GUI)
 crates/pipkin-ui     GPUI views, theme tokens, text editor, transcript
 crates/pipkin-app    controller, storage, engine lifecycle, install and diagnostics
-crates/pi-client     Pi's wire protocol and local transport
+crates/pipkin-engine native engine, providers, tools and durable store
+crates/pipkin-engine-protocol versioned messages and transports
 packaging/ scripts/  Arch package, installer, release and verification scripts
 assets/              fonts, icons and the mascot, with provenance
 docs/                the plan, architecture, packaging, platforms, beta and gate notes
@@ -255,15 +248,15 @@ docs/                the plan, architecture, packaging, platforms, beta and gate
 
 Useful reading: [`docs/architecture.md`](docs/architecture.md), [`docs/packaging.md`](docs/packaging.md),
 [`docs/platforms.md`](docs/platforms.md), [`docs/beta.md`](docs/beta.md), [`docs/extensions.md`](docs/extensions.md),
-[`docs/scorecard.md`](docs/scorecard.md). The proposed Pi-to-native-engine replatform is in
-[`llm-docs/pipkin-rust-engine-plan.md`](llm-docs/pipkin-rust-engine-plan.md); it is a plan, not a shipped replacement.
+[`docs/scorecard.md`](docs/scorecard.md). The Pi-to-native-engine conversion is tracked in
+[`llm-docs/pipkin-rust-engine-plan.md`](llm-docs/pipkin-rust-engine-plan.md); the built-in engine is now the default.
 `AGENTS.md` lists the project's non-negotiables, including the safe way to
 drive the real window in native tests (`scripts/guard.sh`).
 
 ## Credits
 
 Pipkin is built on [GPUI](https://github.com/zed-industries/zed) (from the Zed project; Zed's GPL crates are read for
-reference, never copied) and talks to [Pi](https://github.com/jasona/pi). Typeface: [Poppins](https://github.com/itfoundry/Poppins)
+reference, never copied) and includes MIT-licensed behavior ports from [Pi](https://github.com/jasona/pi), with notices retained. Typeface: [Poppins](https://github.com/itfoundry/Poppins)
 (SIL OFL) for the interface, [Lilex](https://github.com/mishamyrt/Lilex) (SIL OFL) for code, IBM Plex Sans Italic (SIL OFL)
 for emphasis. Icons: [Lucide](https://lucide.dev) (ISC). The mascot and wordmark are Pipkin's brand artwork. Full
 provenance is in [`assets/PROVENANCE.md`](assets/PROVENANCE.md).

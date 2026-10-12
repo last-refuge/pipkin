@@ -2,13 +2,13 @@
 # Build a native-engine candidate package: the pipkin binary (which hosts the built-in engine via
 # `pipkin --engine-worker`), desktop entry, icons, notices, Rust license inventory, runtime
 # inventory and build identity. No Node, npm or Pi checkout is used to build it or shipped in it.
-# The Pi package (scripts/package.sh with no --engine flag) and its outputs are unchanged.
+# scripts/package.sh uses this native path by default.
 #
 #   scripts/package-native.sh            -> dist/native/pipkin-native-<version>-<arch>.tar.zst
 #   scripts/package.sh --engine native      (the same)                and dist/native/stage/
 #
 # PIPKIN_NATIVE_OUT=DIR puts the stage and archive in DIR instead of dist/native.
-# Development candidate only: Pi remains the default engine; this is not a release.
+# Release signing and publication are separate from building this archive.
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 cd "$here"
@@ -49,7 +49,7 @@ install -Dm644 "$out/native-engine.json" "$stage/usr/lib/pipkin/native-engine.js
 rm "$out/native-engine.json"
 install -d "$stage/usr/share/applications"
 sed -e 's/^Exec=pipkin$/Exec=pipkin --engine native/' \
-  -e 's/^Comment=.*/Comment=Native desktop coding agent client (built-in engine candidate)/' \
+  -e 's/^Comment=.*/Comment=Native desktop coding agent client (built-in Rust engine)/' \
   packaging/pipkin.desktop > "$stage/usr/share/applications/pipkin.desktop"
 grep -qx 'Exec=pipkin --engine native' "$stage/usr/share/applications/pipkin.desktop"
 for size in 128 256 512; do

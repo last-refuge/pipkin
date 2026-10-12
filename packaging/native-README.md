@@ -1,18 +1,17 @@
-# Pipkin installed help (native-engine candidate)
+# Pipkin installed help
 
-This is a **development candidate** package for Pipkin's built-in Rust engine. It carries only the `pipkin`
+This qualification package uses Pipkin's built-in Rust engine by default. It carries only the `pipkin`
 binary (which also runs the engine as a private `pipkin --engine-worker` process), the desktop entry, icons,
 notices and inventories. It contains **no Node runtime, npm tree or Pi engine**, and it does not install system
 Node, Git or graphics/desktop libraries. It is not a release, not signed and not qualified on any additional
 platform.
 
-- The desktop entry launches `pipkin --engine native`. Running `pipkin` without that flag still selects the Pi
-  engine (the production default), which this package does not include.
+- Both `pipkin` and the desktop entry use the built-in engine. `--engine native` is an optional alias.
 - Native engine data lives in its own directories (`~/.local/share/pipkin/engine` and `~/.config/pipkin/engine`,
   or under an explicit `--data-dir`), separate from Pi's `~/.pi`. History written by the native engine is
   native-only: Pi does not read it.
 - Claude subscription sign-in is available under Settings → Connections, including browser and copy-code login.
-- Roll back by reinstalling a Pi package (`./install.sh --rollback` when it is the previous installed version);
+- `./install.sh --rollback` can reactivate a retained previous installation, including a historical Pi build;
   native data is left in place and is not migrated back. The installer checks the retained binary and runs
   an offline engine probe before activating it; a damaged or unresponsive target leaves the current version selected.
 

@@ -33,12 +33,10 @@ with tempfile.TemporaryDirectory(prefix='pipkin-mac-bundle-test-') as temporary:
                  'background': '.background/install.tiff'}),
              'assets/fonts/example-OFL.txt': 'font fixture',
              'docs/macos-first-pass.md': 'experimental instructions',
-             'packaging/pi-engine-revision': 'a' * 40,
-             'dist/macos-notices/usr/lib/pipkin/engine/engine.json': json.dumps({'sourceRevision': 'a' * 40, 'development': False, 'productionPruneSucceeded': True}),
-             'dist/macos-notices/usr/lib/pipkin/engine/pi-test.sh': 'fixture launcher',
-             'dist/macos-notices/usr/lib/pipkin/runtime/bin/node': 'fixture node',
-             'dist/macos-notices/usr/lib/pipkin/runtime/LICENSE': 'full Node notice',
-             'dist/macos-notices/usr/lib/pipkin/runtime/runtime.json': json.dumps({'target': 'aarch64-apple-darwin', 'version': '22.23.3', 'binarySha256': hashlib.sha256(b'fixture node').hexdigest()}),
+             'packaging/upstream-notices/pi/LICENSE': 'Pi MIT fixture',
+             'packaging/upstream-notices/minimatch-10.2.6/LICENSE.md': 'Blue Oak fixture',
+             'packaging/upstream-notices/brace-expansion-5.0.12/LICENSE': 'MIT fixture',
+             'assets/icons/LICENSE': 'icons license fixture',
              'dist/macos-notices/usr/share/doc/pipkin/third-party/inventory.json': '{}',
              'dist/macos-notices/usr/share/doc/pipkin/third-party/sources/mpl/src/lib.rs': 'exact source'}
     for relative, text in files.items():
@@ -48,6 +46,8 @@ with tempfile.TemporaryDirectory(prefix='pipkin-mac-bundle-test-') as temporary:
     (root / 'target/release/pipkin').chmod(0o755)
 
     def output(args, **kwargs):
+        if args == [str(root / 'target/release/pipkin'), '--version']:
+            return 'pipkin 0.0.1 (source fixture, engine native 0.0.1, engine protocol 12, engine schema 10, schema 8)'
         if args[:2] == ['git', 'rev-parse']:
             return 'b' * 40 + '\n'
         if args[:2] == ['git', 'status']:
@@ -207,16 +207,17 @@ with tempfile.TemporaryDirectory(prefix='pipkin-mac-bundle-test-') as temporary:
         elif '--diagnose' in args:
             assert '--probe' in args
             assert kwargs['env']['PATH'] == '/usr/bin:/bin:/usr/sbin:/sbin'
-            assert set(kwargs['env']) == {'PATH', 'HOME', 'TMPDIR', 'PI_OFFLINE'}
+            assert set(kwargs['env']) == {'PATH', 'HOME', 'TMPDIR'}
             profile = Path(kwargs['env']['TMPDIR'])
             assert profile == Path(kwargs['env']['HOME'])
             assert profile.parent == Path('/tmp') and len(profile.name) == 8
             assert profile.stat().st_mode & 0o077 == 0  # Disposable private profile.
-            module.check_probe_socket_budget(profile)
             probe_profiles.append(profile)
             contents = Path(args[0]).parent.parent
-            assert json.loads((contents / 'lib/pipkin/engine/engine.json').read_text())['requiresBundledNode']
-            assert (contents / 'lib/pipkin/runtime/LICENSE').read_text() == 'full Node notice'
+            assert json.loads((contents / 'lib/pipkin/native-engine.json').read_text())['engineProtocol'] == 12
+            assert not (contents / 'lib/pipkin/engine').exists()
+            assert not (contents / 'lib/pipkin/runtime').exists()
+
         else:
             raise AssertionError(args)
 
@@ -224,8 +225,8 @@ with tempfile.TemporaryDirectory(prefix='pipkin-mac-bundle-test-') as temporary:
         module.main()
         out = root / 'dist/macos'
         info = json.loads((out / 'build-info.json').read_text())
-        assert info['experimental'] and info['engine']['bundled']
-        assert info['nodeRuntime']['version'] == '22.23.3'
+        assert info['experimental'] and info['engine']['builtIntoBinary']
+        assert info['nodeRuntime'] is None
         assert info['app']['target'] == 'aarch64-apple-darwin'
         assert info['app']['revision'] == 'b' * 40 and info['app']['dirty'] is False
         assert info['app']['preBundleSigningBinarySha256'] == module.sha256(root / 'target/release/pipkin')
@@ -242,12 +243,6 @@ with tempfile.TemporaryDirectory(prefix='pipkin-mac-bundle-test-') as temporary:
         assert sum('--probe' in args for args in calls) == 2  # Extracted ZIP and copied DMG app.
         assert sum(args[:2] == ['hdiutil', 'detach'] for args in calls) == 2
         assert len(probe_profiles) == 2
-        # Regression: the prior longer pk-dmg- prefix crossed Pi's private socket budget.
-        try:
-            module.check_probe_socket_budget('/tmp/pk-dmg-abcdefgh')
-            raise AssertionError('oversized Pi socket path accepted')
-        except RuntimeError as error:
-            assert 'socket-path limit' in str(error)
         before = len(calls)
         tools_before = len(tools_calls)
         with patch.object(module.sys, 'argv', [str(script), 'aarch64-apple-darwin', '--app-only']), \

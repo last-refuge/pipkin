@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-"""One-command native source build/install. Private Node/npm + clean patched Pi; no sudo."""
+"""One-command native source build/install. Built-in Rust engine; no sudo."""
 import argparse
-import importlib.util
-import json
 import os
 from pathlib import Path
 import platform
@@ -10,7 +8,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.request
 import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,18 +52,8 @@ def preflight(system):
     run(['find', str(ROOT / 'scripts'), '-maxdepth', '0'])
     if system == 'Darwin':
         run(['xcode-select', '-p'])
-    if os.environ.get('PIPKIN_ENGINE_DEV', '0') != '0':
-        raise RuntimeError('Unset PIPKIN_ENGINE_DEV: source setup must apply the reviewed auth/subagent patches.')
     if os.environ.get('CARGO_BUILD_TARGET') or os.environ.get('CARGO_TARGET_DIR'):
         raise RuntimeError('Unset CARGO_BUILD_TARGET/CARGO_TARGET_DIR: source setup supports the native target/release layout only.')
-
-
-def assert_subagents(engine):
-    manifest = json.loads((engine / 'engine.json').read_text())
-    if manifest.get('development') is not False or not manifest.get('pipkinSubagentsSha256'):
-        raise RuntimeError('Staged engine is missing the default subagent patch; refusing an incomplete build.')
-    manifest['requiresBundledNode'] = True
-    (engine / 'engine.json').write_text(json.dumps(manifest, indent=2) + '\n')
 
 
 def install_mac(app, destination):
@@ -109,57 +96,16 @@ def main():
     # Never rebuild in a running engine's tree or overwrite a running executable.
     prefix = base / 'builds' / uuid.uuid4().hex
     owned_directory(prefix)
-    spec = importlib.util.spec_from_file_location('pipkin_node', ROOT / 'scripts/stage-node-runtime.py')
-    node = importlib.util.module_from_spec(spec)
-    sys.dont_write_bytecode = True
-    spec.loader.exec_module(node)
-    catalog = json.loads((ROOT / 'packaging/node-runtime.json').read_text())
-    pin = catalog['targets'][target]
-    archive = base / pin['archive']
-    if not archive.exists():
-        url = f'https://nodejs.org/dist/v{catalog["version"]}/{pin["archive"]}'
-        with urllib.request.urlopen(url, timeout=90) as response, tempfile.NamedTemporaryFile(dir=base, delete=False) as stream:
-            partial = Path(stream.name)
-            try:
-                shutil.copyfileobj(response, stream)
-            except BaseException:
-                partial.unlink(missing_ok=True)
-                raise
-        partial.rename(archive)
-    # The helper verifies the archive hash before extracting any executable or npm file.
-    tools = base / 'build-tools'
-    node.stage(target, tools, archive, build_tools=True)
-    runtime = prefix / 'lib/pipkin/runtime'
-    node.stage(target, runtime, archive)
     env = dict(os.environ)
-    env['PATH'] = str(tools / 'bin') + os.pathsep + env.get('PATH', '')
-    env['npm_config_cache'] = str(base / 'npm-cache')
-    env['npm_config_userconfig'] = os.devnull
-    env['npm_config_audit'] = 'false'
-    env['npm_config_fund'] = 'false'
-    revision = (ROOT / 'packaging/pi-engine-revision').read_text().strip()
-    source = base / ('pi-' + revision)
-    if not source.exists():
-        # Clone into scratch and publish only after checkout succeeds. Updates use a new pin directory.
-        with tempfile.TemporaryDirectory(prefix='pi-fetch-', dir=base) as scratch:
-            fetched = Path(scratch) / 'pi'
-            run(['git', 'init', fetched])
-            run(['git', '-C', fetched, 'fetch', '--depth=1', 'https://github.com/jasona/pi.git', revision])
-            run(['git', '-C', fetched, 'checkout', '--detach', 'FETCH_HEAD'])
-            fetched.rename(source)
-    if source.is_symlink():
-        raise RuntimeError('Refusing a symlinked source input')
-    run([ROOT / 'scripts/check-engine-source.sh', source], env=env)
-    run([tools / 'bin/npm', 'ci', '--prefix', source], env=env)
-    engine = prefix / 'lib/pipkin/engine'
-    run([ROOT / 'scripts/build-engine.sh', source, engine], env=env)
-    assert_subagents(engine)
+    run(['python3', ROOT / 'scripts/verify-reqwest-vendor.py'], env=env)
+    run(['python3', ROOT / 'scripts/verify-regress-vendor.py'], env=env)
+    run(['cargo', 'fetch', '--locked', '--target', target], env=env)
     run(['cargo', 'build', '-p', 'pipkin-app', '--release', '--locked'], env=env)
     (prefix / 'bin').mkdir(exist_ok=True)
     shutil.copy2(ROOT / 'target/release/pipkin', prefix / 'bin/pipkin')
     # Short private HOME/TMPDIR, no inherited credentials or external-server overrides.
     with tempfile.TemporaryDirectory(prefix='', dir='/tmp') as profile:
-        probe_env = {'HOME': profile, 'TMPDIR': profile, 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'PI_OFFLINE': '1'}
+        probe_env = {'HOME': profile, 'TMPDIR': profile, 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin'}
         run([prefix / 'bin/pipkin', '--diagnose', '--probe', '--data-dir', Path(profile) / 'app-data'], env=probe_env)
     current = base / 'current'
     if current.exists() and not current.is_symlink():
@@ -173,20 +119,17 @@ def main():
             stage = ROOT / 'dist/macos-notices'
             components = stage / 'usr/lib/pipkin'
             components.mkdir(parents=True, exist_ok=True)
-            for name in ['engine', 'runtime']:
-                destination = components / name
-                if destination.exists():
-                    shutil.rmtree(destination)
-                shutil.copytree(prefix / 'lib/pipkin' / name, destination, symlinks=True)
+            # Refuse stale legacy staging rather than inventorying a retired runtime.
+            if any((components / name).exists() for name in ['engine', 'runtime']):
+                raise RuntimeError('Remove stale dist/macos-notices legacy staging before packaging.')
             run(['python3', ROOT / 'scripts/write-license-inventory.py', stage, target], env=env)
             run(['python3', ROOT / 'scripts/package-macos.py', target, '--app-only'], env=env)
             install_mac(ROOT / 'dist/macos/Pipkin.app', Path.home() / 'Applications/Pipkin.app')
         else:
-            run([ROOT / 'scripts/package.sh', source], env=env)
-            assert_subagents(ROOT / 'dist/stage/usr/lib/pipkin/engine')
-            shutil.copy2(ROOT / 'packaging/install.sh', ROOT / 'dist/stage/install.sh')
-            run(['bash', ROOT / 'dist/stage/install.sh'], env=env)
-    print('\nReady: scripts/run.sh\nSubagents are included by default. Connect a provider/model in Pipkin; setup does not make paid requests.\nYou can rebuild while Pipkin runs: old build trees are retained. Quit the old app before launching the new one so its old engine is not reused.')
+            run([ROOT / 'scripts/package.sh'], env=env)
+            shutil.copy2(ROOT / 'packaging/install.sh', ROOT / 'dist/native/stage/install.sh')
+            run(['bash', ROOT / 'dist/native/stage/install.sh'], env=env)
+    print('\nReady: scripts/run.sh\nSubagents are included by default. Connect a provider/model in Pipkin; setup does not make paid requests.\nYou can rebuild while Pipkin runs: old build trees are retained. Quit the old app before launching the new one so its worker is not reused.')
     if options.run:
         os.execv(str(ROOT / 'scripts/run.sh'), [str(ROOT / 'scripts/run.sh')])
 

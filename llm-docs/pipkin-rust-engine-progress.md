@@ -11,7 +11,20 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — native-default runtime removed Pi dependencies
+## Current follow-up — native build paths and remote backup
+
+2026-10-12, following `676fb82`: source setup, packaging, installer, Arch, local release collector
+and macOS bundle now use Rust only. Legacy Pi build/launch jobs and runtime download scripts are
+removed. Historical rollback, reference fixtures/notices and migration source data remain.
+Required workspace checks pass **1,439/0/9 ignored**, clean Clippy/fmt; focused packaging/setup/
+rollback/signature-policy fixtures pass. [Evidence](pipkin-rust-engine-evidence/build-path-retirement.md).
+
+Earlier corrected Linux run `38262069375` and macOS run `38262827277` both passed; final native-default
+CI/package identity is still required. Push this completed batch immediately, run the new workflows,
+verify the final installed candidate and finish bounded capability accounting. Do not rerun soaks
+or broaden experimental/manual-platform scope. Preserve unrelated owner plan/draft/worktree changes.
+
+## Prior follow-up — native-default runtime removed Pi dependencies
 
 2026-10-12, following **`76ca778`**. Ordinary application launches and diagnostics now use
 the built-in engine. The Pi adapter, pi-client crate/workspace dependency, Node discovery and

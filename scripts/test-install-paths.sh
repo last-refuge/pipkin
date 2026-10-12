@@ -19,7 +19,7 @@ fake_pipkin() { # $1 = archive root, $2 = build tag (changes the binary hash)
 # build $2
 lib=\$(dirname "\$0")/../lib/pipkin
 case "\$*" in
-  '--version') echo 'pipkin 0.0.1 (source fixture, dirty: false, protocol 8, schema 7)' ;;
+  '--version') echo 'pipkin 0.0.1 (source fixture, dirty: false, engine native 0.0.1, engine protocol 12, engine schema 10, schema 8)' ;;
   '--version --engine native') echo 'pipkin 0.0.1 (source fixture, dirty: false, engine native 0.0.1, engine protocol 1, engine schema 1, schema 7)' ;;
   '--diagnose --probe') [ -d "\$lib/engine" ] && echo 'engine probe: OK pi' ;;
   '--diagnose --probe --engine native') [ -f "\$lib/native-engine.json" ] && echo 'engine probe: OK native' ;;
@@ -53,11 +53,18 @@ prefix="$root/prefix with spaces"
 run() { env -i HOME="$root/home" PATH=/usr/bin:/bin "$@"; }
 desktop=$prefix/share/applications/pipkin.desktop
 
-run "$pi/install.sh" --prefix "$prefix" > "$root/pi.log" 2>&1 || { cat "$root/pi.log"; fail=1; }
-check "Pi-shaped archive installs through the Node path" "grep -q 'Private Node 22.23.3 verified' '$root/pi.log' && grep -q 'paired Pi engine verified' '$root/pi.log'"
-check "Pi desktop entry is unchanged: quoted binary, no flags" "grep -Fqx 'Exec=\"$prefix/bin/pipkin\"' '$desktop'"
-pi_version=$(run "$pi/install.sh" --prefix "$prefix" --list | awk '/current/ {print $2}')
-check "Pi version name carries the engine version" "[[ '$pi_version' == 0.0.1-pinfixture-* ]]"
+if run "$pi/install.sh" --prefix "$prefix" > "$root/pi.log" 2>&1; then
+  echo 'FAIL newly installing a retired Pi runtime was accepted'; fail=1
+fi
+check "new Pi archive is rejected" "grep -q 'retired' '$root/pi.log'"
+# Seed a historical installation to exercise upgrading and explicit rollback.
+pi_version=0.0.1-pinfixture-historical
+prior="$prefix/lib/pipkin/versions/$pi_version"
+mkdir -p "$prior" "$prefix/bin" "$prefix/share/applications"
+cp -a "$pi/usr" "$prior/usr"
+ln -s "$prior" "$prefix/lib/pipkin/current"
+ln -s "$prefix/lib/pipkin/current/usr/bin/pipkin" "$prefix/bin/pipkin"
+cp "$pi/usr/share/applications/pipkin.desktop" "$desktop"
 sleep 1
 run "$native/install.sh" --prefix "$prefix" > "$root/native.log" 2>&1 || { cat "$root/native.log"; fail=1; }
 check "native archive installs without the Node path" "grep -q 'no Node runtime needed' '$root/native.log' && ! grep -q 'Private Node' '$root/native.log'"

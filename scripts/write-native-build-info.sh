@@ -6,7 +6,7 @@
 # POSIX sh plus coreutils. The identity comes from the staged binary itself
 # (`pipkin --version --engine native`, stamped by crates/pipkin-app/build.rs and the linked
 # engine crates' constants). Arbitrary environment values are never recorded: custom Rust
-# flags are reported only as present/absent. The Pi package keeps scripts/write-build-info.mjs.
+# flags are reported only as present/absent. The engine is built into the app binary.
 set -eu
 [ $# -eq 1 ] || { echo 'usage: write-native-build-info.sh STAGE' >&2; exit 2; }
 here=$(cd "$(dirname "$0")/.." && pwd)

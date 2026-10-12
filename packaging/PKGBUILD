@@ -1,11 +1,9 @@
 # Maintainer: Jason Alexander <jason@greatspark.com>
-# Builds from this checkout. Pi stays the default during qualification:
-#   cd packaging && makepkg          (PI_CHECKOUT=../../pi-fork/pi by default)
-#   cd packaging && PIPKIN_ENGINE=native makepkg    (no Pi checkout or Node/npm needed)
+# Builds the native Rust app and engine from this checkout: cd packaging && makepkg
 pkgname=pipkin
 pkgver=0.0.1
-pkgrel=3
-pkgdesc='Native Wayland desktop client for the Pi coding agent, with a bundled engine'
+pkgrel=4
+pkgdesc='Native Wayland desktop coding agent with the built-in Rust engine'
 arch=('x86_64')
 url='https://github.com/last-refuge/pipkin'
 license=('MIT')
@@ -14,37 +12,15 @@ makedepends=('rust' 'cargo' 'zstd' 'clang' 'cmake' 'python' 'binutils')
 optdepends=('foot: terminal for the "open terminal" action'
             'orca: screen reader'
             'fcitx5: input methods')
-options=('!strip' '!lto')   # keep debug info; LTO flags break linking the bundled SQLite
-_pipkin_engine=${PIPKIN_ENGINE:-pi}
-case $_pipkin_engine in
-  pi)
-    makedepends+=('npm')
-    PI_CHECKOUT=${PI_CHECKOUT:-"$startdir/../../pi-fork/pi"}
-    ;;
-  native)
-    pkgdesc='Native Wayland desktop coding agent with the built-in Rust engine (candidate)'
-    # Keep Cargo's release line tables; makepkg's full-DWARF override triples the payload.
-    options+=('!debug')
-    ;;
-  *)
-    printf 'Unknown PIPKIN_ENGINE: %s; choose pi or native\n' "$_pipkin_engine" >&2
-    return 1
-    ;;
-esac
+# Keep Cargo release line tables; full-DWARF overrides triple the payload.
+options=('!strip' '!lto' '!debug')
+[[ ${PIPKIN_ENGINE:-native} == native ]] || { echo 'Pi packaging is retired; use the native engine.' >&2; return 1; }
 
 build() {
   cd "$startdir/.."
-  if [[ $_pipkin_engine == native ]]; then
-    PIPKIN_NATIVE_OUT="$srcdir/native" scripts/package-native.sh
-  else
-    scripts/package.sh "$PI_CHECKOUT"
-  fi
+  PIPKIN_NATIVE_OUT="$srcdir/native" scripts/package-native.sh
 }
 
 package() {
-  if [[ $_pipkin_engine == native ]]; then
-    cp -a "$srcdir/native/stage/." "$pkgdir/"
-  else
-    cp -a "$startdir/../dist/stage/." "$pkgdir/"
-  fi
+  cp -a "$srcdir/native/stage/." "$pkgdir/"
 }

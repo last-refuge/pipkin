@@ -8,7 +8,7 @@ Rows cite the native tests that exercise them and say whether any comparison wit
 reference-derived output exists.
 
 - **Reference baseline:** upstream pin `d2a311097cbcf669e699479587332ae3988a49d0` staged by
-  `scripts/build-engine.sh` with `packaging/pi-onboarding.patch` + `packaging/pi-onboarding/*.ts`
+  `scripts/build-engine.sh` at historical `76ca778` with `packaging/pi-onboarding.patch` + `packaging/pi-onboarding/*.ts`
   (bridge sha256 `370dbef417d1cdeb68239f0d283d4dceb36f5ed539e500e0ba041238aad94e3a`) and
   `packaging/pi-subagents.patch` + `packaging/pi-subagents/*.ts` (subagents sha256
   `9fb846e55a931d829e2ca25bde08ae98d2f128c14ceb6f1bc033b0a2e6fb3664`), model data manifest
@@ -20,8 +20,10 @@ reference-derived output exists.
   source backups and frozen evidence remain. Required Rust checks: **1,439 passed, zero failed,
   9 ignored benchmarks**; obsolete Pi runtime/client tests were retired with their code.
   Native package migration/coding/restart/restore and plain default diagnostics pass with
-  Node/Pi traps unused. Legacy setup/package/release entry points still need the next batch;
-  the overall goal and final candidate qualification remain open.
+  Node/Pi traps unused. Source setup/package/release and CI entry points now use Rust only;
+  focused setup/install/rollback/macOS package policy checks pass. Corrected hosted Linux
+  `38262069375` and macOS `38262827277` runs passed. Final candidate qualification remains open.
+  [Build-path evidence](pipkin-rust-engine-evidence/build-path-retirement.md).
   [Runtime evidence](pipkin-rust-engine-evidence/runtime-retirement.md).
 - **Prior follow-up:** sustained compaction on the `ca8c89b` runtime passes 720 turns,
   232 automatic compactions and all 720 retained replies/effects/tool outputs. Peak worker

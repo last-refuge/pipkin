@@ -1,3 +1,18 @@
+# Experimental native macOS packaging
+
+Current source setup and CI package the built-in Rust engine only. No Pi checkout, Node or npm is
+required. `scripts/setup.sh --install` installs an ad-hoc signed app to `~/Applications/Pipkin.app`.
+The bundle carries target-specific Rust notices, ported-source notices and a native-engine marker;
+ZIP extraction, signature verification and an isolated plain `--diagnose --probe` are mandatory.
+The full DMG path remains available with signing/copy verification; current native CI qualifies the
+app and ZIP. No Developer ID, notarization, Finder interaction or Gatekeeper acceptance is claimed.
+See [source setup](source-setup.md) and [hosted evidence](../llm-docs/pipkin-rust-engine-evidence/hosted-qualification.md).
+
+The following is historical Pi-paired artifact evidence, retained for traceability. Its legacy
+launch flags, runtime layouts and setup instructions do not apply to current Pipkin.
+
+---
+
 # macOS: experimental first pass
 
 The `Experimental macOS build` GitHub Actions workflow builds the actual GPUI app on a macOS 15

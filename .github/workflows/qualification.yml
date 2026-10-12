@@ -5,11 +5,6 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
-    inputs:
-      native_only:
-        description: Run only native qualification during the Pi retirement
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -42,6 +37,7 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            ${{ runner.os }}-${{ runner.arch }}-native-
       - name: Install native build dependencies
         run: |
           sudo apt-get update
@@ -54,7 +50,7 @@ jobs:
         run: |
           toolchain=$(awk -F '"' '/^channel =/ {print $2}' rust-toolchain.toml)
           test -n "$toolchain"
-          rustup toolchain install "$toolchain" --profile minimal
+          rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
       - name: Reject Node, npm and Pi in native build commands
         run: |
           mkdir -p "$RUNNER_TEMP/native-shims"
@@ -68,13 +64,28 @@ jobs:
         run: |
           mkdir -p qualification-logs
           set -o pipefail
-          cargo test -p pipkin-engine -p pipkin-engine-protocol --locked 2>&1 | tee qualification-logs/native-engine.log
+          cargo test --workspace --locked 2>&1 | tee qualification-logs/workspace.log
+          cargo clippy --workspace --all-targets --locked 2>&1 | tee qualification-logs/clippy.log
+          cargo fmt --all --check
+          python3 scripts/verify-reqwest-vendor.py
+          python3 scripts/test-reqwest-vendor.py
+          python3 scripts/verify-regress-vendor.py
+          python3 scripts/test-regress-vendor.py
+          scripts/test-release-collection.sh
+          scripts/test-build-stamp.sh
+          scripts/test-install-paths.sh
+          python3 scripts/test-license-inventory.py
+          python3 scripts/test-package-macos.py
+          python3 scripts/test-app-icons.py
+          python3 scripts/test-source-setup.py
+          python3 scripts/test-runtime-inventory.py
+          scripts/test-guard.sh
           test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
       - name: Build and qualify the installed native candidate
         run: |
           mkdir -p qualification-logs
           set -o pipefail
-          scripts/package-native.sh 2>&1 | tee qualification-logs/native-package.log
+          scripts/package.sh 2>&1 | tee qualification-logs/native-package.log
           version=$(cargo pkgid -p pipkin-app | sed 's/.*[#@]//')
           package="dist/native/pipkin-native-$version-$(uname -m).tar.zst"
           scripts/test-native-package.sh --no-build "$package" 2>&1 | tee qualification-logs/native-installed.log
@@ -99,110 +110,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: native-qualification-${{ github.sha }}
-          path: qualification-logs/
-          if-no-files-found: warn
-          retention-days: 30
-
-  scripted-qualification:
-    if: github.event_name != 'workflow_dispatch' || !inputs.native_only
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      CARGO_BUILD_JOBS: "2"
-      CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_DEV_DEBUG: "0"
-      CARGO_PROFILE_TEST_DEBUG: "0"
-      RUST_BACKTRACE: "1"
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - name: Install runner build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake pkg-config zstd jq binutils \
-            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libfreetype-dev \
-            libvulkan-dev libegl1-mesa-dev libssl-dev libasound2-dev libdbus-1-dev \
-            libxcb1-dev libxcb-xkb-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libxcb-randr0-dev libxcb-render-util0-dev
-      - name: Install the repository Rust toolchain
-        run: |
-          toolchain=$(awk -F '"' '/^channel =/ {print $2}' rust-toolchain.toml)
-          test -n "$toolchain"
-          rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "22.19.0"
-      - name: Identify build-only Node
-        run: |
-          node --version
-          # Installed-app probes use the package's private Node; they do not rely on this runner PATH.
-      - name: Rust and packaging policy checks
-        run: |
-          mkdir -p qualification-logs
-          set -o pipefail
-          python3 scripts/verify-reqwest-vendor.py
-          python3 scripts/test-reqwest-vendor.py
-          python3 scripts/verify-regress-vendor.py
-          python3 scripts/test-regress-vendor.py
-          cargo test --workspace --locked 2>&1 | tee qualification-logs/workspace.log
-          cargo clippy --workspace --all-targets --locked 2>&1 | tee qualification-logs/clippy.log
-          cargo fmt --all --check
-          scripts/test-engine-source.sh
-          scripts/test-release-collection.sh
-          scripts/test-build-info.sh
-          scripts/test-build-stamp.sh
-          python3 scripts/test-license-inventory.py
-          python3 scripts/test-package-macos.py
-          python3 scripts/test-app-icons.py
-          python3 scripts/test-node-runtime.py
-          python3 scripts/test-source-setup.py
-          python3 scripts/test-runtime-inventory.py
-          scripts/test-guard.sh
-      - name: Provision a clean pinned engine
-        run: |
-          revision=$(<packaging/pi-engine-revision)
-          [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
-          engine="$RUNNER_TEMP/pi-engine"
-          git init "$engine"
-          git -C "$engine" fetch --depth=1 https://github.com/jasona/pi.git "$revision"
-          git -C "$engine" checkout --detach FETCH_HEAD
-          (cd "$engine" && npm ci)
-          scripts/stage-model-data.sh "$engine"
-          scripts/check-engine-source.sh "$engine"
-          echo "PIPKIN_PI_REPO=$engine" >> "$GITHUB_ENV"
-      - name: Scripted-provider development engine qualification
-        run: |
-          set -o pipefail
-          cargo test -p pipkin-app --release --locked e2e -- --ignored --test-threads=1 --skip installed_pi_native_rollback_preserves_history_and_requires_ownership_release --skip packaged_engines_matched_performance 2>&1 | tee qualification-logs/engine.log
-      - name: Bundled engine and installer qualification
-        run: |
-          set -o pipefail
-          revision=$(git rev-parse HEAD)
-          if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then revision="$revision-dirty"; fi
-          PIPKIN_REVISION="$revision" scripts/package.sh "$PIPKIN_PI_REPO" 2>&1 | tee qualification-logs/package.log
-          python3 scripts/test-package-docs.py dist/stage 2>&1 | tee qualification-logs/package-docs.log
-          version=$(cargo pkgid -p pipkin-app | sed 's/.*[#@]//')
-          package="dist/pipkin-$version-$(uname -m).tar.zst"
-          scripts/verify-install.sh --full "$package" 2>&1 | tee qualification-logs/packaged-engine.log
-          scripts/test-install.sh "$package" 2>&1 | tee qualification-logs/installer.log
-          scripts/package-native.sh 2>&1 | tee qualification-logs/paired-native-package.log
-          native="dist/native/pipkin-native-$version-$(uname -m).tar.zst"
-          scripts/test-native-package.sh --no-build "$native" 2>&1 | tee qualification-logs/paired-native-install.log
-          PIPKIN_PI_PACKAGE="$PWD/$package" PIPKIN_NATIVE_PACKAGE="$PWD/$native" \
-            cargo test -p pipkin-app --release --locked installed_pi_native_rollback_preserves_history_and_requires_ownership_release -- --ignored --nocapture --test-threads=1 2>&1 | tee qualification-logs/cross-engine-rollback.log
-          python3 scripts/compare-native-package.py "$package" "$native" qualification-logs/package-comparison.json
-          sha256sum "$package" > qualification-logs/SHA256SUMS
-          cp dist/stage/usr/lib/pipkin/engine/engine.json qualification-logs/
-          cp dist/stage/usr/share/doc/pipkin/build-info.json qualification-logs/
-          cp dist/stage/usr/share/doc/pipkin/third-party/inventory.json qualification-logs/license-inventory.json
-          cp dist/stage/usr/share/doc/pipkin/runtime-inventory.json qualification-logs/
-          git rev-parse HEAD > qualification-logs/app-revision.txt
-      - name: Retain qualification evidence (not release publication)
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: qualification-${{ github.sha }}
           path: qualification-logs/
           if-no-files-found: warn
           retention-days: 30

@@ -63,9 +63,7 @@ Hello is limited to 4 KiB and three seconds total; later frames use the normal e
 limit and bounded queues. Slow writes have a five-second socket timeout. A closed/overloaded
 connection is recovered using saved state, never by blindly resending a prompt.
 
-Linux tests cover local socket use, ownership, restart, two desktop backends and the shipped
-binary's foreground mode. macOS uses the corresponding peer-credential API but has not been
-run for this feature. Windows attachment is not implemented; private native pipes remain
-independent of Unix sockets. Full Pi/native differential and installed/live desktop
-qualification remain open. Existing `--pi-dir` / `--pi-server-id` flags still select Pi; the
-native equivalent is an explicitly selected endpoint, not an attempt to speak Pi's protocol.
+Linux and hosted macOS tests cover native transport and worker lifecycle. Linux also has installed
+and desktop evidence; macOS interactive acceptance remains separate. Windows Unix attachment is not
+implemented. Legacy Pi flags are retired; `--engine-attach` selects a native endpoint and does not
+speak Pi's protocol. See the current conversion ledger for exact evidence and limitations.

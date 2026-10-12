@@ -7,53 +7,32 @@ See [release gates](v1-release-gates.md) for automated, observed, failed and unv
 ## Recommended: one-command source setup
 
 After the [native prerequisites](source-setup.md#1-install-native-build-prerequisites-once), run
-`scripts/setup.sh --run` from this checkout. It obtains private Node/npm, fetches the pinned Pi source,
-includes Pipkin's OAuth and default-enabled subagent patches, builds and offline-checks the paired app,
-then launches with this checkout as the project. `scripts/run.sh` starts the last successful build;
-`scripts/setup.sh --install` adds a per-user installation on Mac or Linux. No manual engine/server setup
-or global Node installation is needed. See [source setup/self-development](source-setup.md).
+`scripts/setup.sh --run` builds and offline-checks the Rust app and built-in engine, then launches it.
+`scripts/run.sh` starts the last successful build; `scripts/setup.sh --install` installs for your user.
+No Pi checkout, Node/npm or manual server setup is required. See [source setup](source-setup.md).
 
-## Advanced: build a pacman-managed Arch package
+## Build a pacman-managed Arch package
 
-Before starting, ensure Git, Node.js 22.19+, npm and zstd are available; install the Arch build dependencies listed
-in `packaging/PKGBUILD` through your normal package-management workflow. The preparation commands need these tools
-before `makepkg -si` can install missing declared build dependencies. Do not run the build as root.
-
-Use a fresh engine directory rather than changing your daily-use Pi checkout. These commands fetch public source
-and npm dependencies, but do not make model requests or configure credentials:
+Install native prerequisites from `packaging/PKGBUILD`, then run as your normal user:
 
 ```sh
-git clone https://github.com/last-refuge/pipkin.git
-cd pipkin
-git clone --no-checkout https://github.com/jasona/pi.git ../pipkin-release-engine
-git -C ../pipkin-release-engine checkout --detach "$(<packaging/pi-engine-revision)"
-(cd ../pipkin-release-engine && npm ci)
-scripts/stage-model-data.sh ../pipkin-release-engine
-scripts/check-engine-source.sh ../pipkin-release-engine
-(cd packaging && PI_CHECKOUT="$(realpath ../../pipkin-release-engine)" makepkg -si)
+(cd packaging && makepkg -si)
 pipkin --version
 pipkin --diagnose --probe
 ```
 
-Package build dependencies are in `packaging/PKGBUILD`; the pinned Rust toolchain is in
-`rust-toolchain.toml`. The installed package includes a private, pinned Node 22 runtime; no system Node is needed to *run* it. A functioning Vulkan-capable driver, Git and the desktop libraries declared in the PKGBUILD are still needed. A successful build is not clean-machine desktop qualification.
-
-When a signed release is available, use its download/verification instructions instead of building mutable source.
-Do not treat the current unsigned tarball as authenticated merely because its checksum matches.
+A working Vulkan driver, Git and the declared desktop libraries remain required. A successful build is
+not clean-machine desktop qualification. Current artifacts are unsigned and unpublished.
 
 ## First run and provider sign-in
 
 From a newly installed package, open Pipkin from its desktop launcher or run `pipkin`. The shared first-run GUI
 welcomes you, offers **Claude Pro/Max** and **ChatGPT Plus/Pro** OAuth sign-in, then asks for a project folder and
-an available Pi model. The app stores no sign-in answers; Pi stores credentials in its agent profile (normally
-`~/.pi/agent`, or `--pi-agent-dir DIR`). Sign-in, project and model selection are not commands to paste into the
-chat composer. A returning profile with saved work or Pi credentials opens its existing workspace rather than
-forcing a new login. Keep Pi's `auth.json` private; never include it in a report.
-
-The wizard does **not** set up API keys or other providers. Advanced users may configure Pi directly and keep their
-existing credentials; an API-key environment variable set in a terminal is not necessarily inherited by a desktop
-launcher. If a separate/external engine lacks Pipkin's tested OAuth service, the wizard does not offer usable-looking
-login buttons. The installer cannot authenticate your provider or prove that a paid model request succeeds.
+an available model. Native credentials live under `~/.config/pipkin/engine` (or the explicit data directory).
+Settings → Connections provides account management, including Claude browser and copy-code login.
+Use `--pi-agent-dir DIR` only to select a historical import source; it is not a live Pi runtime profile.
+Keep credential files private. Environment API keys set in a terminal may not reach a desktop launcher.
+The installer cannot authenticate your provider or prove a paid model request succeeds.
 
 After selecting a model, send a small prompt. **This makes a real provider request and may be billed.** Demo mode
 is simulated; the scripted-provider test is offline. Neither establishes that your paid provider works.
@@ -63,12 +42,12 @@ is simulated; the scripted-provider test is offline. Neither establishes that yo
 - No usable models: open **Ctrl K → Refresh models** (or the empty-state Refresh models button). Refresh is an
   engine catalog operation, not provider login or a guarantee of network access.
 - Missing key/unauthorized/expired token: read the visible failure; check the selected provider and the agent
-  directory used by the engine. Reauthenticate with Pi or renew the provider key, then reconnect/restart as needed.
+  directory used by the engine. Reauthenticate in Connections or renew the provider key, then reconnect/restart as needed.
 - Models still missing: check provider configuration and network/proxy access. Do not delete saved sessions or the
   desktop database to fix credentials. Do not repeatedly resend a file-changing prompt as an authentication test.
 - `pipkin --diagnose --probe` proves an offline handshake, **not** provider authentication or account balance.
 
-The setup workflow is documented from the implementation and Pi provider contract. A new-user installation to
+The setup workflow is documented from the native implementation. A new-user installation to
 real first reply on a clean supported desktop remains an open qualification gate; no participant results are claimed.
 
 ## Know what the controls mean
@@ -98,7 +77,6 @@ real first reply on a clean supported desktop remains an open qualification gate
   skipped. Newly created/deleted files appear on the next query refresh. A failed root scan is shown as unavailable,
   not an empty success; repair access or select the correct project, then reopen the query to retry.
   Native picker/drop/IME qualification remains separately tracked.
-- **Extensions**: only the experimental remote question contract is supported. Stable Pi `ctx.ui.*` and terminal
-  widgets are not bridged; see [the compatibility matrix](extensions.md).
+- **Pi extensions** are outside scope and are not loaded; imported metadata is preserved.
 
 See [support and recovery](support.md) for data ownership, quitting and diagnostic privacy.

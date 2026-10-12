@@ -9,17 +9,16 @@ still open. Do not treat automated socket/installer checks as proof of a clean d
 | --- | --- | --- |
 | `$XDG_DATA_HOME/pipkin` or `~/.local/share/pipkin` | Pipkin preferences, drafts/attachment references, submission journal, goals and cached conversations in `pipkin.sqlite3`; engine output in `engine.log` | Private: can contain prompt text, tool output, source paths and secrets |
 | `<data dir>/pipkin.sqlite3.bak-vN` | Pre-migration backup for schema N | Same sensitivity as the database; does not include later drafts |
-| `~/.pi/server` (or explicit `--pi-dir`) | Pi server coordination profile/identity, sockets and process/launcher state | Private; not the durable session database location |
-| `~/.pi/agent` (or `--pi-agent-dir`) | Pi authentication/configuration and other agent-managed state | `auth.json` may contain API keys/OAuth tokens; never upload it |
+| `<data dir>/engine` | Native durable sessions and artifacts | Private; back up the complete directory |
+| `~/.config/pipkin/engine` (or explicit data directory) | Native authentication/configuration | `auth.json` may contain API keys/OAuth tokens; never upload it |
 | `<agent dir>/experimental/sessions/<session ID>/` | Authoritative experimental Pi sessions: `meta.json` and worker-owned `session.sqlite` | Private; preserve this directory for session recovery, not just the server sockets/profile |
-| Installation prefix / version directories | App, paired engine, public build identity and third-party notices | Not your draft/session storage |
+| Installation prefix / version directories | App with built-in engine, public build identity and notices | Not your draft/session storage |
 | Project directory | Actual files changed by tools or other programs | Changes survive Stop, quit and uninstall |
 
 Pipkin data-directory precedence is `--data-dir`, `PIPKIN_DATA`, `XDG_DATA_HOME/pipkin`, then
-`~/.local/share/pipkin`. **Changing only `--data-dir` does not isolate the engine profile or credentials.**
-Disposable destructive tests must also use a separate server profile, agent directory and project. With a source
-or installed engine explicitly passed as `--pi-repo`, `--pi-dir` selects that owned engine's profile; `--pi-dir`
-without an engine-to-launch selects an already running external server instead.
+`~/.local/share/pipkin`. Explicit `--data-dir` / `PIPKIN_DATA` also isolates the native engine's
+configuration and credentials under that directory. Use a separate project for destructive tests.
+Historical Pi directories are import sources only; `--pi-agent-dir` selects that source explicitly.
 
 Draft attachments are saved as file references/metadata, not a promise that the original file will exist forever.
 Do not delete originals before checking the restored draft. Keep backups private and include both app and engine
@@ -27,19 +26,19 @@ state if you need full recovery; a desktop-cache or server-coordination-profile 
 backup. An externally started server may use an explicit session-directory override; verify its configuration rather
 than assuming the defaults.
 
-### Native engine (development)
+### Native engine and Pi import
 
 `pipkin --engine native --pi-agent-dir /absolute/pi/profile` selects the source for both
 Pi conversation imports and provider settings/credential imports. It overrides the engine's
 `PI_CODING_AGENT_DIR` / `~/.pi/agent` discovery default; it does not change native storage or
 import anything at startup. Imports still require their normal confirmation. With
 `--engine-attach`, this source path is read by the attached engine. Omit the flag to use the
-engine's default source. Pi server coordination continues to use its separate server profile.
+engine's default source. Pi coordination profiles are read only when importing historical plugin metadata.
 
 For an independently owned native server shared by multiple desktops, see
 [Native engine attachment](native-attachment.md).
 
-`--engine native` runs Pipkin's built-in engine instead of Pi. Its sessions live in `<data dir>/engine/`
+Pipkin runs its built-in engine by default; `--engine native` is an optional alias. Its sessions live in `<data dir>/engine/`
 (`engine.sqlite` and artifacts) and its configuration and credentials in `~/.config/pipkin/engine/`
 (`auth.json` is `0600`; with `--data-dir`/`PIPKIN_DATA` both move under that directory). It never reads Pi's
 directories on its own, and nothing is imported at startup.
@@ -105,23 +104,13 @@ built-in engine now owns each conversation it imported, in the same transaction 
 that were reported but not imported (in use by a running Pi, or not representable) are not recorded and stay Pi's.
 Conversations imported in an earlier run are not recorded again.
 
-- With `--engine native`, imported conversations are written normally.
-- With `--engine pi`, a conversation the built-in engine owns stays readable (its history, search, the saved
-  copy), but it is read-only: the composer is locked and shows "This conversation now continues in the built-in
-  engine (Pipkin --engine native). It is read-only here; the copy shown is the history as of the import." Sending,
-  steering, queueing a follow-up, retrying, goal turns, changing the model, thinking level or subagent setting,
-  answering an extension's question and withdrawing queued input are all refused before anything is sent. The Pi
-  adapter checks the same record again before it sends anything (an import made by another window is seen too); a
-  refused prompt is a definite rejection, never an unknown outcome. Stopping a run already in flight stays possible.
+Current Pipkin writes imported conversations with the native engine. The Pi runtime and `--engine pi`
+are retired. Ownership records remain for safe rollback to an older Pipkin installation. Those older
+versions can display imported conversations read-only and offer their explicit release-back-to-Pi
+confirmation. No current command migrates native history back into Pi.
 
-Release: in Pi mode, the palette offers **Release this conversation back to Pi…** for an owned conversation. It
-asks first, saying that anything written in the built-in engine after the import is not in the Pi copy. Only
-**Confirm: release this conversation back to Pi** releases it, and releasing deletes only Pipkin's ownership record:
-neither engine's data is changed, and nothing moves back automatically. The built-in engine keeps its copy, so
-continuing in both afterwards makes the two differ.
-
-Rollback: an import never changes the Pi source. The Pi sessions, settings and credentials keep working with
-`--engine pi` (the default) as before, except that the imported conversations are read-only there until released.
+Rollback never changes the preserved Pi source. To use it again, explicitly reactivate a retained older
+installation and follow its ownership-release procedure. Keep complete native backups first.
 History written in an imported conversation after the import exists only in the native engine; it is not written
 back to Pi. Native transcript rows display **Native-only history · not in the Pi copy** for that work;
 subagent previews carry the same distinction. Imported rows retain their original text and item IDs.
@@ -142,18 +131,13 @@ source directories need their own backups. Temporary bash spill paths can expire
 native database retains complete tool output up to the displayed retention limit, available through the
 tool-output copy/save action. Archiving the engine does not preserve arbitrary files under `/tmp`.
 
-To roll back, run with `--engine pi` (and release any conversation you want Pi to continue); to discard
-the native copies, remove `<data dir>/engine/` (and `~/.config/pipkin/engine/` for its settings and credentials)
-after making sure nothing there is needed. Removing the engine directory does not remove the ownership records:
-release those conversations from the palette as well.
-
 ## Quitting and interrupted work
 
 Save any important draft and wait for save confirmation before quitting. A visible save failure is not a durable
 save. Do not delete databases or queue an extra copy of an uncertain prompt as a workaround.
 
 Pipkin shuts down the engine it launched and owns, including same-user processes carrying that profile identity.
-It does not own a separately started server selected with `--pi-dir` / `--pi-server-id`; that server can continue
+It does not own a separately started server selected with `--engine-attach`; that server can continue
 work after the window closes. Neither case rolls back file writes, shell commands, commits or remote actions that
 already happened. A detached/external process may require separate inspection.
 

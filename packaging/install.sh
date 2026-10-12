@@ -17,8 +17,7 @@ while (($#)); do
     -h|--help)
       printf '%s\n' 'Usage: ./install.sh [--prefix DIR] [--keep N] [--list | --rollback | --uninstall]' \
         'Run from the extracted x86_64 Linux archive. Default prefix: ~/.local.' \
-        'Installation includes a private Node runtime; provider setup happens in the app.' \
-        'A native-engine candidate archive (usr/lib/pipkin/native-engine.json) needs no Node at all.'
+        'The built-in Rust engine needs no Pi or Node; provider setup happens in the app.'
       exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -56,12 +55,6 @@ progress() {
 }
 die() { printf '%b[FAIL]%b %s\n' "$red" "$reset" "$*" >&2; exit 1; }
 note() { printf '%b[NOTE]%b %s\n' "$yellow" "$reset" "$*"; }
-version_of() {
-  local value
-  value=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1/usr/lib/pipkin/engine/engine.json" | head -1)
-  [[ -n "$value" && "$value" != . && "$value" != .. && "$value" != -* && "$value" != .* && "$value" != *[!a-zA-Z0-9._-]* ]] || return 1
-  printf '%s' "$value"
-}
 app_version() { "$1/usr/bin/pipkin" --version 2>/dev/null | awk '{print $2}'; }
 installed() { ls -1t "$versions" 2>/dev/null || true; }
 current_name() { [[ -L "$current" ]] && basename "$(readlink "$current")" || true; }
@@ -100,12 +93,13 @@ link_all() {
 
 probe_version() {
   local root=$1 native=$2
-  scratch=$(mktemp -d /tmp/pi-XXXXXX)
+  scratch=$(mktemp -d /tmp/pipkin-install-XXXXXX)
   mkdir -p "$scratch/home"
-  local probe_args=(--diagnose --probe)
+  local probe_args=(--diagnose --probe) legacy_env=()
+  [[ "$native" = 1 ]] || legacy_env+=(PI_OFFLINE=1)
   [[ "$native" = 0 ]] || probe_args+=(--engine native)
   if ! env -i HOME="$scratch/home" XDG_DATA_HOME="$scratch/home/.local/share" \
-    TMPDIR="$scratch" PATH=/usr/bin:/bin PI_OFFLINE=1 \
+    TMPDIR="$scratch" PATH=/usr/bin:/bin "${legacy_env[@]}" \
     "$root/usr/bin/pipkin" "${probe_args[@]}" >"$scratch/probe.log" 2>&1; then
     die 'The installed engine failed its offline handshake. The current version is unchanged; inspect local libraries and try again.'
   fi
@@ -124,6 +118,8 @@ verify_rollback_target() {
     [[ ! -e "$root/usr/lib/pipkin/engine" && ! -e "$root/usr/lib/pipkin/runtime" ]] ||
       die 'The native rollback package also carries a Pi engine or Node runtime. The current version is unchanged.'
   else
+    # Explicit rollback may reactivate an intact, previously installed historical Pi build.
+    # New installs never ship or provision this retired runtime.
     local runtime=$root/usr/lib/pipkin/runtime engine=$root/usr/lib/pipkin/engine
     [[ -x "$runtime/bin/node" && -f "$runtime/runtime.json" && -f "$engine/engine.json" &&
        -f "$engine/pi-test.sh" && -d "$engine/node_modules" ]] || die 'The paired rollback engine is incomplete. The current version is unchanged.'
@@ -141,12 +137,9 @@ case "$action" in
     for tool in sha256sum sed awk tr mktemp cp mv install env grep uname; do
       command -v "$tool" >/dev/null || die "Missing basic system tool: $tool. Install coreutils and retry."
     done
-    native=0
-    if [[ -f "$here/usr/lib/pipkin/native-engine.json" ]]; then
-      native=1
-      [[ ! -e "$here/usr/lib/pipkin/engine" && ! -e "$here/usr/lib/pipkin/runtime" ]] || die 'A native-engine archive must not also carry a Pi engine or Node runtime.'
-    fi
-    [[ ( "$native" = 1 || -f "$here/usr/lib/pipkin/engine/engine.json" ) && -x "$here/usr/bin/pipkin" ]] || die 'Run this from a complete extracted Pipkin archive (usr/ is missing).'
+    native=1
+    [[ -f "$here/usr/lib/pipkin/native-engine.json" && -x "$here/usr/bin/pipkin" ]] || die 'Run this from a complete native Pipkin archive. Installing new Pi runtime packages is retired.'
+    [[ ! -e "$here/usr/lib/pipkin/engine" && ! -e "$here/usr/lib/pipkin/runtime" ]] || die 'A native-engine archive must not also carry a Pi engine or Node runtime.'
     [[ ! -L "$versions" ]] || die 'Refusing a symlinked installation versions directory.'
     guard_links
     command -v git >/dev/null || die 'Git is required for project tools. Install it with your distribution package manager (Arch: sudo pacman -S git), then retry.'
@@ -156,41 +149,17 @@ case "$action" in
     fi
     progress OK 'Linux, Git and native libraries'
 
-    runtime="$here/usr/lib/pipkin/runtime"
-    engine="$here/usr/lib/pipkin/engine"
-    if [[ "$native" = 1 ]]; then
-      progress OK 'Built-in native engine: no Node runtime needed; no system changes'
-    else
-    [[ -x "$runtime/bin/node" && -f "$runtime/runtime.json" ]] || die 'Bundled Node is missing. Download the complete Linux archive; no system Node installation is needed.'
-    grep -Fq '"target": "x86_64-unknown-linux-gnu"' "$runtime/runtime.json" || die 'Bundled Node has the wrong Linux architecture.'
-    grep -Eq '"requiresBundledNode"[[:space:]]*:[[:space:]]*true' "$engine/engine.json" || die 'This engine does not declare the paired private Node runtime.'
-    expected=$(sed -n 's/.*"binarySha256": "\([0-9a-f]\{64\}\)".*/\1/p' "$runtime/runtime.json" | head -1)
-    [[ ${#expected} = 64 && $(sha256sum "$runtime/bin/node" | awk '{print $1}') = "$expected" ]] || die 'Bundled Node checksum mismatch; do not run this archive.'
-    node_digest=$expected
-    runtime_version=$(sed -n 's/.*"version": "\([0-9][0-9.]*\)".*/\1/p' "$runtime/runtime.json" | head -1)
-    [[ -n "$runtime_version" && $("$runtime/bin/node" --version) = "v$runtime_version" ]] || die 'The bundled Node runtime cannot run on this system.'
-    progress OK "Private Node $runtime_version verified; no system changes"
-    fi
+    progress OK 'Built-in native engine: no Node runtime needed; no system changes'
 
     info="$here/usr/share/doc/pipkin/build-info.json"
-    [[ -f "$info" && ( "$native" = 1 || ( -f "$engine/pi-test.sh" && -d "$engine/node_modules" ) ) ]] || die 'App or paired Pi engine is incomplete.'
+    [[ -f "$info" ]] || die 'Native app build identity is missing.'
     expected=$(sed -n 's/.*"binarySha256": "\([0-9a-f]\{64\}\)".*/\1/p' "$info" | head -1)
     [[ ${#expected} = 64 && $(sha256sum "$here/usr/bin/pipkin" | awk '{print $1}') = "$expected" ]] || die 'Pipkin executable checksum mismatch; do not run this archive.'
     "$here/usr/bin/pipkin" --version >/dev/null || die 'Pipkin cannot start here. Check your Linux library/GLIBC compatibility.'
-    if [[ "$native" = 1 ]]; then
-    "$here/usr/bin/pipkin" --version --engine native | grep -q 'engine native' || die 'This Pipkin does not identify a built-in native engine.'
-    # App identity only: the engine is part of the binary.
+    "$here/usr/bin/pipkin" --version | grep -q 'engine native' || die 'This Pipkin does not identify the native engine as its default.'
     name="$(app_version "$here")-native-${expected:0:12}"
-    else
-    bridge_digest=$(sed -n 's/.*"pipkinAuthBridgeSha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{64\}\)".*/\1/p' "$engine/engine.json" | head -1)
-    [[ ${#bridge_digest} = 64 ]] || die 'Cannot identify the staged OAuth bridge.'
-    # Version + app, Pi bridge and Node identities: fixes built at the same 0.0.1/Pi
-    # revision must not silently reuse an older installation.
-    name="$(app_version "$here")-$(version_of "$here")-${expected:0:12}-${bridge_digest:0:12}-${node_digest:0:12}" || die 'Cannot identify the app and paired engine.'
-    fi
     [[ "$name" != -* && "$name" != .* && "$name" != *[!a-zA-Z0-9._-]* ]] || die 'Invalid app or engine version.'
-    if [[ "$native" = 1 ]]; then progress OK 'Pipkin and built-in native engine verified'
-    else progress OK 'Pipkin and paired Pi engine verified'; fi
+    progress OK 'Pipkin and built-in native engine verified'
 
     mkdir -p "$versions"
     candidate=$versions/$name

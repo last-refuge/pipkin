@@ -49,3 +49,16 @@ test fails (94 pass): it accepts an old Ready before processing disconnect. The 
 observes disconnect before restarting and locally passes. Full follow-up workspace:
 **1,664 passed, zero failed, 54 ignored**, clean Clippy/fmt. See
 [focused assertions](final-parity-assertions.md). Hosted macOS rerun remains required.
+
+## Corrected hosted outcomes
+
+- Linux [38262069375](https://github.com/last-refuge/pipkin/actions/runs/38262069375)
+  on `252938a` **passed**, including actual native packaging, installed migration/coding/restart,
+  dependency notices and unused Node/npm/Pi traps. Completed 2026-10-12 14:36:58 UTC.
+- macOS [38262827277](https://github.com/last-refuge/pipkin/actions/runs/38262827277)
+  on `76ca778` **passed** engine/protocol, actual worker/diagnostics and native adapter tests.
+  This run did not package the app or qualify interactive macOS behavior.
+
+These close the specific earlier hosted failures; they are not the final native-default artifact.
+The build-path retirement replaces both legacy Pi CI jobs with native-only checks, full workspace
+checks on Linux and actual native app/ZIP packaging on macOS. The final candidate needs its own run.
