@@ -20,7 +20,9 @@ cancellation, rotation, error handling, native engine restart and comparisons ag
 executed pinned SDK. See [federation evidence](pipkin-rust-engine-evidence/anthropic-federation.md).
 This is separate from the existing Claude subscription integration.
 
-Required checks: **1543 passed, 0 failed, 53 ignored**; Clippy, formatting and diff checks clean.
+Required checks: **1543 passed, 0 failed, 53 ignored**; Clippy and formatting clean.
+The staged diff check reports only a trailing blank line in the verbatim upstream MIT
+license; it is retained to preserve the recorded source bytes and SHA-256.
 Logs: `/tmp/pipkin-federation-workspace.log`, `/tmp/pipkin-federation-clippy.log`,
 `/tmp/pipkin-federation-fmt.log`. Protocol 11 / schema 9 unchanged.
 
