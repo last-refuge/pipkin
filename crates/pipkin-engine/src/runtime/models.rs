@@ -1,6 +1,9 @@
 //! Model selection, availability and thinking levels (reference `model-resolver.ts`,
 //! `services/models-provider.ts`).
 
+mod order;
+mod pattern;
+
 use pipkin_engine_protocol::{ModelView, ModelsView, ThinkingView};
 
 use crate::auth::{Auth, Catalog};
@@ -149,7 +152,11 @@ pub struct Scope {
 /// The `enabledModels` scope over the available models; `None` when no patterns are set.
 pub fn scope(auth: &Auth, catalog: &Catalog, settings: &Settings) -> Option<Scope> {
     let patterns = settings.enabled_models.as_ref().filter(|p| !p.is_empty())?;
-    Some(resolve_scope(patterns, &available(auth, catalog)))
+    Some(resolve_scope_with_collator(
+        patterns,
+        &available(auth, catalog),
+        &order::from_env(auth.env()),
+    ))
 }
 
 /// Reference `findExactModelReferenceMatch`: `provider/id` (case-insensitive), then a unique
@@ -203,7 +210,11 @@ fn is_alias(id: &str) -> bool {
 
 /// Reference `tryMatchModel`: exact, else substring of id or name preferring aliases (highest
 /// id first), else the latest dated id.
-fn try_match<'a>(pattern: &str, models: &'a [Model]) -> Option<&'a Model> {
+fn try_match<'a>(
+    pattern: &str,
+    models: &'a [Model],
+    collator: &icu_collator::CollatorBorrowed<'_>,
+) -> Option<&'a Model> {
     if let Some(m) = exact_match(pattern, models) {
         return Some(m);
     }
@@ -225,7 +236,7 @@ fn try_match<'a>(pattern: &str, models: &'a [Model]) -> Option<&'a Model> {
     if !aliases.is_empty() {
         matches = aliases;
     }
-    matches.sort_by(|a, b| b.id.cmp(&a.id));
+    matches.sort_by(|a, b| collator.compare(&b.id, &a.id));
     matches.first().copied()
 }
 
@@ -234,15 +245,16 @@ fn try_match<'a>(pattern: &str, models: &'a [Model]) -> Option<&'a Model> {
 fn parse_pattern<'a>(
     pattern: &str,
     models: &'a [Model],
+    collator: &icu_collator::CollatorBorrowed<'_>,
 ) -> (Option<&'a Model>, Option<ThinkingLevel>, Option<String>) {
-    if let Some(m) = try_match(pattern, models) {
+    if let Some(m) = try_match(pattern, models, collator) {
         return (Some(m), None, None);
     }
     let Some(colon) = pattern.rfind(':') else {
         return (None, None, None);
     };
     let (prefix, suffix) = (&pattern[..colon], &pattern[colon + 1..]);
-    let (model, level, warning) = parse_pattern(prefix, models);
+    let (model, level, warning) = parse_pattern(prefix, models, collator);
     if model.is_none() {
         return (model, level, warning);
     }
@@ -262,18 +274,12 @@ fn parse_pattern<'a>(
     }
 }
 
-/// minimatch-style glob (case-insensitive; `*` and `?` stop at `/`).
-fn glob(pattern: &str) -> Option<globset::GlobMatcher> {
-    globset::GlobBuilder::new(pattern)
-        .case_insensitive(true)
-        .literal_separator(true)
-        .build()
-        .ok()
-        .map(|g| g.compile_matcher())
-}
-
 /// Reference `resolveModelScopeFromModels`.
-pub fn resolve_scope(patterns: &[String], models: &[Model]) -> Scope {
+fn resolve_scope_with_collator(
+    patterns: &[String],
+    models: &[Model],
+    collator: &icu_collator::CollatorBorrowed<'_>,
+) -> Scope {
     let mut scope = Scope::default();
     let push = |scope: &mut Scope, m: &Model, level: Option<ThinkingLevel>| {
         if !scope.models.iter().any(|(s, _)| s.key() == m.key()) {
@@ -293,13 +299,13 @@ pub fn resolve_scope(patterns: &[String], models: &[Model]) -> Scope {
                 push(&mut scope, m, level);
                 continue;
             }
-            let matcher = glob(glob_pattern);
+            let matcher = pattern::Pattern::new(glob_pattern);
             let matching: Vec<&Model> = models
                 .iter()
                 .filter(|m| {
                     matcher
                         .as_ref()
-                        .is_some_and(|g| g.is_match(m.key()) || g.is_match(&m.id))
+                        .is_some_and(|g| g.is_match(&m.key()) || g.is_match(&m.id))
                 })
                 .collect();
             if matching.is_empty() {
@@ -313,7 +319,7 @@ pub fn resolve_scope(patterns: &[String], models: &[Model]) -> Scope {
             }
             continue;
         }
-        let (model, level, warning) = parse_pattern(pattern, models);
+        let (model, level, warning) = parse_pattern(pattern, models, collator);
         if let Some(w) = warning {
             scope.warnings.push(w);
         }
@@ -390,3 +396,7 @@ pub fn thinking_view(model: Option<&Model>, level: Option<&str>) -> ThinkingView
         levels: levels.iter().map(|l| l.as_str().to_owned()).collect(),
     }
 }
+
+#[cfg(test)]
+#[path = "model_scope_tests.rs"]
+mod tests;

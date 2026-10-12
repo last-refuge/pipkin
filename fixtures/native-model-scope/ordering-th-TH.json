@@ -1,0 +1,775 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "node": "v26.8.1",
+  "locale": "th-TH",
+  "minimatch": "10.2.6",
+  "braceExpansion": "5.0.12",
+  "dependencySha256": {
+    "minimatch/index.js": "d224f71f20d7c206fcc5b7e9f747324c7698345a0b2c28d717dd9cf698306783",
+    "minimatch/ast.js": "64eef2ec09b28ba2db87a46111ad87e1e56c73b603baf6de86a12eb5b591f324",
+    "minimatch/brace-expressions.js": "12054a62fa32362027b8103896d28d65adad412efb2a41f01af2e2e7400bbf9a",
+    "brace-expansion/index.js": "e0ede97c712339a70bae2c96c675b1ffd30052bdf57f37f5a97b5945c40a9ae6"
+  },
+  "sourceSha256": "bbd8dcba05e9547e89d9b238f367d0e13fc1106815e7b8acce55a554ddc10396",
+  "argsSha256": "27bf08cf5da0c69913052dea2625d73aba23222733b3d31269c11eec7407e014",
+  "catalog": [],
+  "scope": "Actual resolveModelScopeFromModels and level validator; minimatch from matching locked version. Equality restricted to chat-model fixtures; unused chalk throws. Default Node locale recorded.",
+  "cases": [
+    {
+      "name": "fuzzy-276",
+      "models": [
+        {
+          "provider": "p",
+          "id": "z",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "ä",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-277",
+      "models": [
+        {
+          "provider": "p",
+          "id": "ä",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "z",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-278",
+      "models": [
+        {
+          "provider": "p",
+          "id": "Z",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "a",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/Z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-279",
+      "models": [
+        {
+          "provider": "p",
+          "id": "a",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "Z",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/Z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-280",
+      "models": [
+        {
+          "provider": "p",
+          "id": "a_z",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "a-z",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/a_z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-281",
+      "models": [
+        {
+          "provider": "p",
+          "id": "a-z",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "a_z",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/a-z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-282",
+      "models": [
+        {
+          "provider": "p",
+          "id": "a-z",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "a.z",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/a-z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-283",
+      "models": [
+        {
+          "provider": "p",
+          "id": "a.z",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "a-z",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/a.z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-284",
+      "models": [
+        {
+          "provider": "p",
+          "id": "a.z",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "a+z",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/a.z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-285",
+      "models": [
+        {
+          "provider": "p",
+          "id": "a+z",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "a.z",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/a.z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-286",
+      "models": [
+        {
+          "provider": "p",
+          "id": "a",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "A",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/A",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-287",
+      "models": [
+        {
+          "provider": "p",
+          "id": "A",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "a",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/A",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-288",
+      "models": [
+        {
+          "provider": "p",
+          "id": "é",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "é",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/é",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-289",
+      "models": [
+        {
+          "provider": "p",
+          "id": "é",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "é",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/é",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-290",
+      "models": [
+        {
+          "provider": "p",
+          "id": "i",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "İ",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/İ",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-291",
+      "models": [
+        {
+          "provider": "p",
+          "id": "İ",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "i",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/İ",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-292",
+      "models": [
+        {
+          "provider": "p",
+          "id": "ss",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "ß",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/ß",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-293",
+      "models": [
+        {
+          "provider": "p",
+          "id": "ß",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "ss",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/ß",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-294",
+      "models": [
+        {
+          "provider": "p",
+          "id": "😀",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "z",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-295",
+      "models": [
+        {
+          "provider": "p",
+          "id": "z",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "😀",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/z",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-296",
+      "models": [
+        {
+          "provider": "p",
+          "id": "x9",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "x10",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/x9",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-297",
+      "models": [
+        {
+          "provider": "p",
+          "id": "x10",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "x9",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/x9",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-298",
+      "models": [
+        {
+          "provider": "p",
+          "id": "ı",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "I",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/ı",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-299",
+      "models": [
+        {
+          "provider": "p",
+          "id": "I",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "ı",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/ı",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-300",
+      "models": [
+        {
+          "provider": "p",
+          "id": "İ",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "i",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/İ",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "fuzzy-301",
+      "models": [
+        {
+          "provider": "p",
+          "id": "i",
+          "name": "choose"
+        },
+        {
+          "provider": "p",
+          "id": "İ",
+          "name": "choose"
+        }
+      ],
+      "patterns": [
+        "choose"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/İ",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "dated-only",
+      "models": [
+        {
+          "provider": "p",
+          "id": "x-20250101",
+          "name": "x-20250101"
+        },
+        {
+          "provider": "p",
+          "id": "x-20260101",
+          "name": "x-20260101"
+        }
+      ],
+      "patterns": [
+        "x"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/x-20260101",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "alias-before-dated",
+      "models": [
+        {
+          "provider": "p",
+          "id": "x-20290101",
+          "name": "x-20290101"
+        },
+        {
+          "provider": "p",
+          "id": "x-latest",
+          "name": "x-latest"
+        }
+      ],
+      "patterns": [
+        "x"
+      ],
+      "expected": {
+        "models": [
+          {
+            "key": "p/x-latest",
+            "thinking": null
+          }
+        ],
+        "warnings": []
+      }
+    }
+  ]
+}

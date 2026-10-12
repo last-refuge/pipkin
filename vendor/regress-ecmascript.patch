@@ -1,0 +1,43 @@
+--- a/src/parse.rs
++++ b/src/parse.rs
+@@ -1793,7 +1793,7 @@
+             }
+             match u16::from_str_radix(&s, 16) {
+                 Ok(u) => {
+-                    if (0xD800..=0xDBFF).contains(&u) {
++                    if self.flags.unicode && (0xD800..=0xDBFF).contains(&u) {
+                         // Found a high surrogate. Try to parse a low surrogate next
+                         // to see if we can rebuild the original `char`
+ 
+--- a/src/unicode.rs
++++ b/src/unicode.rs
+@@ -144,7 +144,10 @@
+     if unicode {
+         return fold(cu);
+     }
+-    uppercase(cu)
++    let upper = uppercase(cu);
++    // ECMAScript Canonicalize, legacy mode: a non-ASCII character must never
++    // canonicalize to ASCII (notably U+017F and U+0131).
++    if cu >= 128 && upper < 128 { cu } else { upper }
+ }
+ 
+ pub fn fold(cu: u32) -> u32 {
+@@ -302,7 +305,7 @@
+ 
+ pub(crate) fn unfold_uppercase_char(c: u32) -> Vec<u32> {
+     let mut res = vec![c];
+-    let fcp = uppercase(c);
++    let fcp = fold_code_point(c, false);
+     if fcp != c {
+         res.push(fcp);
+     }
+@@ -311,7 +314,7 @@
+             continue;
+         }
+         for cp in tr.transformed_from().codepoints() {
+-            let tcp = tr.apply(cp);
++            let tcp = fold_code_point(cp, false);
+             if tcp == fcp {
+                 res.push(cp);
+             }

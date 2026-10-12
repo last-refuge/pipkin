@@ -1160,3 +1160,58 @@ fn federation_environment_supports_native_turns_and_reexchange_after_engine_rest
     assert!(scripted.requests().is_empty());
     e.handle.shutdown(Duration::from_secs(1));
 }
+
+#[test]
+fn model_patterns_drive_initial_selection_live_listing_and_restart() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let server = rt.block_on(MockServer::start(|_, _| MockResponse::sse(vec![
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"selected model works\"},\"finish_reason\":null}]}\n\n".into(),
+        "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n".into(),
+    ])));
+    let fx = Fixture::new();
+    let provider = Scripted::echo("selected model works");
+    write_models(
+        &fx,
+        &json!({"providers":{"local":{
+            "baseUrl":format!("{}/v1",server.url), "api":"openai-completions", "apiKey":"k",
+            "models":[{"id":"a_z","name":"Choose","reasoning":true},
+                      {"id":"a-z","name":"Choose","reasoning":true},
+                      {"id":".hidden","reasoning":true},
+                      {"id":"other","reasoning":true}]
+        }}}),
+    );
+    write_settings(&fx, &json!({"enabledModels":["Choose:high"]}));
+    let mut config = fx.config();
+    config.default_model = None;
+    let mut e = fx.start_config(&provider, config.clone());
+    let session = e.create(&fx.project, "scope-reference");
+    assert_eq!(
+        session_model(&mut e, &session),
+        (Some("local/a-z".into()), "high".into())
+    );
+    e.prompt(&session, "scope-turn", "go").unwrap();
+    assert_eq!(e.settled("scope-turn"), RunOutcome::Completed);
+    assert_eq!(server.requests()[0].json()["model"], "a-z");
+    write_settings(&fx, &json!({"enabledModels":["local/@(a_z|a-z)*:low"]}));
+    let keys: Vec<_> = models(&mut e, None)
+        .models
+        .into_iter()
+        .map(|m| m.key)
+        .collect();
+    assert_eq!(keys, vec!["local/a_z", "local/a-z"]);
+    e.handle.shutdown(Duration::from_secs(1));
+    drop(e);
+    let mut e = fx.start_config(&provider, config);
+    let fresh = e.create(&fx.project, "scope-after-restart");
+    assert_eq!(
+        session_model(&mut e, &fresh),
+        (Some("local/a_z".into()), "low".into())
+    );
+    write_settings(&fx, &json!({"enabledModels":["local/*"]}));
+    assert!(
+        !models(&mut e, None)
+            .models
+            .iter()
+            .any(|m| m.key == "local/.hidden")
+    );
+}

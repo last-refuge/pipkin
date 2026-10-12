@@ -111,6 +111,8 @@ jobs:
           set -o pipefail
           python3 scripts/verify-reqwest-vendor.py
           python3 scripts/test-reqwest-vendor.py
+          python3 scripts/verify-regress-vendor.py
+          python3 scripts/test-regress-vendor.py
           cargo test --workspace --locked 2>&1 | tee qualification-logs/workspace.log
           cargo clippy --workspace --all-targets --locked 2>&1 | tee qualification-logs/clippy.log
           cargo fmt --all --check

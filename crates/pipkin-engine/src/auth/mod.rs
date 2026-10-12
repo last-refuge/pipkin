@@ -159,6 +159,10 @@ struct BaseAuth {
 }
 
 impl Auth {
+    pub(crate) fn env(&self) -> &crate::config::Env {
+        &self.inner.config.env
+    }
+
     pub fn new(config: &EngineConfig) -> Auth {
         Auth::with_store(config, Arc::new(FileStore::new(config.auth_path())))
     }

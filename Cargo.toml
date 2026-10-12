@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/pipkin-core", "crates/pipkin-ui", "crates/pipkin-app", "crates/pi-client", "crates/pipkin-engine-protocol", "crates/pipkin-engine"]
-exclude = ["zed", "vendor/reqwest-0.12.28"]
+exclude = ["zed", "vendor/reqwest-0.12.28", "vendor/regress-0.12.0"]
 
 [workspace.package]
 edition = "2024"
@@ -20,3 +20,6 @@ debug = "line-tables-only"
 [patch.crates-io]
 # CONNECT for plain HTTP targets; defaults unchanged for other reqwest consumers.
 reqwest = { path = "vendor/reqwest-0.12.28" }
+
+# Preserve ECMAScript non-Unicode case folding for model glob compatibility.
+regress = { path = "vendor/regress-0.12.0" }

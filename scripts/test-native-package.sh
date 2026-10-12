@@ -38,6 +38,9 @@ check "native Pi source port includes the exact upstream MIT notice" \
   "cmp '$here/packaging/upstream-notices/pi/LICENSE' '$root/pkg/usr/share/licenses/pipkin/pi-MIT-LICENSE'"
 check "native federation source port includes the exact Anthropic SDK notice" \
   "cmp '$here/packaging/upstream-notices/anthropic-sdk/LICENSE' '$root/pkg/usr/share/licenses/pipkin/anthropic-sdk-MIT-LICENSE'"
+check "native model parser includes exact minimatch and brace-expansion notices" \
+  "cmp '$here/packaging/upstream-notices/minimatch-10.2.6/LICENSE.md' '$root/pkg/usr/share/licenses/pipkin/minimatch-BlueOak-LICENSE' &&
+   cmp '$here/packaging/upstream-notices/brace-expansion-5.0.12/LICENSE' '$root/pkg/usr/share/licenses/pipkin/brace-expansion-MIT-LICENSE'"
 check "license inventory lists Rust packages only" \
   "python3 -I -c 'import json,sys; r=json.load(open(sys.argv[1])); e={p[\"ecosystem\"] for p in r[\"packages\"]}; assert e=={\"rust\"}, e' '$root/pkg/usr/share/doc/pipkin/third-party/inventory.json'"
 check "runtime inventory names the built-in engine and no Node" \

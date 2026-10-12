@@ -13,6 +13,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 cd "$here"
 python3 scripts/verify-reqwest-vendor.py
+python3 scripts/verify-regress-vendor.py
 version=$(cargo pkgid -p pipkin-app | sed 's/.*[#@]//')
 arch=$(uname -m)
 target=$(rustc -vV | awk '/^host:/ {print $2}')
@@ -54,6 +55,8 @@ done
 install -Dm644 LICENSE "$stage/usr/share/licenses/pipkin/LICENSE"
 install -Dm644 packaging/upstream-notices/pi/LICENSE "$stage/usr/share/licenses/pipkin/pi-MIT-LICENSE"
 install -Dm644 packaging/upstream-notices/anthropic-sdk/LICENSE "$stage/usr/share/licenses/pipkin/anthropic-sdk-MIT-LICENSE"
+install -Dm644 packaging/upstream-notices/minimatch-10.2.6/LICENSE.md "$stage/usr/share/licenses/pipkin/minimatch-BlueOak-LICENSE"
+install -Dm644 packaging/upstream-notices/brace-expansion-5.0.12/LICENSE "$stage/usr/share/licenses/pipkin/brace-expansion-MIT-LICENSE"
 install -Dm644 assets/icons/LICENSE "$stage/usr/share/licenses/pipkin/icons-LICENSE"
 for f in Poppins-OFL.txt Lilex-OFL.txt IBMPlexSans-LICENSE.txt; do
   install -Dm644 "assets/fonts/$f" "$stage/usr/share/licenses/pipkin/$f"

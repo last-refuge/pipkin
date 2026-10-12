@@ -114,10 +114,12 @@ for identity in sorted(seen):
     vendor_patch = None
     if package['source'] is None and directory.resolve().is_relative_to((ROOT / 'vendor').resolve()):
         source = 'Vendored dependency; see ' + str(directory.relative_to(ROOT)) + '/PIPKIN-PATCH.md'
-        if package['name'] == 'reqwest':
-            vendor_patch = OUT / 'patches' / f"reqwest-{package['version']}"
+        if package['name'] in ('reqwest', 'regress'):
+            vendor_patch = OUT / 'patches' / f"{package['name']}-{package['version']}"
             vendor_patch.mkdir(parents=True, exist_ok=True)
-            for path in [directory / 'PIPKIN-PATCH.md', ROOT / 'vendor/reqwest-provenance.json', ROOT / 'vendor/reqwest-http-tunnel.patch']:
+            stem = package['name']
+            patch_name = 'reqwest-http-tunnel.patch' if stem == 'reqwest' else 'regress-ecmascript.patch'
+            for path in [directory / 'PIPKIN-PATCH.md', ROOT / f'vendor/{stem}-provenance.json', ROOT / 'vendor' / patch_name]:
                 shutil.copyfile(path, vendor_patch / path.name)
             source = 'Vendored dependency; see ' + str((vendor_patch / 'PIPKIN-PATCH.md').relative_to(OUT))
     collect('rust', package['name'], package['version'], package['license'],

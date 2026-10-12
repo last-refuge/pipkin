@@ -11,7 +11,28 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — sustained mixed stream/tool/session/restart workload
+## Current follow-up — native model patterns and locale ordering
+
+2026-10-12, following **`52b60c7`**, protocol 12 / schema 9 unchanged. Replaced the
+model scope's globset/byte-order approximations with a native pattern matcher and ICU
+collation. The initial 93-case executed reference corpus exposed 48 differences; the
+expanded **304 + 112 locale cases pass**, comparing full ordered selections, levels and
+warnings. A real local HTTP generation verifies selected-model dispatch, live extglob
+settings and restart; isolated engines respect their configured locale environment.
+
+Required checks: **1,638 passed, 0 failed, 54 ignored**, clean Clippy and formatting.
+Native package build and scratch installed migration/coding/restart/uninstall checks pass
+with Pi/Node invocation traps. Parser notices and vendored regress patch provenance are
+retained and verified; tamper/license regression checks pass. See
+[model-scope evidence](pipkin-rust-engine-evidence/model-scope.md) for failed intermediate
+runs, dependency changes, reproduction, package measurements and remaining limits.
+
+Inventory dispositions/evidence counts are unchanged; **0 fully qualified**. Native remains
+opt-in. Extreme pattern/resource bounds, broader locale coverage, other core/provider
+comparisons and installed/desktop/release cutover gates remain open. Pi extensions remain
+out of scope. Unrelated owner changes preserved.
+
+## Prior follow-up — sustained mixed stream/tool/session/restart workload
 
 2026-10-12, following **`ca5dd74`**, protocol 12 / schema 9 unchanged. Added a ninth opt-in
 release benchmark to the standard runner: eight attached sessions, two concurrent turns,
