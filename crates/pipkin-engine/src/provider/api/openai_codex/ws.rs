@@ -20,13 +20,30 @@ use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_util::sync::CancellationToken;
 
-use super::super::openai_responses_shared::convert_messages;
+use super::super::openai_responses_shared::convert_response_items;
 use super::events::{ResponsesState, Step};
 use super::{CODEX_TOOL_CALL_PROVIDERS, Failure, FailureKind};
-use crate::provider::{Emitter, Model};
+use crate::provider::{Emitter, ProviderRequest};
 
-pub(crate) type WsStream =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+trait Socket: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> Socket for T {}
+type Transport = Box<dyn Socket>;
+type WsStream = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<Transport>>;
+use tokio_rustls::rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
+
+fn default_tls_config() -> Arc<ClientConfig> {
+    static CONFIG: std::sync::OnceLock<Arc<ClientConfig>> = std::sync::OnceLock::new();
+    CONFIG
+        .get_or_init(|| {
+            let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            Arc::new(
+                ClientConfig::builder()
+                    .with_root_certificates(roots)
+                    .with_no_client_auth(),
+            )
+        })
+        .clone()
+}
 
 /// Reference `OPENAI_BETA_RESPONSES_WEBSOCKETS`.
 pub(crate) const OPENAI_BETA_RESPONSES_WEBSOCKETS: &str = "responses_websockets=2026-02-06";
@@ -92,6 +109,9 @@ struct EntryKey {
 #[derive(Default)]
 pub(crate) struct WsState {
     pool: HashMap<String, HashMap<String, Entry>>,
+    /// Test-local certificate roots; production always uses the standard verified roots.
+    #[cfg(test)]
+    tls: Option<Arc<ClientConfig>>,
     next_id: u64,
     fallback_sessions: HashSet<String>,
     stats: HashMap<String, WebSocketDebugStats>,
@@ -278,34 +298,53 @@ fn header_pairs(
 
 /// Reference `connectWebSocket`.
 ///
-/// With a proxy the TCP connection is an HTTP `CONNECT` tunnel through it (Node's WebSocket
-/// does the same over undici's `EnvHttpProxyAgent`), and TLS to the target runs inside the
-/// tunnel. Only `http://` proxies can carry the tunnel here: with an `https://` proxy the
-/// attempt fails as a transport error, so the adapter falls back to SSE, which the shared
-/// HTTP client sends through that proxy. The connect timeout covers the tunnel.
+/// CONNECT may itself run over verified TLS to an HTTPS proxy. TLS to a WSS target is
+/// negotiated separately inside that tunnel. The connect timeout/cancellation covers DNS,
+/// both TLS handshakes, CONNECT and the WebSocket handshake.
 async fn connect(
     url: &str,
     headers: &[(String, String)],
     cancel: &CancellationToken,
     connect_timeout: Option<Duration>,
     proxy: Option<&url::Url>,
+    tls: Option<Arc<ClientConfig>>,
 ) -> Result<WsStream, Failure> {
     let request = url
         .into_client_request()
         .map_err(|e| Failure::error(e.to_string()))?;
     let request = header_pairs(request, headers);
     let connect = async move {
-        match proxy {
-            None => tokio_tungstenite::connect_async(request)
+        let stream: Transport = match proxy {
+            Some(proxy) => tunnel(proxy, request.uri(), tls.clone()).await?,
+            None => {
+                let host = request
+                    .uri()
+                    .host()
+                    .ok_or("The WebSocket URL has no host")?;
+                let port = request.uri().port_u16().unwrap_or(
+                    if request.uri().scheme_str() == Some("wss") {
+                        443
+                    } else {
+                        80
+                    },
+                );
+                let stream = tokio::net::TcpStream::connect((
+                    host.trim_start_matches('[').trim_end_matches(']'),
+                    port,
+                ))
                 .await
-                .map_err(|e| e.to_string()),
-            Some(proxy) => {
-                let stream = tunnel(proxy, request.uri()).await?;
-                tokio_tungstenite::client_async_tls(request, stream)
-                    .await
-                    .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string())?;
+                Box::new(stream)
             }
-        }
+        };
+        tokio_tungstenite::client_async_tls_with_config(
+            request,
+            stream,
+            None,
+            tls.map(tokio_tungstenite::Connector::Rustls),
+        )
+        .await
+        .map_err(|e| e.to_string())
     };
     let result = tokio::select! {
         _ = cancel.cancelled() => return Err(Failure::aborted()),
@@ -329,20 +368,18 @@ async fn connect(
 /// Largest proxy `CONNECT` response head accepted.
 const MAX_PROXY_HEAD: usize = 16 * 1024;
 
-/// Open an HTTP `CONNECT` tunnel to the WebSocket target through an `http://` proxy (with
+/// Open an HTTP `CONNECT` tunnel through an HTTP or HTTPS proxy (with
 /// `Proxy-Authorization: Basic` from the proxy URL's credentials).
 async fn tunnel(
     proxy: &url::Url,
     target: &tokio_tungstenite::tungstenite::http::Uri,
-) -> Result<tokio::net::TcpStream, String> {
+    tls: Option<Arc<ClientConfig>>,
+) -> Result<Transport, String> {
     use base64::Engine as _;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    if proxy.scheme() != "http" {
-        return Err(format!(
-            "WebSocket connections cannot be tunneled through a {}:// proxy; only http:// proxies are supported",
-            proxy.scheme()
-        ));
+    if !matches!(proxy.scheme(), "http" | "https") {
+        return Err(crate::provider::proxy::UNSUPPORTED_PROXY_PROTOCOL_MESSAGE.into());
     }
     let host = target.host().ok_or("The WebSocket URL has no host")?;
     let port = target
@@ -360,9 +397,19 @@ async fn tunnel(
     let proxy_host = proxy.host_str().ok_or("The proxy URL has no host")?;
     let proxy_port = proxy.port_or_known_default().unwrap_or(80);
     let dial_host = proxy_host.trim_start_matches('[').trim_end_matches(']');
-    let mut tcp = tokio::net::TcpStream::connect((dial_host, proxy_port))
+    let tcp = tokio::net::TcpStream::connect((dial_host, proxy_port))
         .await
         .map_err(|e| format!("Proxy connection to {proxy_host}:{proxy_port} failed: {e}"))?;
+    let mut tcp: Transport = if proxy.scheme() == "https" {
+        let name = ServerName::try_from(dial_host.to_owned())
+            .map_err(|e| format!("Invalid proxy hostname: {e}"))?;
+        let connector = tokio_rustls::TlsConnector::from(tls.unwrap_or_else(default_tls_config));
+        Box::new(connector.connect(name, tcp).await.map_err(|e| {
+            format!("Proxy TLS connection to {proxy_host}:{proxy_port} failed: {e}")
+        })?)
+    } else {
+        Box::new(tcp)
+    };
     let mut head = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n");
     if !proxy.username().is_empty() {
         let credentials = format!(
@@ -400,10 +447,13 @@ async fn tunnel(
     }
     let text = String::from_utf8_lossy(&response);
     let status_line = text.lines().next().unwrap_or("").trim();
-    let ok = status_line
-        .split_whitespace()
-        .nth(1)
-        .is_some_and(|code| code.starts_with('2'));
+    let mut status = status_line.split_whitespace();
+    let ok = matches!(status.next(), Some("HTTP/1.0" | "HTTP/1.1"))
+        && status
+            .next()
+            .filter(|s| s.len() == 3)
+            .and_then(|s| s.parse::<u16>().ok())
+            .is_some_and(|code| (200..300).contains(&code));
     if !ok {
         return Err(format!(
             "Proxy CONNECT to {authority} failed: {status_line}"
@@ -464,8 +514,12 @@ async fn acquire(
     connect_timeout: Option<Duration>,
     proxy: Option<&url::Url>,
 ) -> Result<Lease, Failure> {
+    #[cfg(test)]
+    let tls = lock(shared).tls.clone();
+    #[cfg(not(test))]
+    let tls = None;
     let Some(session) = session else {
-        let socket = connect(url, headers, cancel, connect_timeout, proxy).await?;
+        let socket = connect(url, headers, cancel, connect_timeout, proxy, tls).await?;
         return Ok(Lease {
             socket,
             key: None,
@@ -531,7 +585,7 @@ async fn acquire(
             lock(shared).remove_if(&key, |_| true);
         }
         Plan::Unregistered => {
-            let socket = connect(url, headers, cancel, connect_timeout, proxy).await?;
+            let socket = connect(url, headers, cancel, connect_timeout, proxy, tls).await?;
             return Ok(Lease {
                 socket,
                 key: None,
@@ -540,7 +594,7 @@ async fn acquire(
         }
         Plan::Register => {}
     }
-    let socket = connect(url, headers, cancel, connect_timeout, proxy).await?;
+    let socket = connect(url, headers, cancel, connect_timeout, proxy, tls).await?;
     let mut st = lock(shared);
     st.next_id += 1;
     let id = st.next_id;
@@ -656,10 +710,10 @@ pub(crate) struct WsRequest<'a> {
     pub(crate) url: &'a str,
     pub(crate) body: &'a Value,
     pub(crate) headers: &'a [(String, String)],
-    pub(crate) model: &'a Model,
+    pub(crate) request: &'a ProviderRequest,
     pub(crate) idle_timeout: Option<Duration>,
     pub(crate) connect_timeout: Option<Duration>,
-    /// An `http://` proxy to tunnel through with `CONNECT` (see [`connect`]).
+    /// An HTTP or HTTPS proxy to tunnel through with `CONNECT` (see [`connect`]).
     pub(crate) proxy: Option<&'a url::Url>,
     pub(crate) session: Option<&'a str>,
     pub(crate) account: &'a str,
@@ -740,9 +794,9 @@ pub(crate) async fn run(
                 let stop = state
                     .stop()
                     .unwrap_or(pipkin_engine_protocol::StopReason::Stop);
-                let snapshot = state.snapshot(emitter, req.model, stop);
+                let snapshot = state.snapshot(emitter, &req.request.model, stop);
                 let items: Vec<Value> =
-                    convert_messages(req.model, None, &[snapshot], &CODEX_TOOL_CALL_PROVIDERS)
+                    convert_response_items(req.request, &snapshot, &CODEX_TOOL_CALL_PROVIDERS)
                         .unwrap_or_default()
                         .into_iter()
                         .filter(|item| {
@@ -862,3 +916,7 @@ async fn stream_once(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tls_tests.rs"]
+mod tls_tests;

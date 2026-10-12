@@ -11,7 +11,22 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — constrained tool declarations and execution
+## Current follow-up — verified WebSocket proxy TLS
+
+Constrained-tool integration is committed as **`1077005`**. Codex WebSockets now support
+HTTP and HTTPS CONNECT proxies for WS and WSS targets. TLS to the proxy and TLS inside the
+tunnel verify certificates independently. Tests cover all four combinations, percent-decoded
+proxy authentication without forwarding it to the target, NO_PROXY, connection reuse/close,
+timeouts/cancellation, and refused/malformed/oversized proxy responses. Verification also
+found and repaired grammar response conversion in the cached continuation path.
+See [transport evidence](pipkin-rust-engine-evidence/websocket-proxy-tls.md).
+
+Required checks: **1358 passed, 0 failed, 53 ignored**, Clippy and formatting clean. Counts remain **503 rows; 420 measured, 7 observed,
+0 currently failed, 10 unverified, 66 not started; 0 qualified**. Remaining transport work:
+conversation lifecycle cleanup, shared-client HTTP CONNECT parity, auth proxy error parity,
+external attachment and full transport differentials. Native remains opt-in.
+
+## Previous follow-up — constrained tool declarations and execution
 
 The positional context/paging batch is committed as **`ea0a98b`**. The next batch carries
 `constrainedSampling` through native tool specs and durable declarations. Strict JSON-schema
@@ -307,7 +322,7 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
    commit/snapshot ordering, and the headless memory-budget fix; see delivery/memory evidence.
    Remaining transport and broader memory qualification boundaries are listed above.
 3. Usage counters and positional prompt updates are implemented and tested. Constrained/grammar
-   tool support is implemented with passing targeted/workspace checks. Next: Codex WebSocket lifecycle/proxy gaps and external attachment. Resolve facet ports/profile lifecycle while
+   tool support is implemented with passing targeted/workspace checks. HTTPS proxy/WSS support and cached grammar continuation are now implemented with local TLS tests. Next: Codex conversation lifecycle cleanup, remaining shared-client proxy gaps and external attachment. Resolve facet ports/profile lifecycle while
    keeping Pi as the continuity path.
 4. Add the specific missing assertions in the reconciliation report; build the full native/Pi
    differential harness. Existing disk-full, child recovery and `all` delivery tests do not

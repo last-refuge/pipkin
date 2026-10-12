@@ -151,6 +151,22 @@ pub fn convert_request_messages(
     )
 }
 
+/// Convert the response saved for WebSocket continuation with the same grammar contract
+/// as the next full request, without cloning the conversation history.
+pub(crate) fn convert_response_items(
+    req: &ProviderRequest,
+    message: &Message,
+    providers: &[&str],
+) -> Result<Vec<Value>, String> {
+    convert_messages_inner(
+        &req.model,
+        None,
+        std::slice::from_ref(message),
+        providers,
+        Some(req),
+    )
+}
+
 fn convert_messages_inner(
     model: &Model,
     system: Option<&str>,

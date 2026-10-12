@@ -4455,10 +4455,12 @@ dependencies = [
  "sha2",
  "tempfile",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite",
  "tokio-util",
  "unicode-normalization",
  "url",
+ "webpki-roots 1.0.9",
  "yaml-rust2",
  "zstd",
 ]

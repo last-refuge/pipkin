@@ -753,7 +753,7 @@ impl OpenAICodexResponses {
                         url: &url,
                         body: &body,
                         headers: websocket.pairs(),
-                        model: &req.model,
+                        request: req,
                         idle_timeout: timeout,
                         connect_timeout: opts.websocket_connect_timeout,
                         proxy: proxy.as_ref(),
