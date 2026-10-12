@@ -1042,3 +1042,221 @@ fn sigkill_between_state_commit_and_publication_is_recovered_from_the_outbox() {
     });
     w.close();
 }
+
+fn compaction_settings(p: &Profile, enabled: bool, retries: u32) {
+    std::fs::write(
+        p.config.join("settings.json"),
+        json!({
+            "compaction": {"enabled":enabled,"keepRecentTokens":5},
+            "retry":{"maxRetries":retries,"baseDelayMs":900,"provider":{"maxRetries":0}}
+        })
+        .to_string(),
+    )
+    .unwrap();
+}
+
+fn seed_compaction(w: &mut Worker, p: &Profile) -> String {
+    let s = w.create(&p.project);
+    for i in 0..4 {
+        let key = format!("seed-{i}");
+        w.prompt(&s, &key, "old conversation with several words")
+            .unwrap()
+            .unwrap();
+        assert_eq!(w.settled(&s, &key), RunOutcome::Completed);
+    }
+    s
+}
+
+fn wait_compactions(p: &Profile) -> Value {
+    let conn = rusqlite::Connection::open(p.data.join("engine.sqlite")).unwrap();
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let (state, progress): (String, String) = conn
+            .query_row(
+                "SELECT state, progress FROM compactions ORDER BY id DESC LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        if state == "settled" {
+            return serde_json::from_str(&progress).unwrap();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "compaction did not settle: {progress}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn sigkill_compaction_boundaries_recover_without_open_and_account_once() {
+    for point in [
+        "compaction_admitted",
+        "compaction_selected",
+        "compaction_response_saved",
+        "compaction_classified",
+    ] {
+        let stub = Stub::start(|_, _| text_plan("saved summary or answer"));
+        let p = Profile::new(&stub.url());
+        compaction_settings(&p, false, 1);
+        let mut w = Worker::start(&p, Some(point));
+        let s = seed_compaction(&mut w, &p);
+        let _ = w.call(Call::Compact {
+            session: s.clone(),
+            instructions: Some("focus on durable state".into()),
+        });
+        w.reap_killed();
+        let conn = rusqlite::Connection::open(p.data.join("engine.sqlite")).unwrap();
+        let saved: String = conn
+            .query_row("SELECT progress FROM compactions", [], |r| r.get(0))
+            .unwrap();
+        let saved: Value = serde_json::from_str(&saved).unwrap();
+        // A selected request must not be reconstructed from a changed session model/settings.
+        if point != "compaction_admitted" {
+            conn.execute(
+                "UPDATE sessions SET model = 'missing/model' WHERE id = ?1",
+                [&s],
+            )
+            .unwrap();
+            std::fs::write(
+                p.config.join("settings.json"),
+                json!({"compaction":{"keepRecentTokens":1000000},"retry":{"enabled":false}})
+                    .to_string(),
+            )
+            .unwrap();
+        }
+        drop(conn);
+        let mut w = Worker::start(&p, None);
+        // No OpenSession/Compact request: startup alone recovers the journal.
+        let terminal = wait_compactions(&p);
+        assert_eq!(terminal["result"]["outcome"], "done", "{point}: {terminal}");
+        assert_eq!(
+            stub.bodies().len(),
+            5,
+            "{point}: saved responses must not be sent again"
+        );
+        if let Some(request) = saved.get("request") {
+            let body = stub.bodies().last().unwrap().clone();
+            assert_eq!(
+                messages_with_role(&body, "user"),
+                [request["messages"][0]["content"][0]["text"]
+                    .as_str()
+                    .unwrap()]
+            );
+        }
+        let snap = w.snapshot(&s);
+        assert_eq!(
+            snap.entries
+                .iter()
+                .filter(|e| matches!(e.kind, EntryKind::Compaction { .. }))
+                .count(),
+            1
+        );
+        let conn = rusqlite::Connection::open(p.data.join("engine.sqlite")).unwrap();
+        let total: u64 = conn
+            .query_row(
+                "SELECT json_extract(value, '$.totalTokens') FROM usage WHERE bucket = 'model'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            total, 75,
+            "{point}: four coding turns and exactly one summary"
+        );
+        drop(conn);
+        w.close();
+        let w = Worker::start(&p, None);
+        assert_eq!(wait_compactions(&p), terminal);
+        assert_eq!(stub.bodies().len(), 5);
+        w.close();
+    }
+}
+
+#[test]
+fn sigkill_compaction_retry_keeps_deadline_and_attempt_count() {
+    for point in ["compaction_response_saved", "compaction_classified"] {
+        let times = Arc::new(Mutex::new(Vec::new()));
+        let recorded = times.clone();
+        let stub = Stub::start(move |n, _| {
+            if n < 4 {
+                return text_plan("seed answer");
+            }
+            recorded.lock().unwrap().push(pipkin_engine::util::now_ms());
+            Plan { pieces: vec!["data: {\"error\":{\"message\":\"503: overloaded\",\"type\":\"server_error\"}}\n\n".into()], hang: false }
+        });
+        let p = Profile::new(&stub.url());
+        compaction_settings(&p, false, 1);
+        let mut w = Worker::start(&p, Some(point));
+        let s = seed_compaction(&mut w, &p);
+        let _ = w.call(Call::Compact {
+            session: s,
+            instructions: None,
+        });
+        w.reap_killed();
+        let conn = rusqlite::Connection::open(p.data.join("engine.sqlite")).unwrap();
+        let progress: String = conn
+            .query_row("SELECT progress FROM compactions", [], |r| r.get(0))
+            .unwrap();
+        let progress: Value = serde_json::from_str(&progress).unwrap();
+        let until = progress["until"]
+            .as_i64()
+            .unwrap_or_else(|| progress["response"]["receivedAt"].as_i64().unwrap() + 900);
+        drop(conn);
+        let w = Worker::start(&p, None);
+        assert_eq!(wait_compactions(&p)["result"]["outcome"], "failed");
+        let recorded = times.lock().unwrap();
+        assert_eq!(
+            recorded.len(),
+            2,
+            "{point}: one original attempt plus one retry"
+        );
+        assert!(
+            recorded[1] >= until,
+            "{point}: retry occurred before saved deadline"
+        );
+        drop(recorded);
+        w.close();
+    }
+}
+
+#[test]
+fn sigkill_after_overflow_summary_reuses_it_before_retrying_coding() {
+    let stub = Stub::start(|n, _| {
+        if n == 4 {
+            Plan { pieces: vec!["data: {\"error\":{\"message\":\"prompt is too long: 999999 tokens > 200000 maximum\"}}\n\n".into()], hang: false }
+        } else {
+            text_plan("answer or summary")
+        }
+    });
+    let p = Profile::new(&stub.url());
+    compaction_settings(&p, true, 0);
+    let mut w = Worker::start(&p, Some("compaction_classified"));
+    let s = seed_compaction(&mut w, &p);
+    let _ = w.prompt(&s, "overflow", "trigger overflow");
+    w.reap_killed();
+    compaction_settings(&p, false, 0); // Even disabling compaction cannot discard its handoff.
+    let mut w = Worker::start(&p, None);
+    assert_eq!(w.settled(&s, "overflow"), RunOutcome::Completed);
+    assert_eq!(
+        stub.bodies().len(),
+        7,
+        "four seeds, overflow, one summary, successful retry"
+    );
+    let snap = w.snapshot(&s);
+    assert_eq!(
+        snap.entries
+            .iter()
+            .filter(|e| matches!(e.kind, EntryKind::Compaction { .. }))
+            .count(),
+        1
+    );
+    let bodies = stub.bodies();
+    assert!(
+        messages_with_role(&bodies[6], "user")
+            .iter()
+            .any(|text| text == "trigger overflow")
+    );
+    w.close();
+}

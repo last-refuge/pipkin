@@ -11,7 +11,42 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — durable compaction journal foundation
+## Current follow-up — durable compaction runtime
+
+Journal foundation **`74898a4`** is now activated by schema **7** (protocol **9**).
+All compaction scopes admit durable jobs; startup/reopen resumes selected requests,
+saved responses and absolute retries. Usage, summary placement and settlement commit
+atomically. Stable overflow identities close the summary/generation handoff crash window.
+Foreground Stop, including orphaned-child abort, reaches the journal and live drivers;
+background work survives. Recovery pages ids through an indexed query, with eight recovery
+futures and a separate eight-permit summary pool. See [runtime evidence](pipkin-rust-engine-evidence/compaction-runtime.md).
+
+Pinned-reference source audit confirms retry settings stay live at response classification;
+attempt counts and previously committed deadlines survive restart. An intermediate pinned
+retry-policy approach was replaced to preserve this behavior. The new live-policy regression
+covers changing the settings while a response is pending.
+
+Final required checks: **1455 passed, 0 failed, 53 ignored**, Clippy and formatting clean.
+Logs: `/tmp/pipkin-compaction-runtime-final-{workspace,clippy,fmt}.log`. Tests include actual
+SIGKILL at admission/selection/response/classification and overflow handoff, ordered blocking
+recovery, background startup, storage-failure reopen, late-summary races, eighteen queued jobs
+under an eight-driver limit, orphaned-child Stop, and schema-6 backup/preservation. Earlier
+targeted compile errors and their corrections are retained in the evidence; no failing runtime
+test was waived. No GUI/live-provider/installed-platform acceptance is inferred.
+
+`CTX-CHECKPOINT` moves **PA → NC** with measured runtime evidence, not full qualification.
+Recomputed inventory: **504 rows, 489 non-OS; NC 405, NE 25, NP 30, PA 28, BL 0, LB 1,
+OS 15; 431 measured, 7 observed, 8 unverified, 58 not started; 0 qualified**.
+
+Next: **Q-WRITES is confirmed required built-in behavior.** The pinned reference's manual
+and background summaries use durable write submissions, queued when the conversation is
+busy and placed at a boundary. Native still appends at classification. Implement durable
+queued placement and reconcile boundary ordering, Stop and recovery before qualifying
+compaction. Context replacement/history, provider/settings/auth audits, wider reliability,
+performance, packaging and platform gates remain. Native stays opt-in; Pi retirement is not
+ready. Pi extension compatibility remains out of scope.
+
+## Previous follow-up — durable compaction journal foundation
 
 The Stop/compaction lifecycle fix is committed as **`0721977`**. Schema **6** now stores
 stable compaction identities and select/summarize/retry/terminal progress, selected request

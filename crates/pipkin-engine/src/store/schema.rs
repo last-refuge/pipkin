@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -205,7 +205,9 @@ CREATE TABLE compactions (
 CREATE INDEX compactions_pending ON compactions(session, state, id) WHERE state != 'settled';
 CREATE INDEX compactions_run ON compactions(run, id) WHERE run IS NOT NULL;
 "#;
-const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6];
+// V7 activates journal execution. V6 runtimes must refuse active recoverable jobs.
+const V7: &str = "CREATE INDEX compactions_recovery ON compactions(id) WHERE state != 'settled';";
+const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

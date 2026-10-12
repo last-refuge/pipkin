@@ -123,6 +123,24 @@ pub struct CompactionJob {
 }
 
 impl Store {
+    /// Bounded startup enumeration: saved prompts and responses are loaded only by drivers.
+    pub fn pending_compactions_page(&self, after: u64, limit: u32) -> Result<Vec<(u64, String)>> {
+        self.read(|c| {
+            let mut q = c.prepare("SELECT id, session FROM compactions WHERE state != 'settled' AND id > ?1 ORDER BY id LIMIT ?2")?;
+            Ok(q.query_map(params![after, limit.min(64)], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?)
+        })
+    }
+
+    pub fn pending_run_compaction(c: &Connection, run: u64) -> Result<Option<u64>> {
+        Ok(c.query_row(
+            "SELECT id FROM compactions WHERE run = ?1 AND state != 'settled' ORDER BY id LIMIT 1",
+            [run],
+            |r| r.get(0),
+        )
+        .optional()?)
+    }
+
     /// Admit once per stable operation key. A repeat must describe the identical operation.
     pub fn admit_compaction(
         c: &Connection,

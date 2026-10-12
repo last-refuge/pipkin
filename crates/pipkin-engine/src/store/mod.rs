@@ -1266,6 +1266,7 @@ impl Store {
     /// Persist Stop intent before any cancellation is attempted.
     pub fn request_stop(&self, session: &str, now: i64) -> Result<Option<(u64, u64)>> {
         self.tx(|tx| {
+            Self::stop_compactions(tx, session)?;
             let Some(run) = Self::open_run_in(tx, session)? else {
                 return Ok(None);
             };

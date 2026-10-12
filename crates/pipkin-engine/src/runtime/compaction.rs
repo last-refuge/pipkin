@@ -1,53 +1,22 @@
-//! Compaction (reference `durable/src/harness/compaction.ts`): summarize the context before a
-//! cut so the next request fits.
-//!
-//! Triggers: a manual `Compact` call; before a request, over `contextWindow - reserveTokens`
-//! (blocking: the request waits) or over the background threshold (background: the request
-//! proceeds and the summary lands when ready); after a context-overflow error (blocking, once
-//! per attempt). The summary request uses the session's model with no tools and no prompt
-//! caching. A summary whose cut was already passed by a newer compaction is dropped as stale.
-//! Every attempt's usage is recorded on the session's model bucket.
-
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use std::time::Duration;
-
+//! Recoverable context compaction. Selection, responses, retries and settlement are
+//! checkpointed. Credentials are resolved anew; summaries and usage commit exactly once.
+use super::{Shared, session::SessionRt};
+use crate::context::compaction::{self as algo, Threshold};
+use crate::store::{
+    Store,
+    compactions::{CompactionProgress, CompactionScope},
+};
 use pipkin_engine_protocol::*;
-use serde_json::Map;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
-use super::Shared;
-use super::session::SessionRt;
-use crate::context::compaction::{self as algo, Threshold};
-use crate::provider::{CacheRetention, StreamCtx, errors};
-use crate::store::Store;
-use crate::util::now_ms;
+mod journal;
+mod request;
 
-/// What a compaction attempt did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Compacted {
-    /// A compaction entry was committed.
     Done(EntryId),
-    /// Nothing before a valid cut, or the cut was passed by a newer compaction.
     Nothing(String),
-}
-
-/// Remove exactly this foreground operation on success, failure or future cancellation.
-struct ManualCompaction {
-    session: Arc<SessionRt>,
-    id: u64,
-    cancel: CancellationToken,
-}
-
-impl Drop for ManualCompaction {
-    fn drop(&mut self) {
-        self.cancel.cancel();
-        self.session
-            .manual_compactions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&self.id);
-    }
 }
 
 impl Shared {
@@ -57,204 +26,169 @@ impl Shared {
         instructions: Option<&str>,
         request_cancel: &CancellationToken,
     ) -> Result<Compacted, String> {
-        let operation = {
-            let _lock = sess.lock.lock().await;
-            let id = sess.next_manual_compaction.fetch_add(1, Ordering::Relaxed);
-            let cancel = request_cancel.child_token();
-            sess.manual_compactions
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .insert(id, cancel.clone());
-            ManualCompaction {
-                session: sess.clone(),
-                id,
-                cancel,
-            }
-        };
-        self.compact(sess, None, instructions, &operation.cancel)
-            .await
+        self.compact_key(
+            sess,
+            None,
+            &format!("manual:{}", crate::util::uuid_v4()),
+            instructions,
+            request_cancel,
+        )
+        .await
     }
 
-    /// Summarize the session's context now. `run` attributes the entry to a run (blocking
-    /// compactions inside a run); `None` for manual and background ones.
-    pub async fn compact(
+    pub(super) async fn compact_key(
         self: &Arc<Self>,
         sess: &Arc<SessionRt>,
         run: Option<u64>,
+        key: &str,
         instructions: Option<&str>,
         cancel: &CancellationToken,
     ) -> Result<Compacted, String> {
-        if cancel.is_cancelled() {
-            return Err("Compaction aborted.".into());
-        }
-        let prepared = match self.prepare(sess).await {
-            Ok(p) => p,
-            Err(Some(outcome)) => {
-                return Err(match outcome {
-                    RunOutcome::NoModel { detail } | RunOutcome::ModelError { detail } => detail,
-                    other => format!("{other:?}"),
-                });
-            }
-            Err(None) => return Err("The session could not be read.".into()),
+        let scope = if run.is_some() {
+            CompactionScope::Blocking
+        } else {
+            CompactionScope::Manual
         };
-        let settings = &prepared.settings;
-        let Some(first_kept) =
-            algo::select_cut(&prepared.entries, settings.compaction.keep_recent_tokens)
-        else {
-            return Ok(Compacted::Nothing(
-                "Nothing to compact: the conversation is too short.".into(),
-            ));
-        };
-        let source = algo::summary_source(&prepared.entries, first_kept);
-        let tokens_before = algo::context_tokens(&prepared.entries);
-        let mut req = prepared.req.clone();
-        req.system = algo::SUMMARIZATION_SYSTEM_PROMPT.to_owned();
-        req.messages = vec![Message::User {
-            content: vec![Block::text(algo::summary_request(&source, instructions))],
-            timestamp: now_ms(),
-            extra: Map::new(),
-        }];
-        req.tools = vec![];
-        req.cache_retention = CacheRetention::None;
-        req.max_tokens = Some(algo::summary_max_tokens(
-            settings.compaction.reserve_tokens,
-            prepared.model.max_tokens,
-        ));
-        let retry = settings.retry.clone();
-        let mut attempt = 0u32;
-        let summary = loop {
-            attempt += 1;
-            let message = prepared
-                .adapter
-                .stream(StreamCtx {
-                    req: &req,
-                    http: &prepared.http,
-                    events: None,
-                    cancel: cancel.clone(),
-                })
-                .await;
-            self.record_usage(sess, &prepared.model.key(), &message);
-            match algo::validate_summary(&message) {
-                Ok(summary) => break summary,
-                Err(error) => {
-                    if cancel.is_cancelled() {
-                        return Err("Compaction aborted.".into());
-                    }
-                    if retry.enabled
-                        && attempt <= retry.max_retries
-                        && errors::is_retryable(&message)
-                    {
-                        let wait = errors::retry_delay_ms(
-                            attempt,
-                            retry.base_delay_ms,
-                            retry.max_agent_delay_ms,
-                        );
-                        tokio::select! {
-                            _ = cancel.cancelled() => return Err("Compaction aborted.".into()),
-                            _ = tokio::time::sleep(Duration::from_millis(wait)) => {}
-                        }
-                        continue;
-                    }
-                    return Err(error);
-                }
+        let id = {
+            let _lock = sess.lock.lock().await;
+            if cancel.is_cancelled() {
+                return Err("Compaction aborted.".into());
             }
+            self.commit(sess, |tx| {
+                let job = Store::admit_compaction(tx, &sess.id, key, run, scope, instructions)?;
+                Ok((job.id, vec![]))
+            })
+            .map_err(|e| e.message)?
         };
-        // Serialize the commit with Stop. If the summary won the lock it is completed;
-        // if Stop won it, even a provider returning a late success cannot move the head.
-        let _lock = sess.lock.lock().await;
-        if cancel.is_cancelled() {
-            return Err("Compaction aborted.".into());
-        }
-        let session = sess.id.clone();
-        self.commit(sess, |tx| {
-            // A newer compaction that already keeps less than this one makes it stale.
-            if let Some((_, newest_first_kept)) = Store::last_head(tx, &session)?
-                && newest_first_kept >= first_kept
-            {
-                return Ok((
-                    Compacted::Nothing(
-                        "Compaction summary dropped: the context changed under it.".into(),
-                    ),
-                    vec![],
-                ));
-            }
-            let entry = Store::append_entry(
-                tx,
-                &session,
-                now_ms(),
-                run,
-                &EntryKind::Compaction {
-                    summary: summary.clone(),
-                    first_kept,
-                    tokens_before,
-                },
-            )?;
-            let id = entry.id;
-            Ok((
-                Compacted::Done(id),
-                vec![
-                    SessionChange::EntryAppended { entry },
-                    SessionChange::BoundaryMoved { has_older: true },
-                ],
-            ))
-        })
-        .map_err(|e| e.message)
+        super::faults::crash_point("compaction_admitted");
+        self.execute_compaction(sess, id, cancel).await
     }
 
-    fn record_usage(&self, sess: &SessionRt, key: &str, message: &Message) {
-        let Message::Assistant { usage, .. } = message else {
-            return;
-        };
-        if usage.total_tokens == 0 && usage.cost.total == 0.0 {
-            return;
-        }
-        let session = sess.id.clone();
-        let _ = self.commit(sess, |tx| {
-            Store::add_usage(tx, &session, "model", key, usage)?;
-            Ok(((), vec![]))
-        });
-    }
-
-    /// Before a request: compact when over a threshold. Returns true when a blocking compaction
-    /// committed (the caller re-prepares the request).
+    /// Resume owned work even if settings changed while the process was down.
     pub(super) async fn compact_if_needed(
         self: &Arc<Self>,
         sess: &Arc<SessionRt>,
         run: u64,
         cancel: &CancellationToken,
     ) -> bool {
+        let pending = self.store.read(|c| Store::pending_run_compaction(c, run));
+        match pending {
+            Ok(Some(id)) => {
+                return matches!(
+                    self.execute_compaction(sess, id, cancel).await,
+                    Ok(Compacted::Done(_))
+                );
+            }
+            Err(e) => {
+                self.storage_failure(sess, &e.to_string());
+                return false;
+            }
+            Ok(None) => {}
+        }
         let Ok(prepared) = self.prepare(sess).await else {
             return false;
         };
         let tokens = algo::context_tokens(&prepared.entries)
             + algo::estimate_text_tokens(&prepared.req.system);
-        match algo::threshold_compaction(
+        let tail = prepared.entries.last().map_or(0, |e| e.id);
+        let threshold = algo::threshold_compaction(
             tokens,
             prepared.model.context_window,
             &prepared.settings.compaction,
-        ) {
-            Some(Threshold::Blocking) => {
-                matches!(
-                    self.compact(sess, Some(run), None, cancel).await,
-                    Ok(Compacted::Done(_))
+        );
+        // Release context/credentials before waiting for another operation or a slot.
+        drop(prepared);
+        match threshold {
+            Some(Threshold::Blocking) => matches!(
+                self.compact_key(
+                    sess,
+                    Some(run),
+                    &format!("threshold:{run}:{tail}"),
+                    None,
+                    cancel
                 )
-            }
+                .await,
+                Ok(Compacted::Done(_))
+            ),
             Some(Threshold::Background) => {
-                if !sess.compacting.swap(true, Ordering::SeqCst) {
-                    let shared = self.clone();
-                    let sess = sess.clone();
-                    self.spawn(async move {
-                        // Background work survives a Stop of the run (reference behavior).
-                        let token = CancellationToken::new();
-                        if let Err(e) = shared.compact(&sess, None, None, &token).await {
-                            log::warn!("session {}: background compaction failed: {e}", sess.id);
-                        }
-                        sess.compacting.store(false, Ordering::SeqCst);
-                    });
+                let _lock = sess.lock.lock().await;
+                let admitted = self.commit(sess, |tx| {
+                    use rusqlite::OptionalExtension;
+                    let pending: Option<u64> = tx.query_row(
+                        "SELECT id FROM compactions WHERE session = ?1 AND scope = 'background' AND state != 'settled' LIMIT 1",
+                        [&sess.id], |r| r.get(0)).optional()?;
+                    if pending.is_none() {
+                        Store::admit_compaction(tx, &sess.id, &format!("background:{tail}"), None,
+                            CompactionScope::Background, None)?;
+                    }
+                    Ok(((), vec![]))
+                });
+                if admitted.is_ok() {
+                    self.compaction_recovery.notify_one();
                 }
                 false
             }
             None => false,
         }
     }
+}
+
+/// One bounded recovery scheduler, shared by startup and explicit reopen. It holds only
+/// small identity pages; at most eight recovery futures exist, independently of run permits.
+/// A live caller and recovery may race, but the per-session claim admits only one driver.
+pub(super) fn start_recovery(shared: &Arc<Shared>) {
+    let shared = shared.clone();
+    let owner = shared.clone();
+    owner.spawn(async move {
+        let mut tasks = tokio::task::JoinSet::new();
+        loop {
+            let mut after = 0;
+            loop {
+                if shared.stopping.is_cancelled() {
+                    return;
+                }
+                let page = match shared.store.pending_compactions_page(after, 32) {
+                    Ok(page) => page,
+                    Err(error) => {
+                        log::error!("cannot enumerate compactions: {error}");
+                        break;
+                    }
+                };
+                if page.is_empty() {
+                    break;
+                }
+                for (id, session) in page {
+                    after = id;
+                    while tasks.len() >= 8 {
+                        tokio::select! {
+                            _ = shared.stopping.cancelled() => return,
+                            _ = tasks.join_next() => {}
+                        }
+                    }
+                    let Ok(sess) = shared.session(&session) else {
+                        continue;
+                    };
+                    if sess.failure().is_some()
+                        || sess.active_compactions.lock().unwrap().contains(&id)
+                    {
+                        continue;
+                    }
+                    let shared = shared.clone();
+                    tasks.spawn(async move {
+                        let token = CancellationToken::new();
+                        if let Err(e) = shared.execute_compaction(&sess, id, &token).await {
+                            log::debug!("session {}: recovered compaction {id}: {e}", sess.id);
+                        }
+                    });
+                }
+            }
+            loop {
+                tokio::select! {
+                    _ = shared.stopping.cancelled() => return,
+                    _ = shared.compaction_recovery.notified() => break,
+                    _ = tasks.join_next(), if !tasks.is_empty() => {}
+                }
+            }
+        }
+    });
 }

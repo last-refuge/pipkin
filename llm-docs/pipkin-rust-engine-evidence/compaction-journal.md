@@ -1,5 +1,9 @@
 # Compaction journal and durable Stop intent
 
+Historical storage-stage record. Runtime activation and subsequent evidence are in
+[compaction-runtime.md](compaction-runtime.md); its results supersede the remaining-work
+section below.
+
 Storage stage after `0721977`, 2026-10-11. Native schema **6**, protocol **9**.
 This is a prerequisite for runtime recovery, not a completed compaction recovery path.
 

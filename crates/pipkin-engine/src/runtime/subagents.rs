@@ -250,7 +250,19 @@ impl Shared {
         let Ok(sess) = self.session(&child) else {
             return;
         };
-        match self.store.request_stop(&child, now_ms()) {
+        let stopped = self.store.request_stop(&child, now_ms());
+        if stopped.is_ok() {
+            for token in sess
+                .manual_compactions
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .values()
+            {
+                token.cancel();
+            }
+            self.compaction_recovery.notify_one();
+        }
+        match stopped {
             Ok(Some((run, _))) => {
                 let active = sess
                     .active

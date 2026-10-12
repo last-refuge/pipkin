@@ -51,6 +51,8 @@ pub struct Shared {
     publication: Mutex<()>,
     stopping: tokio_util::sync::CancellationToken,
     prompt_waits: Arc<Semaphore>,
+    compaction_slots: Arc<Semaphore>,
+    compaction_recovery: tokio::sync::Notify,
     clients: Mutex<HashMap<u64, crate::delivery::Delivery>>,
     cursors: Mutex<HashMap<u64, (u64, u64)>>,
     sessions: Mutex<lifecycle::Sessions>,
@@ -231,6 +233,8 @@ impl EngineHandle {
             publication: Mutex::new(()),
             stopping: tokio_util::sync::CancellationToken::new(),
             prompt_waits: Arc::new(Semaphore::new(64)),
+            compaction_slots: Arc::new(Semaphore::new(8)),
+            compaction_recovery: tokio::sync::Notify::new(),
             clients: Mutex::new(HashMap::new()),
             sessions: Mutex::new(lifecycle::Sessions::default()),
             handle: runtime.handle().clone(),
@@ -268,6 +272,7 @@ impl EngineHandle {
             });
         }
         lifecycle::start_reaper(&shared);
+        compaction::start_recovery(&shared);
         Ok(EngineHandle {
             runtime: Mutex::new(Some(runtime)),
             shared,
@@ -590,6 +595,7 @@ async fn dispatch_with_cancel(
         Call::OpenSession { session, window } => {
             let _demand = shared.session(&session)?;
             shared.recover_session(&session)?;
+            shared.compaction_recovery.notify_one();
             shared.ensure_extensions(&session).await;
             let snapshot =
                 shared.snapshot(&session, window.unwrap_or(limits::DEFAULT_WINDOW_ENTRIES))?;

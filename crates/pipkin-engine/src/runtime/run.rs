@@ -148,11 +148,19 @@ impl Shared {
                     }
                 }
                 Step::Request if self.compact_if_needed(sess, run, cancel).await => continue,
-                Step::Request => match self.request(sess, run, cancel).await {
-                    Ok(_) => {}
-                    Err(Some(outcome)) => return Some(outcome),
-                    Err(None) => return None,
-                },
+                Step::Request => {
+                    if sess.failure().is_some() || self.stopping.is_cancelled() {
+                        return None;
+                    }
+                    if cancel.is_cancelled() {
+                        continue;
+                    }
+                    match self.request(sess, run, cancel).await {
+                        Ok(_) => {}
+                        Err(Some(outcome)) => return Some(outcome),
+                        Err(None) => return None,
+                    }
+                }
             }
         }
     }
@@ -181,18 +189,29 @@ impl Shared {
                 message_model(message)
             ))
             .map_or(0, |m| m.context_window);
+        let compaction_key = format!("overflow:{run}:{entry}");
+        let admitted = self.store.read(|c| {
+            Ok(c.query_row("SELECT EXISTS(SELECT 1 FROM compactions WHERE session = ?1 AND operation_key = ?2)",
+                rusqlite::params![sess.id, compaction_key], |r| r.get::<_,bool>(0))?)
+        }).map_err(ProtoError::from)?;
         if !state.overflow_compacted
-            && settings.compaction.enabled
-            && errors::is_context_overflow(message, window)
+            && (admitted
+                || (settings.compaction.enabled && errors::is_context_overflow(message, window)))
         {
+            let result = self
+                .compact_key(sess, Some(run), &compaction_key, None, cancel)
+                .await;
+            if let Some(error) = sess.failure() {
+                return Err(ProtoError::new(ErrorCode::Storage, error));
+            }
+            if self.stopping.is_cancelled() {
+                return Err(ProtoError::new(
+                    ErrorCode::Cancelled,
+                    "Engine shutting down",
+                ));
+            }
             state.overflow_compacted = true;
-            self.commit(sess, |tx| {
-                Store::save_generation_state(tx, run, &state)?;
-                Ok(((), vec![]))
-            })?;
-            if let Ok(super::compaction::Compacted::Done(_)) =
-                self.compact(sess, Some(run), None, cancel).await
-            {
+            if let Ok(super::compaction::Compacted::Done(_)) = result {
                 state.handled_error = Some(entry);
                 state.retry_until = Some(now_ms());
                 return self.commit(sess, |tx| {
@@ -986,7 +1005,7 @@ fn tool_env(
 
 /// A model request whose proxy is configured but unusable (SOCKS, PAC, malformed) fails with
 /// the reference message instead of bypassing the proxy (`resolveHttpProxyUrlForTarget`).
-fn unusable_proxy(
+pub(super) fn unusable_proxy(
     proxy: &crate::provider::proxy::ProxyConfig,
     base_url: &str,
 ) -> Result<(), String> {

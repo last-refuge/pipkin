@@ -50,9 +50,9 @@ pub struct SessionRt {
     pub prompt: Mutex<Option<(String, Map<String, serde_json::Value>)>>,
     /// Questions, status lines and notices from this session's extensions (volatile).
     pub questions: crate::extensions::questions::QuestionHost,
-    /// Manual compactions belong to the foreground Stop scope, even with no coding run.
+    /// Live foreground compactions, including manual work with no coding run.
     pub(super) manual_compactions: Mutex<std::collections::BTreeMap<u64, CancellationToken>>,
-    pub(super) next_manual_compaction: std::sync::atomic::AtomicU64,
+    pub(super) active_compactions: Mutex<std::collections::HashSet<u64>>,
     /// A background compaction is running.
     pub compacting: std::sync::atomic::AtomicBool,
     /// Session extensions, started when the session is first opened.
@@ -69,7 +69,7 @@ impl SessionRt {
             extensions: tokio::sync::Mutex::new(None),
             compacting: std::sync::atomic::AtomicBool::new(false),
             manual_compactions: Mutex::new(Default::default()),
-            next_manual_compaction: std::sync::atomic::AtomicU64::new(1),
+            active_compactions: Mutex::new(Default::default()),
             id: id.to_owned(),
             lock: tokio::sync::Mutex::new(()),
             active: Mutex::new(None),

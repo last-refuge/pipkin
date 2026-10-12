@@ -180,7 +180,8 @@ fn durable_stop_excludes_background_and_prevents_stale_response_overwrite() {
     session(&s, "s");
     let manual = admit(&s, "manual", CompactionScope::Manual);
     let background = admit(&s, "background", CompactionScope::Background);
-    s.tx(|c| Store::stop_compactions(c, "s")).unwrap();
+    // This lower-level path is also used when aborting orphaned subagents.
+    assert!(s.request_stop("s", 2).unwrap().is_none());
     let done = CompactionProgress::Terminal {
         result: CompactionOutcome::Done { entry: 1 },
     };
@@ -278,7 +279,7 @@ fn v5_upgrade_preserves_history_and_makes_a_private_backup_before_compaction_jou
     .unwrap();
     drop(s);
     let s = Store::open(dir.path()).unwrap();
-    assert_eq!(s.read(super::super::schema::version).unwrap(), 6);
+    assert_eq!(s.read(super::super::schema::version).unwrap(), 7);
     assert!(s.read(|c| Store::entry_in(c, "s", 1)).unwrap().is_some());
     assert!(s.pending_compaction_ids().unwrap().is_empty());
     let backup_path = dir.path().join("engine.sqlite.v5.bak");
@@ -296,6 +297,36 @@ fn v5_upgrade_preserves_history_and_makes_a_private_backup_before_compaction_jou
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(
             std::fs::metadata(backup_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+}
+
+#[test]
+fn v6_activation_upgrade_preserves_pending_jobs_and_private_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(dir.path()).unwrap();
+    session(&s, "s");
+    let job = admit(&s, "pending-at-activation", CompactionScope::Manual);
+    s.read(|c| {
+        c.execute_batch("DROP INDEX compactions_recovery; PRAGMA user_version = 6")?;
+        Ok(())
+    })
+    .unwrap();
+    drop(s);
+    let s = Store::open(dir.path()).unwrap();
+    assert_eq!(s.read(super::super::schema::version).unwrap(), 7);
+    assert_eq!(read(&s, job.id), job);
+    let backup = dir.path().join("engine.sqlite.v6.bak");
+    let c =
+        Connection::open_with_flags(&backup, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    assert_eq!(super::super::schema::version(&c).unwrap(), 6);
+    assert_eq!(Store::compaction_in(&c, job.id).unwrap().unwrap(), job);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(backup).unwrap().permissions().mode() & 0o777,
             0o600
         );
     }
