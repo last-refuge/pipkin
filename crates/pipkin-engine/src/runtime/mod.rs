@@ -88,7 +88,10 @@ impl Shared {
     /// Publish a committed event to every connected client.
     pub fn publish(&self, event: Event) {
         let mut clients = self.clients.lock().unwrap_or_else(|e| e.into_inner());
-        clients.retain(|_, tx| tx.event(self.epoch, event.clone()));
+        if !clients.is_empty() {
+            let event = pipkin_engine_protocol::delivery::SharedEvent::from(event);
+            clients.retain(|_, tx| tx.event(self.epoch, event.clone()));
+        }
     }
 
     /// Client-local state has its own sequence; another client's sign-in never creates gaps.

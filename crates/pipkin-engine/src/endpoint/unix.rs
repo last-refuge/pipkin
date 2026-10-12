@@ -408,9 +408,9 @@ fn serve(engine: Arc<EngineHandle>, mut stream: UnixStream) -> io::Result<()> {
         .name("engine-attach-writer".into())
         .spawn(move || {
             while !stop.load(Ordering::SeqCst) {
-                match receiver.recv_timeout(Duration::from_millis(100)) {
+                match receiver.recv_shared_timeout(Duration::from_millis(100)) {
                     Ok(frame) => {
-                        if frame::write(&mut output, &frame).is_err() {
+                        if frame.write(&mut output).is_err() {
                             break;
                         }
                     }

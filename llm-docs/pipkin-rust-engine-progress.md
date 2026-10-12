@@ -11,7 +11,27 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — external native attachment
+## Current follow-up — shared event delivery
+
+External attachment is committed as **`cb98d0a`**. The next change shares one immutable typed
+and encoded event payload across subscriber queues. Private pipes and external sockets write
+the cached body with a connection-specific envelope; in-process consumers retain typed frames.
+Oversized encoding stops at the presentation budget and becomes a resync marker. Subscriber
+pressure, reply barriers, auth scoping and per-client sequence numbers are preserved.
+See [shared delivery evidence](pipkin-rust-engine-evidence/shared-event-delivery.md).
+
+Initial focused and workspace tests passed. Clippy identified a large output-enum variant;
+boxing its reply arm keeps the shared event wrapper small. Final required checks passed:
+**1389 passed, 0 failed, 53 ignored**, Clippy and formatting clean. Logs:
+`/tmp/pipkin-fanout-final-{workspace,clippy,fmt}.log`. The unchanged 1600-turn headless soak
+passes the 100 MiB budget: **29,164 KiB idle / 39,912 KiB sampled peak**, 13 idle fds,
+one process. Raw measurements are under `fixtures/native-bench/2026-10-11-shared-events/`.
+Latency/CPU were higher than the older positional run; the evidence records both and does
+not infer a speed improvement from unmatched runs. Counts remain **503 rows; 423 measured, 7 observed,
+0 currently failed, 10 unverified, 63 not started; 0 qualified**. Frontend/provider-internal
+queue budgets, extension compatibility, transport differentials and release gates remain open.
+
+## Previous follow-up — external native attachment
 
 Implemented on top of **`e738037`**, protocol **6** / schema **4**. A separately owned
 foreground native server exposes an explicit private Unix endpoint. Both sides verify the
@@ -340,7 +360,7 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
    support is now implemented with focused differential/runtime evidence. TypeScript execution
    and remaining unsupported-history conversion (replacement edits/forks) remain open.
 2. **Transport and compatibility:** durable invalidation replay and bounded engine/reader delivery
-   now have passing recovery/pressure evidence. External Unix attachment is implemented; serialize-once fan-out and
+   now have passing recovery/pressure evidence. External Unix attachment and serialize-once event fan-out are implemented;
    frontend/provider-internal queue budgeting remain. TypeScript facets, sticky profiles,
    remote services and reload still depend on Pi.
 3. **Performance:** E2E-37's headless 100 MiB budget now passes on Linux/glibc; an indefinitely flat
@@ -361,7 +381,7 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
    commit/snapshot ordering, and the headless memory-budget fix; see delivery/memory evidence.
    Remaining transport and broader memory qualification boundaries are listed above.
 3. Usage counters and positional prompt updates are implemented and tested. Constrained/grammar
-   tool support is implemented with passing targeted/workspace checks. HTTPS proxy/WSS support and cached grammar continuation are now implemented with local TLS tests. Session lifecycle cleanup and external Unix attachment are now implemented. Next: remaining shared-client proxy gaps, serialize-once delivery and facet ports/profile lifecycle while
+   tool support is implemented with passing targeted/workspace checks. HTTPS proxy/WSS support and cached grammar continuation are now implemented with local TLS tests. Session lifecycle cleanup and external Unix attachment are now implemented. Serialize-once event delivery is implemented. Next: remaining shared-client proxy gaps, frontend/provider queue budgets and facet ports/profile lifecycle while
    keeping Pi as the continuity path.
 4. Add the specific missing assertions in the reconciliation report; build the full native/Pi
    differential harness. Existing disk-full, child recovery and `all` delivery tests do not

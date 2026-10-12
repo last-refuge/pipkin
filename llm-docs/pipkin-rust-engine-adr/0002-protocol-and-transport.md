@@ -5,7 +5,8 @@
 invalidations in the same transaction as the state change. Engine and desktop-reader presentation
 queues are bounded. See [delivery and memory evidence](../pipkin-rust-engine-evidence/durable-delivery-memory.md).
 Protocol 3's import-profile protection is retained. Protocol 6 adds session attachments;
-ADR 0008 adds the explicit local endpoint. Serialize-once fan-out remains open.
+ADR 0008 adds the explicit local endpoint. Event broadcasts now share one encoded body
+across clients; see [shared delivery evidence](../pipkin-rust-engine-evidence/shared-event-delivery.md).
 
 Protocol **5** adds typed positional system messages; schema **4** protects their durable bodies
 from older runtimes. See [context evidence](../pipkin-rust-engine-evidence/positional-system.md).
@@ -77,8 +78,16 @@ The desktop core already routes every backend event through `(conversation, gene
     The adapter polls catch-up every second (one page per pass), so a missing final event
     with no subsequent live traffic is still recovered. Paged history and the selected child
     survive resync. Session commit/publication is serialized; snapshots verify their revision.
-11. **Still open:** full external-attachment qualification, serialize-once
-    fan-out, and end-to-end frontend presentation budgeting. The shared GPUI/core event bus
+11. **Shared event bodies:** serialize each broadcast once into a bounded immutable payload,
+    shared by all client queues. Add connection-specific epoch/sequence envelopes at write
+    time. Private pipe and external socket hosts write the cached bytes; in-process consumers
+    retain typed frames. Oversized encoding stops at the presentation budget and becomes a
+    resync marker. Serialized-body budgets are not total heap limits: one typed value and its
+    encoded bytes remain shared until the last subscriber releases them. Reply encoding is
+    per request. Frontend and provider-internal queue budgets remain separate work.
+
+12. **Still open:** full external-attachment qualification and end-to-end frontend
+    presentation budgeting. The shared GPUI/core event bus
     and provider-internal stream channels are outside this transport change; this ADR does
     not claim every queue in the application is now bounded.
 

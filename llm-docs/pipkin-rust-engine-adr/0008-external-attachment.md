@@ -32,8 +32,8 @@ not emulate a separate Pi coordinator retaining per-session worker processes.
 There are at most 32 connections, including pending Hello, with bounded input/output queues.
 Hello has a 4096-byte / three-second total bound; socket writes time out after five seconds.
 A client uses two bounded I/O threads; the engine retains one async runtime and one store
-writer, independently of conversation count. Encoding is still per client: serialize-once
-fan-out and broader queue/performance qualification remain separate work.
+writer, independently of conversation count. Event bodies are now shared and encoded once across clients (ADR 0002); connection-specific
+envelopes and replies are written per client. Broader queue/performance qualification remains open.
 
 The desktop reconnects to the selected endpoint without launching a replacement server and
 without consuming the owned-worker crash budget. Its local data namespace includes the

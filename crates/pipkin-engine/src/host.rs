@@ -124,8 +124,8 @@ pub fn run_stdio(config: EngineConfig) -> i32 {
         .spawn(move || {
             let stdout = std::io::stdout();
             let mut out = BufWriter::new(stdout.lock());
-            while let Ok(frame) = rx.recv() {
-                if pipkin_engine_protocol::frame::write(&mut out, &frame).is_err() {
+            while let Ok(frame) = rx.recv_shared() {
+                if frame.write(&mut out).is_err() {
                     break;
                 }
             }
