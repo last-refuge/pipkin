@@ -12,6 +12,7 @@ pub fn run(config: crate::config::EngineConfig, directory: &std::path::Path) -> 
     #[cfg(unix)]
     {
         use std::sync::Arc;
+        crate::host::configure_process_allocator();
         let engine = match crate::host::EngineHandle::start(config) {
             Ok(engine) => Arc::new(engine),
             Err(error) => {

@@ -84,8 +84,11 @@ def main():
     parser.add_argument("binary", type=Path)
     parser.add_argument("root", type=Path)
     parser.add_argument("--turns", type=int, default=1500)
+    parser.add_argument("--engine-peak-limit-kib", type=int,
+                        help="Fail after orderly shutdown if sampled kernel VmHWM exceeds this budget")
     args = parser.parse_args()
     assert args.turns > 0
+    assert args.engine_peak_limit_kib is None or args.engine_peak_limit_kib > 0
     # Ensure interrupting the runner also reaps only its own app/server children.
     def interrupted(_signal, _frame):
         raise KeyboardInterrupt
@@ -260,9 +263,14 @@ def main():
             durable = {"verifiedOutputs": len(outputs),
                        "outboxRows": db.execute("SELECT count(*) FROM event_outbox").fetchone()[0]}
         save(root / "requests.json", requests)
+        peak = max(row["engine"]["VmHWM"] for row in samples)
+        memory_gate = {"peakKiB": peak, "limitKiB": args.engine_peak_limit_kib,
+                       "passed": None if args.engine_peak_limit_kib is None
+                       else peak <= args.engine_peak_limit_kib}
         save(root / "workload-complete.json", {"sessions": ids, "turns": args.turns,
             "effects": len(effects), "requests": len(requests), "duration": time.monotonic() - start,
-            "samples": samples, "durable": durable, "noNodePiInvocations": True})
+            "samples": samples, "durable": durable, "memoryGate": memory_gate,
+            "noNodePiInvocations": True})
         print("Workload complete; inspect the desktop, quit it through guard.sh, then create ROOT/finish", flush=True)
         wait_file("finish")
         assert app.poll() is not None, "quit the desktop before finishing"
@@ -270,6 +278,7 @@ def main():
         assert server.wait(timeout=20) == 0
         save(root / "closed.json", {"desktopExit": app.returncode, "engineExit": server.returncode})
         client.socket.close()
+        assert memory_gate["passed"] is not False, f"engine peak memory budget exceeded: {memory_gate}"
     finally:
         for child in reversed(children):
             if child.poll() is None:

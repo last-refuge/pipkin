@@ -1,5 +1,10 @@
 # Context ownership and sustained desktop memory
 
+**Follow-up:** the subsequent [dedicated-server allocator fix](server-allocator.md)
+closes the server memory-budget miss recorded below. These failed/intermediate
+measurements remain historical evidence.
+
+
 2026-10-12, following `23df29c`; protocol 12 / engine schema 10 / desktop schema 8
 unchanged. This follows the [128.07 MiB desktop server peak](desktop-soak.md).
 

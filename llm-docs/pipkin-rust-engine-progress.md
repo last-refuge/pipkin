@@ -11,7 +11,29 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — context-copy reduction and executed token estimates
+## Current follow-up — dedicated-server memory regression closed
+
+2026-10-12, following **`281de0f`**, protocol 12 / engine schema 10 / desktop schema 8
+unchanged. The socket-server process bypassed the existing stdio allocator policy.
+Both process-owning entry points now initialize the same Linux/glibc policy before
+runtime threads start; embedding entry points remain unchanged. Temporary allocator
+probes identified retained free arenas and are absent from the shipped binary.
+
+A fresh actual 1,500-turn desktop run passes an explicit 100 MiB engine peak limit:
+**56,168 KiB peak (54.85 MiB), 38,648 KiB settled (37.74 MiB)**. All 1,500 replies,
+300 unique tool effects and durable outputs verify; 1,800 requests, bounded outbox,
+no Node/Pi invocation, clean desktop/server exits. The reproduced dedicated-server
+budget failure is closed on Linux/glibc. Positive residual slopes, GUI growth and
+realistic compaction remain scoped qualification work. See
+[allocator evidence](pipkin-rust-engine-evidence/server-allocator.md).
+
+Required checks: **1,656 passed, 0 failed, 56 ignored**, clean Clippy/all-targets and
+formatting. Counts remain **445 measured, 9 observed, 1 unverified, 49 not started;
+0 fully qualified**. Next: release/installed candidate, hosted CI, remaining supported
+platform/reference and notice review gates. Native remains opt-in; Pi retirement is
+pending those gates. Unrelated owner changes are preserved.
+
+## Prior follow-up — context-copy reduction and executed token estimates
 
 2026-10-12, following **`23df29c`**, protocol 12 / engine schema 10 / desktop schema 8
 unchanged. Token estimation now borrows retained messages instead of constructing three

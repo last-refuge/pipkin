@@ -1,0 +1,25 @@
+initial {'VmHWM': 28824, 'VmRSS': 28824, 'Threads': 8, 'fds': 19, 'cpuTicks': 4}
+request bytes 4202753
+settled 0 {'VmHWM': 47376, 'VmRSS': 26496, 'Threads': 9, 'fds': 19, 'cpuTicks': 7}
+request bytes 4202753
+settled 1 {'VmHWM': 48004, 'VmRSS': 26752, 'Threads': 9, 'fds': 19, 'cpuTicks': 11}
+request bytes 4202749
+settled 2 {'VmHWM': 48160, 'VmRSS': 26944, 'Threads': 9, 'fds': 19, 'cpuTicks': 15}
+request bytes 4202749
+settled 3 {'VmHWM': 48168, 'VmRSS': 27212, 'Threads': 9, 'fds': 19, 'cpuTicks': 18}
+request bytes 4202867
+settled 4 {'VmHWM': 48308, 'VmRSS': 27356, 'Threads': 9, 'fds': 19, 'cpuTicks': 22}
+request bytes 4202867
+settled 5 {'VmHWM': 48308, 'VmRSS': 27456, 'Threads': 9, 'fds': 19, 'cpuTicks': 25}
+request bytes 4202863
+settled 6 {'VmHWM': 48308, 'VmRSS': 27456, 'Threads': 9, 'fds': 19, 'cpuTicks': 29}
+request bytes 4202863
+settled 7 {'VmHWM': 48308, 'VmRSS': 27392, 'Threads': 9, 'fds': 19, 'cpuTicks': 33}
+request bytes 4202981
+settled 8 {'VmHWM': 48308, 'VmRSS': 27484, 'Threads': 9, 'fds': 19, 'cpuTicks': 35}
+request bytes 4202981
+settled 9 {'VmHWM': 48308, 'VmRSS': 27488, 'Threads': 9, 'fds': 19, 'cpuTicks': 39}
+request bytes 4202978
+settled 10 {'VmHWM': 48308, 'VmRSS': 27596, 'Threads': 9, 'fds': 19, 'cpuTicks': 43}
+request bytes 4202978
+settled 11 {'VmHWM': 48308, 'VmRSS': 27504, 'Threads': 9, 'fds': 19, 'cpuTicks': 46}

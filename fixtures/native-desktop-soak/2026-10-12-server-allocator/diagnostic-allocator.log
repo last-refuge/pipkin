@@ -1,0 +1,12 @@
+HEAP_PROBE used=7587104 free=27495136 mmap=2207824 arenas=35082240 after_used=7587104 after_free=27364064 after_mmap=2207824 after_arenas=34951168
+HEAP_PROBE used=7713648 free=60198032 mmap=2207824 arenas=67911680 after_used=7713648 after_free=60198032 after_mmap=2207824 after_arenas=67911680
+HEAP_PROBE used=7773168 free=90584080 mmap=2207824 arenas=98357248 after_used=7773168 after_free=90584080 after_mmap=2207824 after_arenas=98357248
+HEAP_PROBE used=7791152 free=103108048 mmap=2207824 arenas=110899200 after_used=7791152 after_free=103108048 after_mmap=2207824 after_arenas=110899200
+HEAP_PROBE used=7835216 free=103063984 mmap=2207824 arenas=110899200 after_used=7835216 after_free=103063984 after_mmap=2207824 after_arenas=110899200
+HEAP_PROBE used=7903136 free=134699104 mmap=2207824 arenas=142602240 after_used=7903136 after_free=134699104 after_mmap=2207824 after_arenas=142602240
+HEAP_PROBE used=7913344 free=134688896 mmap=2207824 arenas=142602240 after_used=7913344 after_free=134688896 after_mmap=2207824 after_arenas=142602240
+HEAP_PROBE used=7925072 free=134677168 mmap=2207824 arenas=142602240 after_used=7925072 after_free=134677168 after_mmap=2207824 after_arenas=142602240
+HEAP_PROBE used=7959600 free=134777808 mmap=2207824 arenas=142737408 after_used=7959600 after_free=134777808 after_mmap=2207824 after_arenas=142737408
+HEAP_PROBE used=7955488 free=134781920 mmap=2207824 arenas=142737408 after_used=7955488 after_free=134781920 after_mmap=2207824 after_arenas=142737408
+HEAP_PROBE used=8049552 free=135810160 mmap=2207824 arenas=143859712 after_used=8049552 after_free=135810160 after_mmap=2207824 after_arenas=143859712
+HEAP_PROBE used=8083296 free=135776416 mmap=2207824 arenas=143859712 after_used=8083296 after_free=135776416 after_mmap=2207824 after_arenas=143859712

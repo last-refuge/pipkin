@@ -1,0 +1,16 @@
+{
+  "baseRevision": "281de0f45ee73433bf92bc27e14aee327140b517",
+  "runtimeSourceSha256": {
+    "crates/pipkin-engine/src/host.rs": "f7bacea59ca677f4b70112d166284be713f9211f06547bd2bb739c11caad9d63",
+    "crates/pipkin-engine/src/endpoint.rs": "57afc4a8aef8063563163f77757b39724849171e924ed7ae05441e6d7637457a"
+  },
+  "harnessSha256": "76310fdfa55a27df99d2710501b8638e13498f6c1c920f8ec5f1c9f7ff806798",
+  "desktopScratchFilesystem": "tmpfs",
+  "concurrentWork": "Required workspace tests overlapped the initial part of the run; not an idle-machine latency comparison.",
+  "diagnostic": "Temporary mallinfo2 instrumentation at settlement before/after malloc_trim in the pre-fix dedicated server. Final binary is uninstrumented. SQLite source is only the earlier synthetic soak profile.",
+  "screenshots": {
+    "complete.png": "666e42a79ca457927a1a08e61fafe5bda19f93c6d5c13457dddd8659ed190401",
+    "ready.png": "048cb92472b7ef84ce47a4deec9ade6d42c7d66e138ce4b082fca8b856d6eb52"
+  },
+  "visualObservation": "Latest reply, composer and footer visible; guarded performance palette responds; orderly desktop/server exit 0. Raw screenshots remain private because compositor transparency includes unrelated desktop content."
+}

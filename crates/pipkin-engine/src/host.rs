@@ -88,10 +88,10 @@ pub fn start(config: EngineConfig) -> Result<EngineHandle, String> {
     crate::runtime::EngineHandle::start(config)
 }
 
-/// The private worker mode: serve one client over stdin/stdout frames until the client
-/// closes the channel or sends `Shutdown`. Returns the process exit code.
-pub fn run_stdio(config: EngineConfig) -> i32 {
-    // This entry point owns a dedicated worker process. Keep large temporary context buffers
+/// Allocator policy for dedicated engine processes (stdio workers and socket servers).
+/// Embedding entry points deliberately leave their host application's policy unchanged.
+pub(crate) fn configure_process_allocator() {
+    // Keep large temporary context buffers
     // independently releasable instead of letting glibc's adaptive mmap threshold retain them
     // in thread arenas. Use one arena so request buffers freed on a different runtime thread
     // are reused rather than stranded in per-thread heaps. Never change an embedding
@@ -102,6 +102,12 @@ pub fn run_stdio(config: EngineConfig) -> i32 {
         libc::mallopt(libc::M_MMAP_THRESHOLD, 128 * 1024);
         libc::mallopt(libc::M_ARENA_MAX, 1);
     }
+}
+
+/// The private worker mode: serve one client over stdin/stdout frames until the client
+/// closes the channel or sends `Shutdown`. Returns the process exit code.
+pub fn run_stdio(config: EngineConfig) -> i32 {
+    configure_process_allocator();
     use std::io::{BufReader, BufWriter};
 
     let handle = match start(config) {
