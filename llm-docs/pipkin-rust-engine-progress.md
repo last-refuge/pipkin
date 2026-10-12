@@ -11,7 +11,29 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — subagent storage-failure recovery
+## Current follow-up — original Zune notices and remaining provenance gaps
+
+2026-10-12, following **`e0c0ab5`**, no dependency/protocol/schema changes. Recovered
+zune-inflate 0.2.54's original Zlib notice and repository attribution from the exact published
+VCS revision. All 14 original package files and both notice files match that upstream tree's
+Git blobs. The inventory records the declared Zlib alternative. Its supplemental notice test
+checks full text, revision and retained review flags; no network fetch is added to packaging.
+
+Actual upstream tree audits found no notice file at the recorded hexf-parse, simd_helpers or
+SeaHash revisions; Pathfinder's recorded revision could not be resolved at the checked GitHub
+endpoints. Existing manifest grants/source attribution remain recorded. These findings are not
+waivers or claims that those crates have no license. See [notice recovery evidence](pipkin-rust-engine-evidence/notice-source-recovery.md).
+The 614-package native inventory now has **1,081 notices, four missing-notice entries, and
+33 remaining applicability/review flags**. Original text recovery is not blanket clearance.
+
+A new actual offline native Arch package passes all notice hashes, binary/metadata identities,
+31 installed guides and isolated import/coding/restart/archive restoration without repeated
+effects or Node/Pi trap use. **1,643 workspace tests passed, 0 failed, 56 ignored**, clean
+Clippy/formatting. Reports: `fixtures/native-notices/2026-10-12/`. Ledger evidence/disposition
+counts remain unchanged, **0 fully qualified**; remaining notice/asset/runtime review, broader
+qualification and native-default/Pi retirement remain open. Owner changes are preserved.
+
+## Prior follow-up — subagent storage-failure recovery
 
 2026-10-12, following **`2aea0e8`**, protocol 12/schema 10 unchanged. A real child-tool
 regression reproduced a parent waiting for a settlement that a read-only database could

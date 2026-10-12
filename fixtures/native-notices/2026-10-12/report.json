@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-12",
+  "rustPackages": 614,
+  "noticeFiles": 1081,
+  "reviewFlags": 33,
+  "inventorySha256": "cc05955c23f7409d0a15eb22f3baa7eea0a912b2b319b237aa7548b3bf0d11cf",
+  "missingNotices": [
+    {
+      "name": "hexf-parse",
+      "version": "0.2.1",
+      "declaredLicense": "CC0-1.0",
+      "repository": "https://github.com/lifthrasiir/hexf",
+      "revision": "4225763d744183d720f575ae96d04161b4d08ea0",
+      "manifestSha256": "4a56dbdbc12054fd33b7a2634a45cbbe6fe12f5e6f4081002cbfa527f7220c70",
+      "treeResponseSha256": "715e85656900b66a048cf2dd4f9063d1f383c3002c6bc1a6d362c6e987f84980",
+      "treeEntries": 15,
+      "treeComplete": true,
+      "finding": "No upstream notice file at recorded crate revision; published manifest has a license declaration. Original notice recovery remains open."
+    },
+    {
+      "name": "simd_helpers",
+      "version": "0.1.0",
+      "declaredLicense": "MIT",
+      "repository": "https://github.com/lu-zero/simd_helpers",
+      "revision": "ca1a2f84aa386d758e98f8a609d990263932fb85",
+      "manifestSha256": "b41497677a5498040f2eb3fc089e3c2c38c413dca64f41dc57a115e26480461d",
+      "treeResponseSha256": "fe5b840ac06a764a770fe88eacebeaaa7584e6db2a27a893df70bed55d03d26a",
+      "treeEntries": 7,
+      "treeComplete": true,
+      "finding": "No upstream notice file at recorded crate revision; published manifest has a license declaration. Original notice recovery remains open."
+    },
+    {
+      "name": "seahash",
+      "version": "4.1.0",
+      "declaredLicense": "MIT",
+      "repository": "https://gitlab.redox-os.org/redox-os/seahash",
+      "revision": "94b632aeac099031c373599313d5b5f0acbbaec0",
+      "manifestSha256": "dd213de338ca98b7ef7a2562bcf4e4214d215d1a8277750a6a72b4e809c8d0dd",
+      "treeResponseSha256": "cfbb13c0a4cbd61b9acef27f6b84841cdec2156eed0332d5e8c355d105487d15",
+      "treeEntries": 17,
+      "treeComplete": true,
+      "finding": "No upstream notice file at recorded crate revision; published manifest has a license declaration. Original notice recovery remains open."
+    },
+    {
+      "name": "pathfinder_geometry",
+      "version": "0.5.1",
+      "revision": "a5e98fac00f433fe2ff4b2135383d82491b8bfc5",
+      "declaredLicense": "MIT/Apache-2.0",
+      "finding": "GitHub tree API returns HTTP 422 Invalid object for recorded revision at servo/pathfinder and pcwalton/pathfinder. Published Rust source includes 2019 Pathfinder project attribution and MIT/Apache declaration; no different revision substituted."
+    }
+  ],
+  "recovered": [
+    {
+      "ecosystem": "rust",
+      "name": "zune-inflate",
+      "version": "0.2.54",
+      "selectedAlternative": "Zlib",
+      "declaredLicense": "MIT OR Apache-2.0 OR Zlib",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "noticeProvenance": "immutable upstream notices; applicability requires review",
+      "notices": [
+        {
+          "file": "notices/rust-zune-inflate-0.2.54-beeddd6541c8965e/000-LICENSE.md",
+          "sha256": "e870d7fd7819a9f0453c62798cb52ae95d148a8c91dc2de1d983f997143c72de"
+        },
+        {
+          "file": "notices/rust-zune-inflate-0.2.54-beeddd6541c8965e/001-LICENSE-ZLIB",
+          "sha256": "7fa429541e55b1509909e058f2d21a37467e4958ec713b357f6e0cf9dc4ee352"
+        }
+      ],
+      "supplementalProvenance": [
+        {
+          "ecosystem": "rust",
+          "name": "zune-inflate",
+          "version": "0.2.54",
+          "file": "upstream-notices/zune-inflate-0.2.54/LICENSE.md",
+          "url": "https://raw.githubusercontent.com/etemesi254/zune-image/69502ce83fdfecdd0beefd677e2abb3781b29d98/LICENSE.md",
+          "revision": "69502ce83fdfecdd0beefd677e2abb3781b29d98",
+          "revisionBasis": "published crate .cargo_vcs_info.json; all original package files match the upstream Git tree",
+          "sha256": "e870d7fd7819a9f0453c62798cb52ae95d148a8c91dc2de1d983f997143c72de"
+        },
+        {
+          "ecosystem": "rust",
+          "name": "zune-inflate",
+          "version": "0.2.54",
+          "file": "upstream-notices/zune-inflate-0.2.54/LICENSE-ZLIB",
+          "url": "https://raw.githubusercontent.com/etemesi254/zune-image/69502ce83fdfecdd0beefd677e2abb3781b29d98/LICENSE-ZLIB",
+          "revision": "69502ce83fdfecdd0beefd677e2abb3781b29d98",
+          "revisionBasis": "published crate .cargo_vcs_info.json; all original package files match the upstream Git tree",
+          "sha256": "7fa429541e55b1509909e058f2d21a37467e4958ec713b357f6e0cf9dc4ee352"
+        }
+      ],
+      "reviewRequired": true
+    }
+  ]
+}

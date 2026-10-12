@@ -319,6 +319,26 @@
       "url": "https://raw.githubusercontent.com/DioxusLabs/taffy/45a56299d366ddb383e593a1f0372158d00e8530/LICENSE",
       "revision": "45a56299d366ddb383e593a1f0372158d00e8530",
       "sha256": "f97daf1a0124413dccf399a4e6626b4b74acd05282f80b6d64ac82225650b77a"
+    },
+    {
+      "ecosystem": "rust",
+      "name": "zune-inflate",
+      "version": "0.2.54",
+      "file": "upstream-notices/zune-inflate-0.2.54/LICENSE.md",
+      "url": "https://raw.githubusercontent.com/etemesi254/zune-image/69502ce83fdfecdd0beefd677e2abb3781b29d98/LICENSE.md",
+      "revision": "69502ce83fdfecdd0beefd677e2abb3781b29d98",
+      "revisionBasis": "published crate .cargo_vcs_info.json; all original package files match the upstream Git tree",
+      "sha256": "e870d7fd7819a9f0453c62798cb52ae95d148a8c91dc2de1d983f997143c72de"
+    },
+    {
+      "ecosystem": "rust",
+      "name": "zune-inflate",
+      "version": "0.2.54",
+      "file": "upstream-notices/zune-inflate-0.2.54/LICENSE-ZLIB",
+      "url": "https://raw.githubusercontent.com/etemesi254/zune-image/69502ce83fdfecdd0beefd677e2abb3781b29d98/LICENSE-ZLIB",
+      "revision": "69502ce83fdfecdd0beefd677e2abb3781b29d98",
+      "revisionBasis": "published crate .cargo_vcs_info.json; all original package files match the upstream Git tree",
+      "sha256": "7fa429541e55b1509909e058f2d21a37467e4958ec713b357f6e0cf9dc4ee352"
     }
   ]
 }

@@ -81,4 +81,31 @@ with tempfile.TemporaryDirectory() as temporary:
             raise AssertionError('external staged dependency link was accepted')
         except RuntimeError as error:
             assert 'outside the bundled engine' in str(error)
-print('notice retention, workspace links, fixture exclusion, source provision and host-path omission verified')
+with tempfile.TemporaryDirectory(prefix='pipkin-supplemental-notice-') as temporary:
+    root = Path(temporary)
+    package = root / 'published-package'
+    package.mkdir()
+    metadata = {'packages': [{'id': 'app', 'name': 'pipkin-app', 'version': '1',
+                              'license': 'MIT', 'manifest_path': str(package / 'Cargo.toml'),
+                              'source': None},
+                             {'id': 'zune', 'name': 'zune-inflate', 'version': '0.2.54',
+                              'license': 'MIT OR Apache-2.0 OR Zlib',
+                              'manifest_path': str(package / 'Cargo.toml'),
+                              'source': 'registry+https://github.com/rust-lang/crates.io-index'}],
+                'resolve': {'nodes': [{'id': 'app', 'deps': [{'pkg': 'zune', 'dep_kinds': [{'kind': None}]}]},
+                                      {'id': 'zune', 'deps': []}]}}
+    stage = root / 'stage'
+    with patch.object(sys, 'argv', [str(script), str(stage)]), patch('subprocess.check_output', return_value=json.dumps(metadata).encode()):
+        runpy.run_path(str(script), run_name='__main__')
+    output = stage / 'usr/share/doc/pipkin/third-party'
+    report = json.loads((output / 'inventory.json').read_text())
+    record = next(r for r in report['packages'] if r['name'] == 'zune-inflate')
+    source = script.parent.parent / 'packaging/upstream-notices/zune-inflate-0.2.54'
+    assert {(output / n['file']).read_bytes() for n in record['notices']} == {
+        (source / 'LICENSE.md').read_bytes(), (source / 'LICENSE-ZLIB').read_bytes()}
+    assert record['reviewRequired'], 'retaining upstream notices does not silently grant clearance'
+    assert record['selectedAlternative'] == 'Zlib'
+    assert len(record['supplementalProvenance']) == 2
+    assert all(n['revision'] == '69502ce83fdfecdd0beefd677e2abb3781b29d98'
+               for n in record['supplementalProvenance'])
+print('notice retention, immutable supplements, workspace links, fixture exclusion, source provision and host-path omission verified')

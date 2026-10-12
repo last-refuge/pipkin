@@ -72,6 +72,10 @@ def collect(ecosystem, name, version, declared, source, directory, inherited=Non
     selected = None
     if ecosystem == 'rust' and name == 'self_cell' and declared == 'Apache-2.0 OR GPL-2.0-only':
         selected = 'Apache-2.0'
+    if (ecosystem, name, version, declared) == ('rust', 'zune-inflate', '0.2.54', 'MIT OR Apache-2.0 OR Zlib'):
+        # The exact published source offers this alternative. Its full original notice is
+        # retained alongside the repository attribution; see the source comparison record.
+        selected = 'Zlib'
     if ecosystem == 'npm' and name == 'node-forge' and declared == '(BSD-3-Clause OR GPL-2.0)':
         selected = 'BSD-3-Clause'
     records.append({'ecosystem': ecosystem, 'name': name, 'version': version,
