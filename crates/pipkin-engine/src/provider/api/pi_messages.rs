@@ -48,7 +48,9 @@ impl ApiAdapter for PiMessages {
 /// The transcript as the reference `normalizeContext` builds it.
 fn context(req: &ProviderRequest) -> Value {
     let mut messages = Vec::with_capacity(req.messages.len() + 1);
-    if !req.system.is_empty() || !req.tools.is_empty() {
+    if !req.system.is_empty()
+        || (!req.tools.is_empty() && !req.messages.iter().any(|m| matches!(m, Message::System(_))))
+    {
         let mut system = json!({"role": "system", "content": req.system, "timestamp": 0});
         if !req.tools.is_empty() {
             system["toolsAdded"] = Value::Array(

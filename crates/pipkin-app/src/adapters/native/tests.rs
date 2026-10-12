@@ -768,7 +768,22 @@ fn child_history_pages_by_cursor_and_the_selected_child_refreshes_live() {
                 has_older: true,
             }),
             Some(300) => Ok(Reply::Page {
-                entries: child_entries(100..300),
+                entries: vec![Entry {
+                    id: 299,
+                    at_ms: 1,
+                    run: None,
+                    retired: false,
+                    kind: EntryKind::Message {
+                        message: Message::System(SystemMessage::default()),
+                        mode: InputMode::Prompt,
+                        request: None,
+                        partial: false,
+                    },
+                }],
+                has_older: true,
+            }),
+            Some(299) => Ok(Reply::Page {
+                entries: child_entries(100..299),
                 has_older: true,
             }),
             Some(_) => Err(ProtoError::new(ErrorCode::NotFound, "gone")),
@@ -815,7 +830,7 @@ fn child_history_pages_by_cursor_and_the_selected_child_refreshes_live() {
     run.until("the older page, naming its cursor", |r| {
         r.has(|k| {
             matches!(k, EventKind::SubagentOlderPage { child: 3, before: b, items, has_older: true }
-                if *b == before && items.len() == 200)
+                if *b == before && items.len() == 199)
         })
     });
     assert!(fake.calls().contains(&Call::SubagentHistory {
@@ -824,6 +839,15 @@ fn child_history_pages_by_cursor_and_the_selected_child_refreshes_live() {
         before: Some(300),
         limit: 200,
     }));
+    assert!(
+        fake.calls().contains(&Call::SubagentHistory {
+            session: "s1".into(),
+            child: 3,
+            before: Some(299),
+            limit: 200,
+        }),
+        "hidden system-only pages advance the raw cursor"
+    );
     // A refused page is reported against the same cursor; nothing is invented.
     let oldest = run
         .seen

@@ -397,6 +397,9 @@ fn convert_messages(req: &ProviderRequest, caching: bool) -> Result<Vec<Value>, 
     let mut i = 0;
     while i < messages.len() {
         match &messages[i] {
+            Message::System(_) => {
+                unreachable!("Bedrock system messages must be collapsed before conversion")
+            }
             Message::User { content, .. } => {
                 let mut blocks = Vec::new();
                 for b in content {
@@ -610,7 +613,8 @@ fn additional_fields(env: &Env<'_>, budget: Option<u64>) -> Option<Value> {
 
 /// The JSON body sent (the model id travels in the path).
 fn build_body(env: &Env<'_>) -> Result<Value, String> {
-    let req = env.req;
+    let resolved = env.req.resolve_systems(false);
+    let req = resolved.as_ref();
     let model = &req.model;
     let caching = req.cache_retention != CacheRetention::None
         && supports_prompt_caching(

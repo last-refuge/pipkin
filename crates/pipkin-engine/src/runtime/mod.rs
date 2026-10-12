@@ -160,13 +160,13 @@ impl Shared {
     }
 
     /// The system prompt, kept byte-identical between turns unless its inputs change.
-    fn system_prompt(
+    fn system_sections(
         &self,
         sess: &SessionRt,
         row: &SessionRow,
         tools: &[ToolSpec],
         settings: &Settings,
-    ) -> String {
+    ) -> serde_json::Map<String, serde_json::Value> {
         let names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
         let key = format!(
             "{}\u{0}{}\u{0}{}",
@@ -181,7 +181,7 @@ impl Shared {
             return p.clone();
         }
         let (prompt, warnings) =
-            glue::system_prompt(&row.cwd, &self.config.config_dir, &names, &settings.skills);
+            glue::system_sections(&row.cwd, &self.config.config_dir, &names, &settings.skills);
         for warning in warnings {
             log::warn!("session {}: {warning}", row.id);
         }

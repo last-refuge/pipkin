@@ -8,7 +8,8 @@ Reference revision for every `<pi-staged>` citation: `d2a311097cbcf669e699479587
 with both Pipkin overlays applied exactly as `scripts/build-engine.sh` stages a clean release.
 Native status was reconciled at `e4c3a8c`, then updated for schema 2/protocol 3 import protection
 and durable retries, then schema 3/protocol 4 durable delivery and memory reclamation
-on 2026-10-11 (see the corresponding evidence records); historical
+then schema 4/protocol 5 positional system context on 2026-10-11
+(see the corresponding evidence records); historical
 measurements retain their original identities in the evidence records.
 
 | ADR | Decision | Status |

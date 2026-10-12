@@ -6,10 +6,9 @@
 //! sent back verbatim; an assistant text block carries `textSignature` = `{"v":1,"id","phase"}`
 //! so the message item keeps its id and phase; tool call ids are `"<call_id>|<item_id>"`.
 //!
-//! Engine differences from the reference context model, all by construction:
-//! - The system prompt is a flat string on the request, so there are no mid-conversation system
-//!   messages and no `toolsAdded` anchors (`additional_tools` / client `tool_search_*` items are
-//!   never produced).
+//! Positional system changes are retained when supported and collapsed otherwise; additive
+//! tool histories can use `additional_tools` or client `tool_search_*` anchors.
+//! Remaining differences:
 //! - `ToolSpec` has no `constrainedSampling`, so grammar (`custom`) tools and strict JSON-schema
 //!   sampling never apply; every tool is a `function` tool.
 //! - Rust strings are always valid UTF-8, so `sanitizeSurrogates` is a no-op.
@@ -136,6 +135,30 @@ pub fn convert_messages(
     messages: &[Message],
     allowed_tool_call_providers: &[&str],
 ) -> Result<Vec<Value>, String> {
+    convert_messages_inner(model, system, messages, allowed_tool_call_providers, None)
+}
+
+pub fn convert_request_messages(
+    req: &ProviderRequest,
+    include_system: bool,
+    providers: &[&str],
+) -> Result<Vec<Value>, String> {
+    convert_messages_inner(
+        &req.model,
+        include_system.then_some(req.system.as_str()),
+        &req.messages,
+        providers,
+        Some(req),
+    )
+}
+
+fn convert_messages_inner(
+    model: &Model,
+    system: Option<&str>,
+    messages: &[Message],
+    allowed_tool_call_providers: &[&str],
+    request: Option<&ProviderRequest>,
+) -> Result<Vec<Value>, String> {
     let allowed = allowed_tool_call_providers.contains(&model.provider.as_str());
     let mut normalize = |id: &str, source: &Message| -> String {
         if !allowed || !id.contains('|') {
@@ -172,9 +195,49 @@ pub fn convert_messages(
 
     // `msgIndex` only advances for messages that produced output (the reference `continue`s
     // past the increment for empty user/assistant messages).
-    let mut msg_index = 0usize;
+    let mut msg_index = usize::from(request.is_some_and(|r| {
+        r.options
+            .get("pipkin.leadingSystem")
+            .and_then(Value::as_bool)
+            == Some(true)
+    }));
     for msg in &messages {
         match msg {
+            Message::System(system) => {
+                if let Some(req) = request.filter(|r| {
+                    r.options
+                        .get("pipkin.systemToolAdditions")
+                        .and_then(Value::as_bool)
+                        == Some(true)
+                }) && !system.tools_added.is_empty()
+                {
+                    let added: Vec<_> = system.tools_added.iter().map(ToolSpec::from).collect();
+                    let codex = model.api == "openai-codex-responses";
+                    let strict = model.compat_bool("supportsStrictMode").unwrap_or(codex);
+                    let mut definitions =
+                        convert_tools(&added, strict, if codex { None } else { Some(false) });
+                    if req.model.compat_bool("supportsAdditionalTools") == Some(true) {
+                        out.push(json!({"type":"additional_tools", "role":"developer", "tools":definitions}));
+                    } else if req.model.compat_bool("supportsToolSearch") == Some(true) {
+                        let names = added.iter().map(|t| t.name.as_str()).collect::<Vec<_>>();
+                        let call = format!(
+                            "pi_tool_load_{}",
+                            short_hash(&format!("system:{msg_index}:{}", names.join(",")))
+                        );
+                        for definition in &mut definitions {
+                            definition["defer_loading"] = json!(true);
+                        }
+                        out.push(json!({"type":"tool_search_call", "call_id":call, "execution":"client", "status":"completed", "arguments":{"query":names.join(" "),"limit":names.len()}}));
+                        out.push(json!({"type":"tool_search_output", "call_id":call, "execution":"client", "status":"completed", "tools":definitions}));
+                    }
+                }
+                let text = crate::context::system::update_text(system);
+                if !text.is_empty() {
+                    let developer = model.reasoning
+                        && model.compat_bool("supportsDeveloperRole") != Some(false);
+                    out.push(json!({"role": if developer { "developer" } else { "system" }, "content": text}));
+                }
+            }
             Message::User { content, .. } => {
                 let parts: Vec<Value> = content
                     .iter()

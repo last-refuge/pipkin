@@ -1,0 +1,989 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "packages/durable/src/harness/prompt.ts": "39f18507e3b88fe4d6580742eb0f781d3f038be8b94260635eb4237614f86671",
+    "packages/durable/src/entries.ts": "cd11739efbfbd0b4407ffe99aa400ad9b7424122e5e22e6854ffa3667c0f0250",
+    "packages/ai/src/utils/transcript.ts": "e0814f35bdcc93b017fa45589a6920e46b5480b88fba01ef93e5d2d4e815f0f2",
+    "packages/ai/src/utils/text.ts": "d37c1825855c7fc71669a545b5b266810242c1c7e58d57228c0c143f29c1c544"
+  },
+  "cases": [
+    {
+      "name": "initial",
+      "entries": [],
+      "desired": {
+        "z": "Z",
+        "a": "A"
+      },
+      "tools": [
+        {
+          "name": "read",
+          "description": "read",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      ],
+      "planned": [
+        {
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z",
+                "a": "A"
+              },
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 100
+            }
+          ]
+        }
+      ],
+      "collapsed": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "z": "Z",
+            "a": "A"
+          },
+          "toolsAdded": [
+            {
+              "name": "read",
+              "description": "read",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ],
+          "timestamp": 100
+        }
+      ]
+    },
+    {
+      "name": "unchanged",
+      "entries": [
+        {
+          "id": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z",
+                "a": "A"
+              },
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "write",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "desired": {
+        "z": "Z",
+        "a": "A"
+      },
+      "tools": [
+        {
+          "name": "read",
+          "description": "read",
+          "parameters": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "write",
+          "description": "write",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      ],
+      "planned": [],
+      "collapsed": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "z": "Z",
+            "a": "A"
+          },
+          "toolsAdded": [
+            {
+              "name": "read",
+              "description": "read",
+              "parameters": {
+                "type": "object"
+              }
+            },
+            {
+              "name": "write",
+              "description": "write",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ],
+          "timestamp": 1
+        }
+      ]
+    },
+    {
+      "name": "minimal",
+      "entries": [
+        {
+          "id": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z",
+                "a": "A"
+              },
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "write",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "desired": {
+        "z": "Z2",
+        "b": "B"
+      },
+      "tools": [
+        {
+          "name": "read",
+          "description": "read",
+          "parameters": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "write",
+          "description": "write",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      ],
+      "planned": [
+        {
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z2",
+                "a": null,
+                "b": "B"
+              },
+              "timestamp": 100
+            }
+          ]
+        }
+      ],
+      "collapsed": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "z": "Z2",
+            "b": "B"
+          },
+          "toolsAdded": [
+            {
+              "name": "read",
+              "description": "read",
+              "parameters": {
+                "type": "object"
+              }
+            },
+            {
+              "name": "write",
+              "description": "write",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ],
+          "timestamp": 1
+        }
+      ]
+    },
+    {
+      "name": "reorder",
+      "entries": [
+        {
+          "id": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z",
+                "a": "A"
+              },
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "write",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "desired": {
+        "a": "A",
+        "z": "Z"
+      },
+      "tools": [
+        {
+          "name": "read",
+          "description": "read",
+          "parameters": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "write",
+          "description": "write",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      ],
+      "planned": [
+        {
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": null,
+                "a": null
+              },
+              "timestamp": 100
+            }
+          ]
+        },
+        {
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "a": "A",
+                "z": "Z"
+              },
+              "timestamp": 100
+            }
+          ]
+        }
+      ],
+      "collapsed": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "a": "A",
+            "z": "Z"
+          },
+          "toolsAdded": [
+            {
+              "name": "read",
+              "description": "read",
+              "parameters": {
+                "type": "object"
+              }
+            },
+            {
+              "name": "write",
+              "description": "write",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ],
+          "timestamp": 1
+        }
+      ]
+    },
+    {
+      "name": "tool-addition",
+      "entries": [
+        {
+          "id": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z",
+                "a": "A"
+              },
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "write",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "desired": {
+        "z": "Z",
+        "a": "A"
+      },
+      "tools": [
+        {
+          "name": "read",
+          "description": "read",
+          "parameters": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "write",
+          "description": "write",
+          "parameters": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "bash",
+          "description": "bash",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      ],
+      "planned": [
+        {
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "toolsAdded": [
+                {
+                  "name": "bash",
+                  "description": "bash",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 100
+            }
+          ]
+        }
+      ],
+      "collapsed": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "z": "Z",
+            "a": "A"
+          },
+          "toolsAdded": [
+            {
+              "name": "read",
+              "description": "read",
+              "parameters": {
+                "type": "object"
+              }
+            },
+            {
+              "name": "write",
+              "description": "write",
+              "parameters": {
+                "type": "object"
+              }
+            },
+            {
+              "name": "bash",
+              "description": "bash",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ],
+          "timestamp": 1
+        }
+      ]
+    },
+    {
+      "name": "redefinition-order",
+      "entries": [
+        {
+          "id": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z",
+                "a": "A"
+              },
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "write",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "desired": {
+        "z": "Z",
+        "a": "A"
+      },
+      "tools": [
+        {
+          "name": "read",
+          "description": "changed",
+          "parameters": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "write",
+          "description": "write",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      ],
+      "planned": [
+        {
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "toolsRemoved": [
+                {
+                  "name": "read"
+                },
+                {
+                  "name": "write"
+                }
+              ],
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "changed",
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "write",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 100
+            }
+          ]
+        }
+      ],
+      "collapsed": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "z": "Z",
+            "a": "A"
+          },
+          "toolsAdded": [
+            {
+              "name": "read",
+              "description": "changed",
+              "parameters": {
+                "type": "object"
+              }
+            },
+            {
+              "name": "write",
+              "description": "write",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ],
+          "timestamp": 1
+        }
+      ]
+    },
+    {
+      "name": "tool-removal",
+      "entries": [
+        {
+          "id": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z",
+                "a": "A"
+              },
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "write",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "desired": {
+        "z": "Z",
+        "a": "A"
+      },
+      "tools": [
+        {
+          "name": "write",
+          "description": "write",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      ],
+      "planned": [
+        {
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "toolsRemoved": [
+                {
+                  "name": "read"
+                }
+              ],
+              "timestamp": 100
+            }
+          ]
+        }
+      ],
+      "collapsed": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "z": "Z",
+            "a": "A"
+          },
+          "toolsAdded": [
+            {
+              "name": "write",
+              "description": "write",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ],
+          "timestamp": 1
+        }
+      ]
+    },
+    {
+      "name": "tool-reorder",
+      "entries": [
+        {
+          "id": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z",
+                "a": "A"
+              },
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "write",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "desired": {
+        "z": "Z",
+        "a": "A"
+      },
+      "tools": [
+        {
+          "name": "write",
+          "description": "write",
+          "parameters": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "read",
+          "description": "read",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      ],
+      "planned": [
+        {
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "toolsRemoved": [
+                {
+                  "name": "read"
+                },
+                {
+                  "name": "write"
+                }
+              ],
+              "toolsAdded": [
+                {
+                  "name": "write",
+                  "description": "write",
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 100
+            }
+          ]
+        }
+      ],
+      "collapsed": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "z": "Z",
+            "a": "A"
+          },
+          "toolsAdded": [
+            {
+              "name": "write",
+              "description": "write",
+              "parameters": {
+                "type": "object"
+              }
+            },
+            {
+              "name": "read",
+              "description": "read",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ],
+          "timestamp": 1
+        }
+      ]
+    },
+    {
+      "name": "compaction-baseline",
+      "head": 10,
+      "entries": [
+        {
+          "id": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z",
+                "a": "A"
+              },
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "write",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "desired": {
+        "z": "Z",
+        "a": "A"
+      },
+      "tools": [
+        {
+          "name": "read",
+          "description": "read",
+          "parameters": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "write",
+          "description": "write",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      ],
+      "planned": [
+        {
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z",
+                "a": "A"
+              },
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "write",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 100
+            }
+          ],
+          "edits": [
+            {
+              "target": 1,
+              "action": "omit"
+            }
+          ]
+        }
+      ],
+      "collapsed": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "z": "Z",
+            "a": "A"
+          },
+          "toolsAdded": [
+            {
+              "name": "read",
+              "description": "read",
+              "parameters": {
+                "type": "object"
+              }
+            },
+            {
+              "name": "write",
+              "description": "write",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ],
+          "timestamp": 100
+        }
+      ]
+    },
+    {
+      "name": "compaction-already-rebased",
+      "head": 10,
+      "entries": [
+        {
+          "id": 11,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "z": "Z",
+                "a": "A"
+              },
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "read",
+                  "parameters": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "timestamp": 11
+            }
+          ]
+        }
+      ],
+      "desired": {
+        "z": "Z",
+        "a": "A"
+      },
+      "tools": [
+        {
+          "name": "read",
+          "description": "read",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      ],
+      "planned": [],
+      "collapsed": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "z": "Z",
+            "a": "A"
+          },
+          "toolsAdded": [
+            {
+              "name": "read",
+              "description": "read",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ],
+          "timestamp": 11
+        }
+      ]
+    }
+  ]
+}

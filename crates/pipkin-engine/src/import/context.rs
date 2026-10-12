@@ -5,8 +5,8 @@
 //! `orderToolResults`) for an unforked conversation. The native side mirrors
 //! [`Store::context_entries`](crate::store::Store::context_entries) followed by the documented
 //! context-builder rules (retired entries leave the context; a compaction contributes its
-//! wrapped summary; a reset its handoff). System messages are excluded on both sides: the
-//! native engine renders its own system prompt and never replays imported `pi.system` entries.
+//! wrapped summary; a reset its handoff). Positional system messages are compared and replayed
+//! too, including imports made before they became a native message variant.
 
 use pipkin_engine_protocol::{Entry, EntryKind, Message};
 use serde_json::{Value, json};
@@ -22,22 +22,15 @@ const MISSING_RESULT_TEXT: &str =
 /// `context.ts:8`.
 const EXCLUDED_STOP_REASONS: [&str; 3] = ["aborted", "error", "deferred"];
 
-/// The user message a compaction contributes (`compaction.ts:415-418`).
-pub fn compaction_message(summary: &str, timestamp: i64) -> Value {
-    json!({
-        "role": "user",
-        "content": [{"type": "text", "text": format!("{SUMMARY_PREFIX}{summary}{SUMMARY_SUFFIX}")}],
-        "timestamp": timestamp,
-    })
-}
-
 /// Reference message JSON as the native model stores it: a user/tool-result `content` string
 /// becomes one text block, then the message goes through the native type. Returns the native
 /// message and whether its JSON differs from the source JSON.
 pub fn normalize_message(source: &Value) -> Result<(Message, bool), String> {
     let mut value = source.clone();
     let mut changed = false;
-    if let Some(Value::String(text)) = value.get("content") {
+    if value.get("role").and_then(Value::as_str) != Some("system")
+        && let Some(Value::String(text)) = value.get("content")
+    {
         let block = json!([{"type": "text", "text": text}]);
         value["content"] = block;
         changed = true;
@@ -150,7 +143,7 @@ pub fn order_tool_results(messages: Vec<Value>) -> Vec<Value> {
     ordered
 }
 
-/// The reference model context (minus system messages) of one unforked conversation whose
+/// The reference model context (including system messages) of one unforked conversation whose
 /// entries are given in id order. Messages are normalized with [`normalize_message`].
 pub fn reference_messages(entries: &[&LegacyEntry]) -> Result<Vec<Value>, String> {
     let head = entries.iter().rev().find(|e| e.head().is_some());
@@ -193,9 +186,6 @@ pub fn reference_messages(entries: &[&LegacyEntry]) -> Result<Vec<Value>, String
     let ordered = order_tool_results(messages);
     let mut out = Vec::with_capacity(ordered.len());
     for message in ordered {
-        if message.get("role").and_then(Value::as_str) == Some("system") {
-            continue;
-        }
         let (native, _) = normalize_message(&message)?;
         out.push(serde_json::to_value(native).map_err(|e| e.to_string())?);
     }
@@ -236,30 +226,10 @@ pub fn native_range(entries: &[Entry]) -> Vec<Entry> {
     out
 }
 
-/// The native model context (minus the system prompt) of a context range.
+/// The native model context (including system messages) of a context range.
 pub fn native_messages(range: &[Entry]) -> Vec<Value> {
-    let mut messages = Vec::new();
-    for entry in range {
-        if entry.retired {
-            continue;
-        }
-        let message = match &entry.kind {
-            EntryKind::Message {
-                message,
-                partial: false,
-                ..
-            } => serde_json::to_value(message).ok(),
-            EntryKind::Compaction { summary, .. } => Some(compaction_message(summary, entry.at_ms)),
-            EntryKind::Reset {
-                handoff: Some(message),
-            } => serde_json::to_value(message).ok(),
-            _ => None,
-        };
-        if let Some(m) = message
-            && !stop_reason_excluded(&m)
-        {
-            messages.push(m);
-        }
-    }
-    order_tool_results(messages)
+    crate::context::derive::model_messages(range)
+        .iter()
+        .map(|m| serde_json::to_value(m).expect("valid message"))
+        .collect()
 }

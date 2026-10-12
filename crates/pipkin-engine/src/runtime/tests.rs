@@ -174,6 +174,7 @@ pub fn texts(snapshot: &SessionSnapshot) -> Vec<(String, String, bool)> {
         .filter_map(|e| match &e.kind {
             EntryKind::Message { message, .. } => {
                 let role = match message {
+                    Message::System(_) => return None,
                     Message::User { .. } => "user",
                     Message::Assistant { .. } => "assistant",
                     Message::ToolResult { .. } => "tool",
@@ -662,7 +663,8 @@ fn the_system_prompt_carries_project_instructions_and_stays_byte_stable() {
     e.settled("r1");
     e.prompt(&s, "r2", "two").unwrap();
     e.settled("r2");
-    let reqs = provider.requests();
+    let captured = provider.requests();
+    let reqs: Vec<_> = captured.iter().map(|r| r.resolve_systems(false)).collect();
     assert!(
         reqs[0].system.contains("Always answer in haiku."),
         "{}",
@@ -841,7 +843,20 @@ fn subagents_run_once_per_call_deliver_their_answer_and_are_listed() {
     }) else {
         panic!()
     };
-    assert_eq!(entries.len(), 2);
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|e| !crate::context::system::is_system_entry(e))
+            .count(),
+        2
+    );
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|e| crate::context::system::is_system_entry(e))
+            .count(),
+        1
+    );
     // Ownership guard: an unknown child is refused.
     assert_eq!(
         e.call(Call::SubagentHistory {
@@ -1313,4 +1328,62 @@ fn concurrent_and_private_publications_have_contiguous_per_client_sequences() {
             }
         );
     }
+}
+
+#[test]
+fn positional_system_baseline_survives_restart_and_only_changed_sections_are_appended() {
+    let fx = Fixture::new();
+    std::fs::write(fx.project.join("AGENTS.md"), "Original instruction.").unwrap();
+    let first = Scripted::echo("ok");
+    let session;
+    {
+        let mut e = fx.start(&first);
+        session = e.create(&fx.project, "c");
+        for (key, text) in [("r1", "first"), ("r2", "second")] {
+            e.prompt(&session, key, text).unwrap();
+            e.settled(key);
+        }
+        assert_eq!(
+            e.snapshot(&session)
+                .entries
+                .iter()
+                .filter(|e| crate::context::system::is_system_entry(e))
+                .count(),
+            1
+        );
+        e.handle.shutdown(Duration::from_secs(1));
+    }
+    std::fs::write(fx.project.join("AGENTS.md"), "Updated instruction.").unwrap();
+    let second = Scripted::echo("after restart");
+    let mut e = fx.start(&second);
+    e.prompt(&session, "r3", "continue").unwrap();
+    e.settled("r3");
+    let snap = e.snapshot(&session);
+    let systems: Vec<_> = snap
+        .entries
+        .iter()
+        .filter_map(|e| match &e.kind {
+            EntryKind::Message {
+                message: Message::System(s),
+                ..
+            } => Some(s),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(systems.len(), 2);
+    assert_eq!(systems[1].sections.len(), 1);
+    assert!(systems[1].tools_added.is_empty());
+    assert!(systems[1].tools_removed.is_empty());
+    let requests = second.requests();
+    let resolved = requests[0].resolve_systems(false);
+    assert!(resolved.system.contains("Updated instruction."));
+    assert!(!resolved.system.contains("Original instruction."));
+    assert_eq!(
+        requests[0]
+            .messages
+            .iter()
+            .filter(|m| matches!(m, Message::System(_)))
+            .count(),
+        2
+    );
 }

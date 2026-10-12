@@ -109,7 +109,9 @@ needed. Schema 1 did not persist retry deadlines, so an upgrade cannot restore a
 Schema 3 adds a durable event catch-up log and first saves `engine.sqlite.v2.bak` when upgrading
 schema 2. Slow native clients coalesce streamed presentation, reread saved state, and reconcile
 pending requests; they do not resend prompts to recover missing updates. This preserves loaded
-history and the selected child conversation. Protocol 4 rejects mismatched older workers.
+history and the selected child conversation. Schema 4 adds positional system-message bodies and
+saves `engine.sqlite.v3.bak` before upgrading schema 3. It preserves ordered instruction and tool
+updates across restart/import. Protocol 5 rejects mismatched older workers.
 On Linux/glibc, the private worker limits allocator arenas and releases unused pages at run
 boundaries to avoid retaining large temporary context buffers. This does not shorten saved
 history or change the machine's allocator environment/configuration.

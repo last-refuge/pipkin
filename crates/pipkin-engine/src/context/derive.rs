@@ -71,6 +71,15 @@ pub fn contribution(entry: &Entry, head: bool) -> Vec<Message> {
             extra: Map::new(),
         }],
         EntryKind::Reset { handoff } if head => handoff.iter().cloned().collect(),
+        // Legacy native imports kept pi.system in its original record. Replay it too.
+        EntryKind::Custom { custom_type, data } if custom_type == "pi.system" => data
+            .get("model")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|m| serde_json::from_value::<Message>(m.clone()).ok())
+            .filter(|m| matches!(m, Message::System(_)))
+            .collect(),
         _ => vec![],
     };
     messages.into_iter().filter(|m| !excluded(m)).collect()
@@ -128,7 +137,7 @@ pub(crate) fn order_slots(messages: &[Message]) -> Vec<Slot> {
                         results.push((tool_call_id, next));
                     }
                 }
-                Message::User { .. } => {}
+                Message::User { .. } | Message::System(_) => {}
             }
         }
         for (id, name, _) in calls {

@@ -54,8 +54,8 @@ pub fn is_same_model(message: &Message, model: &Model) -> bool {
 /// - tool calls without a result get a synthetic error result before the next assistant or
 ///   user message (or at the end).
 ///
-/// The engine context has no system messages (the system prompt is a flat string on the
-/// request), so the reference's held-back system message handling never applies.
+/// System messages inside a tool round are held until results (including synthesized
+/// missing results) have closed that round.
 pub fn transform_messages(
     messages: &[Message],
     model: &Model,
@@ -67,6 +67,7 @@ pub fn transform_messages(
 
     for msg in messages {
         match msg {
+            Message::System(_) => transformed.push(msg.clone()),
             Message::User {
                 content,
                 timestamp,
@@ -197,14 +198,23 @@ pub fn transform_messages(
         }
         answered.clear();
     };
+    let mut held_systems = Vec::new();
     for msg in transformed {
         match &msg {
+            Message::System(_) => {
+                if pending.is_empty() {
+                    result.push(msg);
+                } else {
+                    held_systems.push(msg);
+                }
+            }
             Message::Assistant {
                 stop_reason,
                 content,
                 ..
             } => {
                 close(&mut result, &mut pending, &mut answered);
+                result.append(&mut held_systems);
                 if matches!(stop_reason, StopReason::Error | StopReason::Aborted) {
                     continue;
                 }
@@ -227,11 +237,13 @@ pub fn transform_messages(
             }
             Message::User { .. } => {
                 close(&mut result, &mut pending, &mut answered);
+                result.append(&mut held_systems);
                 result.push(msg);
             }
         }
     }
     close(&mut result, &mut pending, &mut answered);
+    result.append(&mut held_systems);
     result
 }
 

@@ -473,14 +473,56 @@ impl Shared {
         )
         .0;
         settings.compaction = settings.compaction.for_model(&model.key());
-        let entries = match tokio::task::block_in_place(|| self.store.context_entries(&sess.id)) {
+        let mut entries = match tokio::task::block_in_place(|| self.store.context_entries(&sess.id))
+        {
             Ok(e) => e,
             Err(_) => return Err(None),
         };
-        let messages = super::glue::model_messages(&entries);
         let tools = self.tools_for(&row);
         let specs: Vec<ToolSpec> = tools.iter().map(|t| t.spec()).collect();
-        let system = self.system_prompt(sess, &row, &specs, &settings);
+        let desired = self.system_sections(sess, &row, &specs, &settings);
+        let declarations = specs
+            .iter()
+            .map(pipkin_engine_protocol::ToolDeclaration::from)
+            .collect::<Vec<_>>();
+        let now = now_ms();
+        let plan = crate::context::system::plan(&entries, &desired, &declarations, now);
+        if !plan.messages.is_empty() {
+            let appended = self
+                .commit(sess, |tx| {
+                    let mut changes = Vec::new();
+                    Store::retire_entries(tx, &sess.id, &plan.retire)?;
+                    for id in &plan.retire {
+                        if let Some(entry) = Store::entry_in(tx, &sess.id, *id)? {
+                            changes.push(SessionChange::EntryReplaced { entry });
+                        }
+                    }
+                    let mut appended = Vec::new();
+                    for system in &plan.messages {
+                        let kind = EntryKind::Message {
+                            message: Message::System(system.clone()),
+                            mode: InputMode::Prompt,
+                            request: None,
+                            partial: false,
+                        };
+                        let entry = Store::append_entry(tx, &sess.id, now, None, &kind)?;
+                        changes.push(SessionChange::EntryAppended {
+                            entry: entry.clone(),
+                        });
+                        appended.push(entry);
+                    }
+                    Ok((appended, changes))
+                })
+                .map_err(|_| None)?;
+            for entry in &mut entries {
+                if plan.retire.contains(&entry.id) {
+                    entry.retired = true;
+                }
+            }
+            entries.extend(appended);
+        }
+        let messages = super::glue::model_messages(&entries);
+        let system = String::new();
         let thinking = row
             .thinking
             .as_deref()

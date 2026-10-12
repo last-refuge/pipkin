@@ -63,7 +63,7 @@ pub use self::ws::WebSocketDebugStats;
 use super::common::{self, Headers, js_truthy, pi_user_agent};
 use super::openai_completions::clamp_prompt_cache_key;
 use super::openai_responses_shared::{
-    apply_service_tier_pricing, convert_messages, convert_tools, service_tier_multiplier,
+    apply_service_tier_pricing, convert_request_messages, convert_tools, service_tier_multiplier,
 };
 use crate::provider::http::{self, ReadError};
 use crate::provider::proxy::ProxyConfig;
@@ -388,8 +388,11 @@ fn build_request_body(
     opts: &CodexOptions,
     prompt_cache_key: Option<&str>,
 ) -> Result<Value, String> {
+    let resolved =
+        req.resolve_systems(req.model.compat_bool("supportsMidConvoSystemMessages") == Some(true));
+    let req = resolved.as_ref();
     let model = &req.model;
-    let input = convert_messages(model, None, &req.messages, &CODEX_TOOL_CALL_PROVIDERS)?;
+    let input = convert_request_messages(req, false, &CODEX_TOOL_CALL_PROVIDERS)?;
     let mut body = Map::new();
     body.insert("model".into(), Value::String(model.id.clone()));
     body.insert("store".into(), Value::Bool(false));

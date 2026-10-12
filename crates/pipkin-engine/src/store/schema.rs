@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -187,7 +187,8 @@ CREATE TRIGGER event_retention AFTER INSERT ON event_outbox BEGIN
 END;
 "#;
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3];
+// Version 4 introduces positional system message bodies; older runtimes must refuse them.
+const MIGRATIONS: &[&str] = &[V1, V2, V3, ""];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

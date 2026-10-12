@@ -1,6 +1,6 @@
 # ADR 0003: Durable store and recovery
 
-**Status:** Accepted; updated on top of `63bd9ae` (2026-10-11). Schema 3,
+**Status:** Accepted; updated on top of `63bd9ae` (2026-10-11). Schema 4,
 OS-locked storage, admission ledger, runs, streamed chunks, tool intent/result/output, usage,
 subagent tasks, `kv` and `import_map` are implemented. Injected disk-full/read-only faults at
 admission and mid-run are covered in `runtime/fault_tests.rs`. Actual worker SIGKILL boundaries,
@@ -9,6 +9,8 @@ damaged-database refusal without mutation and orphan process reaping are covered
 The v1 → v2 migration is tested with an admitted request, open run and history entry; the private
 backup retains schema 1. The v2 → v3 outbox migration also preserves a private v2 backup. A real SIGKILL
 between state commit and publication is recovered through paged catch-up and Lookup.
+Schema 3 → 4 also preserves a private v3 backup before enabling positional system-message
+bodies (tested in `a_v3_database_is_backed_up_before_positional_system_bodies_are_written`).
 Power loss remains unverified. See
 `../pipkin-rust-engine-evidence/import-protection-durable-retries.md`.
 
@@ -39,7 +41,7 @@ each commit durable progress (`scheduler.ts:893-896`); on open every `running` t
    has been fsynced. This is a deliberate strengthening over the reference `NORMAL`
    (intentional improvement I-02 in the parity ledger); process-kill tests do not prove power
    loss and none is claimed.
-3. **Schema:** explicit `PRAGMA user_version`; `SCHEMA_VERSION = 3`; ordered `MIGRATIONS`.
+3. **Schema:** explicit `PRAGMA user_version`; `SCHEMA_VERSION = 4`; ordered `MIGRATIONS`.
    A newer database is refused **before** any pragma change (`schema::open`); an older one is
    backed up with the SQLite backup API next to itself, then migrated inside one transaction.
    Database and migration-backup file mode `0600` on Unix.

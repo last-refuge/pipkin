@@ -41,7 +41,7 @@ pub struct SessionRt {
     pub failed: Mutex<Option<String>>,
     pub settled: broadcast::Sender<Settled>,
     /// The system prompt last sent, so it stays byte-stable between turns (prompt caching).
-    pub prompt: Mutex<Option<(String, String)>>,
+    pub prompt: Mutex<Option<(String, Map<String, serde_json::Value>)>>,
     /// Questions, status lines and notices from this session's extensions (volatile).
     pub questions: crate::extensions::questions::QuestionHost,
     /// A background compaction is running.

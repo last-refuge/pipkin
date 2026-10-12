@@ -11,7 +11,26 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — usage subset preservation
+## Current follow-up — positional system context
+
+Implemented on top of **`7872c91`**. Protocol **5** / schema **4** preserve ordered system
+sections and tool declarations in durable history. Runtime commits minimal patches and
+compaction baselines; imported systems now participate in context equality and replay.
+Provider encoding retains supported positions/tool anchors or collapses the current state.
+Ten pure planner/replay cases match output captured by executing the pinned Pi reference.
+See [context and paging evidence](pipkin-rust-engine-evidence/positional-system.md).
+
+Verification also reproduced and fixed the subagent inspector paging race: an identical live
+page no longer cancels an older page in flight. Hidden system-only pages advance the raw cursor.
+Required checks: **1346 passed, 0 failed, 53 ignored**, Clippy and formatting clean.
+The repeated 1600-turn Linux/glibc headless soak passes at **28,940 KiB idle / 40,148 KiB peak**,
+with 13 idle fds and one process. Desktop/platform/performance qualification remains open.
+
+Ledger: **503 rows; 420 measured, 7 observed, 0 currently failed, 10 unverified,
+66 not started; 0 qualified**. PRM-PATCH is measured with bounded differential evidence;
+provider/extension/installed acceptance is not inferred from those pure cases. Native remains opt-in.
+
+## Previous follow-up — usage subset preservation
 
 Implemented on top of **`e8993de`**. Protocol, adapters, persistence/import, aggregate views,
 core and both desktop adapters now retain optional `reasoning` and `cacheWrite1h` counts.
@@ -246,9 +265,10 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
 
 ## 7. Current blockers
 
-1. **Correctness and migration gaps:** system prompt patches are still flattened. Reasoning/1h-cache
-   counters are now preserved end to end and tested. Plugin-profile import protection and durable retry waits/counts
-   are now implemented and tested; TypeScript execution and unsupported-history conversion remain open.
+1. **Correctness and migration gaps:** positional system patches and reasoning/1h-cache counters
+   are now preserved and tested, including imported system context. Plugin-profile import protection
+   and durable retry waits/counts are implemented. TypeScript execution, constrained/grammar tool
+   semantics and remaining unsupported-history conversion (replacement edits/forks) remain open.
 2. **Transport and compatibility:** durable invalidation replay and bounded engine/reader delivery
    now have passing recovery/pressure evidence. External attach, serialize-once fan-out and
    frontend/provider-internal queue budgeting remain. TypeScript facets, sticky profiles,
@@ -270,8 +290,8 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
 2. Completed next batch: bounded delivery, atomic invalidation outbox, acknowledged catch-up,
    commit/snapshot ordering, and the headless memory-budget fix; see delivery/memory evidence.
    Remaining transport and broader memory qualification boundaries are listed above.
-3. Usage counter preservation is implemented and tested. Close positional prompt updates, Codex WebSocket
-   lifecycle/proxy gaps and external attachment. Resolve facet ports/profile lifecycle while
+3. Usage counters and positional prompt updates are implemented and tested. Close constrained/grammar
+   tool support, Codex WebSocket lifecycle/proxy gaps and external attachment. Resolve facet ports/profile lifecycle while
    keeping Pi as the continuity path.
 4. Add the specific missing assertions in the reconciliation report; build the full native/Pi
    differential harness. Existing disk-full, child recovery and `all` delivery tests do not

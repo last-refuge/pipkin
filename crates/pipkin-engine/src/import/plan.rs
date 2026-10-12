@@ -628,6 +628,11 @@ pub fn plan(source: &str, meta: &Meta, legacy: &Legacy) -> Result<Plan, Vec<Stri
                             e.id
                         ));
                         None
+                    } else if kind == "pi.system"
+                        && model.iter().any(|m| context::normalize_message(m).is_err())
+                    {
+                        reasons.push(format!("entry {} has an invalid system message", e.id));
+                        None
                     } else {
                         Some(EntryKind::Custom {
                             custom_type: kind.to_owned(),

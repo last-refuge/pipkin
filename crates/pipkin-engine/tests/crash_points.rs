@@ -516,6 +516,7 @@ fn texts(s: &SessionSnapshot) -> Vec<(String, String, bool)> {
         .filter_map(|e| match &e.kind {
             EntryKind::Message { message, .. } => Some((
                 match message {
+                    Message::System(_) => return None,
                     Message::User { .. } => "user",
                     Message::Assistant { .. } => "assistant",
                     Message::ToolResult { .. } => "tool",

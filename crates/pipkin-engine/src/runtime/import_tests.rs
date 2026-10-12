@@ -318,6 +318,7 @@ fn reference_fixtures_import_open_and_continue_equivalently() {
             .unwrap()
             .messages
             .iter()
+            .filter(|m| !matches!(m, Message::System(_)))
             .map(project_native)
             .collect();
         assert_eq!(

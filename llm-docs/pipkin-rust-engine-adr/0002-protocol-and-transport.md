@@ -7,6 +7,9 @@ queues are bounded. See [delivery and memory evidence](../pipkin-rust-engine-evi
 Protocol 3's import-profile protection is retained. External attachment and serialize-once
 multi-subscriber fan-out remain separate work.
 
+Protocol **5** adds typed positional system messages; schema **4** protects their durable bodies
+from older runtimes. See [context evidence](../pipkin-rust-engine-evidence/positional-system.md).
+
 ## Context
 
 Reference wire stack (audit `service-api.md` §4.2–4.3): CBOR frames with a 4-byte big-endian
@@ -44,7 +47,7 @@ The desktop core already routes every backend event through `(conversation, gene
    acknowledged or published (ADR 0003), so a resync never loses an outcome.
 5. **Control lane:** `Call::Stop` and `Call::Shutdown` are `Lane::Control` and are handled
    ahead of queued normal calls (`Call::lane`).
-6. **Versioning:** `PROTOCOL_VERSION = 4`; `Hello` with any other version is refused
+6. **Versioning:** `PROTOCOL_VERSION = 5`; `Hello` with any other version is refused
    (`ErrorCode::Incompatible`); the reply `Welcome` carries engine version/revision, schema,
    epoch and capabilities. No guessing across versions.
 7. **Errors:** a closed taxonomy (`Incompatible, NotFound, Conflict, Invalid, TooLarge, Busy,

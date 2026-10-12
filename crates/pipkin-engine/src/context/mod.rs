@@ -24,6 +24,7 @@ pub mod js;
 pub mod paths;
 pub mod prompt;
 pub mod resources;
+pub mod system;
 
 #[cfg(test)]
 pub(crate) mod test_support;

@@ -18,7 +18,7 @@ pub use content::*;
 pub use view::*;
 
 /// Wire protocol version. Bump on any incompatible change to [`api`], [`content`] or [`view`].
-// Version 3 requires plugin-profile inspection for imports, including explicit serverDir.
-pub const PROTOCOL_VERSION: u32 = 4;
+// Version 5 adds positional system messages to durable history.
+pub const PROTOCOL_VERSION: u32 = 5;
 
 pub mod delivery;

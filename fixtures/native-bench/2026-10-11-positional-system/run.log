@@ -1,0 +1,97 @@
+== building release engine
+   Compiling pipkin-engine v0.0.1 (/home/jason/coding/pipkin/crates/pipkin-engine)
+    Finished `release` profile [optimized + debuginfo] target(s) in 16.27s
+    Finished `release` profile [optimized + debuginfo] target(s) in 25.45s
+  Executable tests/perf.rs (target/release/deps/perf-579df25b6622f8d2)
+== machine: { "cpu": "Intel(R) Core(TM) Ultra X7 358H", "logicalCpus": 16, "memTotalKiB": 65326544, "kernel": "7.2.5-3-omarchy", "governor": "powersave", "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)", "gitRevision": "7872c91db6f91691b5da09ada2bcd005335fd84f", "gitDirty": true, "loadavg": "6.83 4.26 3.63 2/4185 1603978", "scratch": "/home/jason/coding/pipkin/target/tmp", "scratchFilesystem": "btrfs", "releaseProfile": "workspace [profile.release]: opt-level 3, debug = line-tables-only"}
+== test soak_1500 (loadavg 6.83 4.26 3.63)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.14s
+     Running tests/perf.rs (target/release/deps/perf-579df25b6622f8d2)
+
+running 1 test
+test soak_1500 ... soak-1500 turn 1: rss 21944 KiB pss 19336 KiB fds 13 threads 7 turn 7.6 ms
+soak-1500 turn 50: rss 23020 KiB pss 20416 KiB fds 13 threads 8 turn 5.9 ms
+soak-1500 turn 100: rss 23576 KiB pss 20972 KiB fds 13 threads 8 turn 8.6 ms
+soak-1500 turn 150: rss 23896 KiB pss 21284 KiB fds 13 threads 8 turn 9.2 ms
+soak-1500 turn 200: rss 24212 KiB pss 21600 KiB fds 13 threads 8 turn 10.7 ms
+soak-1500 turn 250: rss 24508 KiB pss 21896 KiB fds 13 threads 8 turn 11.6 ms
+soak-1500 turn 300: rss 24872 KiB pss 22260 KiB fds 13 threads 8 turn 14.6 ms
+soak-1500 turn 350: rss 25152 KiB pss 22540 KiB fds 13 threads 8 turn 14.1 ms
+soak-1500 turn 400: rss 25364 KiB pss 22756 KiB fds 13 threads 8 turn 17.2 ms
+soak-1500 turn 450: rss 25628 KiB pss 23016 KiB fds 13 threads 8 turn 15.4 ms
+soak-1500 turn 500: rss 25820 KiB pss 23212 KiB fds 13 threads 8 turn 16.0 ms
+soak-1500 turn 550: rss 26060 KiB pss 23452 KiB fds 13 threads 8 turn 16.3 ms
+soak-1500 turn 600: rss 26276 KiB pss 23664 KiB fds 13 threads 8 turn 21.6 ms
+soak-1500 turn 650: rss 26504 KiB pss 23896 KiB fds 13 threads 8 turn 20.7 ms
+soak-1500 turn 700: rss 26736 KiB pss 24132 KiB fds 13 threads 8 turn 23.4 ms
+soak-1500 turn 750: rss 26960 KiB pss 24348 KiB fds 13 threads 8 turn 26.8 ms
+soak-1500 turn 800: rss 27228 KiB pss 24616 KiB fds 13 threads 8 turn 27.3 ms
+soak-1500 turn 850: rss 27444 KiB pss 24832 KiB fds 13 threads 8 turn 32.6 ms
+soak-1500 turn 900: rss 27832 KiB pss 25224 KiB fds 13 threads 8 turn 26.1 ms
+soak-1500 turn 950: rss 27908 KiB pss 25296 KiB fds 13 threads 8 turn 26.1 ms
+soak-1500 turn 1000: rss 28068 KiB pss 25456 KiB fds 13 threads 8 turn 34.1 ms
+soak-1500 turn 1050: rss 27944 KiB pss 25335 KiB fds 13 threads 8 turn 29.5 ms
+soak-1500 turn 1100: rss 28032 KiB pss 25419 KiB fds 13 threads 8 turn 29.5 ms
+soak-1500 turn 1150: rss 28084 KiB pss 25471 KiB fds 13 threads 8 turn 41.4 ms
+soak-1500 turn 1200: rss 28252 KiB pss 25640 KiB fds 13 threads 8 turn 34.4 ms
+soak-1500 turn 1250: rss 28392 KiB pss 25780 KiB fds 13 threads 8 turn 33.4 ms
+soak-1500 turn 1300: rss 28472 KiB pss 25860 KiB fds 13 threads 8 turn 34.1 ms
+soak-1500 turn 1350: rss 28544 KiB pss 25932 KiB fds 13 threads 8 turn 43.6 ms
+soak-1500 turn 1400: rss 28892 KiB pss 26280 KiB fds 13 threads 8 turn 36.4 ms
+soak-1500 turn 1450: rss 28880 KiB pss 26268 KiB fds 13 threads 8 turn 40.2 ms
+soak-1500 turn 1500: rss 28836 KiB pss 26224 KiB fds 13 threads 8 turn 38.1 ms
+soak-1500 turn 1550: rss 28948 KiB pss 26336 KiB fds 13 threads 8 turn 40.1 ms
+soak-1500 turn 1600: rss 28940 KiB pss 26328 KiB fds 13 threads 8 turn 42.7 ms
+{
+  "warmupTurns": 100,
+  "measuredTurns": 1500,
+  "newSessionEvery": 0,
+  "engineEnv": [],
+  "reply": "answer <n>: + \"words \" x 40 (no tools), as the reference soak",
+  "rssKiBIdleBefore": 24804.0,
+  "pssKiBIdleBefore": 22192.0,
+  "rssKiBAfterTurn1": 21944.0,
+  "rssKiBAfterLastTurn": 28940.0,
+  "pssKiBAfterLastTurn": 26328.0,
+  "rssKiBIdleAfter": 28940.0,
+  "pssKiBIdleAfter": 26328.0,
+  "rssKiBPeakSampled50ms": 40148,
+  "vmHwmKiB": 40296.0,
+  "maxProcessesSeen": 1,
+  "maxFdsSeen": 14,
+  "fdsIdleBefore": 13.0,
+  "fdsIdleAfter": 13.0,
+  "threadsIdleAfter": 8.0,
+  "rssSlopeKiBPerTurnMeasured": 3.566,
+  "rssSlopeKiBPerTurnSecondHalf": 1.911,
+  "pssSlopeKiBPerTurnMeasured": 3.564,
+  "fdSlopePerTurnMeasured": 0.0,
+  "turnLatencyMs": {
+    "n": 1500,
+    "p50": 26.173,
+    "p95": 44.934,
+    "min": 6.059,
+    "max": 197.743,
+    "mean": 27.641
+  },
+  "wallSecs": 42.397,
+  "engineCpuSecsTotal": 35.7,
+  "engineCpuMsPerMeasuredTurn": 23.52,
+  "dbBytes": 3313664,
+  "walBytes": 4181832,
+  "providerRequestBytesTotal": 459260683,
+  "openSessionAfterSoak": {
+    "ms": 1.371,
+    "replyBytes": 94674,
+    "entries": 200,
+    "hasOlder": true
+  },
+  "exitAfterStdinCloseMs": 12.77
+}
+wrote /home/jason/coding/pipkin/fixtures/native-bench/2026-10-11-positional-system/soak-1500.json
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 46.54s
+
+== binary sizes
+== done: /home/jason/coding/pipkin/fixtures/native-bench/2026-10-11-positional-system

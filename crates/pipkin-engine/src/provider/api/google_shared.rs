@@ -213,6 +213,9 @@ pub(crate) fn convert_messages(model: &Model, messages: &[Message]) -> Vec<Value
     let mut contents: Vec<Value> = Vec::new();
     for msg in &transformed {
         match msg {
+            Message::System(_) => {
+                unreachable!("Google system messages must be collapsed before conversion")
+            }
             Message::User { content, .. } => {
                 let parts: Vec<Value> = content
                     .iter()
@@ -420,6 +423,8 @@ pub(crate) fn build_body(
     req: &ProviderRequest,
     has_flash_lite_table: bool,
 ) -> Result<Value, String> {
+    let resolved = req.resolve_systems(false);
+    let req = resolved.as_ref();
     let model = &req.model;
     let contents = convert_messages(model, &req.messages);
     let mut generation = Map::new();

@@ -242,6 +242,7 @@ impl Builder<'_> {
             ts => ts,
         });
         match message {
+            Message::System(_) => {}
             Message::User { content, .. } => {
                 let (text, attachments) = chips_for(content);
                 self.push(
@@ -316,6 +317,7 @@ impl Builder<'_> {
             },
             // Settings changes are shown by the model and effort controls, not in the history.
             EntryKind::ModelChange { .. } | EntryKind::ThinkingChange { .. } => {}
+            EntryKind::Custom { custom_type, .. } if custom_type == "pi.system" => {},
             // Preserved but uninterpreted: say it is there, as the Pi mapping does.
             EntryKind::Custom { custom_type, .. } => {
                 self.unsupported += 1;

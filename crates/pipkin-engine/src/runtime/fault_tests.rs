@@ -318,7 +318,13 @@ fn delegating(
         if is_child {
             return child(req);
         }
-        let last_is_user = matches!(req.messages.last(), Some(Message::User { .. }));
+        let last_is_user = matches!(
+            req.messages
+                .iter()
+                .rev()
+                .find(|m| !matches!(m, Message::System(_))),
+            Some(Message::User { .. })
+        );
         if last_is_user {
             R::Tools(
                 None,

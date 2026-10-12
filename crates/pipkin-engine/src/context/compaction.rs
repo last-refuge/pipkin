@@ -84,6 +84,23 @@ fn json_len(value: &Value) -> usize {
 pub fn estimate_message_tokens(message: &Message) -> u64 {
     let mut chars = 0usize;
     match message {
+        Message::System(system) => {
+            let additions = if system.tools_added.is_empty() {
+                0
+            } else {
+                estimate_text_tokens(
+                    &serde_json::to_string(&system.tools_added).unwrap_or_default(),
+                )
+            };
+            let removals = if system.tools_removed.is_empty() {
+                0
+            } else {
+                estimate_text_tokens(
+                    &serde_json::to_string(&system.tools_removed).unwrap_or_default(),
+                )
+            };
+            return estimate_text_tokens(&super::system::text(system)) + additions + removals;
+        }
         Message::User { content, .. } | Message::ToolResult { content, .. } => {
             for block in content {
                 chars += match block {
@@ -374,6 +391,7 @@ pub fn serialize_for_summary(messages: &[Message]) -> String {
     let mut parts = Vec::new();
     for message in messages {
         match message {
+            Message::System(_) => {}
             Message::User { content, .. } => {
                 let text = text_of(content);
                 if !text.is_empty() {

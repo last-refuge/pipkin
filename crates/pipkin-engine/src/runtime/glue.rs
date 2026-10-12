@@ -18,12 +18,12 @@ pub fn model_messages(entries: &[Entry]) -> Vec<Message> {
 }
 
 /// The durable server's system prompt for a session.
-pub fn system_prompt(
+pub fn system_sections(
     cwd: &str,
     config_dir: &Path,
     tools: &[String],
     skill_paths: &[String],
-) -> (String, Vec<String>) {
+) -> (serde_json::Map<String, serde_json::Value>, Vec<String>) {
     let cwd_path = Path::new(cwd);
     let context_files = resources::load_context_files(cwd_path, config_dir);
     let (skills, warnings) = resources::load_skills(cwd_path, config_dir, skill_paths);
@@ -34,5 +34,11 @@ pub fn system_prompt(
         skills,
         docs_dir: None,
     };
-    (SystemPrompt::build(&input), warnings)
+    (
+        SystemPrompt::sections(&input)
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v.into()))
+            .collect(),
+        warnings,
+    )
 }

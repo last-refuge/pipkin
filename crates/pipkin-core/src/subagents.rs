@@ -175,11 +175,18 @@ impl SubagentState {
         }
         .unwrap_or(0);
         if keep == 0 {
+            // A refresh can replace the same newest page while an older read is in flight.
+            // Its cursor is still valid when the oldest visible item did not change.
+            let same_cursor = self.viewed == Some(child)
+                && !self.items.is_empty()
+                && self.items.first().map(|i| i.id) == page.first().map(|i| i.id);
             self.items = page;
             self.previews = self.previews_of(0..usize::MAX);
             self.has_older = has_older;
-            // A page in flight was asked against the replaced view; its answer is stale.
-            self.loading_older = None;
+            if !same_cursor {
+                // A genuinely replaced range invalidates the outstanding cursor.
+                self.loading_older = None;
+            }
         } else {
             self.items.truncate(keep);
             self.previews.truncate(keep);

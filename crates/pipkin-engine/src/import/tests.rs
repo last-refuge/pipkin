@@ -720,6 +720,7 @@ fn native_context(store: &Store, session: &str) -> Vec<Value> {
 fn texts(messages: &[Value]) -> Vec<String> {
     messages
         .iter()
+        .filter(|m| m["role"] != "system")
         .map(|m| {
             let role = m["role"].as_str().unwrap().to_owned();
             let text: String = m["content"]
@@ -1506,7 +1507,11 @@ fn project_native(m: &Value) -> (String, String, Vec<String>) {
 /// of the imported context: what it sent is exactly what the native engine would send, plus
 /// the answer the reference received afterwards.
 fn matches_last_request(requests: &Path, context: &[Value]) -> String {
-    let native: Vec<_> = context.iter().map(project_native).collect();
+    let native: Vec<_> = context
+        .iter()
+        .filter(|m| m["role"] != "system")
+        .map(project_native)
+        .collect();
     let mut last: Option<Vec<(String, String, Vec<String>)>> = None;
     for line in std::fs::read_to_string(requests).unwrap().lines() {
         let request: Value = serde_json::from_str(line).unwrap();

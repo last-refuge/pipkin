@@ -655,3 +655,33 @@ fn finished_history_pages_only_for_paged_engines_and_collapses_on_scope_change()
     s.dispatch(Command::SelectConversation(ConversationId(1)));
     assert_eq!(s.current().unwrap().subagents.history, 0);
 }
+
+#[test]
+fn an_identical_live_page_does_not_cancel_an_older_page_in_flight() {
+    let mut s = paged_child(100..200, true);
+    let before = load_older(&mut s);
+    s.apply_event(event(
+        &s,
+        EventKind::SubagentPage {
+            child: 10,
+            items: (100..200).map(entry).collect(),
+            live: true,
+            has_older: true,
+        },
+    ));
+    assert_eq!(s.current().unwrap().subagents.loading_older, Some(before));
+    s.apply_event(event(
+        &s,
+        EventKind::SubagentOlderPage {
+            child: 10,
+            before,
+            items: (0..100).map(entry).collect(),
+            has_older: false,
+        },
+    ));
+    let sub = &s.current().unwrap().subagents;
+    assert_eq!(sub.items.len(), 200);
+    assert_eq!(sub.items[0].id, ItemId(0));
+    assert!(sub.loading_older.is_none());
+    assert!(!sub.has_older);
+}

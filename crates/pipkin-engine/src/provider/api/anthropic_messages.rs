@@ -326,14 +326,46 @@ fn convert_messages(
     cache_control: Option<&Value>,
     allow_empty_signature: bool,
     managed_provider: Option<&str>,
-) -> (Vec<Value>, HashMap<usize, String>) {
+) -> Result<(Vec<Value>, HashMap<usize, String>), String> {
     let mut normalize = |id: &str, _: &Message| sanitize_tool_call_id(id);
     let transformed = transform_messages(&req.messages, &req.model, Some(&mut normalize));
     let mut params: Vec<Value> = Vec::new();
     let mut levels = HashMap::new();
+    let mut pending_systems = Vec::new();
     let mut i = 0;
     while i < transformed.len() {
         match &transformed[i] {
+            Message::System(system) => {
+                let text = crate::context::system::update_text(system);
+                let mut blocks = Vec::new();
+                if !text.is_empty() {
+                    blocks.push(json!({"type": "text", "text": text}));
+                }
+                if req
+                    .options
+                    .get("pipkin.systemNativeTools")
+                    .and_then(Value::as_bool)
+                    == Some(true)
+                {
+                    for removed in &system.tools_removed {
+                        if !system.tools_added.iter().any(|t| t.name == removed.name) {
+                            blocks.push(json!({"type": "tool_removal", "tool": {"type": "tool_reference", "name": wire_tool_name(req, &removed.name)}}));
+                        }
+                    }
+                    let mut addition_request = req.clone();
+                    addition_request.tools = system
+                        .tools_added
+                        .iter()
+                        .map(crate::provider::ToolSpec::from)
+                        .collect();
+                    for definition in convert_tools(&addition_request, &compat(&req.model), None)? {
+                        blocks.push(json!({"type": "tool_addition", "tool": {"type": "tool_definition", "definition": definition}}));
+                    }
+                }
+                if !blocks.is_empty() {
+                    pending_systems.push(json!({"role": "system", "content": blocks}));
+                }
+            }
             Message::User { content, .. } => {
                 let blocks: Vec<Value> = content
                     .iter()
@@ -358,6 +390,7 @@ fn convert_messages(
                 extra,
                 ..
             } => {
+                params.append(&mut pending_systems);
                 let mut blocks = Vec::new();
                 for block in content {
                     match block {
@@ -444,6 +477,7 @@ fn convert_messages(
         }
         i += 1;
     }
+    params.append(&mut pending_systems);
     if let Some(cc) = cache_control
         && let Some(last) = params.last_mut()
         && (last["role"] == "user" || last["role"] == "system")
@@ -457,7 +491,7 @@ fn convert_messages(
     {
         block["cache_control"] = cc.clone();
     }
-    (params, levels)
+    Ok((params, levels))
 }
 
 /// Per-turn effort messages for managed-effort models.
@@ -638,20 +672,27 @@ fn build_params(
     c: &Compat,
     thinking: &Thinking,
 ) -> Result<(Value, Vec<String>), String> {
+    let resolved = req.resolve_systems(c.supports_mid_convo_system_messages);
+    let req = resolved.as_ref();
     let model = &req.model;
     let cc = cache_control(req, c);
     // Native tool changes keep the request-level tool list fixed (plus a deferred placeholder
     // that keeps Anthropic's tool-change scaffolding in the cached prefix).
     let native_tools = c.supports_mid_convo_system_messages
         && c.supports_mid_convo_tool_changes
-        && !req.tools.is_empty();
+        && !req.tools.is_empty()
+        && req
+            .options
+            .get("pipkin.systemNativeTools")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
     let (messages, levels) = convert_messages(
         req,
         cc.as_ref(),
         c.allow_empty_signature,
         c.supports_mid_convo_effort
             .then_some(model.provider.as_str()),
-    );
+    )?;
     let active_effort = thinking.effort.clone().unwrap_or_else(|| "high".into());
     let betas = betas(req, c, thinking, native_tools);
     let mut p = Map::new();
@@ -1239,6 +1280,57 @@ mod tests {
             "cost": {"input": 3.0, "output": 15.0, "cacheRead": 0.3, "cacheWrite": 3.75},
             "compat": compat
         }))
+    }
+
+    #[test]
+    fn system_updates_and_native_tool_changes_follow_completed_tool_results() {
+        let mut req = request(claude(
+            "anthropic",
+            json!({"supportsMidConvoSystemMessages":true,"supportsMidConvoToolChanges":true}),
+        ));
+        req.system.clear();
+        req.messages = serde_json::from_value(json!([
+            {"role":"system","content":"","sections":{"p":"base"},"toolsAdded":[
+                {"name":"read","description":"old","parameters":{"type":"object"}},
+                {"name":"edit","description":"edit","parameters":{"type":"object"}}],"timestamp":1},
+            {"role":"user","content":[{"type":"text","text":"work"}],"timestamp":2},
+            {"role":"assistant","provider":"anthropic","api":"anthropic-messages","model":"claude-test","content":[{"type":"toolCall","id":"c","name":"read","arguments":{}}],"stopReason":"toolUse","timestamp":3},
+            {"role":"system","content":"","sections":{"p":"updated"},"toolsRemoved":[{"name":"read"},{"name":"edit"}],"toolsAdded":[{"name":"read","description":"new","parameters":{"type":"object"}}],"timestamp":4},
+            {"role":"toolResult","toolCallId":"c","toolName":"read","content":[{"type":"text","text":"done"}],"timestamp":5}
+        ])).unwrap();
+        let c = compat(&req.model);
+        let (body, _) = build_params(&req, &c, &plan_thinking(&req, &c)).unwrap();
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(
+            messages
+                .iter()
+                .map(|m| m["role"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["user", "assistant", "user", "system"]
+        );
+        assert_eq!(messages[2]["content"][0]["type"], "tool_result");
+        let update = &messages[3]["content"];
+        assert_eq!(
+            update[0]["text"],
+            "Updated system prompt section \"p\":\n\nupdated"
+        );
+        assert_eq!(update[1]["type"], "tool_removal");
+        assert_eq!(update[1]["tool"]["name"], "edit");
+        assert_eq!(update[2]["type"], "tool_addition");
+        assert_eq!(update[2]["tool"]["definition"]["description"], "new");
+        assert_eq!(
+            body["tools"][0]["description"], "old",
+            "initial declarations stay at the top"
+        );
+        req.model
+            .compat
+            .insert("supportsMidConvoSystemMessages".into(), json!(false));
+        let c = compat(&req.model);
+        let (body, _) = build_params(&req, &c, &plan_thinking(&req, &c)).unwrap();
+        assert_eq!(body["system"][0]["text"], "updated");
+        assert_eq!(body["tools"].as_array().unwrap().len(), 1);
+        assert_eq!(body["tools"][0]["description"], "new");
+        assert_eq!(body["messages"].as_array().unwrap().len(), 3);
     }
 
     fn read_tool() -> ToolSpec {

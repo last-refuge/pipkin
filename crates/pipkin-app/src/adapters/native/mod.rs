@@ -1764,6 +1764,45 @@ impl Live {
         }
     }
 
+    /// Skip pages containing only hidden system metadata, keeping the raw engine cursor.
+    /// Otherwise a child could appear empty or request the same invisible page forever.
+    fn child_history_page(
+        &mut self,
+        session: String,
+        child: u64,
+        mut before: Option<u64>,
+    ) -> Result<Reply, CallError> {
+        loop {
+            let reply = self.call(Call::SubagentHistory {
+                session: session.clone(),
+                child,
+                before,
+                limit: SUBAGENT_PAGE,
+            })?;
+            let Reply::Page { entries, has_older } = &reply else {
+                return Ok(reply);
+            };
+            if !has_older
+                || !transcript::map_entries(entries, &HashMap::new())
+                    .items
+                    .is_empty()
+            {
+                return Ok(reply);
+            }
+            let Some(next) = entries
+                .first()
+                .map(|e| e.id)
+                .filter(|id| before.is_none_or(|b| *id < b))
+            else {
+                return Err(CallError::Refused(ProtoError::new(
+                    ErrorCode::Invalid,
+                    "The child history cursor did not advance.",
+                )));
+            };
+            before = Some(next);
+        }
+    }
+
     fn load_child(
         &mut self,
         worker: &Worker,
@@ -1778,12 +1817,7 @@ impl Live {
             current.child_dirty = false;
             current.child_sync = Instant::now();
         }
-        match self.call(Call::SubagentHistory {
-            session,
-            child,
-            before: None,
-            limit: SUBAGENT_PAGE,
-        }) {
+        match self.child_history_page(session, child, None) {
             Ok(Reply::Page { entries, has_older }) => worker.emit(
                 conversation,
                 generation,
@@ -1842,12 +1876,7 @@ impl Live {
         let Some(entry) = transcript::entry_of_item(before) else {
             return fail("Earlier activity cannot be located for this entry.".into());
         };
-        match self.call(Call::SubagentHistory {
-            session,
-            child,
-            before: Some(entry),
-            limit: SUBAGENT_PAGE,
-        }) {
+        match self.child_history_page(session, child, Some(entry)) {
             Ok(Reply::Page { entries, has_older }) => worker.emit(
                 conversation,
                 generation,

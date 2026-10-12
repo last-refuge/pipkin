@@ -14,7 +14,7 @@ use super::openai_completions::{
     clamp_prompt_cache_key, client_api_key, copilot_headers, sdk_error,
 };
 use super::openai_responses_shared::{
-    apply_reasoning, apply_service_tier_pricing, convert_messages, convert_tools, exchange,
+    apply_reasoning, apply_service_tier_pricing, convert_request_messages, convert_tools, exchange,
     service_tier_multiplier,
 };
 use crate::provider::{ApiAdapter, BoxFuture, CacheRetention, ProviderRequest, StreamCtx};
@@ -90,6 +90,9 @@ fn is_chatgpt_sign_in(req: &ProviderRequest) -> bool {
 
 /// The request body (reference `buildParams`).
 pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Result<Value, String> {
+    let resolved =
+        req.resolve_systems(req.model.compat_bool("supportsMidConvoSystemMessages") == Some(true));
+    let req = resolved.as_ref();
     let model = &req.model;
     let retention = req.cache_retention;
     let omit = is_chatgpt_sign_in(req);
@@ -97,12 +100,7 @@ pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Result<Value, Str
     p.insert("model".into(), json!(model.id));
     p.insert(
         "input".into(),
-        Value::Array(convert_messages(
-            model,
-            Some(&req.system),
-            &req.messages,
-            TOOL_CALL_PROVIDERS,
-        )?),
+        Value::Array(convert_request_messages(req, true, TOOL_CALL_PROVIDERS)?),
     );
     p.insert("stream".into(), json!(true));
     p.insert("store".into(), json!(false));
@@ -250,6 +248,54 @@ mod tests {
 
     fn body(req: &ProviderRequest) -> Value {
         build_params(req, &Compat::resolve(req)).unwrap()
+    }
+
+    #[test]
+    fn positional_sections_and_tool_anchors_follow_transport_capabilities() {
+        let mut req = request(model());
+        req.system.clear();
+        req.model
+            .compat
+            .insert("supportsMidConvoSystemMessages".into(), json!(true));
+        req.model
+            .compat
+            .insert("supportsAdditionalTools".into(), json!(true));
+        req.messages = vec![
+            serde_json::from_value(json!({"role":"system","content":"", "sections":{"p":"base"}, "toolsAdded":[{"name":"read","description":"read","parameters":{"type":"object"}}],"timestamp":1})).unwrap(),
+            Message::user_text("work", 2),
+            serde_json::from_value(json!({"role":"system","content":"", "sections":{"p":"updated"}, "toolsAdded":[{"name":"write","description":"write","parameters":{"type":"object"}}],"timestamp":3})).unwrap(),
+        ];
+        let b = body(&req);
+        assert_eq!(b["tools"].as_array().unwrap().len(), 1);
+        assert_eq!(b["tools"][0]["name"], "read");
+        assert_eq!(b["input"][0]["content"], "base");
+        assert_eq!(b["input"][2]["type"], "additional_tools");
+        assert_eq!(b["input"][2]["tools"][0]["name"], "write");
+        assert_eq!(
+            b["input"][3]["content"],
+            "Updated system prompt section \"p\":\n\nupdated"
+        );
+        req.model
+            .compat
+            .insert("supportsAdditionalTools".into(), json!(false));
+        req.model
+            .compat
+            .insert("supportsToolSearch".into(), json!(true));
+        let searched = body(&req);
+        assert_eq!(searched["input"][2]["type"], "tool_search_call");
+        assert_eq!(searched["input"][3]["type"], "tool_search_output");
+        assert_eq!(searched["input"][3]["tools"][0]["defer_loading"], true);
+        assert_eq!(
+            searched["input"][2]["call_id"],
+            searched["input"][3]["call_id"]
+        );
+        req.model
+            .compat
+            .insert("supportsMidConvoSystemMessages".into(), json!(false));
+        let collapsed = body(&req);
+        assert_eq!(collapsed["input"].as_array().unwrap().len(), 2);
+        assert_eq!(collapsed["input"][0]["content"], "updated");
+        assert_eq!(collapsed["tools"].as_array().unwrap().len(), 2);
     }
 
     fn reasoning_item() -> Value {

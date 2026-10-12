@@ -1,0 +1,42 @@
+{
+  "binaries": [
+    {
+      "binary": "pipkin-engine",
+      "present": true,
+      "unstrippedBytes": 101319824,
+      "strippedBytes": 16951168,
+      "strippedGzip9Bytes": 6787723,
+      "strippedXz6Bytes": 4947424,
+      "strippedZstd19Bytes": 5330184,
+      "dynamicLibraries": [
+        "/lib64/ld-linux-x86-64.so.2",
+        "libc.so.6",
+        "libgcc_s.so.1",
+        "libm.so.6",
+        "linux-vdso.so.1"
+      ]
+    },
+    {
+      "binary": "pipkin",
+      "present": true,
+      "unstrippedBytes": 343792352,
+      "strippedBytes": 53369560,
+      "strippedGzip9Bytes": 21445395,
+      "strippedXz6Bytes": 15000328,
+      "strippedZstd19Bytes": 16209813,
+      "dynamicLibraries": [
+        "/lib64/ld-linux-x86-64.so.2",
+        "libXau.so.6",
+        "libXdmcp.so.6",
+        "libc.so.6",
+        "libgcc_s.so.1",
+        "libm.so.6",
+        "libxcb-xkb.so.1",
+        "libxcb.so.1",
+        "libxkbcommon-x11.so.0",
+        "libxkbcommon.so.0",
+        "linux-vdso.so.1"
+      ]
+    }
+  ]
+}

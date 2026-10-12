@@ -100,6 +100,7 @@ pub fn notice(id: EntryId) -> Entry {
 /// `role:text` (results as `result:<id>:<text>`), like the reference's `describeMessage`.
 pub fn describe(message: &Message) -> String {
     match message {
+        Message::System(system) => format!("system:{}", crate::context::system::text(system)),
         Message::User { .. } => format!("user:{}", message.text()),
         Message::Assistant { .. } => format!("assistant:{}", message.text()),
         Message::ToolResult {

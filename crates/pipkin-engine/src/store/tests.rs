@@ -724,3 +724,32 @@ fn a_v2_database_is_backed_up_before_adding_the_outbox() {
         1
     );
 }
+
+#[test]
+fn a_v3_database_is_backed_up_before_positional_system_bodies_are_written() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let s = Store::open(dir.path()).unwrap();
+        session(&s, "old");
+        s.tx(|tx| {
+            tx.execute_batch("PRAGMA user_version = 3")?;
+            Ok(())
+        })
+        .unwrap();
+    }
+    let s = Store::open(dir.path()).unwrap();
+    assert_eq!(s.read(schema::version).unwrap(), 4);
+    let backup = Connection::open_with_flags(
+        dir.path().join("engine.sqlite.v3.bak"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    assert_eq!(schema::version(&backup).unwrap(), 3);
+    assert_eq!(
+        backup
+            .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get::<_, u64>(0))
+            .unwrap(),
+        1
+    );
+    assert!(s.session("old").unwrap().is_some());
+}

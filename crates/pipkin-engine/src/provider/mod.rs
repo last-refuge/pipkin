@@ -43,6 +43,26 @@ pub struct ToolSpec {
     pub parameters: Value,
 }
 
+impl From<&pipkin_engine_protocol::ToolDeclaration> for ToolSpec {
+    fn from(t: &pipkin_engine_protocol::ToolDeclaration) -> Self {
+        Self {
+            name: t.name.clone(),
+            description: t.description.clone(),
+            parameters: t.parameters.clone(),
+        }
+    }
+}
+impl From<&ToolSpec> for pipkin_engine_protocol::ToolDeclaration {
+    fn from(t: &ToolSpec) -> Self {
+        Self {
+            name: t.name.clone(),
+            description: t.description.clone(),
+            parameters: t.parameters.clone(),
+            constrained_sampling: None,
+        }
+    }
+}
+
 /// How long a provider should keep a prompt cache.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CacheRetention {
@@ -101,7 +121,7 @@ pub const ISOLATED_ENV: &str = "pipkin.isolatedEnv";
 #[derive(Clone, Debug)]
 pub struct ProviderRequest {
     pub model: Model,
-    /// The flat system prompt.
+    /// Compatibility leading prompt. Durable runtime uses positional system messages.
     pub system: String,
     /// Context messages, already filtered and ordered (tool results follow their calls).
     pub messages: Vec<Message>,
@@ -125,6 +145,74 @@ pub struct ProviderRequest {
 }
 
 impl ProviderRequest {
+    /// Resolve positional systems only at the transport boundary. The durable transcript
+    /// remains unchanged; incapable transports receive the replayed current prompt.
+    pub fn resolve_systems(&self, mid_conversation: bool) -> std::borrow::Cow<'_, Self> {
+        use crate::context::system;
+        use pipkin_engine_protocol::{SystemContent, SystemMessage};
+        if !self
+            .messages
+            .iter()
+            .any(|m| matches!(m, Message::System(_)))
+        {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let mut resolved = self.clone();
+        let mut messages = std::mem::take(&mut resolved.messages);
+        if !self.system.is_empty() {
+            messages.insert(
+                0,
+                Message::System(SystemMessage {
+                    content: SystemContent::Text(self.system.clone()),
+                    ..Default::default()
+                }),
+            );
+        }
+        if !mid_conversation {
+            messages = system::collapse_owned(messages);
+        }
+        resolved.system.clear();
+        resolved.tools = system::tools(&messages)
+            .iter()
+            .map(ToolSpec::from)
+            .collect();
+        let initial = match messages.first() {
+            Some(Message::System(head)) => head.tools_added.as_slice(),
+            _ => &[],
+        };
+        let native_tools = mid_conversation
+            && self.model.api == "anthropic-messages"
+            && self.model.compat_bool("supportsMidConvoToolChanges") == Some(true)
+            && !initial.is_empty();
+        let additions = mid_conversation
+            && ((self.model.api == "openai-completions"
+                && self.model.compat_bool("supportsMidConvoToolAdditions") == Some(true))
+                || (matches!(
+                    self.model.api.as_str(),
+                    "openai-responses" | "azure-openai-responses" | "openai-codex-responses"
+                ) && (self.model.compat_bool("supportsAdditionalTools") == Some(true)
+                    || self.model.compat_bool("supportsToolSearch") == Some(true))))
+            && system::additive_tools(&messages);
+        resolved
+            .options
+            .insert("pipkin.systemNativeTools".into(), native_tools.into());
+        resolved
+            .options
+            .insert("pipkin.systemToolAdditions".into(), additions.into());
+        if native_tools || additions {
+            resolved.tools = initial.iter().map(ToolSpec::from).collect();
+        }
+        if let Some(Message::System(head)) = messages.first() {
+            resolved
+                .options
+                .insert("pipkin.leadingSystem".into(), true.into());
+            resolved.system = system::text(head);
+            messages.remove(0);
+        }
+        resolved.messages = messages;
+        std::borrow::Cow::Owned(resolved)
+    }
+
     pub fn base_url(&self) -> &str {
         self.base_url.as_deref().unwrap_or(&self.model.base_url)
     }

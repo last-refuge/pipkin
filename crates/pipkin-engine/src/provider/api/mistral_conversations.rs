@@ -144,6 +144,12 @@ fn wire_messages(req: &ProviderRequest, messages: &[Message]) -> Vec<Value> {
     }
     for msg in messages {
         match msg {
+            Message::System(system) => {
+                let text = crate::context::system::update_text(system);
+                if !text.is_empty() {
+                    out.push(json!({"role": "system", "content": text}));
+                }
+            }
             Message::User { content, .. } => {
                 let had_images = content.iter().any(|b| matches!(b, Block::Image { .. }));
                 let chunks: Vec<Value> = content
@@ -296,6 +302,9 @@ fn reasoning_controls(model: &Model, level: ThinkingLevel) -> (Option<String>, O
 
 /// The wire body (snake_case), as sent.
 pub(crate) fn build_payload(req: &ProviderRequest) -> Value {
+    let resolved =
+        req.resolve_systems(req.model.compat_bool("supportsMidConvoSystemMessages") == Some(true));
+    let req = resolved.as_ref();
     let mut ids = tool_call_id_normalizer();
     let mut normalize = |id: &str, _: &Message| ids(id);
     let messages = transform_messages(&req.messages, &req.model, Some(&mut normalize));

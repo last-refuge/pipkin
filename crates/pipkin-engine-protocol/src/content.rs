@@ -82,6 +82,84 @@ impl Block {
     }
 }
 
+/// System content preserves both reference wire representations.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SystemContent {
+    Text(String),
+    Blocks(Vec<Block>),
+}
+
+impl Default for SystemContent {
+    fn default() -> Self {
+        Self::Text(String::new())
+    }
+}
+
+impl SystemContent {
+    pub fn text(&self) -> String {
+        match self {
+            Self::Text(text) => text.clone(),
+            Self::Blocks(blocks) => blocks
+                .iter()
+                .filter_map(|b| match b {
+                    Block::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        }
+    }
+}
+
+/// Ordered section patch and tool declarations at one position in model history.
+/// Sections set in place, null removes, and a removed/re-added section moves to the end.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemMessage {
+    #[serde(default)]
+    pub content: SystemContent,
+    #[serde(
+        default,
+        skip_serializing_if = "Map::is_empty",
+        deserialize_with = "system_sections"
+    )]
+    pub sections: Map<String, Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools_removed: Vec<ToolReference>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools_added: Vec<ToolDeclaration>,
+    #[serde(default)]
+    pub timestamp: i64,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+fn system_sections<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Map<String, Value>, D::Error> {
+    let sections = Map::<String, Value>::deserialize(d)?;
+    if sections.values().any(|v| !v.is_null() && !v.is_string()) {
+        return Err(serde::de::Error::custom(
+            "system sections must be strings or null",
+        ));
+    }
+    Ok(sections)
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolDeclaration {
+    pub name: String,
+    pub description: String,
+    pub parameters: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constrained_sampling: Option<Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ToolReference {
+    pub name: String,
+}
+
 /// Token and cost accounting for one assistant message, as the provider reported it.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -163,6 +241,7 @@ pub enum StopReason {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "camelCase")]
 pub enum Message {
+    System(SystemMessage),
     User {
         content: Vec<Block>,
         /// Unix milliseconds.
@@ -220,6 +299,10 @@ impl Message {
 
     pub fn content(&self) -> &[Block] {
         match self {
+            Message::System(system) => match &system.content {
+                SystemContent::Blocks(blocks) => blocks,
+                SystemContent::Text(_) => &[],
+            },
             Message::User { content, .. }
             | Message::Assistant { content, .. }
             | Message::ToolResult { content, .. } => content,
@@ -228,6 +311,7 @@ impl Message {
 
     pub fn timestamp(&self) -> i64 {
         match self {
+            Message::System(system) => system.timestamp,
             Message::User { timestamp, .. }
             | Message::Assistant { timestamp, .. }
             | Message::ToolResult { timestamp, .. } => *timestamp,
@@ -236,6 +320,9 @@ impl Message {
 
     /// Concatenated text blocks.
     pub fn text(&self) -> String {
+        if let Message::System(system) = self {
+            return system.content.text();
+        }
         let mut out = String::new();
         for block in self.content() {
             if let Block::Text { text, .. } = block {
@@ -277,6 +364,20 @@ pub struct ImageInput {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn system_sections_preserve_order_and_reject_invalid_patch_values() {
+        let raw =
+            r#"{"role":"system","content":"","sections":{"z":"Z","a":null,"b":"B"},"timestamp":1}"#;
+        let m: Message = serde_json::from_str(raw).unwrap();
+        assert_eq!(serde_json::to_string(&m).unwrap(), raw);
+        assert!(
+            serde_json::from_str::<Message>(
+                r#"{"role":"system","content":"","sections":{"a":42}}"#
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn usage_optional_subsets_round_trip_and_accumulate_without_double_counting() {

@@ -85,7 +85,7 @@ pub(crate) fn copilot_headers(messages: &[Message]) -> Vec<(&'static str, String
         Message::User { content, .. } | Message::ToolResult { content, .. } => {
             content.iter().any(|b| matches!(b, Block::Image { .. }))
         }
-        Message::Assistant { .. } => false,
+        Message::Assistant { .. } | Message::System(_) => false,
     });
     if has_images {
         out.push(("Copilot-Vision-Request", "true".to_owned()));
@@ -430,7 +430,7 @@ fn has_tool_history(messages: &[Message]) -> bool {
         Message::Assistant { content, .. } => {
             content.iter().any(|b| matches!(b, Block::ToolCall { .. }))
         }
-        Message::User { .. } => false,
+        Message::User { .. } | Message::System(_) => false,
     })
 }
 
@@ -517,6 +517,22 @@ pub fn convert_messages(req: &ProviderRequest, compat: &Compat) -> Vec<Value> {
             );
         }
         match msg {
+            Message::System(system) => {
+                if req
+                    .options
+                    .get("pipkin.systemToolAdditions")
+                    .and_then(Value::as_bool)
+                    == Some(true)
+                    && !system.tools_added.is_empty()
+                {
+                    let tools: Vec<_> = system.tools_added.iter().map(ToolSpec::from).collect();
+                    params.push(json!({"role": "system", "tools": convert_tools(&tools, compat)}));
+                }
+                let text = crate::context::system::update_text(system);
+                if !text.is_empty() {
+                    params.push(json!({"role": instruction_role, "content": text}));
+                }
+            }
             Message::User { content, .. } => {
                 let parts: Vec<Value> = content
                     .iter()
@@ -827,6 +843,9 @@ fn template_values(
 
 /// The full request body (reference `buildParams`).
 pub fn build_params(req: &ProviderRequest, compat: &Compat) -> Value {
+    let resolved =
+        req.resolve_systems(req.model.compat_bool("supportsMidConvoSystemMessages") == Some(true));
+    let req = resolved.as_ref();
     let model = &req.model;
     let retention = req.cache_retention;
     let effort = reasoning_effort(req);
@@ -1712,6 +1731,37 @@ pub(crate) mod tests {
     }
 
     // ----- request bodies -----
+
+    #[test]
+    fn positional_tool_additions_are_anchored_and_removals_fall_back_to_current_tools() {
+        let mut req = request(openai_model());
+        req.system.clear();
+        req.model
+            .compat
+            .insert("supportsMidConvoSystemMessages".into(), json!(true));
+        req.model
+            .compat
+            .insert("supportsMidConvoToolAdditions".into(), json!(true));
+        req.messages = serde_json::from_value(json!([
+            {"role":"system","content":"base", "toolsAdded":[{"name":"read","description":"read","parameters":{"type":"object"}}]},
+            {"role":"user","content":[{"type":"text","text":"work"}]},
+            {"role":"system","content":"changed", "toolsAdded":[{"name":"write","description":"write","parameters":{"type":"object"}}]}
+        ])).unwrap();
+        let b = body(&req);
+        assert_eq!(b["tools"].as_array().unwrap().len(), 1);
+        assert_eq!(b["messages"][2]["tools"][0]["function"]["name"], "write");
+        assert_eq!(b["messages"][3]["content"], "changed");
+        if let Message::System(s) = &mut req.messages[2] {
+            s.tools_removed.push(pipkin_engine_protocol::ToolReference {
+                name: "read".into(),
+            });
+        }
+        let b = body(&req);
+        assert_eq!(b["tools"].as_array().unwrap().len(), 1);
+        assert_eq!(b["tools"][0]["function"]["name"], "write");
+        assert_eq!(b["messages"].as_array().unwrap().len(), 3);
+        assert!(b["messages"][2].get("tools").is_none());
+    }
 
     #[test]
     fn openai_profile_full_request() {

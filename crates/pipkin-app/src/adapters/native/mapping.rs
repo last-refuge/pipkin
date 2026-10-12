@@ -421,7 +421,7 @@ pub fn changed_paths<'a>(entries: impl IntoIterator<Item = &'a Entry>, after: u6
                     paths.insert(path.to_owned());
                 }
             }
-            Message::User { .. } => {}
+            Message::User { .. } | Message::System(_) => {}
         }
     }
     paths.into_iter().collect()

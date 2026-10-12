@@ -16,7 +16,9 @@ use serde_json::{Map, Value, json};
 use super::common::{base_max_tokens, build_headers, opt_str, reasoning_effort};
 use super::openai_completions::{clamp_prompt_cache_key, sdk_error};
 use super::openai_responses::MIN_OUTPUT_TOKENS;
-use super::openai_responses_shared::{apply_reasoning, convert_messages, convert_tools, exchange};
+use super::openai_responses_shared::{
+    apply_reasoning, convert_request_messages, convert_tools, exchange,
+};
 use crate::provider::{ApiAdapter, BoxFuture, ProviderRequest, StreamCtx};
 
 pub const API: &str = "azure-openai-responses";
@@ -124,18 +126,16 @@ pub fn resolve_config(req: &ProviderRequest) -> Result<(String, String), String>
 
 /// The request body (reference `buildParams`).
 pub fn build_params(req: &ProviderRequest) -> Result<Value, String> {
+    let resolved =
+        req.resolve_systems(req.model.compat_bool("supportsMidConvoSystemMessages") == Some(true));
+    let req = resolved.as_ref();
     let model = &req.model;
     let strict = model.compat_bool("supportsStrictMode").unwrap_or(true);
     let mut p = Map::new();
     p.insert("model".into(), json!(deployment_name(req)));
     p.insert(
         "input".into(),
-        Value::Array(convert_messages(
-            model,
-            Some(&req.system),
-            &req.messages,
-            TOOL_CALL_PROVIDERS,
-        )?),
+        Value::Array(convert_request_messages(req, true, TOOL_CALL_PROVIDERS)?),
     );
     p.insert("stream".into(), json!(true));
     p.insert("store".into(), json!(false));
