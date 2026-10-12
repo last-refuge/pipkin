@@ -22,6 +22,68 @@ fn cut_index(entries: &[Entry], keep: u64) -> Option<usize> {
 }
 
 #[test]
+fn context_estimates_and_ordering_match_executed_pi_reference() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../fixtures/native-context-estimate/reference.json"
+    ))
+    .unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let entries: Vec<Entry> = serde_json::from_value(case["entries"].clone()).unwrap();
+        let extra: Vec<Message> = serde_json::from_value(case["extra"].clone()).unwrap();
+        let ordered: Vec<Message> = serde_json::from_value(case["ordered"].clone()).unwrap();
+        assert_eq!(
+            estimate_context(&entries, &extra),
+            case["expected"].as_u64().unwrap(),
+            "{}",
+            case["name"]
+        );
+        assert_eq!(
+            derive::model_messages(&entries),
+            ordered,
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn estimates_borrowed_history_after_measured_usage_with_repeated_and_missing_results() {
+    let repeated = tool_result("same", &"x".repeat(65536));
+    let e = entries(vec![
+        user(&"old history".repeat(65536)),
+        assistant_with(
+            "calls",
+            &["same", "same", "missing"],
+            StopReason::ToolUse,
+            123,
+        ),
+        repeated,
+        tool_result("same", "ignored duplicate"),
+        user("next"),
+    ]);
+    let extra = user("extra");
+    let missing_tokens = estimate_message_tokens(&derive::missing_result("missing", "read", 0));
+    assert_eq!(
+        estimate_context(&e, &[extra]),
+        123 + 2 * 16384 + missing_tokens + 1 + 2
+    );
+    // Without measured usage the whole retained range is still estimated, with exactly
+    // the same derived ordering and missing-result semantics as the model context.
+    let mut unmeasured = e;
+    if let EntryKind::Message {
+        message: Message::Assistant { usage, .. },
+        ..
+    } = &mut unmeasured[1].kind
+    {
+        *usage = Default::default();
+    }
+    assert_eq!(
+        context_tokens(&unmeasured),
+        estimate_tokens(&derive::model_messages(&unmeasured))
+    );
+}
+
+#[test]
 fn keeps_about_keep_recent_tokens_and_cuts_at_the_first_candidate_after_the_budget() {
     let e = entries(vec![
         user(&text("1", 10)),

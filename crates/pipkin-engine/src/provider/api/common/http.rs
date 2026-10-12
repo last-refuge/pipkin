@@ -63,7 +63,9 @@ pub(crate) async fn post_json_observing(
     if !headers.contains_key(CONTENT_TYPE) {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     }
-    let bytes = serde_json::to_vec(body).map_err(|e| e.to_string())?;
+    // Requests and retries share immutable encoded bytes instead of copying the entire
+    // growing conversation into a fresh Vec for each HTTP attempt.
+    let bytes = bytes::Bytes::from(serde_json::to_vec(body).map_err(|e| e.to_string())?);
     let (retries, max_delay) = retry_policy(ctx.req);
     let send = http::send_observing(
         || {

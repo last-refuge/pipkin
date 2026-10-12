@@ -144,7 +144,12 @@ pub fn context_tokens(entries: &[Entry]) -> u64 {
 /// Assistants of entries kept from before a compaction (ids below the marker's) do not count:
 /// their usage measured the history the summary replaced.
 pub fn estimate_context(entries: &[Entry], extra: &[Message]) -> u64 {
-    let contributions = derive::contributions(entries);
+    let has_head = entries.first().is_some_and(derive::is_head_marker);
+    let contributions: Vec<_> = entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| derive::borrowed_contribution(entry, has_head && index == 0))
+        .collect();
     let after = entries
         .first()
         .filter(|entry| derive::is_head_marker(entry))
@@ -160,7 +165,7 @@ pub fn estimate_context(entries: &[Entry], extra: &[Message]) -> u64 {
                 .iter()
                 .enumerate()
                 .rev()
-                .find_map(|(position, message)| match message {
+                .find_map(|(position, message)| match message.as_ref() {
                     Message::Assistant { usage, .. } if calculate_context_tokens(usage) > 0 => {
                         Some((index, position, calculate_context_tokens(usage)))
                     }
@@ -177,12 +182,11 @@ pub fn estimate_context(entries: &[Entry], extra: &[Message]) -> u64 {
     let mut origin = Vec::new();
     for (index, messages) in contributions.iter().enumerate() {
         for (position, message) in messages.iter().enumerate() {
-            flat.push(message.clone());
+            flat.push(message.as_ref());
             origin.push((index, position));
         }
     }
     let slots = derive::order_slots(&flat);
-    let messages = derive::materialize(&flat, &slots);
     let (from, mut tokens) = match measured {
         Some((index, position, tokens)) => {
             let at = slots
@@ -193,7 +197,16 @@ pub fn estimate_context(entries: &[Entry], extra: &[Message]) -> u64 {
         }
         None => (0, 0),
     };
-    tokens += estimate_tokens(&messages[from..]);
+    for slot in &slots[from..] {
+        tokens += match slot {
+            Slot::Input(index) => estimate_message_tokens(flat[*index]),
+            Slot::Missing {
+                call_id,
+                tool_name,
+                timestamp,
+            } => estimate_message_tokens(&derive::missing_result(call_id, tool_name, *timestamp)),
+        };
+    }
     tokens += estimate_tokens(extra);
     tokens
 }

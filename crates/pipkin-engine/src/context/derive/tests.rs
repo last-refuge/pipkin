@@ -12,6 +12,33 @@ fn described(entries: &[Entry]) -> Vec<String> {
 }
 
 #[test]
+fn owned_ordering_preserves_repeated_call_results_and_drops_unmatched_results() {
+    let result = tool_result("same", &"large result\n".repeat(8192));
+    let call = assistant("calls", &["same", "same", "missing"]);
+    let next = assistant("later call", &["same"]);
+    let later = tool_result("same", "later result");
+    let actual = order_tool_results(vec![
+        tool_result("orphan", "must not enter context"),
+        call.clone(),
+        result.clone(),
+        tool_result("same", "ignored second result"),
+        next.clone(),
+        later.clone(),
+    ]);
+    assert_eq!(
+        actual,
+        vec![
+            call,
+            result.clone(),
+            result,
+            missing_result("missing", "read", 0),
+            next,
+            later,
+        ]
+    );
+}
+
+#[test]
 fn whole_transcript_without_a_head_and_display_entries_contribute_nothing() {
     let entries = vec![
         message(1, user("hi")),

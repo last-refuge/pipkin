@@ -42,7 +42,9 @@ const FLUSH_BYTES: usize = 16 * 1024;
 
 /// A request ready to send, with what it was built from.
 pub(super) struct Prepared {
-    pub req: ProviderRequest,
+    /// Resolved transport/options without messages. Generation derives the model context;
+    /// compaction estimates the raw entries or supplies its own summary request instead.
+    pub request_template: ProviderRequest,
     pub adapter: Arc<dyn crate::provider::ApiAdapter>,
     pub model: crate::provider::Model,
     /// The session's settings, with compaction's per-model overrides already applied.
@@ -359,13 +361,16 @@ impl Shared {
         cancel: &CancellationToken,
     ) -> Result<(), Option<RunOutcome>> {
         let Prepared {
-            req,
+            request_template: mut req,
             adapter,
             model,
             http,
             net,
+            entries,
             ..
         } = self.prepare(sess).await?;
+        req.messages = super::glue::model_messages(&entries);
+        drop(entries);
         let _permit = tokio::select! {
             p = self.generations.clone().acquire_owned() => p.ok(),
             _ = cancel.cancelled() => return Ok(()),
@@ -462,7 +467,8 @@ impl Shared {
         }
     }
 
-    /// Resolve the model, adapter, credential and context for the next request.
+    /// Resolve transport/options and the raw context range. Do not construct a second
+    /// copy of history until the caller actually needs outbound model messages.
     pub(super) async fn prepare(
         self: &Arc<Self>,
         sess: &Arc<SessionRt>,
@@ -566,7 +572,6 @@ impl Shared {
             }
             entries.extend(appended);
         }
-        let messages = super::glue::model_messages(&entries);
         let system = String::new();
         let thinking = row
             .thinking
@@ -597,7 +602,7 @@ impl Shared {
         let mut req = ProviderRequest {
             model: model.clone(),
             system,
-            messages,
+            messages: Vec::new(),
             tools: specs,
             thinking,
             session_id: provider_session,
@@ -639,7 +644,7 @@ impl Shared {
             }
         }
         Ok(Prepared {
-            req,
+            request_template: req,
             adapter,
             model,
             settings,

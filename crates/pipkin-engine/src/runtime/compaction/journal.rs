@@ -255,7 +255,7 @@ impl Shared {
                         )?;
                         continue;
                     };
-                    let mut req = prepared.req;
+                    let mut req = prepared.request_template;
                     req.system = algo::SUMMARIZATION_SYSTEM_PROMPT.into();
                     req.messages = vec![Message::User {
                         content: vec![Block::text(algo::summary_request(

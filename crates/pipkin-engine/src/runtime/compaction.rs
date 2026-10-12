@@ -111,7 +111,7 @@ impl Shared {
             return false;
         };
         let tokens = algo::context_tokens(&prepared.entries)
-            + algo::estimate_text_tokens(&prepared.req.system);
+            + algo::estimate_text_tokens(&prepared.request_template.system);
         let tail = prepared.entries.last().map_or(0, |e| e.id);
         let threshold = algo::threshold_compaction(
             tokens,

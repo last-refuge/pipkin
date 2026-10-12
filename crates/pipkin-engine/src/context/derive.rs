@@ -17,6 +17,7 @@
 
 use pipkin_engine_protocol::{Block, Entry, EntryKind, Message, StopReason};
 use serde_json::{Map, Value, json};
+use std::borrow::{Borrow, Cow};
 
 /// Text of a tool result synthesized for a call whose result is not in the context.
 pub const MISSING_RESULT_TEXT: &str =
@@ -52,6 +53,15 @@ fn excluded(message: &Message) -> bool {
 /// What one entry contributes to the model context. `head` says whether the entry is the
 /// range's head marker (index 0 of the context entries).
 pub fn contribution(entry: &Entry, head: bool) -> Vec<Message> {
+    borrowed_contribution(entry, head)
+        .into_iter()
+        .map(Cow::into_owned)
+        .collect()
+}
+
+/// Estimation can inspect ordinary messages without copying their content. Only derived
+/// summaries and legacy system records require a new message.
+pub(crate) fn borrowed_contribution(entry: &Entry, head: bool) -> Vec<Cow<'_, Message>> {
     if entry.retired {
         return vec![];
     }
@@ -62,15 +72,15 @@ pub fn contribution(entry: &Entry, head: bool) -> Vec<Message> {
             if *partial {
                 vec![]
             } else {
-                vec![message.clone()]
+                vec![Cow::Borrowed(message)]
             }
         }
-        EntryKind::Compaction { summary, .. } if head => vec![Message::User {
+        EntryKind::Compaction { summary, .. } if head => vec![Cow::Owned(Message::User {
             content: vec![Block::text(summary_message_text(summary))],
             timestamp: entry.at_ms,
             extra: Map::new(),
-        }],
-        EntryKind::Reset { handoff } if head => handoff.iter().cloned().collect(),
+        })],
+        EntryKind::Reset { handoff } if head => handoff.iter().map(Cow::Borrowed).collect(),
         // Legacy native imports kept pi.system in its original record. Replay it too.
         EntryKind::Custom { custom_type, data } if custom_type == "pi.system" => data
             .get("model")
@@ -79,6 +89,7 @@ pub fn contribution(entry: &Entry, head: bool) -> Vec<Message> {
             .flatten()
             .filter_map(|m| serde_json::from_value::<Message>(m.clone()).ok())
             .filter(|m| matches!(m, Message::System(_)))
+            .map(Cow::Owned)
             .collect(),
         _ => vec![],
     };
@@ -139,9 +150,10 @@ pub(crate) enum Slot {
 }
 
 /// `orderToolResults` over indices, so callers can trace a derived message to its source.
-pub(crate) fn order_slots(messages: &[Message]) -> Vec<Slot> {
+pub(crate) fn order_slots(messages: &[impl Borrow<Message>]) -> Vec<Slot> {
     let mut ordered = Vec::new();
     for (index, message) in messages.iter().enumerate() {
+        let message = message.borrow();
         if matches!(message, Message::ToolResult { .. }) {
             continue;
         }
@@ -156,7 +168,7 @@ pub(crate) fn order_slots(messages: &[Message]) -> Vec<Slot> {
         // The first result per call id among the messages before the next assistant.
         let mut results: Vec<(&str, usize)> = Vec::new();
         for (next, candidate) in messages.iter().enumerate().skip(index + 1) {
-            match candidate {
+            match candidate.borrow() {
                 Message::Assistant { .. } => break,
                 Message::ToolResult { tool_call_id, .. } => {
                     if !results.iter().any(|(id, _)| id == tool_call_id) {
@@ -194,11 +206,33 @@ pub fn missing_result(call_id: &str, tool_name: &str, timestamp: i64) -> Message
     }
 }
 
-pub(crate) fn materialize(messages: &[Message], slots: &[Slot]) -> Vec<Message> {
+fn materialize_owned(messages: Vec<Message>, slots: &[Slot]) -> Vec<Message> {
+    // Malformed/replayed history can repeat a call id within one assistant. The same
+    // first result then occupies several slots; clone only those repeated uses and move
+    // the final use. The normal path transfers every message without copying its text.
+    let mut uses = vec![0usize; messages.len()];
+    for slot in slots {
+        if let Slot::Input(index) = slot {
+            uses[*index] += 1;
+        }
+    }
+    let mut messages: Vec<_> = messages.into_iter().map(Some).collect();
     slots
         .iter()
         .map(|slot| match slot {
-            Slot::Input(index) => messages[*index].clone(),
+            Slot::Input(index) => {
+                uses[*index] -= 1;
+                if uses[*index] == 0 {
+                    messages[*index]
+                        .take()
+                        .expect("last use of ordered message")
+                } else {
+                    messages[*index]
+                        .as_ref()
+                        .expect("repeated ordered message")
+                        .clone()
+                }
+            }
             Slot::Missing {
                 call_id,
                 tool_name,
@@ -214,7 +248,7 @@ pub(crate) fn materialize(messages: &[Message], slots: &[Slot]) -> Vec<Message> 
 /// timestamp) and results that match no preceding call are dropped.
 pub fn order_tool_results(messages: Vec<Message>) -> Vec<Message> {
     let slots = order_slots(&messages);
-    materialize(&messages, &slots)
+    materialize_owned(messages, &slots)
 }
 
 /// `details` of a tool result, if any (convenience for callers and tests).

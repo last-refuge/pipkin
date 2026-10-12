@@ -1,0 +1,20 @@
+{
+  "baseRevision": "23df29cf8305e1a92af4a264a4e0b4ef6dea6728",
+  "runtimeSourceSha256": {
+    "crates/pipkin-engine/src/context/compaction.rs": "af0c2641fc9b462c62834e39d63fefd6e9ed20b4b50339aa3651cab659f384f6",
+    "crates/pipkin-engine/src/context/derive.rs": "6150f9e80c6e9434d42c8ab7050fcf6d734c0428b3d7d7864abcbb02560df5a3",
+    "crates/pipkin-engine/src/provider/api/common/http.rs": "82f7a9de6356aeecdc7a2bb48e474f24b4bcf0bbee6387bc3e7e62133d72f90a",
+    "crates/pipkin-engine/src/runtime/run.rs": "867980c1a28cd06c14aeb8025bf5df6fb4f6aa4a0cb07c8a2bf89cc2048b9e7d",
+    "crates/pipkin-engine/src/runtime/compaction.rs": "866475eb104c808d7bc7453ba9242caface289623da9d2173fd889419d2bef89",
+    "crates/pipkin-engine/src/runtime/compaction/journal.rs": "09abf3a32c12fe55b55d669e8b5deccbfcee3464ad9dcb06c39d9bc1222e1440"
+  },
+  "harnessSha256": "8800db9c6abad5d23d6af934c045d99d9af6d12b1eee3b064d6f923e69d12d9a",
+  "desktopScratchFilesystem": "tmpfs",
+  "concurrentWork": "Required workspace tests overlapped the first part of the run. Not a quiet-machine comparative latency measurement.",
+  "scope": "Final candidate includes borrowed estimates, owned tool ordering, shared HTTP bytes and deferred model-message construction. No runtime instrumentation.",
+  "screenshots": {
+    "complete.png": "caef6b983aee59d2c2e8738f2b0f5108f4d99f7c8c134c3f043d3fc4a1aff5c9",
+    "ready.png": "e9656c2c6355cfdfd553c4beb6c4d66efa7c2f08120ef9fccbe1483fc625103e"
+  },
+  "visualObservation": "Final reply, composer and sidebar footer visible; performance palette responsive; guarded Quit exited cleanly. Raw screenshots private because compositor transparency includes unrelated desktop content."
+}

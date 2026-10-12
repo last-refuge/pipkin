@@ -2588,6 +2588,7 @@ pub(crate) mod tests {
         // 429 then success with one retry allowed.
         let mut req = request(openai_model());
         req.options.insert("maxRetries".into(), json!(1));
+        req.messages = vec![Message::user_text("retry payload 🦀\n".repeat(65536), 0)];
         let busy = MockResponse::json(429, &json!({"error": {"message": "slow down"}}))
             .with_header("retry-after-ms", "1");
         let ok = fragmented(
@@ -2599,6 +2600,8 @@ pub(crate) mod tests {
         let run = run_mock(adapter(), req, "", vec![busy.clone(), ok]).await;
         assert_eq!(parts(&run.message).1, StopReason::Stop);
         assert_eq!(run.requests.len(), 2);
+        assert_eq!(run.requests[0].body, run.requests[1].body);
+        assert!(run.requests[0].body.len() > 1024 * 1024);
         // Without retries the 429 surfaces and is retryable at the turn level.
         let run = run_mock(adapter(), request(openai_model()), "", vec![busy]).await;
         assert!(crate::provider::errors::is_retryable(&run.message));

@@ -1,0 +1,1817 @@
+{
+  "sessions": [
+    "6b98d32f-2c27-46f4-af3e-6d48938268c9",
+    "87ec1e59-6a35-4c7a-8749-d854d2257e46",
+    "0c4efd71-e86b-46c6-a937-2cb10fb23314",
+    "3fec4112-4e41-4339-9ca0-c01a5fc29746"
+  ],
+  "turns": 1500,
+  "effects": 300,
+  "requests": 1800,
+  "duration": 274.65749613200023,
+  "samples": [
+    {
+      "turn": 0,
+      "elapsed": 1.8740101950243115e-06,
+      "desktop": {
+        "VmHWM": 149892,
+        "VmRSS": 149892,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 39
+      },
+      "engine": {
+        "VmHWM": 32412,
+        "VmRSS": 32412,
+        "Threads": 10,
+        "fds": 23,
+        "cpuTicks": 17
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 25,
+      "elapsed": 4.007013900001766,
+      "desktop": {
+        "VmHWM": 171644,
+        "VmRSS": 152072,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 67
+      },
+      "engine": {
+        "VmHWM": 36044,
+        "VmRSS": 35052,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 38
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 50,
+      "elapsed": 8.030513173012878,
+      "desktop": {
+        "VmHWM": 171644,
+        "VmRSS": 152720,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 82
+      },
+      "engine": {
+        "VmHWM": 37900,
+        "VmRSS": 37716,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 60
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 75,
+      "elapsed": 12.068055862007895,
+      "desktop": {
+        "VmHWM": 171644,
+        "VmRSS": 154024,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 97
+      },
+      "engine": {
+        "VmHWM": 39664,
+        "VmRSS": 39328,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 84
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 100,
+      "elapsed": 16.13295707500947,
+      "desktop": {
+        "VmHWM": 171644,
+        "VmRSS": 154640,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 111
+      },
+      "engine": {
+        "VmHWM": 40672,
+        "VmRSS": 38688,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 110
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 125,
+      "elapsed": 20.20352273900062,
+      "desktop": {
+        "VmHWM": 174216,
+        "VmRSS": 156364,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 142
+      },
+      "engine": {
+        "VmHWM": 42340,
+        "VmRSS": 40200,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 135
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 150,
+      "elapsed": 24.298463481012732,
+      "desktop": {
+        "VmHWM": 174216,
+        "VmRSS": 157432,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 155
+      },
+      "engine": {
+        "VmHWM": 43604,
+        "VmRSS": 39940,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 161
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 175,
+      "elapsed": 28.39066367399937,
+      "desktop": {
+        "VmHWM": 174216,
+        "VmRSS": 157892,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 169
+      },
+      "engine": {
+        "VmHWM": 44764,
+        "VmRSS": 41524,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 188
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 200,
+      "elapsed": 32.50395296000352,
+      "desktop": {
+        "VmHWM": 174216,
+        "VmRSS": 159152,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 182
+      },
+      "engine": {
+        "VmHWM": 46028,
+        "VmRSS": 41692,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 215
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 225,
+      "elapsed": 36.65927179400751,
+      "desktop": {
+        "VmHWM": 177868,
+        "VmRSS": 160088,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 215
+      },
+      "engine": {
+        "VmHWM": 46616,
+        "VmRSS": 40740,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 249
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 250,
+      "elapsed": 40.845251858001575,
+      "desktop": {
+        "VmHWM": 177868,
+        "VmRSS": 161136,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 230
+      },
+      "engine": {
+        "VmHWM": 49220,
+        "VmRSS": 43132,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 285
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 275,
+      "elapsed": 45.036965324004996,
+      "desktop": {
+        "VmHWM": 177868,
+        "VmRSS": 162632,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 248
+      },
+      "engine": {
+        "VmHWM": 49852,
+        "VmRSS": 43836,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 321
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 300,
+      "elapsed": 49.24908233100723,
+      "desktop": {
+        "VmHWM": 177868,
+        "VmRSS": 163068,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 263
+      },
+      "engine": {
+        "VmHWM": 50660,
+        "VmRSS": 43280,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 359
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 325,
+      "elapsed": 53.48419936001301,
+      "desktop": {
+        "VmHWM": 180364,
+        "VmRSS": 164236,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 295
+      },
+      "engine": {
+        "VmHWM": 53000,
+        "VmRSS": 44824,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 398
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 350,
+      "elapsed": 57.733223525006906,
+      "desktop": {
+        "VmHWM": 180364,
+        "VmRSS": 164860,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 313
+      },
+      "engine": {
+        "VmHWM": 53892,
+        "VmRSS": 44752,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 438
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 375,
+      "elapsed": 62.00929798600555,
+      "desktop": {
+        "VmHWM": 180364,
+        "VmRSS": 165476,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 328
+      },
+      "engine": {
+        "VmHWM": 54992,
+        "VmRSS": 46416,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 480
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 400,
+      "elapsed": 66.30173562699929,
+      "desktop": {
+        "VmHWM": 180364,
+        "VmRSS": 166140,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 345
+      },
+      "engine": {
+        "VmHWM": 57728,
+        "VmRSS": 49188,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 524
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 425,
+      "elapsed": 70.6086827830004,
+      "desktop": {
+        "VmHWM": 182588,
+        "VmRSS": 163952,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 381
+      },
+      "engine": {
+        "VmHWM": 60860,
+        "VmRSS": 50036,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 569
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 450,
+      "elapsed": 74.94005281101272,
+      "desktop": {
+        "VmHWM": 182588,
+        "VmRSS": 167544,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 399
+      },
+      "engine": {
+        "VmHWM": 60932,
+        "VmRSS": 47508,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 616
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 475,
+      "elapsed": 79.27712455901201,
+      "desktop": {
+        "VmHWM": 182588,
+        "VmRSS": 169264,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 416
+      },
+      "engine": {
+        "VmHWM": 64904,
+        "VmRSS": 50764,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 663
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 500,
+      "elapsed": 83.63313952600583,
+      "desktop": {
+        "VmHWM": 182588,
+        "VmRSS": 169892,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 434
+      },
+      "engine": {
+        "VmHWM": 64904,
+        "VmRSS": 49324,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 712
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 525,
+      "elapsed": 88.02139022300253,
+      "desktop": {
+        "VmHWM": 186156,
+        "VmRSS": 186156,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 470
+      },
+      "engine": {
+        "VmHWM": 64904,
+        "VmRSS": 50380,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 764
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 550,
+      "elapsed": 92.41859625400684,
+      "desktop": {
+        "VmHWM": 185576,
+        "VmRSS": 171688,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 490
+      },
+      "engine": {
+        "VmHWM": 66172,
+        "VmRSS": 50616,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 817
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 575,
+      "elapsed": 96.85871124701225,
+      "desktop": {
+        "VmHWM": 185576,
+        "VmRSS": 172232,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 508
+      },
+      "engine": {
+        "VmHWM": 67080,
+        "VmRSS": 54512,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 873
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 600,
+      "elapsed": 101.29461211600574,
+      "desktop": {
+        "VmHWM": 185576,
+        "VmRSS": 172860,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 527
+      },
+      "engine": {
+        "VmHWM": 71488,
+        "VmRSS": 51476,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 929
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 625,
+      "elapsed": 105.7424239890097,
+      "desktop": {
+        "VmHWM": 188264,
+        "VmRSS": 175572,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 564
+      },
+      "engine": {
+        "VmHWM": 71488,
+        "VmRSS": 47864,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 985
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 650,
+      "elapsed": 110.21044224601064,
+      "desktop": {
+        "VmHWM": 188264,
+        "VmRSS": 176432,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 585
+      },
+      "engine": {
+        "VmHWM": 71488,
+        "VmRSS": 48848,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1044
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 675,
+      "elapsed": 114.70079678601178,
+      "desktop": {
+        "VmHWM": 188264,
+        "VmRSS": 177060,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 603
+      },
+      "engine": {
+        "VmHWM": 71488,
+        "VmRSS": 54124,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1103
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 700,
+      "elapsed": 119.19374357500055,
+      "desktop": {
+        "VmHWM": 188264,
+        "VmRSS": 177536,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 622
+      },
+      "engine": {
+        "VmHWM": 73240,
+        "VmRSS": 50184,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1163
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 725,
+      "elapsed": 123.7058587979991,
+      "desktop": {
+        "VmHWM": 188360,
+        "VmRSS": 179508,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 662
+      },
+      "engine": {
+        "VmHWM": 73240,
+        "VmRSS": 52556,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1224
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 750,
+      "elapsed": 128.24120265099918,
+      "desktop": {
+        "VmHWM": 188360,
+        "VmRSS": 179716,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 681
+      },
+      "engine": {
+        "VmHWM": 77940,
+        "VmRSS": 61200,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1288
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 775,
+      "elapsed": 132.7852179180045,
+      "desktop": {
+        "VmHWM": 188360,
+        "VmRSS": 179944,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 704
+      },
+      "engine": {
+        "VmHWM": 84668,
+        "VmRSS": 65880,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1350
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 800,
+      "elapsed": 137.35706383800425,
+      "desktop": {
+        "VmHWM": 188360,
+        "VmRSS": 180052,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 726
+      },
+      "engine": {
+        "VmHWM": 88280,
+        "VmRSS": 66208,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1417
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 825,
+      "elapsed": 141.92879015300423,
+      "desktop": {
+        "VmHWM": 189596,
+        "VmRSS": 170816,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 765
+      },
+      "engine": {
+        "VmHWM": 88280,
+        "VmRSS": 69208,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1482
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 850,
+      "elapsed": 146.52446458500344,
+      "desktop": {
+        "VmHWM": 189596,
+        "VmRSS": 179448,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 789
+      },
+      "engine": {
+        "VmHWM": 89748,
+        "VmRSS": 67320,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1550
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 875,
+      "elapsed": 151.14790673801326,
+      "desktop": {
+        "VmHWM": 189596,
+        "VmRSS": 180312,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 813
+      },
+      "engine": {
+        "VmHWM": 89748,
+        "VmRSS": 68144,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1621
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 900,
+      "elapsed": 155.79577989000245,
+      "desktop": {
+        "VmHWM": 189596,
+        "VmRSS": 180668,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 835
+      },
+      "engine": {
+        "VmHWM": 90524,
+        "VmRSS": 68388,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1692
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 925,
+      "elapsed": 160.44986915501067,
+      "desktop": {
+        "VmHWM": 191468,
+        "VmRSS": 171456,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 875
+      },
+      "engine": {
+        "VmHWM": 94788,
+        "VmRSS": 65668,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1767
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 950,
+      "elapsed": 165.13446322600066,
+      "desktop": {
+        "VmHWM": 191468,
+        "VmRSS": 181460,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 901
+      },
+      "engine": {
+        "VmHWM": 94788,
+        "VmRSS": 56060,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1844
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 975,
+      "elapsed": 169.82561620500928,
+      "desktop": {
+        "VmHWM": 191468,
+        "VmRSS": 181644,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 922
+      },
+      "engine": {
+        "VmHWM": 96732,
+        "VmRSS": 57400,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1919
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1000,
+      "elapsed": 174.53479542200512,
+      "desktop": {
+        "VmHWM": 191468,
+        "VmRSS": 181968,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 945
+      },
+      "engine": {
+        "VmHWM": 102460,
+        "VmRSS": 66388,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 1997
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1025,
+      "elapsed": 179.27280646300642,
+      "desktop": {
+        "VmHWM": 192316,
+        "VmRSS": 173524,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 985
+      },
+      "engine": {
+        "VmHWM": 102460,
+        "VmRSS": 68828,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 2079
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1050,
+      "elapsed": 184.0335022680083,
+      "desktop": {
+        "VmHWM": 192316,
+        "VmRSS": 183024,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1009
+      },
+      "engine": {
+        "VmHWM": 102788,
+        "VmRSS": 69304,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 2160
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1075,
+      "elapsed": 188.778026289001,
+      "desktop": {
+        "VmHWM": 192316,
+        "VmRSS": 183188,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1032
+      },
+      "engine": {
+        "VmHWM": 102788,
+        "VmRSS": 65860,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 2241
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1100,
+      "elapsed": 193.57422544900328,
+      "desktop": {
+        "VmHWM": 192316,
+        "VmRSS": 183352,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1057
+      },
+      "engine": {
+        "VmHWM": 102856,
+        "VmRSS": 58132,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 2326
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1125,
+      "elapsed": 198.386311484006,
+      "desktop": {
+        "VmHWM": 194640,
+        "VmRSS": 174288,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1100
+      },
+      "engine": {
+        "VmHWM": 102856,
+        "VmRSS": 65752,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 2413
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1150,
+      "elapsed": 203.20815119100735,
+      "desktop": {
+        "VmHWM": 194640,
+        "VmRSS": 183708,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1126
+      },
+      "engine": {
+        "VmHWM": 102856,
+        "VmRSS": 75252,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 2499
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1175,
+      "elapsed": 208.0246015140001,
+      "desktop": {
+        "VmHWM": 194640,
+        "VmRSS": 184252,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1147
+      },
+      "engine": {
+        "VmHWM": 103420,
+        "VmRSS": 63156,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 2584
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1200,
+      "elapsed": 212.8871334370051,
+      "desktop": {
+        "VmHWM": 194640,
+        "VmRSS": 184484,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1171
+      },
+      "engine": {
+        "VmHWM": 103420,
+        "VmRSS": 58020,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 2674
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1225,
+      "elapsed": 217.7509007280023,
+      "desktop": {
+        "VmHWM": 194640,
+        "VmRSS": 184156,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1214
+      },
+      "engine": {
+        "VmHWM": 103420,
+        "VmRSS": 61084,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 2764
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1250,
+      "elapsed": 222.61803202501324,
+      "desktop": {
+        "VmHWM": 194640,
+        "VmRSS": 184936,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1239
+      },
+      "engine": {
+        "VmHWM": 103420,
+        "VmRSS": 63352,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 2855
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1275,
+      "elapsed": 227.52740042201185,
+      "desktop": {
+        "VmHWM": 194640,
+        "VmRSS": 185092,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1264
+      },
+      "engine": {
+        "VmHWM": 104360,
+        "VmRSS": 67836,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 2950
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1300,
+      "elapsed": 232.49533029099985,
+      "desktop": {
+        "VmHWM": 194640,
+        "VmRSS": 185400,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1290
+      },
+      "engine": {
+        "VmHWM": 104360,
+        "VmRSS": 67412,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 3050
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1325,
+      "elapsed": 237.4534669390123,
+      "desktop": {
+        "VmHWM": 196428,
+        "VmRSS": 196428,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1334
+      },
+      "engine": {
+        "VmHWM": 110012,
+        "VmRSS": 65204,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 3149
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1350,
+      "elapsed": 242.44135548300983,
+      "desktop": {
+        "VmHWM": 194884,
+        "VmRSS": 186848,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1361
+      },
+      "engine": {
+        "VmHWM": 110012,
+        "VmRSS": 65248,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 3248
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1375,
+      "elapsed": 247.41771828000492,
+      "desktop": {
+        "VmHWM": 194884,
+        "VmRSS": 187388,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1386
+      },
+      "engine": {
+        "VmHWM": 110012,
+        "VmRSS": 67312,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 3348
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1400,
+      "elapsed": 252.4403728680045,
+      "desktop": {
+        "VmHWM": 194884,
+        "VmRSS": 188100,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1412
+      },
+      "engine": {
+        "VmHWM": 110012,
+        "VmRSS": 60840,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 3452
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1425,
+      "elapsed": 257.4864677200094,
+      "desktop": {
+        "VmHWM": 199580,
+        "VmRSS": 199580,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1457
+      },
+      "engine": {
+        "VmHWM": 110012,
+        "VmRSS": 56628,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 3557
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1450,
+      "elapsed": 262.52723805600544,
+      "desktop": {
+        "VmHWM": 197896,
+        "VmRSS": 187900,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1483
+      },
+      "engine": {
+        "VmHWM": 110012,
+        "VmRSS": 61676,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 3662
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1475,
+      "elapsed": 267.56177459801256,
+      "desktop": {
+        "VmHWM": 197896,
+        "VmRSS": 188684,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1511
+      },
+      "engine": {
+        "VmHWM": 110012,
+        "VmRSS": 63632,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 3766
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1500,
+      "elapsed": 272.6114231820102,
+      "desktop": {
+        "VmHWM": 197896,
+        "VmRSS": 189040,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1539
+      },
+      "engine": {
+        "VmHWM": 110012,
+        "VmRSS": 83780,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 3870
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    },
+    {
+      "turn": 1500,
+      "elapsed": 274.6203877700027,
+      "desktop": {
+        "VmHWM": 197896,
+        "VmRSS": 189044,
+        "Threads": 38,
+        "fds": 54,
+        "cpuTicks": 1542
+      },
+      "engine": {
+        "VmHWM": 110012,
+        "VmRSS": 85632,
+        "Threads": 12,
+        "fds": 23,
+        "cpuTicks": 3872
+      },
+      "window": {
+        "workspace": 1,
+        "mapped": true,
+        "visible": true,
+        "active": true,
+        "size": [
+          1440,
+          960
+        ],
+        "xwayland": false
+      }
+    }
+  ],
+  "durable": {
+    "verifiedOutputs": 300,
+    "outboxRows": 4096
+  },
+  "noNodePiInvocations": true
+}

@@ -11,7 +11,31 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — actual desktop and uninterrupted mixed soaks
+## Current follow-up — context-copy reduction and executed token estimates
+
+2026-10-12, following **`23df29c`**, protocol 12 / engine schema 10 / desktop schema 8
+unchanged. Token estimation now borrows retained messages instead of constructing three
+full copies. Tool ordering transfers owned messages while preserving repeated-result slots;
+HTTP retries share immutable encoded bytes. Runtime preparation defers outbound context
+construction until generation needs it; compaction no longer builds a discarded copy.
+
+Twelve actual pinned Pi estimator/tool-ordering comparisons pass and regenerate byte for
+byte, alongside large-history/repeated-result and byte-identical large HTTP retry tests.
+Two more actual 1,500-turn desktop soaks verify every reply and all 300 durable tool outputs
+and effects. The intermediate peak is 123,900 KiB; final peak **110,012 KiB (107.43 MiB)**,
+versus original 131,140 KiB. This is a 16.11% peak reduction, **not a closed memory gate**.
+Final server RSS 85,632 KiB exceeds the original 59,212 KiB; resource retention and residual
+slopes remain open. All windows/servers close cleanly; no Node/Pi trap was invoked. See
+[context-memory evidence](pipkin-rust-engine-evidence/context-memory.md).
+
+Required final checks: **1,656 passed, 0 failed, 56 ignored**, clean Clippy/all-targets and
+formatting. Counts stay **445 measured, 9 observed, 1 unverified, 49 not started;
+0 fully qualified**. Next: attribute remaining live-context copies versus allocator
+retention and repeat realistic compaction plus expanded stress checks. Installed/release,
+CI/platform and notice review, native-default and Pi retirement remain open. All unrelated
+owner plan/worktree changes remain intact.
+
+## Prior follow-up — actual desktop and uninterrupted mixed soaks
 
 2026-10-12, source **`9d61b26`**, protocol 12 / engine schema 10 / desktop schema 8.
 A reusable isolated desktop harness runs the actual GPUI application and native server

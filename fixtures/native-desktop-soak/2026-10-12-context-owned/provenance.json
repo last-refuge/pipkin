@@ -1,0 +1,17 @@
+{
+  "baseRevision": "23df29cf8305e1a92af4a264a4e0b4ef6dea6728",
+  "runtimeSourceSha256": {
+    "crates/pipkin-engine/src/context/compaction.rs": "af0c2641fc9b462c62834e39d63fefd6e9ed20b4b50339aa3651cab659f384f6",
+    "crates/pipkin-engine/src/context/derive.rs": "6150f9e80c6e9434d42c8ab7050fcf6d734c0428b3d7d7864abcbb02560df5a3",
+    "crates/pipkin-engine/src/provider/api/common/http.rs": "82f7a9de6356aeecdc7a2bb48e474f24b4bcf0bbee6387bc3e7e62133d72f90a"
+  },
+  "harnessSha256": "8800db9c6abad5d23d6af934c045d99d9af6d12b1eee3b064d6f923e69d12d9a",
+  "desktopScratchFilesystem": "tmpfs",
+  "diagnostic": "12 late-history prompts over a fresh SQLite backup of the previous synthetic 1500-turn profile, four sessions. Baseline temporarily instrumented with /proc/self/status reads at context preparation and HTTP stages; final uninstrumented binary. Exact request lengths match. Indicative attribution, not controlled absolute memory qualification. No user profile or live provider used.",
+  "concurrentWork": "Workspace tests overlapped the first part of the desktop run. Not a quiet-machine comparative latency measurement.",
+  "screenshots": {
+    "complete.png": "3c512058d13cbb014fae3d2ff49acd01550e12a2a38b9333d93106c586c65d99",
+    "ready.png": "32190ae10ec8000ac0132fc191e4a925a81bee518d5237ba58d126f74d53cc78"
+  },
+  "result": "All functional checks passed; peak engine memory 123900 KiB still exceeds the 100 MiB comparison target. Intermediate implementation, before deferring outbound context construction."
+}
