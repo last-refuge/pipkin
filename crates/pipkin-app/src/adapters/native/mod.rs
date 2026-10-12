@@ -62,6 +62,8 @@ const OFFLINE: &str = "Not connected to the built-in engine.";
 #[derive(Clone)]
 pub struct NativeConfig {
     pub host: HostSpec,
+    /// Explicit Pi profile source for discovery and confirmed imports only.
+    pub import_agent_dir: Option<String>,
     /// Shown as the location of sessions without a usable working directory.
     pub location: String,
     /// Delay between connection attempts while the engine cannot be reached.
@@ -70,9 +72,15 @@ pub struct NativeConfig {
 }
 
 impl NativeConfig {
+    pub fn with_import_source(mut self, source: Option<&Path>) -> Self {
+        self.import_agent_dir = source.map(|path| path.display().to_string());
+        self
+    }
+
     pub fn new(host: HostSpec, location: String) -> NativeConfig {
         NativeConfig {
             host,
+            import_agent_dir: None,
             location,
             retry_delay: Duration::from_secs(3),
             call_timeout: CALL_TIMEOUT,

@@ -246,11 +246,10 @@ impl Options {
             if options.pi_dir.is_some()
                 || options.pi_server_id.is_some()
                 || options.pi_repo.is_some()
-                || options.pi_agent_dir.is_some()
                 || !options.pi_extensions.is_empty()
             {
                 return Err(
-                    "the --pi-* options apply to the Pi engine, not --engine native".into(),
+                    "Pi launch options require --engine pi; --pi-agent-dir may select a native import source".into(),
                 );
             }
         }
@@ -874,7 +873,8 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                 .to_string();
             let native = Arc::new(NativeBackend::new(
                 event_tx,
-                NativeConfig::new(host, location),
+                NativeConfig::new(host, location)
+                    .with_import_source(options.pi_agent_dir.as_deref()),
             ));
             native_backend = Some(native.clone());
             native
@@ -1542,6 +1542,40 @@ mod tests {
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn native_agent_directory_selects_an_import_source_for_owned_and_attached_hosts() {
+        for args in [
+            vec!["--engine", "native", "--pi-agent-dir", "custom-agent"],
+            vec![
+                "--engine",
+                "native",
+                "--engine-attach",
+                "/endpoint",
+                "--pi-agent-dir",
+                "custom-agent",
+            ],
+        ] {
+            let options = parse(&args).unwrap();
+            assert_eq!(
+                options.pi_agent_dir,
+                Some(std::env::current_dir().unwrap().join("custom-agent"))
+            );
+            assert_eq!(options.data_dir, None);
+            let config = NativeConfig::new(
+                HostSpec::External(PathBuf::from("/endpoint")),
+                "native-data".into(),
+            )
+            .with_import_source(options.pi_agent_dir.as_deref());
+            assert_eq!(
+                config.import_agent_dir.as_deref(),
+                options.pi_agent_dir.as_deref().and_then(Path::to_str)
+            );
+            assert_eq!(config.location, "native-data");
+        }
+        assert!(parse(&["--engine", "native", "--pi-repo", "/pi"]).is_err());
+        assert!(parse(&["--engine", "native", "--pi-dir", "/pi-server"]).is_err());
     }
 
     #[test]

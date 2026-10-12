@@ -2131,6 +2131,113 @@ fn pi_credentials_are_imported_only_after_their_own_confirmation() {
     h.stop();
 }
 
+#[test]
+fn an_explicit_pi_import_source_overrides_the_engine_default_without_changing_native_storage() {
+    let fx = Fixture::start(|_, _| Reply::Text("Continued from selected profile.".into()));
+    assert!(
+        add_pi_session(&fx, "a-text-multiturn"),
+        "frozen import fixture is required"
+    );
+    let selected = fx.root.join("selected-pi-agent");
+    std::fs::rename(fx.pi_agent(), &selected).unwrap();
+    assert!(add_pi_session(&fx, "b-tools-diff"));
+    std::fs::write(
+        fx.pi_agent().join("auth.json"),
+        r#"{"openrouter":{"type":"api_key","key":"wrong-profile"}}"#,
+    )
+    .unwrap();
+    let source_auth = r#"{"openrouter":{"type":"api_key","key":"selected-synthetic-key"}}"#;
+    let source_models = r#"{"providers":{}}"#;
+    std::fs::write(selected.join("auth.json"), source_auth).unwrap();
+    std::fs::write(selected.join("models.json"), source_models).unwrap();
+    let source_db = selected.join("experimental/sessions/a-text-multiturn/session.sqlite");
+    let original_db = std::fs::read(&source_db).unwrap();
+    let options = crate::controller::Options::parse([
+        "--engine".to_owned(),
+        "native".to_owned(),
+        "--pi-agent-dir".to_owned(),
+        selected.display().to_string(),
+    ])
+    .unwrap();
+    let config = fx
+        .native(Duration::from_secs(10))
+        .with_import_source(options.pi_agent_dir.as_deref());
+    let mut h = Harness::start_with(config, &fx.root.join("app.sqlite3"));
+    h.until("connected", |s| s.connection.is_ready());
+    h.state.import_available = true;
+    assert!(h.state.conversations.is_empty());
+    let native_auth = fx.root.join("engine-config/auth.json");
+    assert!(!native_auth.exists());
+    h.dispatch(Command::ImportFromPi(ImportKind::Conversations));
+    h.until("selected profile offer", |s| offer(s).is_some());
+    assert_eq!(offer(&h.state).unwrap().sessions, ["a-text-multiturn"]);
+    assert!(
+        h.state
+            .notice
+            .as_ref()
+            .unwrap()
+            .contains(&selected.display().to_string())
+    );
+    assert!(h.state.conversations.is_empty());
+    h.dispatch(Command::ConfirmImport);
+    h.until("selected conversation imported", |s| {
+        s.import == ImportFlow::Idle && s.conversations.len() == 1
+    });
+    h.dispatch(Command::ImportFromPi(ImportKind::Credentials));
+    h.until("selected credential offer", |s| offer(s).is_some());
+    assert_eq!(offer(&h.state).unwrap().providers, ["openrouter"]);
+    assert_eq!(offer(&h.state).unwrap().config, ["models.json"]);
+    assert!(!native_auth.exists());
+    h.dispatch(Command::ConfirmImport);
+    h.until("selected credentials imported", |s| {
+        s.import == ImportFlow::Idle
+    });
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&native_auth).unwrap()).unwrap();
+    assert_eq!(saved["openrouter"]["key"], "selected-synthetic-key");
+    assert_eq!(
+        std::fs::read_to_string(fx.root.join("engine-config/models.json")).unwrap(),
+        source_models
+    );
+    assert_eq!(std::fs::read(&source_db).unwrap(), original_db);
+    assert_eq!(
+        std::fs::read_to_string(selected.join("auth.json")).unwrap(),
+        source_auth
+    );
+    // Re-discovery uses the same selected source, including the already-imported result.
+    h.dispatch(Command::ImportFromPi(ImportKind::Conversations));
+    h.until("selected profile rediscovery", |s| {
+        s.import == ImportFlow::Idle
+            && s.notice
+                .as_ref()
+                .is_some_and(|n| n.contains("imported earlier"))
+    });
+    assert_eq!(h.state.conversations.len(), 1);
+    assert!(
+        h.state
+            .notice
+            .as_ref()
+            .unwrap()
+            .contains("imported earlier")
+    );
+    h.dispatch(Command::CancelImport);
+    let id = ConversationId(pipkin_core::stable_id("a-text-multiturn"));
+    h.dispatch(Command::SelectConversation(id));
+    h.until("selected history open", |s| {
+        s.current().is_some_and(|c| c.opened)
+    });
+    h.dispatch(Command::SetModel("scripted/scripted".into()));
+    h.send("Continue this imported history.");
+    h.until("continued", |s| {
+        is_idle(s)
+            && assistant_texts(s).last().map(String::as_str)
+                == Some("Continued from selected profile.")
+    });
+    assert!(user_texts(fx.requests().last().unwrap()).contains(&"Hello, who are you?".to_owned()));
+    assert_eq!(std::fs::read(&source_db).unwrap(), original_db);
+    h.stop();
+}
+
 /// Tool results in a model request (how far a scripted child has got).
 fn tool_results(request: &ProviderRequest) -> usize {
     request

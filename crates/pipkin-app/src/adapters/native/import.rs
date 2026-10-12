@@ -283,10 +283,10 @@ impl Live {
         self.client.call(call, IMPORT_TIMEOUT)
     }
 
-    fn discover(&self) -> Result<ImportReport, String> {
+    fn discover(&self, worker: &Worker) -> Result<ImportReport, String> {
         match self.import_call(Call::ImportDiscover {
             server_dir: None,
-            agent_dir: None,
+            agent_dir: worker.config.import_agent_dir.clone(),
         }) {
             Ok(Reply::ImportReport(report)) => Ok(report),
             Ok(other) => Err(format!("unexpected reply {other:?}")),
@@ -297,7 +297,7 @@ impl Live {
     pub(super) fn import(&mut self, worker: &mut Worker, step: ImportStep, done: ImportDone) {
         let result = match step {
             ImportStep::Discover(kind) => {
-                ImportResult::Offer(self.discover().map(|r| match kind {
+                ImportResult::Offer(self.discover(worker).map(|r| match kind {
                     ImportKind::Conversations => conversations_offer(&r),
                     ImportKind::Credentials => credentials_offer(&r),
                 }))
@@ -313,7 +313,7 @@ impl Live {
     fn import_conversations(&mut self, worker: &mut Worker, sessions: Vec<String>) -> ImportResult {
         let view = match self.import_call(Call::ImportSessions {
             server_dir: None,
-            agent_dir: None,
+            agent_dir: worker.config.import_agent_dir.clone(),
             sessions,
         }) {
             Ok(Reply::Imported(view)) => view,
@@ -331,7 +331,7 @@ impl Live {
                 };
             }
         };
-        let after = self.discover().ok();
+        let after = self.discover(worker).ok();
         let (message, imported, existing) = conversations_result(&view, after.as_ref());
         // The catalogue now lists the imported sessions under the ids the Pi adapter gave them.
         if let Err(e) = self.refresh_sessions() {
@@ -360,7 +360,7 @@ impl Live {
         let mut lines = Vec::new();
         if !config.is_empty() {
             match self.import_call(Call::ImportConfig {
-                agent_dir: None,
+                agent_dir: worker.config.import_agent_dir.clone(),
                 items: config,
             }) {
                 Ok(Reply::ConfigImported(view)) => {
@@ -386,7 +386,7 @@ impl Live {
         }
         if !providers.is_empty() {
             match self.import_call(Call::ImportCredentials {
-                agent_dir: None,
+                agent_dir: worker.config.import_agent_dir.clone(),
                 providers,
             }) {
                 Ok(Reply::CredentialsImported(view)) => {

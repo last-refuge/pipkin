@@ -29,6 +29,13 @@ than assuming the defaults.
 
 ### Native engine (development)
 
+`pipkin --engine native --pi-agent-dir /absolute/pi/profile` selects the source for both
+Pi conversation imports and provider settings/credential imports. It overrides the engine's
+`PI_CODING_AGENT_DIR` / `~/.pi/agent` discovery default; it does not change native storage or
+import anything at startup. Imports still require their normal confirmation. With
+`--engine-attach`, this source path is read by the attached engine. Omit the flag to use the
+engine's default source. Pi server coordination continues to use its separate server profile.
+
 For an independently owned native server shared by multiple desktops, see
 [Native engine attachment](native-attachment.md).
 
@@ -39,8 +46,8 @@ directories on its own, and nothing is imported at startup.
 
 Importing from Pi is explicit, from the command palette, and only in native mode:
 
-- **Import conversations from Pi…** reads the Pi agent directory (`$PI_CODING_AGENT_DIR` in the engine's
-  environment, else `~/.pi/agent`), shows what can be imported and what cannot (sessions in use by a running Pi,
+- **Import conversations from Pi…** reads the selected Pi agent directory (`--pi-agent-dir`, else
+  `$PI_CODING_AGENT_DIR` in the engine's environment, else `~/.pi/agent`), shows what can be imported and what cannot (sessions in use by a running Pi,
   sessions that cannot be represented without guessing, with reasons), and imports only after you choose
   **Confirm: import…**. Each Pi session is copied consistently into `<data dir>/engine/imports/<UTC time>/<session>/`
   first and read only from that copy. The desktop drafts, prompt history, unresolved requests and saved transcript

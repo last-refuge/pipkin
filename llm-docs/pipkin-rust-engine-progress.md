@@ -11,7 +11,34 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — invalid proxy diagnostics before dispatch
+## Current follow-up — explicit Pi import source in native mode
+
+2026-10-12, following **`6b148ee`**. `--engine native --pi-agent-dir DIR` now selects the
+source for discovery and confirmed conversation/config/credential imports, including an
+attached engine. Relative CLI paths become absolute; an omitted flag retains the engine's
+existing default. Native data/configuration roots and process environment are unchanged.
+There is no startup import, and Pi server/launch options retain their separate meanings.
+
+Two new tests cover owned/attached CLI options and a real core/adapter/engine/SQLite workflow
+with two disposable profiles. The selected profile overrides the engine's default, all import
+steps use it, source bytes remain unchanged, and imported history continues natively through
+a scripted provider. The first run exposed an incorrect test expectation for no-op rediscovery;
+the existing Idle/informational behavior was preserved and the corrected tests passed.
+See [source flag evidence](pipkin-rust-engine-evidence/import-source-flag.md).
+
+Required checks passed **1624 tests, 0 failed, 53 ignored**, with clean Clippy and formatting.
+Logs: `/tmp/pipkin-import-source-tests{,2}.log`, `/tmp/pipkin-import-source-workspace.log`,
+`/tmp/pipkin-import-source-clippy.log`, `/tmp/pipkin-import-source-fmt.log`. This is headless
+workflow evidence, not a new desktop/live-provider/platform acceptance run.
+
+Protocol 11 / schema 9 unchanged. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**. Native remains opt-in. Invalid settings semantics,
+model-scope glob/ordering, credential SDK retries, trust configuration scope, rollback history
+labels, sustained workloads and release/CI/platform qualification remain open. Owner changes
+are preserved.
+
+## Previous follow-up — invalid proxy diagnostics before dispatch
 
 2026-10-12, following **`367e389`**. The shared client now validates proxy policy before every
 HTTP/1 or HTTP/2 dispatch, including redirects and pooled connections. The reserved DNS
