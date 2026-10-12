@@ -24,6 +24,7 @@ pub mod plan;
 pub mod read;
 pub mod schema;
 pub mod text;
+pub mod web;
 pub mod write;
 
 #[cfg(test)]
@@ -216,6 +217,50 @@ pub trait ToolHost: Send + Sync {
         _include_archived: bool,
     ) -> BoxFuture<'a, Result<pipkin_engine_protocol::PlanView, String>> {
         Box::pin(async { Err("No plan service is configured".into()) })
+    }
+
+    /// Search the web and record the results as sources of this call.
+    #[allow(clippy::type_complexity)]
+    fn web_search<'a>(
+        &'a self,
+        _call_id: &'a str,
+        _query: &'a str,
+        _count: usize,
+        _cancel: CancellationToken,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<(String, Vec<crate::web::SourceRecord>), crate::web::providers::SearchError>,
+            String,
+        >,
+    > {
+        Box::pin(async { Err("No web service is configured".into()) })
+    }
+
+    /// Fetch a page within the network boundary and retain it as a source of this call.
+    #[allow(clippy::type_complexity)]
+    fn web_fetch<'a>(
+        &'a self,
+        _call_id: &'a str,
+        _url: &'a str,
+        _cancel: CancellationToken,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<(crate::web::SourceRecord, crate::web::Fetched), crate::web::FetchError>,
+            String,
+        >,
+    > {
+        Box::pin(async { Err("No web service is configured".into()) })
+    }
+
+    /// A retained source and its text (None when unknown or expired).
+    #[allow(clippy::type_complexity)]
+    fn web_source<'a>(
+        &'a self,
+        _id: u64,
+    ) -> BoxFuture<'a, Result<(Option<crate::web::SourceRecord>, Option<String>), String>> {
+        Box::pin(async { Err("No web service is configured".into()) })
     }
 }
 

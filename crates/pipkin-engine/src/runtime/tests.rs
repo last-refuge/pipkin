@@ -31,6 +31,8 @@ impl Fixture {
         c.env = Env::isolated(Default::default());
         c.extra_models = vec![scripted::model()];
         c.default_model = Some("scripted/scripted".into());
+        // Tool fixtures run a local server; the boundary otherwise refuses loopback.
+        c.web_allow_private_hosts = true;
         c
     }
 
@@ -745,7 +747,10 @@ fn the_system_prompt_carries_project_instructions_and_stays_byte_stable() {
             "subagent",
             "ask_user_question",
             "plan_update",
-            "plan_read"
+            "plan_read",
+            "web_search",
+            "web_fetch",
+            "web_read"
         ]
     );
     assert_eq!(reqs[0].thinking, crate::provider::ThinkingLevel::Medium);

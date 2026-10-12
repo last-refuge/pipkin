@@ -18,5 +18,6 @@ pub mod runtime;
 pub mod store;
 pub mod tools;
 pub mod util;
+pub mod web;
 
 pub mod delivery;

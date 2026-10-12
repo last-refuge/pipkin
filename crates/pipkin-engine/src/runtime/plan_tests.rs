@@ -193,7 +193,10 @@ fn the_model_creates_tasks_and_the_next_request_carries_the_plan_section() {
             "subagent",
             "ask_user_question",
             "plan_update",
-            "plan_read"
+            "plan_read",
+            "web_search",
+            "web_fetch",
+            "web_read"
         ]
     );
 }
@@ -576,7 +579,7 @@ fn removing_a_session_removes_its_plan_rows() {
 }
 
 #[test]
-fn the_capability_is_advertised_and_the_schema_is_eleven() {
+fn the_capability_is_advertised_with_the_current_schema() {
     let fx = Fixture::new();
     let provider = Scripted::echo("x");
     let mut e = fx.start(&provider);
@@ -588,5 +591,5 @@ fn the_capability_is_advertised_and_the_schema_is_eleven() {
         other => panic!("{other:?}"),
     };
     assert!(welcome.capabilities.iter().any(|c| c == "plans"));
-    assert_eq!(welcome.schema, 11);
+    assert_eq!(welcome.schema, crate::store::SCHEMA_VERSION);
 }

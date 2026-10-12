@@ -136,6 +136,60 @@ impl ToolHost for Host {
                 .map_err(|e| e.message)
         })
     }
+
+    fn web_search<'a>(
+        &'a self,
+        call_id: &'a str,
+        query: &'a str,
+        count: usize,
+        cancel: CancellationToken,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<(String, Vec<crate::web::SourceRecord>), crate::web::providers::SearchError>,
+            String,
+        >,
+    > {
+        Box::pin(async move {
+            let service = self.shared.web_service(&self.parent);
+            Ok(service
+                .search(&self.parent, call_id, query, count, cancel)
+                .await)
+        })
+    }
+
+    fn web_fetch<'a>(
+        &'a self,
+        call_id: &'a str,
+        url: &'a str,
+        cancel: CancellationToken,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<(crate::web::SourceRecord, crate::web::Fetched), crate::web::FetchError>,
+            String,
+        >,
+    > {
+        Box::pin(async move {
+            let service = self.shared.web_service(&self.parent);
+            Ok(service.fetch(&self.parent, call_id, url, cancel).await)
+        })
+    }
+
+    fn web_source<'a>(
+        &'a self,
+        id: u64,
+    ) -> BoxFuture<'a, Result<(Option<crate::web::SourceRecord>, Option<String>), String>> {
+        Box::pin(async move {
+            let service = self.shared.web_service(&self.parent);
+            let record = service.source(&self.parent, id)?;
+            let text = match &record {
+                Some(r) if !r.expired => service.text(&self.parent, id)?,
+                _ => None,
+            };
+            Ok((record, text))
+        })
+    }
 }
 
 /// Map a child run's state to the directory status strings the desktop understands

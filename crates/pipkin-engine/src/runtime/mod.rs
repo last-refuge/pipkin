@@ -16,6 +16,7 @@ mod session;
 mod subagents;
 mod views;
 mod wait;
+mod web;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -149,6 +150,7 @@ impl Shared {
         }
         // Every session has its own plan (a child's plan is separate from its parent's).
         tools.extend(self.plan_tools());
+        tools.extend(self.web_tools());
         tools
     }
 
@@ -162,6 +164,7 @@ impl Shared {
             // Receipts by call id make a rerun return the recorded outcome; reads are pure.
             crate::tools::plan::PLAN_UPDATE => Some(Arc::new(crate::tools::plan::PlanUpdateTool)),
             crate::tools::plan::PLAN_READ => Some(Arc::new(crate::tools::plan::PlanReadTool)),
+            crate::tools::web::WEB_READ => Some(Arc::new(crate::tools::web::WebReadTool)),
             _ => None,
         }
     }
@@ -598,6 +601,7 @@ async fn dispatch_with_cancel(
                     "questions".into(),
                     "askUserQuestion".into(),
                     "plans".into(),
+                    "web".into(),
                     "compaction".into(),
                     "toolOutput".into(),
                 ],
@@ -789,6 +793,7 @@ async fn dispatch_with_cancel(
             session,
             include_archived,
         } => Ok(Reply::Plan(shared.plan_view(&session, include_archived)?)),
+        Call::WebSources { session } => Ok(Reply::WebSources(shared.web_sources_view(&session)?)),
         Call::UpdatePlan {
             session,
             request,
@@ -1122,6 +1127,8 @@ mod queue_reference_tests;
 mod settings_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod web_tests;
 
 #[cfg(test)]
 mod cancel_tests;

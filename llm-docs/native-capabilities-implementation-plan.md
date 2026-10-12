@@ -1,6 +1,6 @@
 # Pipkin native capabilities: implementation and comparative review plan
 
-Status: implementation in progress. ASK-1 (the first reviewable change, §13), PLAN-1 and PLAN-2 (§8) and the per-tool recovery part of F0 item 4 landed on 2026-10-12; see [docs/ask-user-question.md](../docs/ask-user-question.md), [docs/plans.md](../docs/plans.md) and the progress notes under §8 and §13. Everything else remains proposed.
+Status: implementation in progress. ASK-1 (the first reviewable change, §13), PLAN-1 and PLAN-2 (§8), WEB-1 (§5) and the per-tool recovery part of F0 item 4 landed on 2026-10-12; see [docs/ask-user-question.md](../docs/ask-user-question.md), [docs/plans.md](../docs/plans.md) and the progress notes under §8 and §13. Everything else remains proposed.
 
 Prepared: 2026-10-11 (America/Phoenix). Local audit baseline: Git HEAD `67ba56f6bf525493bf9c33ad1cad8a353d558a92`, plus the working-tree changes present during inspection. External references were read on this date. Reference links to `main` are moving targets, not reproducible dependency pins.
 
@@ -146,6 +146,8 @@ The adapter now also compares itself with newer Pi built-in MCP. That does not p
 - Store sources under engine-owned private artifact storage with session/project provenance, content hash, byte count, retention policy and access scope. Return bounded excerpts plus stable read/find cursors. An expired artifact produces an explicit expired result; refetching creates a new version.
 - Format citations from verified source records. Clicking one opens the source externally initially. A persisted citation must remain meaningful after a transient cache expires: retain URL/title/date and any evidence excerpt attached to a goal/task.
 - Support bounded batches, cancellation and a configured fallback chain. Do not send the same query/page to additional providers without a configured routing policy. Label summaries as derived, not verbatim source content.
+
+**Progress (2026-10-12).** WEB-1 done: `web/` (policy, extraction, Brave and SearXNG providers, service), `store/web.rs` (schema 12 `web_sources` with expiry and per-call idempotency), `tools/web.rs` (`web_search`, `web_fetch`, `web_read`), `runtime/web.rs`, the `WebSources` call (protocol 14) and capability `web`. See [docs/web-access.md](../docs/web-access.md). Not done: desktop citation rendering (click to open), batch fetches and a fallback provider chain, live-provider verification, and WEB-2 below.
 
 **WEB-2 — extraction breadth.** Add local text extraction for PDFs only after packaging and hostile/oversized-document limits are qualified. Add OCR, authenticated pages, screenshots/video and browser automation as separate capabilities with explicit cost/data routing. Keep source retrieval independent from the Browse/webview milestone.
 

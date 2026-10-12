@@ -1,5 +1,30 @@
 # Scorecard
 
+## Web access, WEB-1 (2026-10-12)
+
+The native engine offers `web_search`, `web_fetch` and `web_read` with retained sources
+([web-access.md](web-access.md)): schema 12, protocol 14, capability `web`.
+
+- **Measured (automated).** Against a local fixture server: readable text extracted with
+  scripts, styles and markup removed; titles and published dates taken from the page only;
+  slices and `find` by character offset; relative and absolute redirect chains with the
+  final and requested URLs recorded; redirect loops, credential-bearing cross-origin
+  redirects and non-http schemes refused; Windows-1252 and `<meta charset>` decoding; JSON
+  bodies; unsupported content types, compressed responses, oversized bodies and non-2xx
+  statuses as typed errors that retain nothing; loopback, link-local, metadata-service,
+  credential and `file:` URLs refused with no connection when private hosts are not allowed;
+  Stop aborting a hanging fetch and the service reporting cancellation; SearXNG-format search
+  with duplicate URLs dropped, no invented dates, empty results as success, and 429/403/
+  non-JSON answers classified; missing provider or key as `not_configured` without key
+  material in history; sources readable after a restart; expiry of the oldest content with
+  the citation kept; per-call idempotent source recording; the tool order, recovery registry
+  and capability. Unit tests cover the policy's address classes, entity decoding, charset
+  parsing and attribute parsing. The repository gate passed.
+- **Observed.** Nothing against a live provider or a real site.
+- **Unverified.** Brave and SearXNG responses from live instances; behaviour behind the
+  engine's HTTP proxy; real-world pages (encodings, size, hostile markup beyond the
+  fixtures); the 8 MiB bound against a slow server. Not a release qualification.
+
 ## Plan view, PLAN-2 (2026-10-12)
 
 The desktop shows the engine's plan ([plans.md](plans.md)): a strip above the composer, a Plan

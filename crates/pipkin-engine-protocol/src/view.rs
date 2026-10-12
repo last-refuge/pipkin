@@ -655,7 +655,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 13);
+        assert_eq!(crate::PROTOCOL_VERSION, 14);
         let release = Call::ReleaseSession {
             session: "s1".into(),
         };
@@ -1003,4 +1003,34 @@ pub struct PlanRejected {
     pub message: String,
     /// The plan revision at the time of the rejection.
     pub revision: u64,
+}
+
+// --------------------------------------------------------------------------- web sources
+
+/// A retained web source: a search result or a fetched page. Content is read through the
+/// `web_read` tool; this view carries provenance only.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebSourceView {
+    /// `s<n>`, stable within the session.
+    pub id: String,
+    /// `search` or `fetch`.
+    pub kind: String,
+    pub provider: String,
+    pub requested_url: String,
+    pub final_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// As the provider or page supplied it, verbatim; never derived.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published: Option<String>,
+    pub retrieved_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    pub bytes: u64,
+    pub text_chars: u64,
+    /// The content is no longer retained; the record remains for citation.
+    pub expired: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
 }

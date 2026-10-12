@@ -77,6 +77,9 @@ pub struct EngineConfig {
     pub extensions: Vec<ExtensionSpec>,
     /// Explicitly clear the sticky default at startup (mutually exclusive with extensions).
     pub clear_extensions: bool,
+    /// Tests only: let `web_fetch` reach loopback and private addresses (a local fixture
+    /// server). The default refuses them.
+    pub web_allow_private_hosts: bool,
 }
 
 pub use pipkin_engine_protocol::ExtensionSpec;
@@ -124,6 +127,7 @@ impl EngineConfig {
             max_tool_processes: 16,
             extensions: vec![],
             clear_extensions: false,
+            web_allow_private_hosts: false,
         }
     }
 

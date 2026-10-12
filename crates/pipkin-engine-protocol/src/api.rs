@@ -273,6 +273,10 @@ pub enum Call {
         #[serde(default)]
         expected_revision: Option<u64>,
     },
+    /// The session's retained web sources (search results and fetched pages), oldest first.
+    WebSources {
+        session: SessionId,
+    },
     SubagentHistory {
         session: SessionId,
         child: u64,
@@ -439,6 +443,7 @@ pub enum Reply {
     Subagents(SubagentsView),
     Plan(PlanView),
     PlanUpdated(PlanReceipt),
+    WebSources(Vec<WebSourceView>),
     Auth(AuthSnapshot),
     Thinking(ThinkingView),
     ImportReport(ImportReport),

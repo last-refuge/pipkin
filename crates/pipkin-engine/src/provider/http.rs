@@ -80,7 +80,7 @@ pub(crate) fn client_with_identity(
         .map_err(|_| "Cannot build Google certificate TLS client".into())
 }
 
-fn builder(net: &NetSettings) -> reqwest::ClientBuilder {
+pub(crate) fn builder(net: &NetSettings) -> reqwest::ClientBuilder {
     let mut builder = reqwest::Client::builder()
         .http_proxy_tunnel(true)
         .user_agent(concat!("pipkin/", env!("CARGO_PKG_VERSION")))

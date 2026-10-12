@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 11;
+pub const SCHEMA_VERSION: u32 = 12;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -302,7 +302,33 @@ CREATE TABLE plan_receipts (
     PRIMARY KEY (session, key)
 ) STRICT;
 "#;
-const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11];
+// Version 12 adds retained web sources (search results and fetched pages) per session.
+const V12: &str = r#"
+CREATE TABLE web_sources (
+    session TEXT NOT NULL REFERENCES sessions(id),
+    id INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('search', 'fetch')),
+    provider TEXT NOT NULL,
+    requested_url TEXT NOT NULL,
+    final_url TEXT NOT NULL,
+    title TEXT,
+    excerpt TEXT,
+    published_at TEXT,
+    retrieved_at INTEGER NOT NULL,
+    content_type TEXT,
+    bytes INTEGER NOT NULL DEFAULT 0,
+    sha256 TEXT,
+    text_chars INTEGER NOT NULL DEFAULT 0,
+    expired INTEGER NOT NULL DEFAULT 0 CHECK (expired IN (0, 1)),
+    query TEXT,
+    call_id TEXT NOT NULL,
+    text TEXT,
+    body BLOB,
+    PRIMARY KEY (session, id)
+) STRICT;
+CREATE INDEX web_sources_by_call ON web_sources(session, call_id);
+"#;
+const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

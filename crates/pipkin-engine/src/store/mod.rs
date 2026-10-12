@@ -21,6 +21,7 @@ pub(crate) mod removal;
 mod schema;
 mod tool_identity;
 mod tool_progress;
+mod web;
 mod writes;
 pub use generation::GenerationState;
 
