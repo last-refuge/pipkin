@@ -1,0 +1,98 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "credential-provider-process": {
+      "version": "3.972.70",
+      "integrity": "sha512-2ry03fGRJr4sV3jI+ocjj5JqALnFD6ymM5KiNCDZMvq8bX2GSbE0vji4aM43TVCl2nXqqLRZaUxdq/KeWRAY4Q==",
+      "sha256": "459dccd69ac50b0cf33d00398dd6b18dec18521d8ed6bc359121e1a96115ea4d"
+    }
+  },
+  "scope": "Executed pinned SDK credential_process using synthetic shell helpers; no live AWS request",
+  "cases": [
+    {
+      "name": "valid",
+      "command": "printf '%s' '{\"Version\":1,\"AccessKeyId\":\"PROCESS\",\"SecretAccessKey\":\"synthetic\",\"SessionToken\":\"session\",\"Expiration\":\"2099-01-01T00:00:00Z\"}'",
+      "credentials": {
+        "accessKeyId": "PROCESS",
+        "secretAccessKey": "synthetic",
+        "sessionToken": "session",
+        "expiration": "2099-01-01T00:00:00.000Z"
+      }
+    },
+    {
+      "name": "permanent",
+      "command": "printf '%s' '{\"Version\":1,\"AccessKeyId\":\"PERMANENT\",\"SecretAccessKey\":\"synthetic\"}'",
+      "credentials": {
+        "accessKeyId": "PERMANENT",
+        "secretAccessKey": "synthetic",
+        "sessionToken": null,
+        "expiration": null
+      }
+    },
+    {
+      "name": "whitespace",
+      "command": "printf ' \\n'; printf '%s' '{\"Version\":1,\"AccessKeyId\":\"PROCESS\",\"SecretAccessKey\":\"synthetic\",\"SessionToken\":\"session\",\"Expiration\":\"2099-01-01T00:00:00Z\"}'; printf '\\n'",
+      "credentials": {
+        "accessKeyId": "PROCESS",
+        "secretAccessKey": "synthetic",
+        "sessionToken": "session",
+        "expiration": "2099-01-01T00:00:00.000Z"
+      }
+    },
+    {
+      "name": "stderr-success",
+      "command": "printf '%s' '{\"Version\":1,\"AccessKeyId\":\"PROCESS\",\"SecretAccessKey\":\"synthetic\",\"SessionToken\":\"session\",\"Expiration\":\"2099-01-01T00:00:00Z\"}'; printf synthetic-detail >&2",
+      "credentials": {
+        "accessKeyId": "PROCESS",
+        "secretAccessKey": "synthetic",
+        "sessionToken": "session",
+        "expiration": "2099-01-01T00:00:00.000Z"
+      }
+    },
+    {
+      "name": "shell-expansion",
+      "command": "PIPKIN_HELPER_ID=SCOPED; printf '{\"Version\":1,\"AccessKeyId\":\"%s\",\"SecretAccessKey\":\"synthetic\"}' \"$PIPKIN_HELPER_ID\"",
+      "credentials": {
+        "accessKeyId": "SCOPED",
+        "secretAccessKey": "synthetic",
+        "sessionToken": null,
+        "expiration": null
+      }
+    },
+    {
+      "name": "expired",
+      "command": "printf '%s' '{\"Version\":1,\"AccessKeyId\":\"PROCESS\",\"SecretAccessKey\":\"synthetic\",\"SessionToken\":\"session\",\"Expiration\":\"2000-01-01T00:00:00Z\"}'",
+      "error": "Profile test credential_process returned expired credentials."
+    },
+    {
+      "name": "invalid-version",
+      "command": "printf '%s' '{\"Version\":2,\"AccessKeyId\":\"PROCESS\",\"SecretAccessKey\":\"synthetic\",\"SessionToken\":\"session\",\"Expiration\":\"2099-01-01T00:00:00Z\"}'",
+      "error": "Profile test credential_process did not return Version 1."
+    },
+    {
+      "name": "missing-keys",
+      "command": "printf '%s' '{\"Version\":1}'",
+      "error": "Profile test credential_process returned invalid credentials."
+    },
+    {
+      "name": "invalid-json",
+      "command": "printf synthetic-detail",
+      "error": "Profile test credential_process returned invalid JSON."
+    },
+    {
+      "name": "exit-error",
+      "command": "printf synthetic-detail >&2; exit 7",
+      "error": "Command failed: printf synthetic-detail >&2; exit 7\nsynthetic-detail"
+    },
+    {
+      "name": "stdout-bound",
+      "command": "/usr/bin/head -c 1048577 /dev/zero",
+      "error": "stdout maxBuffer length exceeded"
+    },
+    {
+      "name": "stderr-bound",
+      "command": "/usr/bin/head -c 1048577 /dev/zero >&2",
+      "error": "stderr maxBuffer length exceeded"
+    }
+  ]
+}

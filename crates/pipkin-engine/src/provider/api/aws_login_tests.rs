@@ -53,6 +53,11 @@ impl Fixture {
         let http = crate::provider::http::client();
         resolve_credentials(&ChainInput {
             env: &lookup,
+            process_env: &self
+                .vars
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             explicit_profile: Some("test".into()),
             ambient_profile: None,
             region: "us-west-2".into(),
@@ -121,6 +126,7 @@ fn sec1_cli_key_produces_valid_p256_dpop_proofs() {
     let normalized = super::endpoint(
         &ChainInput {
             env: &lookup,
+            process_env: &Default::default(),
             explicit_profile: None,
             ambient_profile: None,
             region: "us-west-2".into(),

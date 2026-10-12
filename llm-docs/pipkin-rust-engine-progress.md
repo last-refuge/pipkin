@@ -11,7 +11,38 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — Google certificate federation and transport preservation
+## Current follow-up — AWS credential cache and helper isolation
+
+2026-10-12, following **`0c3d742`**. The shared AWS credential cache no longer identifies
+process credentials by profile name, assumed roles by profile/role, container credentials by
+URL alone, or every EC2 instance by one global key. Identity keys include configuration and
+source credentials, rotating web/container token contents, endpoints and helper environments.
+The cache is bounded to 64 identities with expiry pruning and least-recently-used eviction.
+
+Bedrock now honors the isolated-environment flag for credentials, profiles and regions.
+Shell helpers receive the request's effective environment, retain shell semantics, bound each
+output stream to 1 MiB, redact output in failures, reject expired credentials and clean up
+Unix descendants on timeout/cancellation. Token files and credential HTTP bodies are bounded.
+See [AWS isolation evidence](pipkin-rust-engine-evidence/aws-credential-isolation.md).
+
+Twelve new tests cover identity separation, rotation, limits, cancellation, cleanup and an
+actual local Bedrock stream with conflicting ambient identity. Twelve cases captured by
+executing Pi's pinned AWS credential-process SDK compare successful credentials and error
+categories. The focused provider suite passed **264 tests**. Initial workspace checks passed
+**1610 tests, 0 failed, 53 ignored**. Clippy's one collapsible-if warning was corrected. The
+final workspace run also passed **1610 / 0 / 53**, including that correction and a helper
+wait-error cleanup adjustment; final Clippy and formatting are clean. Logs:
+`/tmp/pipkin-aws-isolation-provider-tests.log`, `/tmp/pipkin-aws-isolation-workspace2.log`,
+`/tmp/pipkin-aws-isolation-clippy2.log`, `/tmp/pipkin-aws-isolation-fmt.log`. Initial logs
+are retained in `...-workspace.log` and `...-clippy.log`.
+
+Protocol 11 / schema 9 unchanged. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**. Native remains opt-in. Live AWS acceptance, broader
+credential retries, proxy/server-trust settings, migration flags, sustained workloads and
+clean release/CI/platform qualification remain open. Owner plan/worktree changes are preserved.
+
+## Previous follow-up — Google certificate federation and transport preservation
 
 2026-10-12, following **`d1809e7`**. Native certificate ADC now loads explicit/env/default
 certificate config, validates leaf/trust chains and performs credential exchanges with mutual

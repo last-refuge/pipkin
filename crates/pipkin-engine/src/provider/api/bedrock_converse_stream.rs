@@ -196,11 +196,30 @@ struct Env<'a> {
 }
 
 impl Env<'_> {
+    fn isolated(&self) -> bool {
+        self.req.options.get(crate::provider::ISOLATED_ENV) == Some(&Value::Bool(true))
+    }
+
+    fn helper_environment(&self) -> std::collections::BTreeMap<String, String> {
+        let mut vars = std::collections::BTreeMap::new();
+        if !self.isolated() {
+            for (k, _) in std::env::vars_os() {
+                if let Ok(k) = k.into_string()
+                    && let Some(v) = (self.ambient)(&k)
+                {
+                    vars.insert(k, v);
+                }
+            }
+        }
+        vars.extend(self.req.env.iter().map(|(k, v)| (k.clone(), v.clone())));
+        vars
+    }
     /// Request overrides (an empty override masks the process value), then the process.
     fn get(&self, name: &str) -> Option<String> {
         match self.req.env.get(name) {
             Some(v) => Some(v.clone()),
-            None => (self.ambient)(name),
+            None if !self.isolated() => (self.ambient)(name),
+            None => None,
         }
         .filter(|v| !v.is_empty())
     }
@@ -238,7 +257,11 @@ impl Env<'_> {
     }
 
     fn ambient_profile(&self) -> Option<String> {
-        (self.ambient)("AWS_PROFILE")
+        if self.isolated() {
+            None
+        } else {
+            (self.ambient)("AWS_PROFILE")
+        }
     }
 }
 
@@ -1046,8 +1069,10 @@ impl BedrockConverseStream {
             return Ok(Auth::Bearer(token));
         }
         let lookup = |k: &str| env.get(k);
+        let process_env = env.helper_environment();
         aws_auth::resolve_credentials(&ChainInput {
             env: &lookup,
+            process_env: &process_env,
             explicit_profile: env.explicit_profile(),
             ambient_profile: env.ambient_profile(),
             region: region.to_owned(),
@@ -1362,6 +1387,91 @@ mod tests {
             timestamp: 0,
             extra: Map::new(),
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn isolated_helper_environment_signs_bedrock_without_ambient_identity() {
+        fn ambient(name: &str) -> Option<String> {
+            match name {
+                "AWS_PROFILE" => Some("ambient-profile".into()),
+                "AWS_REGION" => Some("ambient-region".into()),
+                "AWS_ACCESS_KEY_ID" => Some("AMBIENT".into()),
+                "AWS_SECRET_ACCESS_KEY" => Some("ambient-secret".into()),
+                "HOME" => Some("/ambient-home".into()),
+                _ => None,
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config");
+        std::fs::write(&config,r#"[default]
+credential_process = printf '{"Version":1,"AccessKeyId":"%s","SecretAccessKey":"synthetic"}' "$HELPER_ID"
+"#).unwrap();
+        let server = MockServer::start(|_, _| {
+            let mut bytes = encode_event("messageStart", &json!({"role":"assistant"}));
+            bytes.extend(encode_event(
+                "contentBlockDelta",
+                &json!({"contentBlockIndex":0,"delta":{"text":"ok"}}),
+            ));
+            bytes.extend(encode_event(
+                "messageStop",
+                &json!({"stopReason":"end_turn"}),
+            ));
+            eventstream(bytes, 64)
+        })
+        .await;
+        let mut req = request(model("amazon.nova-pro-v1:0", json!({"reasoning":false})));
+        req.env.clear();
+        req.options
+            .insert(crate::provider::ISOLATED_ENV.into(), json!(true));
+        req.env
+            .insert("AWS_CONFIG_FILE".into(), config.display().to_string());
+        req.env.insert(
+            "AWS_SHARED_CREDENTIALS_FILE".into(),
+            dir.path().join("absent").display().to_string(),
+        );
+        req.env
+            .insert("AWS_EC2_METADATA_DISABLED".into(), "true".into());
+        req.env.insert("HELPER_ID".into(), "SCOPED".into());
+        req.env.insert("HOME".into(), "".into());
+        req.base_url = Some(server.url.clone());
+        let env = Env { req: &req, ambient };
+        assert_eq!(env.get("AWS_ACCESS_KEY_ID"), None);
+        assert_eq!(env.ambient_profile(), None);
+        assert_eq!(env.configured_region(), None);
+        assert_eq!(
+            env.helper_environment(),
+            req.env
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        );
+        let http = http::client();
+        let message = BedrockConverseStream { ambient }
+            .stream(StreamCtx {
+                req: &req,
+                http: &http,
+                net: None,
+                events: None,
+                cancel: CancellationToken::new(),
+            })
+            .await;
+        assert!(
+            matches!(
+                message,
+                Message::Assistant {
+                    stop_reason: StopReason::Stop,
+                    ..
+                }
+            ),
+            "{message:?}"
+        );
+        assert!(
+            server.requests()[0]
+                .header("authorization")
+                .unwrap()
+                .starts_with("AWS4-HMAC-SHA256 Credential=SCOPED/")
+        );
     }
 
     #[test]

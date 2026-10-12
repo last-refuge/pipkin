@@ -52,6 +52,11 @@ impl Fixture {
         let http = crate::provider::http::client();
         resolve_credentials(&ChainInput {
             env: &lookup,
+            process_env: &self
+                .vars
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             explicit_profile: Some("test".into()),
             ambient_profile: None,
             region: "us-west-2".into(),

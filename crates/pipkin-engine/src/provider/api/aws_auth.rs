@@ -27,7 +27,7 @@
 //! they fail explicitly. Temporary credentials are cached in-process until five minutes
 //! before they expire. STS honours `AWS_ENDPOINT_URL_STS` / `AWS_ENDPOINT_URL`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -401,36 +401,94 @@ enum ChainError {
 
 type ChainResult = Result<AwsCredentials, ChainError>;
 
-fn cache() -> &'static Mutex<HashMap<String, AwsCredentials>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, AwsCredentials>>> = OnceLock::new();
+#[derive(Default)]
+struct CredentialCache {
+    entries: HashMap<String, (AwsCredentials, u64)>,
+    accessed: u64,
+}
+impl CredentialCache {
+    fn get(&mut self, key: &str) -> Option<AwsCredentials> {
+        self.accessed = self.accessed.saturating_add(1);
+        let (creds, used) = self.entries.get_mut(key)?;
+        if creds.expires_at.is_some_and(|t| t > now_secs() + 300) {
+            *used = self.accessed;
+            Some(creds.clone())
+        } else {
+            self.entries.remove(key);
+            None
+        }
+    }
+    fn insert(&mut self, key: &str, creds: &AwsCredentials) {
+        if !creds.expires_at.is_some_and(|t| t > now_secs() + 300) {
+            return;
+        }
+        self.entries
+            .retain(|_, (c, _)| c.expires_at.is_some_and(|t| t > now_secs() + 300));
+        if self.entries.len() >= 64
+            && !self.entries.contains_key(key)
+            && let Some(old) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, (_, used))| *used)
+                .map(|(k, _)| k.clone())
+        {
+            self.entries.remove(&old);
+        }
+        self.accessed = self.accessed.saturating_add(1);
+        self.entries
+            .insert(key.into(), (creds.clone(), self.accessed));
+    }
+}
+fn cache() -> &'static Mutex<CredentialCache> {
+    static CACHE: OnceLock<Mutex<CredentialCache>> = OnceLock::new();
     CACHE.get_or_init(Default::default)
 }
-
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
 }
-
 fn cached(key: &str) -> Option<AwsCredentials> {
-    let map = cache().lock().unwrap_or_else(|e| e.into_inner());
-    map.get(key)
-        .filter(|c| c.expires_at.is_some_and(|t| t > now_secs() + 300))
-        .cloned()
+    cache().lock().unwrap_or_else(|e| e.into_inner()).get(key)
 }
-
 fn remember(key: &str, creds: &AwsCredentials) {
-    if creds.expires_at.is_some() {
-        cache()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(key.to_owned(), creds.clone());
-    }
+    cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(key, creds);
+}
+fn cache_key(input: &ChainInput<'_>, kind: &str, details: Value) -> String {
+    // Hash credentials and configuration; neither raw key material nor helper env is logged.
+    let files: BTreeMap<_, _> = [
+        "HOME",
+        "USERPROFILE",
+        "AWS_CONFIG_FILE",
+        "AWS_SHARED_CREDENTIALS_FILE",
+        "AWS_ROLE_SESSION_NAME",
+    ]
+    .into_iter()
+    .map(|k| (k, (input.env)(k)))
+    .collect();
+    sha256_hex(
+        serde_json::json!([
+            kind,
+            files,
+            input.region,
+            sts_endpoint(input),
+            input.explicit_profile,
+            input.ambient_profile,
+            details
+        ])
+        .to_string()
+        .as_bytes(),
+    )
 }
 
 /// Inputs of one resolution.
 pub struct ChainInput<'a> {
     pub env: EnvLookup<'a>,
+    /// Effective, isolated helper environment; contains no model history.
+    pub process_env: &'a BTreeMap<String, String>,
     /// A profile chosen for this provider (option or scoped `AWS_PROFILE`): wins over
     /// environment keys.
     pub explicit_profile: Option<String>,
@@ -556,7 +614,19 @@ fn from_profile<'a>(input: &'a ChainInput<'a>, name: String, visited: Vec<String
                     }
                 }
             };
-            let key = format!("assume:{name}:{role}");
+            let profile: BTreeMap<_, _> = p.iter().collect();
+            let key = cache_key(
+                input,
+                "assume",
+                serde_json::json!([
+                    name,
+                    role,
+                    profile,
+                    source.access_key_id,
+                    source.secret_access_key,
+                    source.session_token
+                ]),
+            );
             if let Some(c) = cached(&key) {
                 return Ok(c);
             }
@@ -576,11 +646,16 @@ fn from_profile<'a>(input: &'a ChainInput<'a>, name: String, visited: Vec<String
                 .map_err(fatal_str);
         }
         if let Some(command) = get("credential_process") {
-            let key = format!("process:{name}");
+            let profile: BTreeMap<_, _> = p.iter().collect();
+            let key = cache_key(
+                input,
+                "process",
+                serde_json::json!([name, profile, input.process_env]),
+            );
             if let Some(c) = cached(&key) {
                 return Ok(c);
             }
-            let creds = credential_process(&command, input.cancel)
+            let creds = process::credentials(&command, input.process_env, input.cancel)
                 .await
                 .map_err(fatal_str)?;
             remember(&key, &creds);
@@ -668,15 +743,23 @@ async fn send_with_cancel(
     cancel: &CancellationToken,
 ) -> Result<(reqwest::StatusCode, String), String> {
     let fut = async {
-        let resp = builder
+        let mut resp = builder
             .send()
             .await
             .map_err(|e| crate::provider::http::transport_error(&e))?;
         let status = resp.status();
-        let text = resp
-            .text()
+        let mut bytes = Vec::new();
+        while let Some(chunk) = resp
+            .chunk()
             .await
-            .map_err(|e| crate::provider::http::transport_error(&e))?;
+            .map_err(|e| crate::provider::http::transport_error(&e))?
+        {
+            if bytes.len().saturating_add(chunk.len()) > 1024 * 1024 {
+                return Err("AWS credential response is too large".into());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let text = String::from_utf8_lossy(&bytes).into_owned();
         Ok((status, text))
     };
     tokio::select! {
@@ -759,18 +842,55 @@ async fn assume_role(
     sts_credentials(status, &text, "AssumeRole")
 }
 
+async fn read_token_file(path: &str, cancel: &CancellationToken) -> Result<String, String> {
+    use tokio::io::AsyncReadExt;
+    if cancel.is_cancelled() {
+        return Err("Request was aborted".into());
+    }
+    let read = async {
+        if !tokio::fs::metadata(path)
+            .await
+            .map_err(|_| "Cannot inspect AWS identity token file")?
+            .is_file()
+        {
+            return Err("AWS identity token is not a regular file".into());
+        }
+        let file = tokio::fs::File::open(path)
+            .await
+            .map_err(|_| "Cannot read AWS identity token file")?;
+        let mut bytes = Vec::new();
+        file.take(1024 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(|_| "Cannot read AWS identity token file")?;
+        if bytes.len() > 1024 * 1024 {
+            return Err("AWS identity token file is too large".into());
+        }
+        String::from_utf8(bytes).map_err(|_| "AWS identity token is not UTF-8".into())
+    };
+    tokio::select! {
+        _ = cancel.cancelled() => Err("Request was aborted".into()),
+        result = tokio::time::timeout(Duration::from_secs(30), read) => {
+            result.map_err(|_| "AWS identity token read timed out".to_owned())?
+        },
+    }
+}
+
 async fn web_identity(
     input: &ChainInput<'_>,
     role_arn: &str,
     token_file: &str,
     session: Option<&str>,
 ) -> Result<AwsCredentials, String> {
-    let key = format!("webid:{role_arn}:{token_file}");
+    let token = read_token_file(token_file, input.cancel).await?;
+    let key = cache_key(
+        input,
+        "webid",
+        serde_json::json!([role_arn, token_file, session, token]),
+    );
     if let Some(c) = cached(&key) {
         return Ok(c);
     }
-    let token = std::fs::read_to_string(token_file)
-        .map_err(|e| format!("Could not read web identity token file {token_file}: {e}"))?;
     let session = session_name(input.env, session);
     let body = form(&[
         ("Action", "AssumeRoleWithWebIdentity"),
@@ -817,48 +937,8 @@ fn json_credentials(v: &Value, token_key: &str) -> Result<AwsCredentials, String
     }
 }
 
-async fn credential_process(
-    command: &str,
-    cancel: &CancellationToken,
-) -> Result<AwsCredentials, String> {
-    let mut cmd = if cfg!(windows) {
-        let mut c = tokio::process::Command::new("cmd");
-        c.arg("/C").arg(command);
-        c
-    } else {
-        let mut c = tokio::process::Command::new("sh");
-        c.arg("-c").arg(command);
-        c
-    };
-    cmd.kill_on_drop(true)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    let child = cmd
-        .spawn()
-        .map_err(|e| format!("credential_process failed to start: {e}"))?;
-    let out = tokio::select! {
-        _ = cancel.cancelled() => return Err("Request was aborted".into()),
-        _ = tokio::time::sleep(Duration::from_secs(60)) => {
-            return Err("credential_process timed out".into());
-        }
-        o = child.wait_with_output() => o.map_err(|e| format!("credential_process failed: {e}"))?,
-    };
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(format!(
-            "credential_process exited with {}: {}",
-            out.status,
-            err.trim()
-        ));
-    }
-    let v: Value = serde_json::from_slice(&out.stdout)
-        .map_err(|e| format!("credential_process returned invalid JSON: {e}"))?;
-    if v.get("Version").and_then(Value::as_u64) != Some(1) {
-        return Err("credential_process output must have Version 1".into());
-    }
-    json_credentials(&v, "SessionToken").map_err(|e| format!("credential_process {e}"))
-}
+#[path = "aws_process.rs"]
+mod process;
 
 const ECS_HOST: &str = "http://169.254.170.2";
 
@@ -900,19 +980,20 @@ async fn from_container(input: &ChainInput<'_>) -> ChainResult {
             "The container metadata credential provider cannot be used unless AWS_CONTAINER_CREDENTIALS_RELATIVE_URI or AWS_CONTAINER_CREDENTIALS_FULL_URI is set".into(),
         ));
     };
-    let key = format!("ecs:{url}");
-    if let Some(c) = cached(&key) {
-        return Ok(c);
-    }
     let auth = match env("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE") {
         Some(file) => Some(
-            std::fs::read_to_string(&file)
-                .map_err(|e| ChainError::Fatal(format!("Could not read {file}: {e}")))?
+            read_token_file(&file, input.cancel)
+                .await
+                .map_err(ChainError::Fatal)?
                 .trim()
                 .to_owned(),
         ),
         None => env("AWS_CONTAINER_AUTHORIZATION_TOKEN"),
     };
+    let key = cache_key(input, "ecs", serde_json::json!([url, auth]));
+    if let Some(c) = cached(&key) {
+        return Ok(c);
+    }
     let mut builder = input.http.get(&url).timeout(Duration::from_secs(5));
     if let Some(auth) = auth {
         builder = builder.header("authorization", auth);
@@ -944,7 +1025,12 @@ async fn from_imds(input: &ChainInput<'_>) -> ChainResult {
     let base =
         env("AWS_EC2_METADATA_SERVICE_ENDPOINT").unwrap_or_else(|| "http://169.254.169.254".into());
     let base = base.trim_end_matches('/').to_owned();
-    if let Some(c) = cached("imds") {
+    let key = cache_key(
+        input,
+        "imds",
+        serde_json::json!([base, env("AWS_EC2_METADATA_V1_DISABLED")]),
+    );
+    if let Some(c) = cached(&key) {
         return Ok(c);
     }
     let timeout = Duration::from_secs(1);
@@ -1000,7 +1086,7 @@ async fn from_imds(input: &ChainInput<'_>) -> ChainResult {
     }
     let v: Value = serde_json::from_str(&text).map_err(|e| unavailable(e.to_string()))?;
     let creds = json_credentials(&v, "Token").map_err(unavailable)?;
-    remember("imds", &creds);
+    remember(&key, &creds);
     Ok(creds)
 }
 
@@ -1210,6 +1296,11 @@ mod tests {
             let cancel = CancellationToken::new();
             resolve_credentials(&ChainInput {
                 env: &lookup,
+                process_env: &self
+                    .vars
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
                 explicit_profile: explicit.map(str::to_owned),
                 ambient_profile: ambient.map(str::to_owned),
                 region: "us-east-1".into(),
@@ -1418,15 +1509,12 @@ mod tests {
         let mut f = Fixture::new("", "");
         f.vars.remove("AWS_EC2_METADATA_DISABLED");
         f.set("AWS_EC2_METADATA_SERVICE_ENDPOINT", &server.url);
-        // The IMDS cache key is global; clear it so this test is independent.
-        cache().lock().unwrap().remove("imds");
         let c = f.resolve(None, None).await.unwrap();
         assert_eq!(c.access_key_id, "IMDSKEY");
         assert_eq!(
             server.requests()[2].path,
             "/latest/meta-data/iam/security-credentials/my-role"
         );
-        cache().lock().unwrap().remove("imds");
     }
 
     #[cfg(unix)]
@@ -1442,6 +1530,11 @@ mod tests {
             ("PROC", Some("t"))
         );
         let err = f.resolve(Some("broken"), None).await.unwrap_err();
-        assert!(err.contains("exited") && err.contains("nope"), "{err}");
+        assert!(err.contains("exited") && !err.contains("nope"), "{err}");
+    }
+    #[cfg(unix)]
+    mod isolation {
+        use super::*;
+        include!("aws_isolation_tests.rs");
     }
 }
