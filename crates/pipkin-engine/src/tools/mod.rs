@@ -21,6 +21,7 @@ pub mod edit;
 mod files;
 pub mod goal;
 pub mod inspect;
+pub mod mcp;
 pub mod path;
 pub mod plan;
 pub mod read;
@@ -290,6 +291,40 @@ pub trait ToolHost: Send + Sync {
         >,
     > {
         Box::pin(async { Err("No goal service is configured".into()) })
+    }
+
+    /// Search the configured MCP servers' tools.
+    #[allow(clippy::type_complexity)]
+    fn mcp_search<'a>(
+        &'a self,
+        _query: &'a str,
+        _server: Option<&'a str>,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<(Vec<crate::mcp::ToolInfo>, Vec<(String, String)>), crate::mcp::McpError>,
+            String,
+        >,
+    > {
+        Box::pin(async { Err("No MCP service is configured".into()) })
+    }
+
+    fn mcp_describe<'a>(
+        &'a self,
+        _qualified: &'a str,
+    ) -> BoxFuture<'a, Result<Result<crate::mcp::ToolInfo, crate::mcp::McpError>, String>> {
+        Box::pin(async { Err("No MCP service is configured".into()) })
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn mcp_call<'a>(
+        &'a self,
+        _call_id: &'a str,
+        _qualified: &'a str,
+        _arguments: Value,
+        _cancel: CancellationToken,
+    ) -> BoxFuture<'a, Result<Result<crate::mcp::CallOutcome, crate::mcp::McpError>, String>> {
+        Box::pin(async { Err("No MCP service is configured".into()) })
     }
 
     /// A retained source and its text (None when unknown or expired).

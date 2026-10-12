@@ -201,7 +201,10 @@ fn the_model_creates_tasks_and_the_next_request_carries_the_plan_section() {
             "plan_read",
             "web_search",
             "web_fetch",
-            "web_read"
+            "web_read",
+            "mcp_search",
+            "mcp_describe",
+            "mcp_call"
         ]
     );
 }

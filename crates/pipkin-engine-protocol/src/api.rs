@@ -277,6 +277,11 @@ pub enum Call {
     WebSources {
         session: SessionId,
     },
+    /// The MCP servers configured for the session's project (user settings merged with the
+    /// project's) and their current state. Secret values never appear.
+    McpServers {
+        session: SessionId,
+    },
     /// Set (or replace) the session's goal; the engine schedules its turns.
     SetGoal {
         session: SessionId,
@@ -467,6 +472,7 @@ pub enum Reply {
     Plan(PlanView),
     PlanUpdated(PlanReceipt),
     WebSources(Vec<WebSourceView>),
+    McpServers(McpServersView),
     Goal(Option<GoalView>),
     Goals(Vec<GoalView>),
     Auth(AuthSnapshot),

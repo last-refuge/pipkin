@@ -1,5 +1,32 @@
 # Scorecard
 
+## MCP servers and tools, MCP-1 (2026-10-12)
+
+Configured MCP servers (stdio) are supervised by one engine-wide service with lazy starts,
+cached catalogs, an idle reaper and bounded calls; the model reaches them through
+`mcp_search`, `mcp_describe` and `mcp_call` ([mcp.md](mcp.md)); protocol 19 adds
+`McpServers` and the `mcp` capability. Built on the official `rmcp` SDK pinned at 3.5.1.
+
+- **Measured (automated).** Engine tests against a scripted fixture server: search, describe
+  and call through the client contract with the resolved server/tool/revision in the durable
+  result and an environment reference reaching the process but never a view; classified
+  errors (unconfigured, unknown server/tool, invalid arguments against the cached schema,
+  disabled, start failures with backoff, missing environment and secret references, a
+  server's own error kept separate from transport failures, large results bounded); a lost
+  reply times out as unknown effect and is never re-sent while the server stays usable; a
+  restart during a call records it interrupted and never reruns it (the side-effect counter
+  stays at one); a `tools/list_changed` notification refreshes the catalog; idle servers stop
+  and restart on use, kept-alive ones stay, and a call longer than the idle allowance is not
+  reaped; project settings add servers with project scope, a changed revision stops the old
+  process and discards its catalog, removal makes the server unknown, invalid entries are
+  warnings; the catalog persists across a restart; read-only profiles exclude the tools. A
+  pre-existing recovery race (startup and a client's open both recording the same
+  interrupted call) was fixed and is covered by the restart test. The repository gate
+  passed.
+- **Observed.** Nothing native.
+- **Unverified.** Any third-party MCP server; Streamable HTTP; OAuth; resources and prompts;
+  a native inspector. Not a release qualification.
+
 ## Independent goal audit, GOAL-3 (2026-10-12)
 
 An audit-required goal sends accepted completion proposals to a read-only `auditor`

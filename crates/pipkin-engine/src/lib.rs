@@ -13,6 +13,7 @@ pub mod extensions;
 pub mod goals;
 pub mod host;
 pub mod import;
+pub mod mcp;
 pub mod plans;
 pub mod profiles;
 pub mod provider;

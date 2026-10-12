@@ -722,11 +722,21 @@ fn web_tools_are_offered_and_only_read_is_recoverable() {
     let tail: Vec<&str> = names
         .iter()
         .rev()
-        .take(3)
+        .take(6)
         .rev()
         .map(String::as_str)
         .collect();
-    assert_eq!(tail, ["web_search", "web_fetch", "web_read"]);
+    assert_eq!(
+        tail,
+        [
+            "web_search",
+            "web_fetch",
+            "web_read",
+            "mcp_search",
+            "mcp_describe",
+            "mcp_call"
+        ]
+    );
     let shared = e.handle.shared();
     assert!(shared.recoverable_tool("web_read").is_some());
     assert!(shared.recoverable_tool("web_fetch").is_none());

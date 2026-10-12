@@ -662,7 +662,15 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 18);
+        assert_eq!(crate::PROTOCOL_VERSION, 19);
+        let servers = Call::McpServers {
+            session: "s1".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&servers).unwrap()["call"],
+            "mcpServers"
+        );
+        round_trip(&servers);
         let release = Call::ReleaseSession {
             session: "s1".into(),
         };
@@ -1013,6 +1021,39 @@ pub struct PlanRejected {
 }
 
 // --------------------------------------------------------------------------- web sources
+
+/// One configured MCP server as a client sees it. `command` is the executable and its
+/// arguments; `env` lists variable names with their reference (`$NAME`, `secret:key`) or
+/// `…` for an inline literal, never a resolved value.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerView {
+    pub name: String,
+    /// `user` or `project`.
+    pub scope: String,
+    pub enabled: bool,
+    /// `stopped`, `connecting`, `ready` or `failed`.
+    pub state: String,
+    pub error: Option<String>,
+    /// Number of tools in the cached catalog, when it has been read.
+    pub tools: Option<usize>,
+    /// Hash of the launch-relevant configuration.
+    pub revision: String,
+    pub command: String,
+    pub env: Vec<String>,
+    pub keep_alive: bool,
+    pub idle_seconds: u64,
+    pub in_flight: usize,
+}
+
+/// The configured servers plus configuration warnings (invalid entries left out).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServersView {
+    pub servers: Vec<McpServerView>,
+    pub warnings: Vec<String>,
+    pub call_timeout_seconds: u64,
+}
 
 /// A retained web source: a search result or a fetched page. Content is read through the
 /// `web_read` tool; this view carries provenance only.

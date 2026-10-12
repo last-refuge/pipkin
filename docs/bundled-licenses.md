@@ -130,3 +130,16 @@ The current native graph has 614 Rust entries, 33 review flags and five entries 
 copied notice. This corrects discovery for one crate; it does not resolve other notice
 applicability or runtime/asset provenance findings. Previously measured archives retain their
 original inventories. See [filename evidence](../llm-docs/pipkin-rust-engine-evidence/notice-filenames.md).
+
+## MCP SDK dependencies (2026-10-12)
+
+MCP-1 adds the official `rmcp` 3.5.1 and `rmcp-macros` 3.5.1 (Apache-2.0) to the engine
+with client and child-process transport features only, pulling in `nix` 0.31.3 (MIT),
+`process-wrap` 10.0.1 (Apache-2.0 OR MIT), `tokio-stream` 0.1.19 (MIT), `pastey` (MIT OR
+Apache-2.0), `darling` 0.24.1 with `darling_core`/`darling_macro`/`strsim` (MIT) and
+`ident_case` (MIT/Apache-2.0). The test-only fixture server also uses `schemars` 1.2.2 (MIT). These
+enter the native inventory through the locked graph like every other crate; their notices
+still need the same applicability review before a release, and the Apache-2.0 crates'
+`NOTICE` files (if any) must be carried. No HTTP transport feature is enabled, so no second
+`reqwest` is present.
+

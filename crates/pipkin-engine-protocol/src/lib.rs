@@ -25,6 +25,7 @@ pub use view::*;
 // Version 16 adds engine-owned goals: `goal` in snapshots, `GoalChanged`, the goal calls.
 // Version 17 adds goal criteria, evidence, limits and structured decisions.
 // Version 18 adds the verifying state and the goal audit record.
-pub const PROTOCOL_VERSION: u32 = 18;
+// Version 19 adds `McpServers` (configured MCP servers and their state) and the `mcp` capability.
+pub const PROTOCOL_VERSION: u32 = 19;
 
 pub mod delivery;

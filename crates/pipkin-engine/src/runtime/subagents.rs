@@ -223,6 +223,46 @@ impl ToolHost for Host {
         Box::pin(async move { self.shared.goal_propose_from_tool(&self.parent, proposal) })
     }
 
+    fn mcp_search<'a>(
+        &'a self,
+        query: &'a str,
+        server: Option<&'a str>,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<(Vec<crate::mcp::ToolInfo>, Vec<(String, String)>), crate::mcp::McpError>,
+            String,
+        >,
+    > {
+        Box::pin(async move {
+            self.shared.mcp_refresh(&self.parent);
+            Ok(self.shared.mcp.search(query, server).await)
+        })
+    }
+
+    fn mcp_describe<'a>(
+        &'a self,
+        qualified: &'a str,
+    ) -> BoxFuture<'a, Result<Result<crate::mcp::ToolInfo, crate::mcp::McpError>, String>> {
+        Box::pin(async move {
+            self.shared.mcp_refresh(&self.parent);
+            Ok(self.shared.mcp.describe(qualified).await)
+        })
+    }
+
+    fn mcp_call<'a>(
+        &'a self,
+        _call_id: &'a str,
+        qualified: &'a str,
+        arguments: serde_json::Value,
+        cancel: CancellationToken,
+    ) -> BoxFuture<'a, Result<Result<crate::mcp::CallOutcome, crate::mcp::McpError>, String>> {
+        Box::pin(async move {
+            self.shared.mcp_refresh(&self.parent);
+            Ok(self.shared.mcp.call(qualified, arguments, cancel).await)
+        })
+    }
+
     fn web_source<'a>(
         &'a self,
         id: u64,

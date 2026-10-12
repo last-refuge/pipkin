@@ -8,6 +8,7 @@ mod glue;
 mod goals;
 mod import;
 mod lifecycle;
+mod mcp;
 pub mod models;
 mod plans;
 mod plugins;
@@ -50,6 +51,8 @@ pub struct Shared {
     pub epoch: u64,
     pub adapters: Registry,
     pub tools: Vec<Arc<dyn Tool>>,
+    /// Engine-wide MCP servers (see [`crate::mcp`]).
+    pub mcp: Arc<crate::mcp::McpService>,
     pub generations: Arc<Semaphore>,
     pub processes: Arc<Semaphore>,
     pub locks: Arc<MutationLocks>,
@@ -160,6 +163,7 @@ impl Shared {
         // Every session has its own plan (a child's plan is separate from its parent's).
         tools.extend(self.plan_tools());
         tools.extend(self.web_tools());
+        tools.extend(self.mcp_tools());
         // A child is offered what its frozen launch policy allows; a child from before
         // launch records existed keeps the full set, as it always had.
         if row.parent.is_some()
@@ -182,6 +186,9 @@ impl Shared {
             crate::tools::plan::PLAN_READ => Some(Arc::new(crate::tools::plan::PlanReadTool)),
             crate::tools::web::WEB_READ => Some(Arc::new(crate::tools::web::WebReadTool)),
             crate::tools::goal::GET_GOAL => Some(Arc::new(crate::tools::goal::GetGoalTool)),
+            // Catalog reads are pure; `mcp_call` is deliberately absent (its effect is unknown).
+            crate::tools::mcp::MCP_SEARCH => Some(Arc::new(crate::tools::mcp::McpSearchTool)),
+            crate::tools::mcp::MCP_DESCRIBE => Some(Arc::new(crate::tools::mcp::McpDescribeTool)),
             _ => None,
         }
     }
@@ -287,8 +294,17 @@ impl EngineHandle {
         let net = NetSettings::new(&config.env, &Settings::load(&config.config_dir, None).0);
         let http = crate::provider::http::client_with(&net);
         auth.set_http(http.clone());
+        let mcp = {
+            let env = config.env.clone();
+            Arc::new(crate::mcp::McpService::new(
+                config.config_dir.clone(),
+                config.data_dir.clone(),
+                Arc::new(move |key| env.get(key)),
+            ))
+        };
         let shared = Arc::new_cyclic(|me| Shared {
             me: me.clone(),
+            mcp,
             generations: Arc::new(Semaphore::new(config.max_active_generations.max(1))),
             processes: Arc::new(Semaphore::new(config.max_tool_processes.max(1))),
             config,
@@ -344,6 +360,7 @@ impl EngineHandle {
         }
         lifecycle::start_reaper(&shared);
         compaction::start_recovery(&shared);
+        mcp::start_reaper(&shared);
         Ok(EngineHandle {
             runtime: Mutex::new(Some(runtime)),
             shared,
@@ -532,12 +549,17 @@ impl EngineHandle {
             .as_ref()
         {
             let grace = timeout.min(Duration::from_secs(2));
+            let mcp = self.shared.mcp.clone();
             let done = rt.spawn(async move {
                 for sess in sessions {
                     sess.questions.dispose();
                     if let Some(runner) = sess.extensions.lock().await.take() {
                         runner.shutdown(grace).await;
                     }
+                }
+                // MCP server processes belong to this engine's lifetime.
+                for handle in mcp.drain() {
+                    let _ = tokio::time::timeout(grace, handle.stop()).await;
                 }
             });
             let deadline = std::time::Instant::now() + grace + Duration::from_millis(500);
@@ -624,6 +646,7 @@ async fn dispatch_with_cancel(
                     "plans".into(),
                     "web".into(),
                     "goals".into(),
+                    "mcp".into(),
                     "compaction".into(),
                     "toolOutput".into(),
                 ],
@@ -816,6 +839,7 @@ async fn dispatch_with_cancel(
             include_archived,
         } => Ok(Reply::Plan(shared.plan_view(&session, include_archived)?)),
         Call::WebSources { session } => Ok(Reply::WebSources(shared.web_sources_view(&session)?)),
+        Call::McpServers { session } => Ok(Reply::McpServers(shared.mcp_servers_view(&session)?)),
         Call::SetGoal { session, objective } => {
             Ok(Reply::Goal(shared.set_goal(&session, &objective).await?))
         }
@@ -1165,6 +1189,8 @@ mod goal2_tests;
 mod goal3_tests;
 #[cfg(test)]
 mod goal_tests;
+#[cfg(test)]
+mod mcp_tests;
 #[cfg(test)]
 mod plan_tests;
 #[cfg(test)]

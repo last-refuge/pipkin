@@ -61,12 +61,16 @@ pub struct SessionRt {
     pub compacting: std::sync::atomic::AtomicBool,
     /// Session extensions, started when the session is first opened.
     pub extensions: tokio::sync::Mutex<Option<crate::extensions::ExtensionRunner>>,
+    /// Serializes [`Shared::recover_session`]: startup recovery and a client's open can run
+    /// at once, and both would record the same interrupted call.
+    pub(super) recovery: Mutex<()>,
 }
 
 impl SessionRt {
     pub fn new(id: &str, questions: crate::extensions::questions::QuestionHost) -> SessionRt {
         SessionRt {
             questions,
+            recovery: Mutex::new(()),
             extension_profile: Vec::new(),
             profile_pin_pending: std::sync::atomic::AtomicBool::new(false),
             predecessor: None,
@@ -692,6 +696,8 @@ impl Shared {
     /// durable, record interrupted (unconfirmed) tool effects, and resume the rest.
     pub fn recover_session(self: &Arc<Self>, session: &str) -> Result<(), ProtoError> {
         let sess = self.session(session)?;
+        let gate = sess.clone();
+        let _one_at_a_time = gate.recovery.lock().unwrap_or_else(|e| e.into_inner());
         if sess
             .profile_pin_pending
             .load(std::sync::atomic::Ordering::Acquire)
