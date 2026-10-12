@@ -1,0 +1,163 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "packages/coding-agent/src/experimental/services/models-provider.ts": "72c220985fb0f74889b596d1c60914390f85c367b470f2a72ebbdcbd823af022",
+    "packages/ai/src/models.ts": "62e4a8cb3d52d76f3eb2286f23436f5cd6d4d33dc56cebfa4a528c6a6d4d525e"
+  },
+  "scope": "Original createModelsService/cycleThinking and getSupportedThinkingLevels; stubbed document, configuration commit and facet dependencies; no network",
+  "cases": [
+    {
+      "name": "missing-current",
+      "model": {
+        "reasoning": true
+      },
+      "expected": {
+        "levels": [
+          "off",
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "thinking": "minimal"
+      }
+    },
+    {
+      "name": "ordinary",
+      "model": {
+        "reasoning": true
+      },
+      "current": "medium",
+      "expected": {
+        "levels": [
+          "off",
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "thinking": "high"
+      }
+    },
+    {
+      "name": "wrap",
+      "model": {
+        "reasoning": true
+      },
+      "current": "high",
+      "expected": {
+        "levels": [
+          "off",
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "thinking": "off"
+      }
+    },
+    {
+      "name": "unknown-current",
+      "model": {
+        "reasoning": true
+      },
+      "current": "future",
+      "expected": {
+        "levels": [
+          "off",
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "thinking": "off"
+      }
+    },
+    {
+      "name": "disabled-current",
+      "model": {
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "minimal": null
+        }
+      },
+      "current": "minimal",
+      "expected": {
+        "levels": [
+          "off",
+          "low",
+          "medium",
+          "high"
+        ],
+        "thinking": "off"
+      }
+    },
+    {
+      "name": "mapped-extended",
+      "model": {
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "xhigh": "extra",
+          "max": "maximum"
+        }
+      },
+      "current": "xhigh",
+      "expected": {
+        "levels": [
+          "off",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "thinking": "max"
+      }
+    },
+    {
+      "name": "non-reasoning",
+      "model": {
+        "reasoning": false
+      },
+      "current": "high",
+      "expected": {
+        "levels": [
+          "off"
+        ],
+        "thinking": "off"
+      }
+    },
+    {
+      "name": "missing-model",
+      "model": null,
+      "current": "high",
+      "expected": {
+        "levels": [
+          "off"
+        ],
+        "thinking": "off"
+      }
+    },
+    {
+      "name": "empty-levels",
+      "model": {
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": null,
+          "minimal": null,
+          "low": null,
+          "medium": null,
+          "high": null,
+          "xhigh": null,
+          "max": null
+        }
+      },
+      "current": "medium",
+      "expected": {
+        "levels": [],
+        "thinking": "off"
+      }
+    }
+  ]
+}

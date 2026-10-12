@@ -18,7 +18,7 @@ pub use content::*;
 pub use view::*;
 
 /// Wire protocol version. Bump on any incompatible change to [`api`], [`content`] or [`view`].
-// Version 9 adds connection-scoped request cancellation.
-pub const PROTOCOL_VERSION: u32 = 9;
+// Version 10 adds server-side thinking-level cycling.
+pub const PROTOCOL_VERSION: u32 = 10;
 
 pub mod delivery;

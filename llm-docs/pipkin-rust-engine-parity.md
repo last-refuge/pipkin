@@ -15,8 +15,9 @@ reference-derived output exists.
   `b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05` (archive
   `2be5f68d90695e71372c01ccbd08d5728b93691e07c45918846997c8949bcabb`), plus the Pipkin desktop
   at app base `75f5c35`. Frozen reference fixtures: `fixtures/pi-sessions/` (8 scenarios, RE-02).
-- **Current follow-up:** prompt-resource lifetime fix/provider audit on top of `e92c4f1`
-  (2026-10-11), protocol 9 / schema 8; see [resource/provider evidence](pipkin-rust-engine-evidence/prompt-resource-provider-audit.md).
+- **Current follow-up:** thinking cycling and atomic model configuration on top of `5917287`
+  (2026-10-11), protocol 10 / schema 8; see [cycle evidence](pipkin-rust-engine-evidence/model-cycle.md).
+  Prior prompt-resource fix: [resource/provider evidence](pipkin-rust-engine-evidence/prompt-resource-provider-audit.md).
   Catalog refresh/offline implementation: [catalog evidence](pipkin-rust-engine-evidence/remote-catalog.md).
 - **Historical broad code reconciliation:** `e4c3a8c` (2026-10-11), including the Claude lifecycle
   checks; see [reconciliation](pipkin-rust-engine-evidence/parity-reconciliation.md). The following
@@ -210,10 +211,10 @@ of all 504 capabilities.
 
 | Disposition (target) | Rows |
 | --- | --- |
-| `NC` native implementation of the same contract | 411 |
+| `NC` native implementation of the same contract | 412 |
 | `NE` native equivalent | 26 |
 | `NP` not present in the baseline (evidence in row) | 37 |
-| `PA` pending audit | 13 |
+| `PA` pending audit | 12 |
 | `BL` blocked | 0 |
 | `LB` legacy bridge only | 1 |
 | `RC` reserved for Codex — not implemented or qualified | 0 |
@@ -233,11 +234,11 @@ the row evidence for history; no package execution is claimed.
 
 | Evidence | Rows |
 | --- | --- |
-| measured | 434 |
+| measured | 435 |
 | observed | 7 |
 | failed | 0 |
 | unverified (code exists, no test) | 8 |
-| not started (implementation absent or excluded; see row evidence) | 55 |
+| not started (implementation absent or excluded; see row evidence) | 54 |
 
 | Section | Rows | NC | NE | NP | PA | BL | LB | RC | OS | measured | observed | failed | unverified | not started |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -247,7 +248,7 @@ the row evidence for history; no package execution is claimed.
 | 4 Provider ids (P03) | 43 | 41 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 42 | 0 | 0 | 0 | 1 |
 | 5 Provider config (P03/P19) | 14 | 11 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 12 | 0 | 0 | 0 | 2 |
 | 6 Credentials / OAuth (P04) | 59 | 49 | 1 | 1 | 8 | 0 | 0 | 0 | 0 | 56 | 0 | 0 | 2 | 1 |
-| 7 Service API / transport | 48 | 37 | 0 | 5 | 2 | 0 | 0 | 0 | 4 | 38 | 0 | 0 | 0 | 10 |
+| 7 Service API / transport | 48 | 38 | 0 | 5 | 1 | 0 | 0 | 0 | 4 | 39 | 0 | 0 | 0 | 9 |
 | 8 Durable / queue / Stop (P05–P08) | 43 | 41 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 42 | 0 | 0 | 0 | 1 |
 | 9 Subagents (P09/P10) | 17 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16 | 0 | 0 | 1 | 0 |
 | 10 Attachments / models / usage (P11) | 9 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 8 | 0 | 0 | 1 | 0 |
@@ -259,7 +260,7 @@ the row evidence for history; no package execution is claimed.
 | 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 53 | 1 | 0 | 1 | 5 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
 | 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 6 | 0 | 0 | 6 |
-| **Total** | 504 | 411 | 26 | 37 | 13 | 0 | 1 | 0 | 16 | 434 | 7 | 0 | 8 | 55 |
+| **Total** | 504 | 412 | 26 | 37 | 12 | 0 | 1 | 0 | 16 | 435 | 7 | 0 | 8 | 54 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
 whenever rows change. Release gates: native beta needs every mandatory row implemented; native
@@ -566,7 +567,7 @@ is the differential target; Chord replicated-state op streams are not reproduced
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | SVC-DIR-STATE | svc/sessions.ts:21-30; svc/server.ts:39-54 | `pi.session-directory` replicated `{revision, sessions[{serverId, sessionId, createdAt, cwd}]}` | rt::sessions_are_created_once_per_key_and_listed | Opus · `Call::ListSessions`, `Event::SessionsChanged` | meta.json → sessions | Same session list after create/remove/restart | — | NC | measured: rt::sessions_are_created_once_per_key_and_listed, nmap::the_catalog_groups_by_working_directory_with_a_fallback, nt::the_catalog_models_and_sign_in_arrive_before_ready; no differential |
 | SVC-MGMT-CREATE | svc/server.ts:97-102; ce/server.ts:76-89,417-420 | `create({id?, cwd?})`; cwd must be absolute existing dir (realpath); id regex; duplicate error; no worker start | rt::sessions_are_created_once_per_key_and_listed; st::create_is_idempotent_under_its_key | Opus · `Call::CreateSession` (idempotent request key) | session id map in import_map | Same validation errors; native adds idempotent key (I-01-related) | — | NC | measured: rt::sessions_are_created_once_per_key_and_listed, st::create_is_idempotent_under_its_key; cwd validation texts not compared; no differential |
-| SVC-MGMT-REMOVE | svc/server.ts:103-108 | `remove(id)`: release attachments, stop worker, `rm -rf` session dir, remove plugin profile | none | Opus · (no native Call yet) | n/a | The desktop adapter never calls it (App/adapters/pi/mod.rs calls only create/attach); confirm no other reachable caller | — | PA | not started (PA): no native `RemoveSession` call; the desktop never removes sessions |
+| SVC-MGMT-REMOVE | svc/server.ts:97-102; ce/server.ts:431-435; ce/client-runtime.ts:203-206 | `remove(id)`: release attachments, stop worker, remove session storage/profile, refresh directory | source audit; [required lifecycle work](pipkin-rust-engine-evidence/model-cycle.md) | Codex · E/runtime/store (no native Call yet) | original import source and backups must be preserved | Confirmed built-in service exposed to non-interactive clients despite no desktop delete button | — | PA | not started: native root/child removal lifecycle, admission barrier, teardown, atomic persistent cleanup/invalidation and restart/race tests required; remains a core gap |
 | SVC-MGMT-ATTACH | svc/server.ts:109-112; session-router.ts:160-197 | `attach(id)` mints attachmentId, opens/spawns worker, sends attachment envelope | ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away; ne2e::a_prompt_streams_settles_and_reopens_with_the_same_history | Opus · `Call::OpenSession` (snapshot + window + per-client attachment) | n/a | Switching sessions yields equal visible state | — | NC | measured: ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away, ne2e::a_prompt_streams_settles_and_reopens_with_the_same_history; no differential  life::disconnect_grace_can_be_readopted_and_cloned_senders_hold_the_client covers shared ownership and reconnect grace. |
 | SVC-MGMT-DETACH | svc/server.ts:113-117 | `detach()` releases attachment; detaching never cancels runs | ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away | Codex · `Call::ReleaseSession`, E/runtime/lifecycle.rs | n/a | Background run continues | — | NC | measured: ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away (background run continues); life::detach_keeps_the_active_run_and_follow_up_until_both_settle, life::attachments_are_client_owned_and_retirement_closes_the_provider_affinity_id, life::idle_release_is_retired_by_the_running_engine_without_manual_sweeps; explicit per-client attachment release now retires idle resources; no differential |
 | SVC-PLUGINS-PREPARE | svc/plugins.ts:4-12; ce/server.ts:453-469,573-602 | `prepareSession({sessionId, packagePaths})` builds/selects facet packages, persists selection, checks worker conflict | e2e::an_extension_in_the_engine_asks_three_questions_and_the_answers_reach_it | legacy (Pi) | plugin profile JSON preserved | see EXT-* | — | OS | not started (BL: TypeScript facet packages need Node; legacy bridge only); native PrepareExtensions validates/persists native selections with conflict checks (profile evidence), but does not build or execute TypeScript packages; excluded from release gates by owner on 2026-10-11 (previous disposition: BL); retained evidence does not claim Pi package compatibility |
@@ -576,7 +577,7 @@ is the differential target; Chord replicated-state op streams are not reproduced
 | SVC-MODELS-STATE | svc/models.ts:4-24 | `{catalog{revision, availableModels[{provider, modelId, name, reasoning}]}, configuration{model, thinkingLevel}, refresh}`; catalog includes selected model if missing | nmap::only_usable_models_are_offered_with_the_selection_first; nt::the_catalog_models_and_sign_in_arrive_before_ready | Opus · `Call::Models`, `ModelsView` | n/a | Same model list and configuration | all providers | NC | measured (part): nmap::only_usable_models_are_offered_with_the_selection_first, nt::the_catalog_models_and_sign_in_arrive_before_ready; observed: walk §3 (model picker shows the custom provider); engine-side `Models` view (selected model included when missing) not asserted; no differential |
 | SVC-MODELS-SELECT | svc/models-provider.ts:93-103 | `select({provider, modelId})`: unknown → `Unknown model: p/m`; clamps thinking; writes `pi.agent`; **also persists global default** in settings.json | rt::thinking_and_model_selection_are_validated_and_persisted | Opus · `Call::SetModel` | sessions.model | Same clamp and error; global-default write is an open decision (D-04) | — | NC | measured: rt::thinking_and_model_selection_are_validated_and_persisted (session model, unknown model refused, global `defaultModel` written to settings.json as the reference does — D-04 implemented as reference, owner sign-off pending); no differential |
 | SVC-MODELS-THINKING | svc/models-provider.ts:104-110 | `selectThinking(level)` validated: `Thinking level X is unavailable; choose one of: ...` | rt::thinking_and_model_selection_are_validated_and_persisted | Opus · `Call::SetThinking` | sessions.thinking | Same error text | — | NC | measured: rt::thinking_and_model_selection_are_validated_and_persisted (unsupported level refused); exact error text not compared; no differential |
-| SVC-MODELS-CYCLE | svc/models-provider.ts:69-74 | `cycleThinking()` next supported level | n/a | — | n/a | Desktop does not call it (TUI only) | — | PA | not started (PA; desktop does not call it) |
+| SVC-MODELS-CYCLE | svc/models-provider.ts:69-74 | `cycleThinking()` next supported level, wrap and unknown/empty fallback | rt::settings_tests::thinking_cycles_match_the_executed_reference_service; thinking_cycles_are_serialized_notify_clients_and_survive_restart | Codex · E/runtime; P/api | persisted thinking selection | Nine executed reference service/selector cases | all | NC | measured: CycleThinking protocol, 23 concurrent clients with no lost cycles, ordered observer revisions, generation and restart; model/thinking selection commits atomically with outbox and rollback checks; see [cycle evidence](pipkin-rust-engine-evidence/model-cycle.md) |
 | SVC-MODELS-LEVELS | svc/models-provider.ts:47-50 | `getThinkingLevels()` (`["off"]` with no model) | mdl::thinking_levels_follow_the_reference_rules; rt::thinking_and_model_selection_are_validated_and_persisted | Opus · `ThinkingView` | n/a | Same levels | — | NC | measured: mdl::thinking_levels_follow_the_reference_rules, rt::thinking_and_model_selection_are_validated_and_persisted; no differential |
 | SVC-MODELS-REFRESH | svc/models-provider.ts:78-92 | `refresh()` → refreshing → done or warning{errors}; re-reads models.json/auth | rts::a_provider_configured_after_start_appears_after_refresh_models; ne2e::a_provider_configured_after_start_appears_after_a_refresh_and_can_then_be_used | Opus · `Call::RefreshModels` | n/a | Same visible outcome | — | NC | measured: rts::a_provider_configured_after_start_appears_after_refresh_models (engine: a `models.json` provider written after start is absent until `RefreshModels`, which publishes `ModelsChanged`, then listed and available; also re-reads network settings via `Shared::refresh_net`) and ne2e::a_provider_configured_after_start_appears_after_a_refresh_and_can_then_be_used (desktop: the added provider appears after a refresh, is selected and answers); no differential |
 | SVC-AGENT-PROMPT | svc/agent-controller-provider.ts:37-47 | `prompt(req)` → `{accepted, operationId}` or `busy` | rt::a_prompt_is_admitted_durably_streamed_settled_and_looked_up; rt::a_busy_session_refuses_a_second_prompt_without_recording_it | Opus · `Call::Prompt` | submissions → requests | Same acceptance/busy outcomes | — | NC | measured: rt::a_prompt_is_admitted_durably_streamed_settled_and_looked_up, rt::a_busy_session_refuses_a_second_prompt_without_recording_it, wp::admission_survives_sigkill_and_is_found_by_lookup_after_restart; no differential |

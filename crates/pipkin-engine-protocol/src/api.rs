@@ -216,6 +216,11 @@ pub enum Call {
         session: SessionId,
         level: String,
     },
+    /// Select the next supported level, wrapping to the first; an unknown current level
+    /// starts at the first. Serialized with model and explicit thinking changes.
+    CycleThinking {
+        session: SessionId,
+    },
     Models {
         #[serde(default)]
         session: Option<SessionId>,

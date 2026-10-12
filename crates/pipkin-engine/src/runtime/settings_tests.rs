@@ -114,6 +114,219 @@ fn session_model(e: &mut Engine, session: &str) -> (Option<String>, String) {
 }
 
 #[test]
+fn thinking_cycles_match_the_executed_reference_service() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../fixtures/native-thinking/reference.json"
+    ))
+    .unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let fx = Fixture::new();
+        let mut config = fx.config();
+        let model = &mut config.extra_models[0];
+        if !case["model"].is_null() {
+            model.reasoning = case["model"]["reasoning"].as_bool().unwrap();
+            model.thinking_level_map = serde_json::from_value(
+                case["model"]
+                    .get("thinkingLevelMap")
+                    .cloned()
+                    .unwrap_or(json!({})),
+            )
+            .unwrap();
+        }
+        let mut e = fx.start_config(&Scripted::echo("done"), config);
+        let session = e.create(&fx.project, "cycle-reference");
+        if case["model"].is_null() {
+            e.handle
+                .shared()
+                .store
+                .set_session_field(
+                    &session,
+                    crate::store::SessionField::Model(Some("missing/model".into())),
+                )
+                .unwrap();
+        }
+        e.handle
+            .shared()
+            .store
+            .set_session_field(
+                &session,
+                crate::store::SessionField::Thinking(case["current"].as_str().map(str::to_owned)),
+            )
+            .unwrap();
+        let call = Call::CycleThinking {
+            session: session.clone(),
+        };
+        let wire = serde_json::to_value(&call).unwrap();
+        assert_eq!(wire["call"], "cycleThinking");
+        let Reply::Thinking(view) = e.call(serde_json::from_value(wire).unwrap()).unwrap() else {
+            panic!("{case}")
+        };
+        assert_eq!(
+            serde_json::to_value(&view.levels).unwrap(),
+            case["expected"]["levels"],
+            "{case}"
+        );
+        assert_eq!(
+            view.level,
+            case["expected"]["thinking"].as_str().unwrap(),
+            "{case}"
+        );
+        assert_eq!(
+            e.handle
+                .shared()
+                .store
+                .session(&session)
+                .unwrap()
+                .unwrap()
+                .thinking
+                .as_deref(),
+            Some(view.level.as_str())
+        );
+    }
+}
+
+#[test]
+fn thinking_cycles_are_serialized_notify_clients_and_survive_restart() {
+    let fx = Fixture::new();
+    let provider = Scripted::echo("done");
+    let mut e = fx.start(&provider);
+    let session = e.create(&fx.project, "cycle");
+    e.call(Call::SetThinking {
+        session: session.clone(),
+        level: "off".into(),
+    })
+    .unwrap();
+    let before = e.snapshot(&session);
+    let levels = before.thinking.levels.clone();
+    assert!(levels.len() > 1);
+    // Independent clients race on the same session; every accepted cycle must count.
+    let connections: Vec<_> = (0..23).map(|_| e.handle.connect("cycle-racer")).collect();
+    std::thread::scope(|scope| {
+        for connection in connections {
+            let session = &session;
+            scope.spawn(move || {
+                connection
+                    .send(ClientFrame {
+                        id: 1,
+                        lane: Lane::Normal,
+                        call: Call::CycleThinking {
+                            session: session.clone(),
+                        },
+                    })
+                    .unwrap();
+                loop {
+                    match connection.recv_timeout(Duration::from_secs(10)).unwrap() {
+                        ServerFrame::Reply {
+                            id: 1,
+                            result: Ok(Reply::Thinking(_)),
+                        } => break,
+                        ServerFrame::Event { .. } => {}
+                        other => panic!("{other:?}"),
+                    }
+                }
+            });
+        }
+    });
+    let expected = levels[23 % levels.len()].clone();
+    let after = e.snapshot(&session);
+    assert_eq!(after.thinking.level, expected);
+    assert_eq!(after.revision, before.revision + 23);
+    let changed: Vec<_> = e
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Session {
+                session: id,
+                revision,
+                change: SessionChange::ThinkingChanged { thinking },
+            } if id == &session && *revision > before.revision => {
+                Some((*revision, thinking.level.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(changed.len(), 23);
+    for (i, (revision, level)) in changed.iter().enumerate() {
+        assert_eq!(*revision, before.revision + i as u64 + 1);
+        assert_eq!(*level, levels[(i + 1) % levels.len()]);
+    }
+    e.prompt(&session, "coding", "use the cycled thinking level")
+        .unwrap();
+    assert_eq!(e.settled("coding"), RunOutcome::Completed);
+    assert_eq!(provider.requests()[0].thinking.as_str(), expected);
+    e.handle.shutdown(Duration::from_secs(1));
+    drop(e);
+    let mut e = fx.start(&Scripted::echo("resumed"));
+    assert_eq!(e.snapshot(&session).thinking.level, expected);
+}
+
+#[test]
+fn model_and_thinking_changes_commit_together_and_fail_without_partial_state() {
+    let fx = Fixture::new();
+    let mut config = fx.config();
+    let mut plain = config.extra_models[0].clone();
+    plain.id = "plain".into();
+    plain.reasoning = false;
+    config.extra_models.push(plain);
+    let mut e = fx.start_config(&Scripted::echo("done"), config);
+    let session = e.create(&fx.project, "atomic-config");
+    let before = e.snapshot(&session);
+    let cursor = e.handle.shared().store.catch_up(0, 256).unwrap().head;
+    e.handle.shared().store.fail_next_write();
+    assert_eq!(
+        e.call(Call::SetModel {
+            session: session.clone(),
+            model: "scripted/plain".into()
+        })
+        .unwrap_err()
+        .code,
+        ErrorCode::Storage
+    );
+    assert_eq!(e.snapshot(&session).summary, before.summary);
+    assert_eq!(
+        e.handle.shared().store.catch_up(cursor, 256).unwrap().head,
+        cursor
+    );
+    e.call(Call::SetModel {
+        session: session.clone(),
+        model: "scripted/plain".into(),
+    })
+    .unwrap();
+    let after = e.snapshot(&session);
+    assert_eq!(after.summary.model.as_deref(), Some("scripted/plain"));
+    assert_eq!(after.thinking.level, "off");
+    assert_eq!(after.revision, before.revision + 1);
+    assert_eq!(
+        e.handle
+            .shared()
+            .store
+            .catch_up(cursor, 256)
+            .unwrap()
+            .events
+            .len(),
+        1
+    );
+    e.handle.shared().store.fail_next_write();
+    assert_eq!(
+        e.call(Call::CycleThinking {
+            session: session.clone()
+        })
+        .unwrap_err()
+        .code,
+        ErrorCode::Storage
+    );
+    assert_eq!(e.snapshot(&session).summary, after.summary);
+    assert_eq!(
+        e.call(Call::CycleThinking {
+            session: "missing".into()
+        })
+        .unwrap_err()
+        .code,
+        ErrorCode::NotFound
+    );
+}
+
+#[test]
 fn steering_mode_all_places_every_queued_steer_at_one_boundary() {
     let fx = Fixture::new();
     write_settings(&fx, &json!({"steeringMode": "all"}));

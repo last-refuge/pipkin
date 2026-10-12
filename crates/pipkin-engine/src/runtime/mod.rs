@@ -543,6 +543,7 @@ async fn dispatch_with_cancel(
                     "extensionProfiles".into(),
                     "waitForPrompt".into(),
                     "cancelRequest".into(),
+                    "cycleThinking".into(),
                     "subagents".into(),
                     "questions".into(),
                     "compaction".into(),
@@ -648,7 +649,8 @@ async fn dispatch_with_cancel(
         Call::CancelQueued { session, entry } => shared.cancel_queued(&session, entry).await,
         Call::Stop { session } => shared.stop(&session).await,
         Call::SetModel { session, model } => shared.set_model(&session, &model),
-        Call::SetThinking { session, level } => shared.set_thinking(&session, &level),
+        Call::SetThinking { session, level } => shared.set_thinking(&session, Some(&level)),
+        Call::CycleThinking { session } => shared.set_thinking(&session, None),
         Call::Models { session } => {
             let catalog = shared.auth.catalog();
             let row = match &session {
@@ -866,12 +868,15 @@ impl Shared {
     }
 
     fn set_model(&self, session: &str, key: &str) -> Result<Reply, ProtoError> {
-        self.session(session)?;
+        let _session = self.session(session)?;
         let catalog = self.auth.catalog();
         let model = catalog
             .find(key)
             .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, format!("Unknown model: {key}")))?
             .clone();
+        let settings = self.settings_for(session);
+        // Model selection, explicit thinking and cycling share one configuration order.
+        let publication = self.publication.lock().unwrap_or_else(|e| e.into_inner());
         let row = self
             .store
             .session(session)?
@@ -883,14 +888,16 @@ impl Shared {
             .unwrap_or(models::DEFAULT_THINKING);
         // Reference `_getThinkingLevelForModelSwitch`: the model's own default, then the
         // global default, then the session's current level.
-        let settings = self.settings_for(session);
         let thinking = models::thinking_for(&settings, &model, None, current);
-        self.store
-            .set_session_field(session, SessionField::Model(Some(model.key())))?;
         self.store.set_session_field(
             session,
-            SessionField::Thinking(Some(thinking.as_str().into())),
+            SessionField::ModelAndThinking {
+                model: model.key(),
+                thinking: thinking.as_str().into(),
+            },
         )?;
+        self.model_and_thinking_changed(session);
+        drop(publication);
         // The reference also makes the selection the global default, and adds it to a
         // non-empty `enabledModels` scope it is not already in.
         if let Err(e) =
@@ -912,12 +919,12 @@ impl Shared {
                 log::warn!("could not save the enabled models: {e}");
             }
         }
-        self.model_and_thinking_changed(session);
         Ok(Reply::Ok)
     }
 
-    fn set_thinking(&self, session: &str, level: &str) -> Result<Reply, ProtoError> {
-        self.session(session)?;
+    fn set_thinking(&self, session: &str, level: Option<&str>) -> Result<Reply, ProtoError> {
+        let _session = self.session(session)?;
+        let _publication = self.publication.lock().unwrap_or_else(|e| e.into_inner());
         let row = self
             .store
             .session(session)?
@@ -927,21 +934,32 @@ impl Shared {
         let levels = model.map_or(vec![crate::provider::ThinkingLevel::Off], |m| {
             m.thinking_levels()
         });
-        let parsed = crate::provider::ThinkingLevel::parse(level)
-            .filter(|l| levels.contains(l))
-            .ok_or_else(|| {
-                ProtoError::new(
-                    ErrorCode::Invalid,
-                    format!(
-                        "Thinking level {level} is unavailable; choose one of: {}",
-                        levels
-                            .iter()
-                            .map(|l| l.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ),
-                )
-            })?;
+        let parsed = if let Some(level) = level {
+            crate::provider::ThinkingLevel::parse(level)
+                .filter(|l| levels.contains(l))
+                .ok_or_else(|| {
+                    ProtoError::new(
+                        ErrorCode::Invalid,
+                        format!(
+                            "Thinking level {level} is unavailable; choose one of: {}",
+                            levels
+                                .iter()
+                                .map(|l| l.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    )
+                })?
+        } else {
+            let next = levels
+                .iter()
+                .position(|l| l.as_str() == row.thinking.as_deref().unwrap_or("off"))
+                .map_or(0, |i| (i + 1) % levels.len());
+            levels
+                .get(next)
+                .copied()
+                .unwrap_or(crate::provider::ThinkingLevel::Off)
+        };
         self.store.set_session_field(
             session,
             SessionField::Thinking(Some(parsed.as_str().into())),

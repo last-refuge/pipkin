@@ -679,6 +679,10 @@ impl Store {
                     "UPDATE sessions SET thinking = ?2 WHERE id = ?1",
                     params![session, t],
                 )?,
+                SessionField::ModelAndThinking { model, thinking } => tx.execute(
+                    "UPDATE sessions SET model = ?2, thinking = ?3 WHERE id = ?1",
+                    params![session, model, thinking],
+                )?,
                 SessionField::SubagentsEnabled(e) => tx.execute(
                     "UPDATE sessions SET subagents_enabled = ?2 WHERE id = ?1",
                     params![session, *e as i64],
@@ -1717,6 +1721,7 @@ pub enum SessionField {
     Title(Option<String>),
     Model(Option<String>),
     Thinking(Option<String>),
+    ModelAndThinking { model: String, thinking: String },
     SubagentsEnabled(bool),
     Blocked(Option<String>),
 }

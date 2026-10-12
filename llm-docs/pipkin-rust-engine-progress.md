@@ -11,7 +11,35 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — prompt-resource lifetimes and provider-path audit
+## Current follow-up — thinking cycling and atomic model configuration
+
+Following **`5917287`**, implemented the built-in Models service's missing cycle operation.
+`CycleThinking` advances/wraps through supported levels and matches the reference for
+missing/unknown/disabled current levels, missing/non-reasoning models and empty level sets.
+It is advertised in Hello; protocol **10**, schema **8**. The desktop retains its existing
+explicit selection controls. Model selection now writes model and thinking together in one
+transaction/revision/invalidation; configuration changes and notifications are serialized.
+
+Nine executed pinned-reference service/level-selector cases match the native protocol.
+Twenty-three independent clients race cycles without losing an accepted change; observer
+events remain ordered, generation uses the resulting level, and restart preserves it.
+Post-write/pre-commit fault injection verifies rollback of model/thinking and outbox state.
+See [cycle/configuration evidence](pipkin-rust-engine-evidence/model-cycle.md).
+
+Required checks: **1491 passed, 0 failed, 53 ignored**; Clippy and formatting clean.
+Logs: `/tmp/pipkin-model-cycle-{workspace,clippy,fmt}.log`. Initial test compilation used
+the wrong snapshot field for revision; corrected before the passing run. No runtime failure
+was waived. SVC-MODELS-CYCLE moves PA → NC with measured evidence.
+
+Recomputed inventory: **504 rows, 488 non-OS; NC 412, NE 26, NP 37, PA 12, BL 0,
+LB 1, OS 16; 435 measured, 7 observed, 8 unverified, 54 not started; 0 qualified**.
+Native remains opt-in. Session removal is confirmed as a required built-in service
+capability, exposed to non-interactive clients despite no desktop delete button. Its native
+root/child teardown, persistent cleanup, invalidation and restart/race work remains open;
+the evidence records the concrete contract. Provider identity/OAuth and prompt identity/docs
+audits plus broader reliability, installed workflows and release qualification also remain.
+
+## Prior follow-up — prompt-resource lifetimes and provider-path audit
 
 Following **`e92c4f1`**, fixed a reproduced instruction-cache mismatch: toggling offered
 tools could reread AGENTS.md mid-session, and a newly created subagent could see different
