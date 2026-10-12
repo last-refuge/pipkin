@@ -12,6 +12,7 @@
 //! No network, process or person is awaited while a transaction is open: callers prepare
 //! everything, then commit in one short transaction.
 
+pub mod compactions;
 mod generation;
 mod outbox;
 pub(crate) mod prompt_result;

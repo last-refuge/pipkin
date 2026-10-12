@@ -106,7 +106,7 @@ Test citations are `<prefix>::<function>`; a prefix names one file:
 
 Owner: **Opus** = main implementation; **Codex** = reserved final integration.
 
-## Status summary (2026-10-11, Stop/compaction lifecycle follow-up)
+## Status summary (2026-10-11, compaction journal storage stage)
 
 The import-protection/durable-retry batch is committed as `63bd9ae`. This follow-up adds
 protocol **4**, schema **3**, atomic durable invalidations, acknowledged paged catch-up,
@@ -201,11 +201,11 @@ the row evidence for history; no package execution is claimed.
 
 | Evidence | Rows |
 | --- | --- |
-| measured | 430 |
+| measured | 431 |
 | observed | 7 |
 | failed | 0 |
 | unverified (code exists, no test) | 8 |
-| not started (implementation absent or excluded; see row evidence) | 59 |
+| not started (implementation absent or excluded; see row evidence) | 58 |
 
 | Section | Rows | NC | NE | NP | PA | BL | LB | RC | OS | measured | observed | failed | unverified | not started |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -220,14 +220,14 @@ the row evidence for history; no package execution is claimed.
 | 9 Subagents (P09/P10) | 17 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16 | 0 | 0 | 1 | 0 |
 | 10 Attachments / models / usage (P11) | 9 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 8 | 0 | 0 | 1 | 0 |
 | 11 Prompt / resources (P12) | 23 | 16 | 0 | 4 | 3 | 0 | 0 | 0 | 0 | 18 | 0 | 0 | 1 | 4 |
-| 12 Context / compaction (P13) | 15 | 12 | 0 | 1 | 2 | 0 | 0 | 0 | 0 | 13 | 0 | 0 | 0 | 2 |
+| 12 Context / compaction (P13) | 15 | 12 | 0 | 1 | 2 | 0 | 0 | 0 | 0 | 14 | 0 | 0 | 0 | 1 |
 | 13 Extensions / questions (P14/P15) | 24 | 9 | 2 | 5 | 0 | 0 | 0 | 0 | 8 | 15 | 0 | 0 | 0 | 9 |
 | 14 Tool output (P16) | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 1 | 0 |
 | 15 Settings / env | 34 | 29 | 0 | 1 | 4 | 0 | 0 | 0 | 0 | 29 | 0 | 0 | 1 | 4 |
 | 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 53 | 1 | 0 | 1 | 5 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
 | 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 6 | 0 | 0 | 6 |
-| **Total** | 504 | 404 | 25 | 30 | 29 | 0 | 1 | 0 | 15 | 430 | 7 | 0 | 8 | 59 |
+| **Total** | 504 | 404 | 25 | 30 | 29 | 0 | 1 | 0 | 15 | 431 | 7 | 0 | 8 | 58 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
 whenever rows change. Release gates: native beta needs every mandatory row implemented; native
@@ -706,7 +706,7 @@ is the differential target; Chord replicated-state op streams are not reproduced
 | CTX-ESTIMATE | compaction.ts:307-322; ai/utils/estimate.ts | Token estimate: last usage + chars/4 (images 4800) + planned system entries | cmp::message_estimates_follow_the_reference_rules; cmp::context_tokens_* | Opus · E/context/compaction.rs + E/runtime/compaction.rs | — | Same estimates | — | NC | measured: cmp::message_estimates_follow_the_reference_rules, cmp::context_tokens_use_the_newest_usage_after_the_head_plus_later_estimates, cmp::context_tokens_count_reordered_and_synthesized_results_after_the_measured_call, gsh::context_estimate_prefers_the_last_usage; no differential |
 | CTX-CUT | compaction.ts:255-295 | `selectCut` keepRecentTokens 20000 walk-back with candidate rules | cmp:: cut tests (8) | Opus · E/context/compaction.rs + E/runtime/compaction.rs | — | Same cut entry | — | NC | measured: cmp::keeps_about_keep_recent_tokens_and_cuts_at_the_first_candidate_after_the_budget, cmp::cuts_at_a_user_entry, cmp::cuts_at_an_assistant_in_one_long_run_and_never_at_a_tool_result, cmp::keeps_a_huge_last_tool_result_with_its_assistant, cmp::never_cuts_at_a_display_entry_or_an_excluded_answer, cmp::does_not_cut_at_a_user_entry_that_a_result_of_the_preceding_call_follows, cmp::finds_nothing_when_the_budget_is_never_reached_or_only_the_marker_precedes; no differential (ported `harness-compaction.test.ts`) |
 | CTX-SUMMARY-PROMPT | compaction.ts:57-207 | Exact summarization system prompt, format, serialization (2000-char tool result truncation), cacheRetention none, maxTokens min(0.8·reserve, model) | cmp::summary_request_text_is_exact; cmp::serializes_a_transcript_and_truncates_tool_results | Opus · E/context/compaction.rs + E/runtime/compaction.rs | — | Byte-identical request | — | NC | measured: cmp::summary_request_text_is_exact, cmp::serializes_a_transcript_and_truncates_tool_results, cmp::summarizes_an_earlier_summary_marker_first, rt::manual_and_overflow_compaction_summarize_older_context (no tools); no differential; `e-compaction` fixture's summary request not compared |
-| CTX-CHECKPOINT | D/harness/compaction.ts:33-52,112-217 | Durable select/summarize/retry phases preserve model/thinking/options, context tail/cut and absolute retry deadline across restart; foreground Stop intent survives | Planned: checkpoint/restart/Stop/fault tests and reference comparison | Native · E/runtime/compaction.rs + E/store | In-flight imports currently refuse; completed summaries preserved | Same operation and pinned request after restart | — | PA | not started: source audit confirms checkpoints; native manual/background futures are volatile and blocking retries can recompute their selection after restart. See stop-compaction-lifecycle.md; required built-in behavior, not extension scope |
+| CTX-CHECKPOINT | D/harness/compaction.ts:33-52,112-217 | Durable select/summarize/retry phases preserve model/thinking/options, context tail/cut and absolute retry deadline across restart; foreground Stop intent survives | Planned: checkpoint/restart/Stop/fault tests and reference comparison | Native · E/runtime/compaction.rs + E/store | In-flight imports currently refuse; completed summaries preserved | Same operation and pinned request after restart | — | PA | measured (storage only): schema-6 journal stores selected request, saved response, retry deadline and revisioned terminal/Stop state; store reopen, atomic rollback/accounting, idempotency, secret exclusion and v5 backup tests pass (compaction-journal.md). Runtime admission/recovery is still absent: manual/background futures are volatile and blocking retries can recompute selection. Required built-in behavior; PA remains open |
 | CTX-SUMMARY-RESULT | compaction.ts | Valid summary rules; failure texts; retry via durable retry; usage recorded | cmp::validates_summaries_with_the_reference_failure_texts | Opus · E/context/compaction.rs + E/runtime/compaction.rs | — | Same outcomes | — | NC | measured: cmp::validates_summaries_with_the_reference_failure_texts; retry of a failed summary and its usage not tested; no differential |
 | CTX-PLACEMENT | compaction.ts:407-436 | `pi.compaction` head marker with wrapped summary; non-blocking placed via write submission (`compaction:<taskId>`), stale if passed | rt::manual_and_overflow_compaction_summarize_older_context | Opus · E/context/compaction.rs + E/runtime/compaction.rs | `pi.compaction` → head marker entry | Same context after compaction | — | NC | measured (part): rt::manual_and_overflow_compaction_summarize_older_context (`BoundaryMoved`, next request starts with the summary); stale-summary drop not tested; no differential |
 | CTX-BOUNDARY-UI | e2e::history_before_a_compaction_is_paged_in_once_and_in_order | Desktop pages history before a compaction once, in order | rt::manual_and_overflow_compaction_summarize_older_context; ne2e::older_history_pages_in_and_stays_through_later_updates | Opus · `BoundaryMoved`, HistoryPage | — | Same visible history | desktop | NC | measured (part): rt::manual_and_overflow_compaction_summarize_older_context (`has_older` after compaction), ne2e::older_history_pages_in_and_stays_through_later_updates (paging without a compaction); desktop paging across a compaction boundary not in the native e2e; no differential |

@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -189,7 +189,23 @@ END;
 
 // Version 4 introduces positional system message bodies; older runtimes must refuse them.
 // Version 5 pins extension selections in kv/meta; older engines would ignore these choices.
-const MIGRATIONS: &[&str] = &[V1, V2, V3, "", ""];
+const V6: &str = r#"
+CREATE TABLE compactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session TEXT NOT NULL REFERENCES sessions(id),
+    operation_key TEXT NOT NULL,
+    run INTEGER REFERENCES runs(id),
+    scope TEXT NOT NULL CHECK (scope IN ('manual', 'background', 'blocking')),
+    instructions TEXT,
+    state TEXT NOT NULL CHECK (state IN ('running', 'stopping', 'settled')),
+    revision INTEGER NOT NULL DEFAULT 0,
+    progress TEXT NOT NULL CHECK (json_valid(progress)),
+    UNIQUE(session, operation_key)
+) STRICT;
+CREATE INDEX compactions_pending ON compactions(session, state, id) WHERE state != 'settled';
+CREATE INDEX compactions_run ON compactions(run, id) WHERE run IS NOT NULL;
+"#;
+const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

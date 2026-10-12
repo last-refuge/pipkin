@@ -423,6 +423,7 @@ impl Shared {
         let sess = self.session(session)?;
         let _guard = sess.lock.lock().await;
         let run = self.commit(&sess, |tx| {
+            Store::stop_compactions(tx, session)?;
             let Some(run) = Store::open_run_in(tx, session)? else {
                 return Ok((None, vec![]));
             };

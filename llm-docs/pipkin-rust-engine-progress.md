@@ -11,6 +11,27 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
+## Current follow-up — durable compaction journal foundation
+
+The Stop/compaction lifecycle fix is committed as **`0721977`**. Schema **6** now stores
+stable compaction identities and select/summarize/retry/terminal progress, selected request
+input/options without credentials, saved provider responses, absolute deadlines and revisioned
+Stop state. A summary/usage/terminal transaction either commits once or rolls back completely.
+Conversation Stop persists foreground journal intent even when no coding run is open; background
+scope is preserved. See [journal evidence](pipkin-rust-engine-evidence/compaction-journal.md).
+
+Required checks: **1445 passed, 0 failed, 53 ignored**, Clippy and formatting clean.
+Logs: `/tmp/pipkin-compaction-journal-{workspace,clippy,fmt}.log`. Migration and store-reopen
+tests are measured; this is not evidence of runtime compaction recovery or a worker crash test.
+`CTX-CHECKPOINT` remains **PA**. The current driver does not yet produce or consume these jobs.
+Next: integrate journal admission/selection/execution/classification/recovery for every
+compaction scope, including overflow/generation handoff, then test phase-boundary crashes.
+Advance the schema at activation so this intermediate journal-only runtime cannot ignore
+active jobs written by the recovery-capable runtime.
+
+Inventory remains **504 rows, 489 non-OS; NC 404, NE 25, NP 30, PA 29, BL 0, LB 1, OS 15**;
+**431 measured, 7 observed, 8 unverified, 58 not started; 0 qualified**. Native stays opt-in.
+
 ## Current follow-up — Stop and compaction lifecycle
 
 Request cancellation is committed as **`7c27693`**. Stop now reaches every manual

@@ -306,3 +306,54 @@ fn stop_records_aborted_results_for_unstarted_sequential_tools_without_running_t
     assert!(!fx.project.join("must-not-exist").exists());
     assert_eq!(provider.requests().len(), 1);
 }
+
+#[test]
+fn stop_persists_foreground_compaction_intent_even_without_an_open_coding_run() {
+    use crate::store::{Store, compactions::CompactionScope};
+    let fx = Fixture::new();
+    let mut e = fx.start(&Scripted::echo("unused"));
+    let session = e.create(&fx.project, "s");
+    let (manual, background) = e
+        .handle
+        .shared()
+        .store
+        .tx(|tx| {
+            Ok((
+                Store::admit_compaction(
+                    tx,
+                    &session,
+                    "manual",
+                    None,
+                    CompactionScope::Manual,
+                    None,
+                )?,
+                Store::admit_compaction(
+                    tx,
+                    &session,
+                    "background",
+                    None,
+                    CompactionScope::Background,
+                    None,
+                )?,
+            ))
+        })
+        .unwrap();
+    assert_eq!(
+        e.call(Call::Stop { session }),
+        Ok(Reply::Stopping { run: None })
+    );
+    e.handle.shutdown(std::time::Duration::from_secs(1));
+    drop(e);
+    let store = Store::open(&fx.config().data_dir).unwrap();
+    let manual = store
+        .read(|c| Store::compaction_in(c, manual.id))
+        .unwrap()
+        .unwrap();
+    let background = store
+        .read(|c| Store::compaction_in(c, background.id))
+        .unwrap()
+        .unwrap();
+    assert!(manual.stopping);
+    assert!(!background.stopping);
+    assert_eq!(store.pending_compaction_ids().unwrap().len(), 2);
+}
