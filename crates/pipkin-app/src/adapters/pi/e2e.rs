@@ -43,6 +43,10 @@ use crate::storage::Storage;
 const NAMESPACE: &str = "pi:e2e";
 const WAIT: Duration = Duration::from_secs(90);
 
+#[cfg(target_os = "linux")]
+#[path = "paired_perf.rs"]
+pub(crate) mod paired;
+
 /// The model's script: edit a tracked file, create a new one, then say what it did.
 fn two_edits(request: &Value, n: usize) -> Reply {
     match n {

@@ -1,5 +1,8 @@
 //! Small shared helpers.
 
+/// Private durable-block metadata, removed when projecting a model request.
+pub const ORIGINAL_TOOL_CALL_ID: &str = "_pipkin_original_tool_call_id";
+
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

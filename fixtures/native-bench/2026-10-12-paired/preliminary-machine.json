@@ -1,0 +1,20 @@
+{
+  "cpu": "Intel(R) Core(TM) Ultra X7 358H",
+  "logicalCpus": 16,
+  "kernel": "7.2.5-3-omarchy",
+  "gitRevision": "42b196de61bff60ed3614e639bd8f2e6c2d5db33",
+  "dirty": true,
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "loadavg": "6.90 4.68 3.62 1/3118 3556263",
+  "scratchFilesystem": "btrfs",
+  "clockTicksPerSecond": 100,
+  "measurement": "alternating order; fresh profiles; warm executable/filesystem cache; local HTTP scripted provider",
+  "releaseProfile": "workspace release opt-level=3, debug=line-tables-only",
+  "inputSha256": {
+    "scripts/bench-paired-engines.sh": "a35daab5354e7faa45fb7092d7053b5364ec87e47ae1e8d6096f8113aedc2fcb",
+    "crates/pipkin-app/src/adapters/pi/paired_perf.rs": "662b3399e143a047d5df627a507ccddc0095f9109615274207c051b08be55adf",
+    "crates/pipkin-app/src/adapters/pi/e2e.rs": "a69e2a206c010e01e4c19c11ecca44bcdc6d74d6090a59e464123a4d2b0de728",
+    "crates/pipkin-app/src/adapters/pi/testsupport.rs": "ae79c120b13672f234378b2771cc9115b5e6dd7e250d6f8a14f94c0893d4501e",
+    "crates/pipkin-app/src/adapters/native/e2e.rs": "d1f22055c34e461e1787c575f82717db84441cce806d0d0b8c4844b92ce590cc"
+  }
+}

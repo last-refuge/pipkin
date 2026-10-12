@@ -2875,4 +2875,4 @@ mod real_pi;
 mod testsupport;
 
 #[cfg(test)]
-mod e2e;
+pub(crate) mod e2e;

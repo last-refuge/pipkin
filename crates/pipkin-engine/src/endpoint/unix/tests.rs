@@ -271,6 +271,13 @@ fn single_owner_reclaims_only_stale_sockets_and_does_not_delete_a_replacement() 
         "must not steal a listening socket even without our lock"
     );
     drop(stale);
+    // Concurrent process tests can briefly inherit the listener between fork and exec.
+    // It is stale only after the last inherited descriptor closes; production must keep
+    // refusing a still-listening socket during that interval.
+    wait(
+        "the fixture listener is actually stale",
+        || matches!(UnixStream::connect(fx.path.join(SOCKET)), Err(e) if e.kind() == io::ErrorKind::ConnectionRefused),
+    );
     let server = fx.server();
     assert!(
         Server::start(fx.engine.clone(), &fx.path).is_err(),

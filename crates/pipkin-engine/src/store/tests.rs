@@ -571,7 +571,7 @@ fn a_v1_database_is_backed_up_before_adding_durable_retry_state() {
         .unwrap();
         // Reconstruct the actual v1 schema, retaining a nonempty history/catalog.
         s.tx(|tx| {
-            tx.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE generation_state; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 1;")?;
+            tx.execute_batch("DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE generation_state; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 1;")?;
             Ok(())
         })
         .unwrap();
@@ -702,7 +702,7 @@ fn a_v2_database_is_backed_up_before_adding_the_outbox() {
         let s = Store::open(tmp.path()).unwrap();
         session(&s, "existing");
         s.tx(|tx| {
-            tx.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 2;")?;
+            tx.execute_batch("DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 2;")?;
             Ok(())
         }).unwrap();
     }
@@ -732,7 +732,7 @@ fn a_v3_database_is_backed_up_before_positional_system_bodies_are_written() {
         let s = Store::open(dir.path()).unwrap();
         session(&s, "old");
         s.tx(|tx| {
-            tx.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 3")?;
+            tx.execute_batch("DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 3")?;
             Ok(())
         })
         .unwrap();
@@ -781,7 +781,7 @@ fn a_v4_database_is_backed_up_before_pinned_extension_profiles_are_written() {
         session(&s, "existing");
         s.tx(|tx| {
             Store::kv_set(tx, "existing", "opaque-state", "retained bytes")?;
-            tx.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 4")?;
+            tx.execute_batch("DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 4")?;
             Ok(())
         })
         .unwrap();
@@ -826,7 +826,7 @@ fn a_v8_database_is_backed_up_before_removal_receipts_and_delete_events() {
         session(&s, "existing");
         s.tx(|tx| {
             Store::kv_set(tx, "existing", "opaque-state", "retained bytes")?;
-            tx.execute_batch("DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; PRAGMA user_version = 8")?;
+            tx.execute_batch("DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; PRAGMA user_version = 8")?;
             Ok(())
         }).unwrap();
     }
@@ -860,4 +860,95 @@ fn a_v8_database_is_backed_up_before_removal_receipts_and_delete_events() {
         "existing"
     );
     s.integrity_check().unwrap();
+}
+
+#[test]
+fn v9_tool_history_is_backed_up_and_preserved_before_invocation_aliases() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("engine.sqlite");
+    let original;
+    {
+        let s = Store::open(tmp.path()).unwrap();
+        session(&s, "s");
+        s.tx(|tx| {
+            Store::append_entry(tx, "s", 1, None, &user("saved history"))?;
+            Store::tool_intent(tx, "s", "provider-id", None, "bash", &json!({}), false, 1)?;
+            Store::tool_result(
+                tx,
+                "s",
+                "provider-id",
+                ToolState::Done,
+                1,
+                "saved output",
+                0,
+                2,
+            )?;
+            Store::append_entry(
+                tx,
+                "s",
+                2,
+                None,
+                &EntryKind::Message {
+                    message: Message::Assistant {
+                        content: vec![Block::tool_call("unexecuted", "bash", json!({}))],
+                        api: "x".into(),
+                        provider: "x".into(),
+                        model: "x".into(),
+                        usage: Usage::default(),
+                        stop_reason: StopReason::ToolUse,
+                        error_message: None,
+                        timestamp: 2,
+                        extra: Default::default(),
+                    },
+                    mode: InputMode::Prompt,
+                    request: None,
+                    partial: false,
+                },
+            )?;
+            // Reconstruct V9 before reopening; its call index is populated by the migration.
+            tx.execute_batch("DROP TABLE tool_call_ids; PRAGMA user_version=9")?;
+            Ok(())
+        })
+        .unwrap();
+        original = s.read(|c| Store::entry_in(c, "s", 1)).unwrap();
+    }
+    let s = Store::open(tmp.path()).unwrap();
+    assert_eq!(s.read(schema::version).unwrap(), 10);
+    assert_eq!(s.read(|c| Store::entry_in(c, "s", 1)).unwrap(), original);
+    assert_eq!(
+        s.tool_output("s", "provider-id").unwrap().unwrap().text,
+        "saved output"
+    );
+    // Even an imported/unexecuted historical call reserves its id, without an intent row.
+    assert!(s.tool_call("s", "unexecuted").unwrap().is_none());
+    let mut later = match s
+        .read(|c| Store::entry_in(c, "s", 2))
+        .unwrap()
+        .unwrap()
+        .kind
+    {
+        EntryKind::Message { message, .. } => message,
+        _ => unreachable!(),
+    };
+    s.tx(|tx| Store::disambiguate_tool_ids(tx, "s", &mut later))
+        .unwrap();
+    let (id, _, _) = later.tool_calls()[0];
+    assert_ne!(id, "unexecuted");
+    let backup = Connection::open_with_flags(
+        path.with_extension("sqlite.v9.bak"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    assert_eq!(schema::version(&backup).unwrap(), 9);
+    assert_eq!(Store::entry_in(&backup, "s", 1).unwrap(), original);
+    assert_eq!(
+        backup
+            .query_row(
+                "SELECT text FROM tool_outputs WHERE session='s' AND call_id='provider-id'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+        "saved output"
+    );
 }

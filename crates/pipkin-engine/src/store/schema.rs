@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -249,7 +249,25 @@ WHEN EXISTS (SELECT 1 FROM session_removals WHERE root = NEW.id OR root = NEW.ro
     SELECT RAISE(ABORT, 'session removal is committed');
 END;
 "#;
-const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9];
+// A complete index includes imported/retired/unexecuted calls, not just executed intents.
+// Version 10 also changes semantics: private ids on collided calls must be projected back
+// to their provider originals. Older engines refuse this version before modifying it.
+const V10: &str = r#"
+CREATE TABLE tool_call_ids (
+    session TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    call_id TEXT NOT NULL,
+    PRIMARY KEY (session, call_id)
+) STRICT;
+INSERT OR IGNORE INTO tool_call_ids(session, call_id)
+SELECT e.session, json_extract(j.value, '$.id') FROM entries e,
+    json_each(e.body, '$.message.content') j
+WHERE e.partial=0 AND json_extract(e.body, '$.message.role')='assistant'
+    AND j.type='object' AND json_extract(j.value, '$.type')='toolCall'
+    AND json_type(j.value, '$.id')='text';
+INSERT OR IGNORE INTO tool_call_ids SELECT session, call_id FROM tool_calls;
+INSERT OR IGNORE INTO tool_call_ids SELECT session, call_id FROM tool_outputs;
+"#;
+const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9, V10];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

@@ -174,6 +174,13 @@ pending requests; they do not resend prompts to recover missing updates. This pr
 history and the selected child conversation. Schema 4 adds positional system-message bodies and
 saves `engine.sqlite.v3.bak` before upgrading schema 3. It preserves ordered instruction and tool
 updates across restart/import. Protocol 5 rejects mismatched older workers.
+Native schema 10 distinguishes later tool invocations that reuse a provider's tool-call ID.
+The engine retains separate durable output/recovery identities and restores the provider's
+original IDs when sending context. Upgrading schema 9 first writes `engine.sqlite.v9.bak`;
+older engines refuse schema 10. To return to an older native engine, quit all profile users,
+retain a complete current archive, and restore a compatible pre-upgrade profile. Switching
+binaries alone does not downgrade data or transfer later work into the backup.
+
 On Linux/glibc, the private worker limits allocator arenas and releases unused pages at run
 boundaries to avoid retaining large temporary context buffers. This does not shorten saved
 history or change the machine's allocator environment/configuration.

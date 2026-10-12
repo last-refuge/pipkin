@@ -98,7 +98,33 @@ pub fn contributions(entries: &[Entry]) -> Vec<Vec<Message>> {
 
 /// The next request's messages, oldest first.
 pub fn model_messages(entries: &[Entry]) -> Vec<Message> {
-    order_tool_results(contributions(entries).into_iter().flatten().collect())
+    let mut messages = order_tool_results(contributions(entries).into_iter().flatten().collect());
+    // Pair results using durable invocation ids first, then restore provider ids. This
+    // preserves repeated/opaque ids and signatures without collapsing distinct outputs.
+    let mut original = std::collections::HashMap::new();
+    for message in &mut messages {
+        match message {
+            Message::Assistant { content, .. } => {
+                original.clear();
+                for block in content {
+                    if let Block::ToolCall { id, extra, .. } = block
+                        && let Some(Value::String(provider_id)) =
+                            extra.remove(crate::util::ORIGINAL_TOOL_CALL_ID)
+                    {
+                        original.insert(id.clone(), provider_id.clone());
+                        *id = provider_id;
+                    }
+                }
+            }
+            Message::ToolResult { tool_call_id, .. } => {
+                if let Some(id) = original.get(tool_call_id) {
+                    *tool_call_id = id.clone();
+                }
+            }
+            _ => {}
+        }
+    }
+    messages
 }
 
 /// One slot of an ordered context: an input message by index, or a synthesized result.

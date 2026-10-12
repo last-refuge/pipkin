@@ -1879,3 +1879,196 @@ fn stop_interrupts_a_provider_that_keeps_emitting_without_yielding() {
                 && text.bytes().all(|b| b == b'x'))
     );
 }
+
+/// Provider ids may repeat in later assistant messages. Recovery belongs to the invocation,
+/// not every future call that happens to use the same model-supplied id.
+#[test]
+fn repeated_provider_tool_ids_execute_distinct_calls_and_keep_recovery_idempotent() {
+    use crate::provider::{ApiAdapter, BoxFuture, StreamCtx};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Reused(AtomicUsize);
+    impl ApiAdapter for Reused {
+        fn api(&self) -> &'static str {
+            "scripted"
+        }
+        fn stream<'a>(&'a self, ctx: StreamCtx<'a>) -> BoxFuture<'a, Message> {
+            Box::pin(async move {
+                let n = self.0.fetch_add(1, Ordering::SeqCst);
+                // Verify the exact provider-visible pairing, even after a restart.
+                let wire = crate::provider::api::common::transform_messages(
+                    &ctx.req.messages,
+                    &ctx.req.model,
+                    None,
+                );
+                for message in &wire {
+                    match message {
+                        Message::Assistant { content, .. } => {
+                            for b in content {
+                                if let Block::ToolCall { id, extra, .. } = b {
+                                    assert_eq!(id, "reused");
+                                    assert!(!extra.keys().any(|k| k.starts_with("_pipkin")));
+                                }
+                            }
+                        }
+                        Message::ToolResult { tool_call_id, .. } => {
+                            assert_eq!(tool_call_id, "reused")
+                        }
+                        _ => {}
+                    }
+                }
+                let mut emitter = ctx.emitter();
+                if n % 3 < 2 {
+                    let id = emitter.start_tool_call("reused", "bash");
+                    emitter.tool_args(id, &json!({"command":format!("printf '{n}\\n' >> effects; printf 'output-{n}'")}).to_string());
+                    emitter.finish(ctx.req, StopReason::ToolUse, None)
+                } else {
+                    emitter.append_text("Done");
+                    emitter.finish(ctx.req, StopReason::Stop, None)
+                }
+            })
+        }
+    }
+    let fx = Fixture::new();
+    let provider = Arc::new(Reused(AtomicUsize::new(0)));
+    let start = || {
+        let handle = EngineHandle::start_with(
+            fx.config(),
+            registry_with(provider.clone()),
+            crate::tools::builtin_tools(),
+        )
+        .unwrap();
+        let conn = handle.connect("reused-id-test");
+        Engine {
+            handle,
+            conn,
+            next: 0,
+            events: vec![],
+        }
+    };
+    let mut first = start();
+    let session = first.create(&fx.project, "create");
+    first.prompt(&session, "first", "two tools").unwrap();
+    assert_eq!(first.settled("first"), RunOutcome::Completed);
+    assert_eq!(
+        std::fs::read_to_string(fx.project.join("effects")).unwrap(),
+        "0\n1\n"
+    );
+    first.handle.shutdown(Duration::from_secs(2));
+    drop(first);
+    let mut second = start();
+    second.prompt(&session, "second", "two more tools").unwrap();
+    assert_eq!(second.settled("second"), RunOutcome::Completed);
+    assert_eq!(
+        std::fs::read_to_string(fx.project.join("effects")).unwrap(),
+        "0\n1\n3\n4\n"
+    );
+    let snapshot = second.snapshot(&session);
+    let ids: Vec<_> = snapshot
+        .entries
+        .iter()
+        .flat_map(|entry| {
+            if let EntryKind::Message { message, .. } = &entry.kind {
+                message
+                    .tool_calls()
+                    .into_iter()
+                    .map(|(id, _, _)| id.to_owned())
+                    .collect::<Vec<_>>()
+            } else {
+                vec![]
+            }
+        })
+        .collect();
+    assert_eq!(ids.len(), 4);
+    assert_eq!(
+        ids.iter().collect::<std::collections::HashSet<_>>().len(),
+        4
+    );
+    for (id, n) in ids.iter().zip([0, 1, 3, 4]) {
+        let result = second
+            .call(Call::ToolOutput {
+                session: session.clone(),
+                call_id: id.clone(),
+            })
+            .unwrap();
+        let Reply::ToolOutput(output) = result else {
+            panic!("{result:?}")
+        };
+        assert_eq!(output.text, format!("output-{n}"));
+    }
+    // Retrying a settled request must not execute either of its distinct calls again.
+    second.prompt(&session, "second", "two more tools").unwrap();
+    assert_eq!(provider.0.load(Ordering::SeqCst), 6);
+    assert_eq!(
+        std::fs::read_to_string(fx.project.join("effects")).unwrap(),
+        "0\n1\n3\n4\n"
+    );
+    // Lose settlement of a colliding unsafe call, then restart. Its committed alias must
+    // recover as interrupted; it must neither rerun nor overwrite the older invocation.
+    second
+        .handle
+        .shared()
+        .store
+        .inject(crate::store::Fault::ToolResult)
+        .unwrap();
+    second
+        .prompt(&session, "third", "recover another pair")
+        .unwrap();
+    second.until("tool-result storage failure", |events| {
+        events.iter().any(
+            |event| matches!(event, Event::Notice { message } if message.contains("storage error")),
+        )
+    });
+    assert_eq!(
+        std::fs::read_to_string(fx.project.join("effects")).unwrap(),
+        "0\n1\n3\n4\n6\n"
+    );
+    second.handle.shutdown(Duration::from_secs(2));
+    drop(second);
+    let mut third = start();
+    third.snapshot(&session);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Reply::Lookup(LookupResult::Known {
+            open: false,
+            outcome: Some(outcome),
+            ..
+        }) = third
+            .call(Call::Lookup {
+                session: session.clone(),
+                request: "third".into(),
+            })
+            .unwrap()
+        {
+            assert_eq!(outcome, RunOutcome::Completed);
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(provider.0.load(Ordering::SeqCst), 9);
+    assert_eq!(
+        std::fs::read_to_string(fx.project.join("effects")).unwrap(),
+        "0\n1\n3\n4\n6\n7\n"
+    );
+    let snapshot = third.snapshot(&session);
+    assert!(snapshot.entries.iter().any(|e| matches!(
+        &e.kind,
+        EntryKind::Message {
+            message: Message::ToolResult { is_error: true, .. },
+            ..
+        }
+    )));
+    for (id, n) in ids.iter().zip([0, 1, 3, 4]) {
+        let Reply::ToolOutput(output) = third
+            .call(Call::ToolOutput {
+                session: session.clone(),
+                call_id: id.clone(),
+            })
+            .unwrap()
+        else {
+            panic!("missing retained output")
+        };
+        assert_eq!(output.text, format!("output-{n}"));
+    }
+    third.handle.shutdown(Duration::from_secs(2));
+}

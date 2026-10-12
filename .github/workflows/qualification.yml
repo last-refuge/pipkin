@@ -142,7 +142,7 @@ jobs:
       - name: Scripted-provider development engine qualification
         run: |
           set -o pipefail
-          cargo test -p pipkin-app --release --locked e2e -- --ignored --test-threads=1 --skip installed_pi_native_rollback_preserves_history_and_requires_ownership_release 2>&1 | tee qualification-logs/engine.log
+          cargo test -p pipkin-app --release --locked e2e -- --ignored --test-threads=1 --skip installed_pi_native_rollback_preserves_history_and_requires_ownership_release --skip packaged_engines_matched_performance 2>&1 | tee qualification-logs/engine.log
       - name: Bundled engine and installer qualification
         run: |
           set -o pipefail

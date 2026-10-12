@@ -406,6 +406,8 @@ impl Shared {
         };
         let committed = self.commit(sess, move |tx| {
             let now = now_ms();
+            let mut message = message;
+            Store::disambiguate_tool_ids(tx, &session, &mut message)?;
             let kind = EntryKind::Message {
                 message,
                 mode: InputMode::Prompt,

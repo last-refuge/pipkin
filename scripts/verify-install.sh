@@ -55,6 +55,6 @@ if [ $full = 1 ]; then
   # The cross-package rollback test requires both archives and runs in its own CI step.
   (cd "$here" && PIPKIN_PI_REPO="$root/prefix/usr/lib/pipkin/engine" \
     cargo test -p pipkin-app --release --locked e2e -- --ignored --test-threads=1 \
-      --skip installed_pi_native_rollback_preserves_history_and_requires_ownership_release 2>&1)
+      --skip installed_pi_native_rollback_preserves_history_and_requires_ownership_release --skip packaged_engines_matched_performance 2>&1)
 fi
 [ $fail = 0 ] && echo "install verified" || { echo "install NOT verified"; exit 1; }

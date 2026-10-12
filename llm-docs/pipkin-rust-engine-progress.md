@@ -11,7 +11,39 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — published MIT/Apache notice filenames
+## Current follow-up — durable tool identities and matched engine performance
+
+2026-10-12, following **`42b196d`**, protocol 12 / schema **10**. Actual matched package
+execution exposed a native correctness bug: reused provider tool IDs caused later tool effects
+to be skipped. Distinct durable invocation IDs now preserve each effect/output while provider
+context retains its original IDs. The indexed registry includes imported/unexecuted/retired
+calls. Restart, settled-request replay and failed-result recovery regression checks pass;
+existing histories/outputs are preserved. See [identity evidence](pipkin-rust-engine-evidence/tool-call-identities.md).
+
+Real schema-9 → schema-10 package upgrade, coding, exact pre-upgrade backup, older-worker
+refusal without database changes, older-backup opening and current archive restoration pass.
+The new package also passes installed Pi → native → Pi rollback with ownership guards,
+confirmed release, full desktop/native archive restoration and retained native branch checks.
+Reports: `fixtures/native-installed/2026-10-12-schema10-{upgrade,cross-engine}.json`.
+
+The final paired benchmark passes 20 fresh profiles per engine and six coding turns per
+profile: **240 real effects**, exact replies, 480 provider requests and no owned processes
+left after shutdown. Native/Pi p95 warm client readiness **42.984/830.414 ms**, idle engine
+RSS **32,048/464,284 KiB**, sampled peak **37,708/494,304 KiB**. Idle/peak RSS reductions
+**93.10%/92.37%** and all five defined performance gates pass. These are headless engine
+measurements, excluding GUI/provider/tool subprocess memory; warm caches, disk profiles.
+See [paired performance](pipkin-rust-engine-evidence/paired-performance.md) for exact artifacts,
+raw results, initial failures, preliminary run and limits.
+
+Required workspace checks: **1,640 passed, 0 failed, 56 ignored**, clean Clippy/all-targets
+and formatting. Dedicated ignored paired and cross-engine tests were explicitly executed.
+Native package install/coding/restart/restore/uninstall checks pass with Node/Pi traps unused.
+Ledger counts remain **444 measured, 8 observed, 1 unverified, 51 not started** across
+504 rows (488 non-OS), **0 fully qualified**. Remaining behavioral comparisons, sustained/
+desktop/uncached resource checks, visual acceptance, hosted CI, license review and actual
+native-default/Pi retirement remain open. Owner plan/worktree changes are preserved.
+
+## Prior follow-up — published MIT/Apache notice filenames
 
 2026-10-12, following **`3fa2d98`**. Fixed a packaging inventory bug: yaml-rust2 0.13.0
 already contains `MIT-LICENSE` and `Apache-LICENSE`, but discovery missed those names.

@@ -3027,3 +3027,46 @@ pub(crate) fn installed_migration_roundtrip(
     }));
     h.stop();
 }
+
+#[cfg(target_os = "linux")]
+impl crate::adapters::pi::e2e::paired::Desktop for Harness {
+    fn state(&self) -> &AppState {
+        &self.state
+    }
+    fn dispatch(&mut self, command: Command) {
+        Harness::dispatch(self, command);
+    }
+    fn pump(&mut self) {
+        Harness::pump(self);
+    }
+    fn stop(self: Box<Self>) {
+        Harness::stop(*self);
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn paired_performance_client(
+    program: &Path,
+    root: &Path,
+    marker: &str,
+) -> Box<dyn crate::adapters::pi::e2e::paired::Desktop> {
+    use super::supervisor::WorkerSpec;
+    let data = root.join("native-data");
+    let config = root.join("agent");
+    let mut worker =
+        WorkerSpec::engine(&data, &config, &[], false, &root.join("native.log")).unwrap();
+    let mut args = vec![
+        "-i".into(),
+        format!("HOME={}", root.join("home").display()).into(),
+        "PATH=/usr/bin:/bin".into(),
+        format!("PIPKIN_PAIRED_ID={marker}").into(),
+        program.as_os_str().to_owned(),
+    ];
+    args.extend(worker.args);
+    worker.args = args;
+    worker.program = "/usr/bin/env".into();
+    Box::new(Harness::start_with(
+        NativeConfig::new(HostSpec::Child(worker), data.display().to_string()),
+        &root.join("app.sqlite3"),
+    ))
+}

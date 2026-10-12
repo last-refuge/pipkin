@@ -1,0 +1,107 @@
+{
+  "pi": {
+    "archiveSha256": "fd393969b9f33e09531f9c7dc36b752ccb9f8ee42117df005d8d029c202c415e",
+    "buildInfo": {
+      "formatVersion": 1,
+      "app": {
+        "version": "0.0.1",
+        "revision": "42b196de61bff60ed3614e639bd8f2e6c2d5db33",
+        "dirty": "true",
+        "binarySha256": "4f5453d4b7d07436bfb01209de07d7a4b8284a19fda4905d06e6bde2efe659b6"
+      },
+      "compatibility": {
+        "protocol": 8,
+        "schema": 8,
+        "nodeMinimum": "22.19"
+      },
+      "engine": {
+        "revision": "d2a311097cbcf669e699479587332ae3988a49d0",
+        "development": false,
+        "productionPruneSucceeded": true,
+        "modelDataManifestSha256": "b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05",
+        "stagedLockSha256": "aad6e878fa237f4b92645408c8de1b596ef9246a1f2fcabd47a0ac8563c0102b"
+      },
+      "inputs": {
+        "cargoLockSha256": "e51ef4eebee96ac4f9a30e3a4fdf22021e0d2cd75ff81d7a640a57d85a81a778",
+        "engineSourceLockSha256": "aad6e878fa237f4b92645408c8de1b596ef9246a1f2fcabd47a0ac8563c0102b",
+        "modelDataArchiveSha256": "2be5f68d90695e71372c01ccbd08d5728b93691e07c45918846997c8949bcabb",
+        "rustToolchainSha256": "2ad6f15416572b4836585087f1d4abc53b8fa2dbd616f8dacfaa587ed6714228",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+        "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+        "node": "v26.8.1",
+        "npm": "11.19.0",
+        "python": "Python 3.14.7",
+        "platform": "linux",
+        "architecture": "x64",
+        "customRustFlags": false
+      }
+    },
+    "engine": {
+      "name": "pi",
+      "version": "d2a311097cbcf669e699479587332ae3988a49d0",
+      "sourceRevision": "d2a311097cbcf669e699479587332ae3988a49d0",
+      "pipkinAuthBridgeSha256": "370dbef417d1cdeb68239f0d283d4dceb36f5ed539e500e0ba041238aad94e3a",
+      "pipkinSubagentsSha256": "9fb846e55a931d829e2ca25bde08ae98d2f128c14ceb6f1bc033b0a2e6fb3664",
+      "modelDataManifestSha256": "b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05",
+      "productionPruneSucceeded": true,
+      "development": false,
+      "protocol": 8,
+      "minClient": "0.0.1",
+      "builtAt": "2026-10-12T11:20:24Z",
+      "requiresBundledNode": true
+    },
+    "runtime": {
+      "formatVersion": 1,
+      "version": "22.23.3",
+      "target": "x86_64-unknown-linux-gnu",
+      "buildTools": false,
+      "archive": "node-v22.23.3-linux-x64.tar.gz",
+      "archiveSha256": "1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af",
+      "source": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.gz",
+      "binarySha256": "fde6a4bf8d0562f7751d1a2d6cb9b417c4cfe107bbcb0aa3e9a24e125e348f48",
+      "licenseSha256": "c738ae413cf561f174e34f6961f8ca458aae2369a73640dda6234c629b98bcc4",
+      "limitations": "Pinned HTTPS/checksum inputs, not independent signature authentication or security audit. Full Node/dependency LICENSE retained."
+    }
+  },
+  "native": {
+    "archiveSha256": "a45a83ddd1783a98f2a8a446fa412f4976abbf65160ad3a462bb71a833059d24",
+    "buildInfo": {
+      "formatVersion": 1,
+      "kind": "native-engine-candidate",
+      "app": {
+        "version": "0.0.1",
+        "revision": "42b196de61bff60ed3614e639bd8f2e6c2d5db33",
+        "dirty": "true",
+        "binarySha256": "4f5453d4b7d07436bfb01209de07d7a4b8284a19fda4905d06e6bde2efe659b6"
+      },
+      "compatibility": {
+        "engine": "native",
+        "engineSelector": "--engine native",
+        "engineProtocol": 12,
+        "engineSchema": 10,
+        "desktopSchema": 8,
+        "nodeMinimum": null
+      },
+      "engine": {
+        "kind": "native",
+        "builtIntoBinary": true,
+        "version": "0.0.1",
+        "sourceRevision": "42b196de61bff60ed3614e639bd8f2e6c2d5db33",
+        "bundledNode": false,
+        "piEngine": false
+      },
+      "inputs": {
+        "cargoLockSha256": "e51ef4eebee96ac4f9a30e3a4fdf22021e0d2cd75ff81d7a640a57d85a81a778",
+        "rustToolchainSha256": "2ad6f15416572b4836585087f1d4abc53b8fa2dbd616f8dacfaa587ed6714228",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+        "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+        "python": "Python 3.14.7",
+        "node": null,
+        "npm": null,
+        "platform": "linux",
+        "architecture": "x86_64",
+        "customRustFlags": false
+      }
+    }
+  }
+}

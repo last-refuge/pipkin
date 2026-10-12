@@ -18,6 +18,7 @@ mod outbox;
 pub(crate) mod prompt_result;
 pub(crate) mod removal;
 mod schema;
+mod tool_identity;
 mod tool_progress;
 mod writes;
 pub use generation::GenerationState;
@@ -837,6 +838,7 @@ impl Store {
                 json(&kind)
             ],
         )?;
+        Self::remember_tool_ids(tx, session, &kind)?;
         Ok(Entry {
             id,
             at_ms,
@@ -850,6 +852,7 @@ impl Store {
     /// Replace an entry's body (finalizing a streamed message); drops its stream chunks.
     pub fn replace_entry(tx: &Connection, session: &str, entry: &Entry) -> Result<()> {
         let partial = matches!(entry.kind, EntryKind::Message { partial: true, .. });
+        Self::remember_tool_ids(tx, session, &entry.kind)?;
         let n = tx.execute(
             "UPDATE entries SET body = ?3, partial = ?4, retired = ?5, kind = ?6
              WHERE session = ?1 AND id = ?2",

@@ -1,0 +1,61 @@
+   Compiling pipkin-engine v0.0.1 (/home/jason/coding/pipkin/crates/pipkin-engine)
+   Compiling pipkin-app v0.0.1 (/home/jason/coding/pipkin/crates/pipkin-app)
+    Finished `release` profile [optimized + debuginfo] target(s) in 33.13s
+     Running unittests src/main.rs (target/release/deps/pipkin-2990b52262a0cc12)
+
+running 1 test
+test adapters::pi::e2e::paired::packaged_engines_matched_performance ... pair 0: "pi" ready 827.6ms idle 463108KiB peak 491576KiB
+pair 0: "native" ready 41.8ms idle 31548KiB peak 36500KiB
+pair 1: "native" ready 42.6ms idle 31860KiB peak 37204KiB
+pair 1: "pi" ready 830.3ms idle 463220KiB peak 494304KiB
+pair 2: "pi" ready 826.0ms idle 461440KiB peak 492496KiB
+pair 2: "native" ready 39.3ms idle 31472KiB peak 38084KiB
+pair 3: "native" ready 41.0ms idle 32048KiB peak 37252KiB
+pair 3: "pi" ready 827.7ms idle 458700KiB peak 486852KiB
+pair 4: "pi" ready 728.9ms idle 460296KiB peak 484004KiB
+pair 4: "native" ready 40.3ms idle 32008KiB peak 36864KiB
+pair 5: "native" ready 45.1ms idle 32044KiB peak 37072KiB
+pair 5: "pi" ready 826.9ms idle 463608KiB peak 495452KiB
+pair 6: "pi" ready 827.6ms idle 463148KiB peak 493624KiB
+pair 6: "native" ready 40.4ms idle 31616KiB peak 35784KiB
+pair 7: "native" ready 39.8ms idle 31552KiB peak 36688KiB
+pair 7: "pi" ready 726.1ms idle 462392KiB peak 491980KiB
+pair 8: "pi" ready 825.4ms idle 462052KiB peak 489072KiB
+pair 8: "native" ready 41.2ms idle 31356KiB peak 36452KiB
+pair 9: "native" ready 41.9ms idle 31852KiB peak 37232KiB
+pair 9: "pi" ready 726.4ms idle 463628KiB peak 491576KiB
+pair 10: "pi" ready 723.5ms idle 461236KiB peak 489940KiB
+pair 10: "native" ready 43.0ms idle 31496KiB peak 36744KiB
+pair 11: "native" ready 41.6ms idle 31932KiB peak 37636KiB
+pair 11: "pi" ready 827.3ms idle 464284KiB peak 494108KiB
+pair 12: "pi" ready 829.6ms idle 460948KiB peak 492068KiB
+pair 12: "native" ready 38.4ms idle 31580KiB peak 36204KiB
+pair 13: "native" ready 39.4ms idle 31968KiB peak 36408KiB
+pair 13: "pi" ready 827.3ms idle 459128KiB peak 491124KiB
+pair 14: "pi" ready 827.6ms idle 461620KiB peak 489712KiB
+pair 14: "native" ready 40.5ms idle 31872KiB peak 37464KiB
+pair 15: "native" ready 40.5ms idle 32060KiB peak 37236KiB
+pair 15: "pi" ready 830.8ms idle 462324KiB peak 490948KiB
+pair 16: "pi" ready 830.4ms idle 465300KiB peak 487716KiB
+pair 16: "native" ready 40.9ms idle 31852KiB peak 36640KiB
+pair 17: "native" ready 41.0ms idle 31828KiB peak 37064KiB
+pair 17: "pi" ready 830.4ms idle 463268KiB peak 492296KiB
+pair 18: "pi" ready 724.7ms idle 461976KiB peak 489776KiB
+pair 18: "native" ready 41.4ms idle 31872KiB peak 37708KiB
+pair 19: "native" ready 39.4ms idle 31528KiB peak 36768KiB
+pair 19: "pi" ready 725.1ms idle 459424KiB peak 488400KiB
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 402 filtered out; finished in 60.81s
+
+     Running tests/engine_worker.rs (target/release/deps/engine_worker-c75d2b4dbd88ada4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/native_diagnose.rs (target/release/deps/native_diagnose-310066473c182024)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
