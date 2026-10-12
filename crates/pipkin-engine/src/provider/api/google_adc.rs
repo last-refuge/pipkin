@@ -12,14 +12,24 @@ use super::{AccessToken, CLOUD_PLATFORM_SCOPE, GOOGLE_TOKEN_URL, NO_CREDENTIALS}
 use crate::provider::api::common::opt_str;
 use crate::provider::{BoxFuture, StreamCtx, http};
 
+#[path = "google_external.rs"]
+mod external;
+
 const LIMIT: usize = 1024 * 1024;
 const BUDGET: Duration = Duration::from_secs(30);
 const EAGER: Duration = Duration::from_secs(300);
 struct Cached {
     token: AccessToken,
-    expires: Instant,
+    expires: Option<Instant>,
 }
-type Slot = Arc<tokio::sync::Mutex<Option<Cached>>>;
+#[derive(Default)]
+struct State {
+    cached: Option<Cached>,
+    // Google external authorized-user clients retain rotated refresh tokens in memory.
+    refresh_tokens: HashMap<String, String>,
+}
+type Token = (String, Option<Duration>);
+type Slot = Arc<tokio::sync::Mutex<State>>;
 fn slot(key: String) -> Result<Slot, String> {
     static CACHE: OnceLock<Mutex<HashMap<String, Slot>>> = OnceLock::new();
     let mut all = CACHE
@@ -37,7 +47,7 @@ fn slot(key: String) -> Result<Slot, String> {
             .ok_or("Too many concurrent Google credential identities")?;
         all.remove(&idle);
     }
-    let slot = Arc::new(tokio::sync::Mutex::new(None));
+    let slot = Arc::new(tokio::sync::Mutex::new(State::default()));
     all.insert(key, slot.clone());
     Ok(slot)
 }
@@ -70,7 +80,7 @@ async fn read(path: &Path) -> Result<Option<Value>, String> {
         serde_json::from_slice(&bytes).map_err(|_| "Google credentials file is not valid JSON")?;
     Ok(Some(value))
 }
-async fn response(mut response: reqwest::Response) -> Result<Value, String> {
+async fn response_bytes(mut response: reqwest::Response) -> Result<Vec<u8>, String> {
     let status = response.status();
     let mut bytes = Vec::new();
     while let Some(chunk) = response
@@ -89,7 +99,11 @@ async fn response(mut response: reqwest::Response) -> Result<Value, String> {
             status.as_u16()
         ));
     }
-    serde_json::from_slice(&bytes).map_err(|_| "Google authentication returned invalid JSON".into())
+    Ok(bytes)
+}
+async fn response(response: reqwest::Response) -> Result<Value, String> {
+    serde_json::from_slice(&response_bytes(response).await?)
+        .map_err(|_| "Google authentication returned invalid JSON".into())
 }
 fn oauth_token(v: &Value) -> Result<(String, Duration), String> {
     let token = field(v, "access_token")?;
@@ -104,7 +118,10 @@ fn oauth_token(v: &Value) -> Result<(String, Duration), String> {
     Ok((token, duration))
 }
 fn universe(doc: &Value) -> &str {
-    if let Some(domain) = doc["universe_domain"].as_str().filter(|s| !s.is_empty()) {
+    if let Some(domain) = external::option(doc, "universe_domain")
+        .as_str()
+        .filter(|s| !s.is_empty())
+    {
         domain
     } else if doc["type"] == "impersonated_service_account" {
         universe(&doc["source_credentials"])
@@ -125,6 +142,11 @@ fn validate(doc: &Value, depth: usize) -> Result<(), String> {
         }
         principal(doc)?;
         validate(source, depth + 1)?;
+    } else if matches!(
+        doc["type"].as_str(),
+        Some("external_account" | "external_account_authorized_user")
+    ) {
+        external::validate(doc)?;
     } else {
         super::parse_credentials(&doc.to_string())?;
     }
@@ -148,17 +170,26 @@ fn exchange<'a>(
     doc: &'a Value,
     token_url: &'a str,
     depth: usize,
-) -> BoxFuture<'a, Result<(String, Duration), String>> {
+    state: &'a mut State,
+) -> BoxFuture<'a, Result<Token, String>> {
     Box::pin(async move {
         if depth > 8 {
             return Err("Google credential impersonation nesting is too deep".into());
         }
+        if matches!(
+            doc["type"].as_str(),
+            Some("external_account" | "external_account_authorized_user")
+        ) {
+            return external::exchange(http, doc, state).await;
+        }
         if doc["type"] != "impersonated_service_account" {
             let parsed = super::parse_credentials(&doc.to_string())?;
-            return super::exchange(http, &CancellationToken::new(), token_url, &parsed).await;
+            return super::exchange(http, &CancellationToken::new(), token_url, &parsed)
+                .await
+                .map(|(t, d)| (t, Some(d)));
         }
         let source = &doc["source_credentials"];
-        let (source_token, _) = exchange(http, source, token_url, depth + 1).await?;
+        let (source_token, _) = exchange(http, source, token_url, depth + 1, state).await?;
         let principal = principal(doc)?;
         let base = super::field(doc, "endpoint")
             .unwrap_or_else(|| format!("https://iamcredentials.{}", universe(source)));
@@ -207,7 +238,7 @@ fn exchange<'a>(
             .and_then(|v| v.checked_sub(super::unix_now()))
             .filter(|v| *v > 0)
             .ok_or("Google impersonation token is already expired")?;
-        Ok((token, Duration::from_secs(lifetime)))
+        Ok((token, Some(Duration::from_secs(lifetime))))
     })
 }
 fn google_resident(ctx: &StreamCtx<'_>) -> bool {
@@ -328,7 +359,7 @@ pub(crate) async fn resolve(
     let quota = ctx.req.env_var("GOOGLE_CLOUD_QUOTA_PROJECT").or_else(|| {
         document
             .as_ref()
-            .and_then(|d| super::field(d, "quota_project_id"))
+            .and_then(|d| external::string(d, "quota_project_id"))
     });
     let token_url = opt_str(ctx.req, "googleTokenUrl")
         .unwrap_or(GOOGLE_TOKEN_URL)
@@ -342,26 +373,33 @@ pub(crate) async fn resolve(
     let http = ctx.http.clone();
     let mut owner = tokio::spawn(async move {
         tokio::time::timeout(BUDGET, async {
-            let mut cached = slot.lock().await;
-            if let Some(c) = cached
-                .as_ref()
-                .filter(|c| Instant::now() + EAGER < c.expires)
-            {
+            let mut state = slot.lock().await;
+            if let Some(c) = state.cached.as_ref().filter(|c| {
+                c.expires
+                    .is_none_or(|expires| Instant::now() + EAGER < expires)
+            }) {
                 return Ok(c.token.clone());
             }
             let started = Instant::now();
             let (token, lifetime) = match document {
-                Some(doc) => exchange(&http, &doc, &token_url, 0).await?,
-                None => self::metadata(&http, metadata.as_deref().unwrap()).await?,
+                Some(doc) => exchange(&http, &doc, &token_url, 0, &mut state).await?,
+                None => {
+                    let (t, d) = self::metadata(&http, metadata.as_deref().unwrap()).await?;
+                    (t, Some(d))
+                }
             };
-            let expires = started
-                .checked_add(lifetime)
-                .ok_or("Google authentication returned excessive token lifetime")?;
+            let expires = lifetime
+                .map(|duration| {
+                    started
+                        .checked_add(duration)
+                        .ok_or("Google authentication returned excessive token lifetime")
+                })
+                .transpose()?;
             let token = AccessToken {
                 token,
                 quota_project: quota,
             };
-            *cached = Some(Cached {
+            state.cached = Some(Cached {
                 token: token.clone(),
                 expires,
             });

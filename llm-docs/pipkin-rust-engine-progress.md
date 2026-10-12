@@ -11,7 +11,28 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — Google metadata and impersonated credentials
+## Current follow-up — Google external file/URL and authorized-user credentials
+
+2026-10-12, following **`28b0e4d`**. Native Vertex now supports external-account file/URL
+subject suppliers, workforce STS billing, optional service-account impersonation and external
+user refresh grants. Eight executed SDK cases establish request/token contracts. Seven new
+tests cover refresh rotation after cancellation, source reload, aliases, bounds, a real
+thirty-second timeout/recovery and actual Vertex streams. See
+[external ADC evidence](pipkin-rust-engine-evidence/google-external.md).
+
+Required checks: **1581 passed, 0 failed, 53 ignored**, clean Clippy and formatting.
+Logs: `/tmp/pipkin-google-external-workspace.log`, `/tmp/pipkin-google-external-clippy2.log`,
+`/tmp/pipkin-google-external-fmt.log`. Two initial Clippy warnings were corrected with
+behavior-preserving control-flow/formatting cleanup. Protocol 11 / schema 9 unchanged.
+
+Inventory remains **504 rows, 488 non-OS; NC 412, NE 38, NP 37, PA 0, BL 0, LB 1,
+OS 16; 444 measured, 7 observed, 1 unverified, 52 not started; 0 fully qualified**.
+External user refresh rotation is in memory, matching the SDK; it does not rewrite ADC files.
+AWS/executable/certificate federation sources, broader credential retries/configuration,
+sustained workloads and release qualification remain open. Native remains opt-in.
+Unrelated owner plan/worktree changes remain untouched.
+
+## Previous follow-up — Google metadata and impersonated credentials
 
 2026-10-12, following **`8abc540`**. Native Vertex now supports impersonated-service-account
 ADC files and metadata-server credentials. Executed SDK comparisons cover source grants,

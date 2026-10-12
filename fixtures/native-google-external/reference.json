@@ -1,0 +1,333 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "version": "10.6.2",
+  "integrity": "sha512-e27Z6EThmVNNvtYASwQxose/G57rkRuaRbQyxM2bvYLLX/GqWZ5chWq2EBoUchJbCc57eC9ArzO5wMsEmWftCw==",
+  "hashes": {
+    "baseexternalclient": "f1082f6d5c3a35ee95614bfb8a7f79c2782c4964652b75e46719586b308dcba9",
+    "identitypoolclient": "4a0f123357c45e1b5186afc432b7f2128ffe49cebefca9434b00f9d502d282b0",
+    "filesubjecttokensupplier": "dea3e32f99a91ab2f0d1f752e9713b1c8686667e7dde03792e68106e6ae4e9bb",
+    "urlsubjecttokensupplier": "c77fa1dffa42a1db166745454469b4d5e9100ab50c60ec5a2a28cfa0225eb7d1",
+    "stscredentials": "a33e677b4c7c21987c672d7235e7b43ecf7087309ad6b4ce0a5c3d0999fa86b8",
+    "oauth2common": "a7c5b7dde3cb6274fa507aeed4aebe7c4ad6ec350e183f26acd03d24625076e8",
+    "externalAccountAuthorizedUserClient": "4c8b8dbcb16078eafa8d9fc26326ebd76d75d507ce91a4de7cbd8a9c5c8f359d"
+  },
+  "scope": "Executed GoogleAuth external-account clients with synthetic files and transporter; no live account",
+  "cases": [
+    {
+      "name": "file-text",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "file": "$SUBJECT_FILE"
+        },
+        "quota_project_id": "billing"
+      },
+      "subject": "raw-token\n",
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "authorization": null,
+          "identity": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "raw-token\n",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:jwt"
+          }
+        }
+      ],
+      "tokens": [
+        "federated-token"
+      ],
+      "quota": "billing"
+    },
+    {
+      "name": "file-json",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "file": "$SUBJECT_FILE",
+          "format": {
+            "type": "json",
+            "subject_token_field_name": "jwt"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "subject": "{\"jwt\":\"json-token\",\"ignored\":\"x\"}",
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "authorization": null,
+          "identity": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "json-token",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:jwt"
+          }
+        }
+      ],
+      "tokens": [
+        "federated-token"
+      ],
+      "quota": "billing"
+    },
+    {
+      "name": "url-json",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "url": "https://issuer.example/subject",
+          "headers": {
+            "X-Identity": "selector"
+          },
+          "format": {
+            "type": "json",
+            "subject_token_field_name": "jwt"
+          }
+        },
+        "quota_project_id": "billing"
+      },
+      "subject": "raw-token\n",
+      "requests": [
+        {
+          "method": "GET",
+          "url": "https://issuer.example/subject",
+          "authorization": null,
+          "identity": "selector",
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "authorization": null,
+          "identity": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "url-token",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:jwt"
+          }
+        }
+      ],
+      "tokens": [
+        "federated-token"
+      ],
+      "quota": "billing"
+    },
+    {
+      "name": "workforce",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/locations/global/workforcePools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "file": "$SUBJECT_FILE"
+        },
+        "quota_project_id": "billing",
+        "workforce_pool_user_project": "workforce-billing"
+      },
+      "subject": "raw-token\n",
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "authorization": null,
+          "identity": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/locations/global/workforcePools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "raw-token\n",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+            "options": "{\"userProject\":\"workforce-billing\"}"
+          }
+        }
+      ],
+      "tokens": [
+        "federated-token"
+      ],
+      "quota": "billing"
+    },
+    {
+      "name": "workforce-basic",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/locations/global/workforcePools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "file": "$SUBJECT_FILE"
+        },
+        "quota_project_id": "billing",
+        "workforce_pool_user_project": "workforce-billing",
+        "client_id": "client",
+        "client_secret": "secret"
+      },
+      "subject": "raw-token\n",
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "authorization": "Basic Y2xpZW50OnNlY3JldA==",
+          "identity": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/locations/global/workforcePools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "raw-token\n",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:jwt"
+          }
+        }
+      ],
+      "tokens": [
+        "federated-token"
+      ],
+      "quota": "billing"
+    },
+    {
+      "name": "impersonation",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "file": "$SUBJECT_FILE"
+        },
+        "quota_project_id": "billing",
+        "service_account_impersonation_url": "https://iam.example/v1/projects/-/serviceAccounts/target@example:generateAccessToken",
+        "service_account_impersonation": {
+          "token_lifetime_seconds": 1800
+        }
+      },
+      "subject": "raw-token\n",
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "authorization": null,
+          "identity": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "raw-token\n",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:jwt"
+          }
+        },
+        {
+          "method": "POST",
+          "url": "https://iam.example/v1/projects/-/serviceAccounts/target@example:generateAccessToken",
+          "authorization": "Bearer federated-token",
+          "identity": null,
+          "body": {
+            "scope": [
+              "https://www.googleapis.com/auth/cloud-platform"
+            ],
+            "lifetime": "1800s"
+          }
+        }
+      ],
+      "tokens": [
+        "impersonated-token"
+      ],
+      "quota": "billing"
+    },
+    {
+      "name": "no-expiry",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "file": "$SUBJECT_FILE"
+        },
+        "quota_project_id": "billing"
+      },
+      "subject": "raw-token\n",
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "authorization": null,
+          "identity": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "raw-token\n",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:jwt"
+          }
+        }
+      ],
+      "tokens": [
+        "federated-token"
+      ],
+      "quota": "billing"
+    },
+    {
+      "name": "external-user",
+      "document": {
+        "type": "external_account_authorized_user",
+        "client_id": "client",
+        "client_secret": "secret",
+        "refresh_token": "initial-refresh",
+        "token_url": "https://sts.example/v1/oauthtoken",
+        "quota_project_id": "billing"
+      },
+      "subject": "raw-token\n",
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/oauthtoken",
+          "authorization": "Basic Y2xpZW50OnNlY3JldA==",
+          "identity": null,
+          "body": {
+            "grant_type": "refresh_token",
+            "refresh_token": "initial-refresh"
+          }
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/oauthtoken",
+          "authorization": "Basic Y2xpZW50OnNlY3JldA==",
+          "identity": null,
+          "body": {
+            "grant_type": "refresh_token",
+            "refresh_token": "rotated-1"
+          }
+        }
+      ],
+      "tokens": [
+        "federated-token",
+        "federated-token"
+      ],
+      "quota": "billing"
+    }
+  ]
+}

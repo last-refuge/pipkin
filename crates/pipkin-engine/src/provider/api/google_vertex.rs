@@ -342,6 +342,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn external_account_credentials_authenticate_vertex_streams() {
+        for authorized_user in [false, true] {
+            let server = MockServer::start(|req, _| {
+                if req.path.starts_with("/v1/token") || req.path.starts_with("/v1/oauthtoken") {
+                    MockResponse::json(200, &json!({"access_token":"federated-token", "expires_in":3600, "refresh_token":"rotated"}))
+                } else {
+                    MockResponse::sse(vec![OK.into()])
+                }
+            }).await;
+            let dir = tempfile::tempdir().unwrap();
+            let reference: Value = serde_json::from_str(include_str!(
+                "../../../../../fixtures/native-google-external/reference.json"
+            ))
+            .unwrap();
+            let mut document =
+                reference["cases"][if authorized_user { 7 } else { 0 }]["document"].clone();
+            document["token_url"] = json!(format!(
+                "{}/v1/{}",
+                server.url,
+                if authorized_user {
+                    "oauthtoken"
+                } else {
+                    "token"
+                }
+            ));
+            if !authorized_user {
+                let subject = dir.path().join("subject");
+                std::fs::write(&subject, "subject-token").unwrap();
+                document["credential_source"]["file"] = json!(subject.display().to_string());
+            }
+            let path = dir.path().join("adc.json");
+            std::fs::write(&path, document.to_string()).unwrap();
+            let mut req = request(vertex("gemini-2.5-pro", &format!("{}/vx", server.url)));
+            req.credential = Credential::None;
+            req.env.clear();
+            req.options
+                .insert(crate::provider::ISOLATED_ENV.into(), json!(true));
+            req.options.insert("project".into(), json!("project"));
+            req.options.insert("location".into(), json!("us-central1"));
+            req.env.insert(
+                "GOOGLE_APPLICATION_CREDENTIALS".into(),
+                path.display().to_string(),
+            );
+            for _ in 0..2 {
+                let message = run_req(&req).await;
+                assert!(
+                    matches!(
+                        message,
+                        Message::Assistant {
+                            stop_reason: StopReason::Stop,
+                            ..
+                        }
+                    ),
+                    "{message:?}"
+                );
+            }
+            let requests = server.requests();
+            assert_eq!(requests.len(), 3);
+            for model in &requests[1..] {
+                assert_eq!(
+                    model.header("authorization"),
+                    Some("Bearer federated-token")
+                );
+                assert_eq!(model.header("x-goog-user-project"), Some("billing"));
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn metadata_and_impersonation_credentials_reach_vertex_streams() {
         for impersonated in [false, true] {
             let server = MockServer::start(|req, _| {

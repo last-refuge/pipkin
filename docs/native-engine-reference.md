@@ -21,6 +21,8 @@ engine and is available without a Pi installation or network access.
   files. Its ADC mode can also use Google metadata credentials when no default file exists;
   the `gcp-vertex-credentials` key marker selects ADC without a local file. Configure the
   Google project and location as usual. `GOOGLE_CLOUD_QUOTA_PROJECT` overrides ADC billing.
+- Vertex ADC also supports external-account file/URL subject tokens, workforce billing,
+  optional service-account impersonation, and external-account authorized-user refresh.
 - The engine configuration directory holds `auth.json`, `models.json` and `settings.json`.
   The desktop's `--engine-config-dir` and `--engine-data-dir` select engine configuration
   and history; `--data-dir` selects desktop drafts/cache. Do not expose stored credentials.

@@ -15,7 +15,7 @@
 //! `quota_project_id` becomes the `x-goog-user-project` header. The token endpoint can be
 //! overridden with the `googleTokenUrl` request option (tests point it at a local mock).
 //! ADC discovery, impersonated credentials and metadata-server fallback are in `google_adc`.
-//! External-account federation remains separate follow-up work.
+//! File/URL external-account federation and external authorized-user refresh use `google_external`.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
