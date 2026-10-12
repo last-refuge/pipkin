@@ -1508,7 +1508,7 @@ fn init_project(project: &Path) {
 fn native_editor_and_terminal_flags_launch_from_a_real_tool_change() {
     use crate::controller::{EngineKind, Options};
     use crate::launch::{self, LaunchConfig};
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::symlink;
 
     const FILE: &str = "notes with spaces;literal.txt";
     let fx = Fixture::start(|_, n| {
@@ -1546,7 +1546,8 @@ fn native_editor_and_terminal_flags_launch_from_a_real_tool_change() {
         .unwrap();
     let terminal = fx.root.join("record-terminal");
     std::fs::write(&terminal, "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > terminal-record\nshift\nif [ \"$1\" = -e ]; then shift; exec \"$@\"; fi\n").unwrap();
-    std::fs::set_permissions(&terminal, std::fs::Permissions::from_mode(0o700)).unwrap();
+    // Execute an existing interpreter: another test's concurrent fork may briefly
+    // inherit a just-written file descriptor and make a new script ETXTBSY.
     let cwd = std::fs::canonicalize(&fx.project)
         .unwrap()
         .display()
@@ -1574,19 +1575,20 @@ fn native_editor_and_terminal_flags_launch_from_a_real_tool_change() {
         ("nvim", "--clean", true),
     ] {
         let editor = fx.root.join(name);
+        symlink("/bin/sh", &editor).unwrap();
+        let script = fx.root.join(format!("{name}.sh"));
         std::fs::write(
-            &editor,
+            &script,
             "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > editor-record\n",
         )
         .unwrap();
-        std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o700)).unwrap();
         let options = Options::parse([
             "--engine".into(),
             "native".into(),
             "--editor".into(),
-            format!("{} {flag}", editor.display()),
+            format!("{} {} {flag}", editor.display(), script.display()),
             "--terminal".into(),
-            format!("{} --configured", terminal.display()),
+            format!("/bin/sh {} --configured", terminal.display()),
         ])
         .unwrap();
         assert_eq!(options.engine, EngineKind::Native);
@@ -1601,8 +1603,9 @@ fn native_editor_and_terminal_flags_launch_from_a_real_tool_change() {
             wait_record(
                 "terminal-record",
                 &format!(
-                    "{cwd}\n--configured\n-e\n{}\n{flag}\n{file}\n",
-                    editor.display()
+                    "{cwd}\n--configured\n-e\n{}\n{}\n{flag}\n{file}\n",
+                    editor.display(),
+                    script.display()
                 ),
             );
         }

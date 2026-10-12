@@ -1,0 +1,149 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "credential-provider-sso": {
+      "version": "3.973.14",
+      "integrity": "sha512-jkhg/8ocAAoc0RFyLMhCw+/zZh7gystQgd4F4hznNa8P4Cc501PQmxd+jGLiMHodPJ+7Zv/3znM62gZojyasmA==",
+      "sha256": "cc75ada3cbe32e31cca407a81ee5f2c2e81a36134d4f8fec50c898110a60f772"
+    },
+    "credential-provider-ini": {
+      "version": "3.973.15",
+      "integrity": "sha512-Rykg6s5ceBuynMOGWgoowO4N+27JfnqXAnVaSunZl0hOO1XodSrxGNz6sCEbnmS0lAfQZDKyb3fbr46gSuv6Sg==",
+      "sha256": "2d975f8114b17e1e96eea2735c7271f735f08bab35dc922384cd15735bbdd085"
+    },
+    "token-providers": {
+      "version": "3.1127.0",
+      "integrity": "sha512-Dv2TMWBshJ+tF6ahs2Sy5bh4Iabsd4GAQqVvE9XZmYmnoaVbpS2QKIKE/HRacc7bTtbjEEvP+laGzHvHlf1CiQ==",
+      "sha256": "d45a861be3abd682fec912c954858283da2ac251bc227946a6445a84e35e4a75"
+    },
+    "nested-clients": {
+      "version": "3.997.44",
+      "integrity": "sha512-NhEgryjlBF9w38ZXqGymQV28IhkYa1mKhlbYnqIis57AYwWGVYfUPgg/qC2rLRqOUfblxx++irvju10kVTa8Vw==",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "submodules": {
+        "dist-cjs/submodules/sso/index.js": "ec685c80548003fd9fde906e01fc6337e5e5935bd645f48d972c65cb852b65a0",
+        "dist-cjs/submodules/sso-oidc/index.js": "e1b685943d4708c77192e30e57c1587154a7341130c2a391c4274e6104001d2a"
+      }
+    }
+  },
+  "scope": "Executed pinned SDK credential providers with synthetic CLI files and SDK HTTP request recorder; no live AWS request",
+  "cases": [
+    {
+      "name": "legacy",
+      "cacheId": "https://example.awsapps.com/start",
+      "cacheName": "e8be5486177c5b5392bd9aa76563515b29358e6e.json",
+      "token": {
+        "accessToken": "old-access",
+        "expiresAt": "2099-01-01T00:00:00Z",
+        "clientId": "client",
+        "clientSecret": "secret",
+        "refreshToken": "old-refresh",
+        "custom": {
+          "keep": true
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/federation/credentials",
+          "query": {
+            "role_name": "Developer",
+            "account_id": "123456789012"
+          },
+          "bearer": "old-access",
+          "body": null
+        }
+      ],
+      "credentials": {
+        "accessKeyId": "SSO-ID",
+        "secretAccessKey": "sso-secret",
+        "sessionToken": "sso-session",
+        "expiration": "2099-01-01T00:00:00.000Z"
+      },
+      "saved": {
+        "accessToken": "old-access",
+        "refreshToken": "old-refresh",
+        "custom": {
+          "keep": true
+        }
+      }
+    },
+    {
+      "name": "session-refresh",
+      "cacheId": "corp",
+      "cacheName": "ee0bfd2552fbd840c02cc48b6e823320543c450f.json",
+      "token": {
+        "accessToken": "old-access",
+        "expiresAt": "2000-01-01T00:00:00Z",
+        "clientId": "client",
+        "clientSecret": "secret",
+        "refreshToken": "old-refresh",
+        "custom": {
+          "keep": true
+        }
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/token",
+          "query": {},
+          "bearer": null,
+          "body": {
+            "clientId": "client",
+            "clientSecret": "secret",
+            "grantType": "refresh_token",
+            "refreshToken": "old-refresh"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/federation/credentials",
+          "query": {
+            "role_name": "Developer",
+            "account_id": "123456789012"
+          },
+          "bearer": "new-access",
+          "body": null
+        }
+      ],
+      "credentials": {
+        "accessKeyId": "SSO-ID",
+        "secretAccessKey": "sso-secret",
+        "sessionToken": "sso-session",
+        "expiration": "2099-01-01T00:00:00.000Z"
+      },
+      "saved": {
+        "accessToken": "new-access",
+        "refreshToken": "new-refresh",
+        "custom": {
+          "keep": true
+        }
+      }
+    },
+    {
+      "name": "expired-legacy",
+      "cacheId": "https://example.awsapps.com/start",
+      "cacheName": "e8be5486177c5b5392bd9aa76563515b29358e6e.json",
+      "token": {
+        "accessToken": "old-access",
+        "expiresAt": "2000-01-01T00:00:00Z",
+        "clientId": "client",
+        "clientSecret": "secret",
+        "refreshToken": "old-refresh",
+        "custom": {
+          "keep": true
+        }
+      },
+      "requests": [],
+      "error": "The SSO session associated with this profile has expired. To refresh this SSO session run aws sso login with the corresponding profile.",
+      "saved": {
+        "accessToken": "old-access",
+        "refreshToken": "old-refresh",
+        "custom": {
+          "keep": true
+        }
+      }
+    }
+  ],
+  "mfaError": "Profile mfa requires multi-factor authentication, but no MFA code callback was provided."
+}

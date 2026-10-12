@@ -1685,6 +1685,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sso_profile_credentials_sign_a_real_converse_stream_request() {
+        let bytes = golden_stream();
+        let server = MockServer::start(move |req, _| {
+            if req.path.starts_with("/federation/credentials?") {
+                MockResponse::json(
+                    200,
+                    &json!({"roleCredentials": {
+                        "accessKeyId":"SSO-ID", "secretAccessKey":"sso-secret",
+                        "sessionToken":"sso-session", "expiration":4070908800000u64
+                    }}),
+                )
+            } else {
+                eventstream(bytes.clone(), 10000)
+            }
+        })
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".aws/sso/cache")).unwrap();
+        std::fs::write(dir.path().join(".aws/config"),
+            "[profile sso]\nsso_start_url=https://example.awsapps.com/start\nsso_region=us-west-2\nsso_account_id=123456789012\nsso_role_name=Developer\n").unwrap();
+        std::fs::write(dir.path().join(".aws/credentials"), "").unwrap();
+        // SHA-1 filename captured from the executed AWS SDK, not the native helper.
+        std::fs::write(
+            dir.path()
+                .join(".aws/sso/cache/e8be5486177c5b5392bd9aa76563515b29358e6e.json"),
+            json!({"accessToken":"sso-access","expiresAt":"2099-01-01T00:00:00Z"}).to_string(),
+        )
+        .unwrap();
+        let mut req = request(model(
+            "anthropic.claude-sonnet-4-5-20250929-v1:0",
+            json!({}),
+        ));
+        req.base_url = Some(server.url.clone());
+        req.env = HashMap::from([
+            ("HOME".into(), dir.path().display().to_string()),
+            ("AWS_PROFILE".into(), "sso".into()),
+            ("AWS_REGION".into(), "us-west-2".into()),
+            ("AWS_ENDPOINT_URL_SSO".into(), server.url.clone()),
+            ("AWS_EC2_METADATA_DISABLED".into(), "true".into()),
+        ]);
+        let (message, _) = exchange(&req, CancellationToken::new()).await;
+        assert!(
+            matches!(
+                message,
+                Message::Assistant {
+                    stop_reason: StopReason::ToolUse,
+                    ..
+                }
+            ),
+            "{message:?}"
+        );
+        let requests = server.requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[0].header("x-amz-sso_bearer_token"),
+            Some("sso-access")
+        );
+        assert!(
+            requests[1]
+                .header("authorization")
+                .unwrap()
+                .starts_with("AWS4-HMAC-SHA256 Credential=SSO-ID/")
+        );
+        assert_eq!(
+            requests[1].header("x-amz-security-token"),
+            Some("sso-session")
+        );
+        assert!(requests[1].path.ends_with("/converse-stream"));
+    }
+
+    #[tokio::test]
     async fn golden_exchange_signed_and_fragmented() {
         let bytes = golden_stream();
         let server = MockServer::start(move |_, _| eventstream(bytes.clone(), 5)).await;

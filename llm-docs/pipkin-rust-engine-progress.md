@@ -11,7 +11,36 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — fork migration and installed coding
+## Current follow-up — AWS IAM Identity Center credentials
+
+2026-10-12, following **`8a0ac3d`**. Native Bedrock now resolves legacy and session-based
+SSO profiles, refreshes eligible cached tokens, preserves rotating credentials after caller
+cancellation, and signs model requests with the returned role credentials. Atomic private
+cache writes preserve metadata and avoid overwriting a newer login. Ten new tests include
+executed pinned-SDK comparisons, concurrent cancellation, role/rotation isolation,
+AssumeRole sourcing, malformed/oversized inputs and a real thirty-second stalled exchange.
+See [SSO evidence](pipkin-rust-engine-evidence/aws-sso.md).
+
+The first workspace run exposed ETXTBSY in the generated launcher recorder fixture. Using
+an existing shell interpreter removes execution of newly written files while retaining
+real process/argument assertions; production launcher behavior is unchanged. The corrected
+required checks passed: **1558 passed, 0 failed, 53 ignored**, clean Clippy and formatting.
+Logs: `/tmp/pipkin-sso-workspace.log` (initial failure), `/tmp/pipkin-sso-workspace2.log`,
+`/tmp/pipkin-sso-clippy.log`, `/tmp/pipkin-sso-fmt.log`. Protocol 11 / schema 9 unchanged.
+
+MFA callback refusal matches the executed SDK and Pi's client configuration; it is not a
+missing native prompt. A separate required gap was confirmed: the pinned SDK supports
+AWS `login_session` credential-cache profiles; native does not yet resolve them. SSO support
+therefore does not establish complete AWS chain parity. Live AWS, broader provider/platform
+and native-default qualification remain open. Inventory counts are unchanged: **504 rows,
+488 non-OS; NC 412, NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed,
+1 unverified, 52 not started; 0 fully qualified**. Native remains opt-in.
+
+Next: AWS login-session and remaining Google ADC/proxy/configuration gaps, sustained
+workloads, clean release comparisons and CI/platform acceptance. Extension-only behavior
+remains out of scope. Unrelated owner plan/worktree changes remain untouched.
+
+## Previous follow-up — fork migration and installed coding
 
 Following **`c508954`**, forked Pi histories now import with their visible ancestor cutoffs,
 branch documents, independent native roots and separate subagent ownership preserved. Five

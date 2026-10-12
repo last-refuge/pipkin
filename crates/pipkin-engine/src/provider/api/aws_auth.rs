@@ -21,9 +21,9 @@
 //!    `_FULL_URI`, with `AWS_CONTAINER_AUTHORIZATION_TOKEN(_FILE)`);
 //! 5. EC2 instance metadata (IMDSv2 with v1 fallback) unless `AWS_EC2_METADATA_DISABLED`.
 //!
-//! Not supported: IAM Identity Center (SSO) profiles and MFA-protected role profiles (both
-//! need interactive or cached-token flows); they fail with a clear message rather than
-//! silently falling through. Temporary credentials are cached in-process until five minutes
+//! IAM Identity Center profiles use the AWS CLI token cache, including session-token refresh.
+//! MFA role profiles require a callback which neither Pipkin nor the pinned Pi adapter supplies;
+//! they fail explicitly. Temporary credentials are cached in-process until five minutes
 //! before they expire. STS honours `AWS_ENDPOINT_URL_STS` / `AWS_ENDPOINT_URL`.
 
 use std::collections::HashMap;
@@ -35,6 +35,9 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 use url::Url;
+
+#[path = "aws_sso.rs"]
+mod sso;
 
 /// Reads an environment value (request overrides, then the process).
 pub type EnvLookup<'a> = &'a (dyn Fn(&str) -> Option<String> + Send + Sync);
@@ -580,10 +583,17 @@ fn from_profile<'a>(input: &'a ChainInput<'a>, name: String, visited: Vec<String
             remember(&key, &creds);
             return Ok(creds);
         }
-        if get("sso_session").is_some() || get("sso_start_url").is_some() {
-            return Err(ChainError::Fatal(format!(
-                "Profile {name} uses IAM Identity Center (SSO), which Pipkin does not support yet. Export temporary credentials (aws configure export-credentials) or use a bearer token."
-            )));
+        if [
+            "sso_session",
+            "sso_start_url",
+            "sso_region",
+            "sso_account_id",
+            "sso_role_name",
+        ]
+        .iter()
+        .any(|key| get(key).is_some())
+        {
+            return sso::resolve(input, p).await.map_err(fatal_str);
         }
         Err(ChainError::Next(format!(
             "Profile {name} did not contain credentials"
@@ -1239,7 +1249,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sso_and_mfa_profiles_fail_clearly() {
+    async fn incomplete_sso_and_unsupported_mfa_profiles_fail_clearly() {
         let f = Fixture::new(
             "[profile sso]\nsso_session = corp\n[profile mfa]\nrole_arn = arn:aws:iam::1:role/r\nsource_profile = base\nmfa_serial = arn:mfa\n",
             "[base]\naws_access_key_id = B\naws_secret_access_key = b\n",

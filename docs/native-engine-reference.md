@@ -9,6 +9,11 @@ engine and is available without a Pi installation or network access.
 - Desktop Connections supports Claude subscription and ChatGPT/Codex sign-in. Other
   built-in OAuth flows are accessible through the engine service. Saved subscription
   credentials remain distinct from API keys; failed refresh does not silently switch billing.
+- Amazon Bedrock supports AWS IAM Identity Center profiles and the AWS CLI SSO token cache.
+  Run `aws sso login --profile <profile>` to establish the session, then select that profile
+  through `AWS_PROFILE` or the Bedrock profile option. Session-based SSO profiles can refresh
+  cached tokens; expired legacy SSO profiles require another CLI login. MFA role profiles
+  requiring an interactive code callback need externally obtained temporary credentials.
 - The engine configuration directory holds `auth.json`, `models.json` and `settings.json`.
   The desktop's `--engine-config-dir` and `--engine-data-dir` select engine configuration
   and history; `--data-dir` selects desktop drafts/cache. Do not expose stored credentials.
