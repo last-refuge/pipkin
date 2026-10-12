@@ -508,7 +508,7 @@ impl Shared {
             // Nothing executes it here (for example, a run left over from before a restart
             // that has not been resumed): settle it now, with any child it delegated to.
             None => {
-                self.abort_orphaned_children(session, run);
+                self.abort_orphaned_children(session, run)?;
                 self.settle(&sess, run, RunOutcome::Aborted)?;
             }
         }
@@ -683,7 +683,7 @@ impl Shared {
                     &call.call_id,
                 ));
             }
-            self.abort_orphaned_children(session, run.id);
+            self.abort_orphaned_children(session, run.id)?;
             return self.settle(&sess, run.id, RunOutcome::Aborted);
         }
         // Tool intents without a result: unconfirmed effects unless replay-safe.
@@ -708,7 +708,7 @@ impl Shared {
                 );
             }
             if call.name == "subagent" {
-                self.abort_child(session, &call.call_id);
+                self.abort_child(session, &call.call_id)?;
             }
             let output = self
                 .store

@@ -1,0 +1,65 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "packages/durable/src/storage/sqlite/node.ts": "d3f058870a0a016359a64767fcfa33946c1e0f38b6ff5b7cf076eae5a0f78786",
+    "packages/durable/src/harness/context.ts": "c79961dc4090bc1a6765ac82099e7ec477d737f047189e9cefc94673a8c377c4",
+    "packages/durable/src/harness/scheduler.ts": "d69b7a6880aed16f034b6c3f07530ce0eb182f5741da90005a1ab8b1015be4f4",
+    "packages/durable/src/harness/live.ts": "6b3208a4431bc03a5688558e91f235c2a7bc1c2d06b1652563ee1ad055e8e083",
+    "packages/durable/src/harness/generation.ts": "bcfc8584adb9987173a7db528eceb8054151fd879ef88de4e878c63d234f7274",
+    "packages/durable/src/harness/compaction.ts": "cf8fb28b0ad9cb06d209168f845d8f416e8203ca431a1824860ea57e24a90400",
+    "packages/durable/src/harness/tool.ts": "8027ca9ef3e6feb2a803b9c57f34a903b3f8a706864360c6a50f2aa2dbc34bb8",
+    "packages/durable/src/harness/harness.ts": "a0db9c6f24c664ce415c46547b8aa25efce6868e661b2811fab6a9d22e340732",
+    "packages/durable/src/storage/sqlite/storage.ts": "8d785bdfc19b33dc66191e86f350354e38cc781c83885dca9f43e3d2044cfeb3",
+    "packages/ai/src/providers/faux.ts": "dcf37d154680cef0fa5188efd4881450073c5342a9b56cc9e25cee9b9f1ccfcc"
+  },
+  "kind": "compaction",
+  "rootId": 1,
+  "taskId": 8,
+  "blocked": {
+    "kind": "blocked",
+    "reason": "task_too_old"
+  },
+  "settled": {
+    "id": 8,
+    "conversationId": 1,
+    "kind": "pi.compaction",
+    "version": 2,
+    "input": {
+      "reason": "manual"
+    },
+    "background": false,
+    "abortRequested": false,
+    "state": {
+      "status": "terminal",
+      "outcome": {
+        "status": "orphaned",
+        "reason": "task_too_old"
+      }
+    }
+  },
+  "submission": null,
+  "live": {},
+  "entries": [
+    {
+      "model": [
+        {
+          "role": "user",
+          "content": "Recover compaction work",
+          "timestamp": 1
+        }
+      ],
+      "kind": "pi.user",
+      "id": 7,
+      "conversationId": 1
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Recover compaction work",
+      "timestamp": 1
+    }
+  ],
+  "blockedSha256": "e029cbbe3617b5dc81627d88d819461e182ea31058bb31da4220a42dc8a3e464",
+  "sqliteSha256": "ea21502e38c167ed2a86a485adaea23e9f938b67dffe06eabaf4ab783f94b05f"
+}

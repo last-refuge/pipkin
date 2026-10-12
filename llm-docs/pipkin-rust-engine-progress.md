@@ -11,7 +11,30 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — original Zune notices and remaining provenance gaps
+## Current follow-up — built-in orphan/fault recovery and migration
+
+2026-10-12, following **`2369416`**, protocol 12/schema 10 unchanged. Actual pinned Pi
+Harness/SQLite execution captures newer built-in generation, compaction and tool tasks
+blocked after reopen, their explicit orphan cleanup, and a generation fault with retained
+partial output. Native refuses the three blocked sources unchanged, imports all four settled
+histories with task/submission/live state and effective context preserved, then reopens and
+continues a real tool turn without repeated effects on replay. No in-flight checkpoint or
+extension-task execution is added. See [recovery evidence](pipkin-rust-engine-evidence/orphan-recovery.md).
+
+A real-shell regression reproduced native orphan-child cleanup leaving execution running
+when Stop persistence failed. Cleanup now cancels child/parent through storage failure,
+propagates errors before parent settlement, attempts all orphan children, and reconciles an
+inactive failed child only after Stop is saved. Explicit retry produces no repeated effects;
+unsettled work is not falsely labelled aborted.
+
+Required checks: **1,647 passed, 0 failed, 56 ignored**, clean Clippy/all-targets and formatting;
+eight focused orphan checks pass. `REC-ORPHAN` moves not started → measured for the bounded
+built-in cases: **445 measured, 9 observed, 1 unverified, 49 not started; 0 fully qualified**.
+Remaining reference/release qualification, installed/desktop fault checks, sustained desktop
+use, CI/platform and notice review, native-default and Pi retirement remain open. Owner plan
+and worktree changes are preserved.
+
+## Prior follow-up — original Zune notices and remaining provenance gaps
 
 2026-10-12, following **`e0c0ab5`**, no dependency/protocol/schema changes. Recovered
 zune-inflate 0.2.54's original Zlib notice and repository attribution from the exact published

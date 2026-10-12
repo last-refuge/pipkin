@@ -1207,6 +1207,9 @@ fn an_unknown_kind_with_model_messages_blocks_even_inherited_fork_history() {
 #[path = "fork_tests.rs"]
 mod fork_tests;
 
+#[path = "orphan_tests.rs"]
+mod orphan_tests;
+
 #[test]
 fn in_flight_work_blocks_the_session() {
     let agent = Agent::new();

@@ -139,6 +139,114 @@ fn project_history(m: &Value) -> (String, String) {
 type Projected = (String, String, Vec<String>);
 
 #[test]
+fn orphaned_pi_import_reopens_without_execution_and_continues_with_real_tools() {
+    use crate::provider::scripted::Reply as R;
+
+    for kind in ["generation", "compaction", "tool", "faulted"] {
+        let fx = Fixture::new();
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/native-orphan-import")
+            .join(kind);
+        let reference: Value =
+            serde_json::from_slice(&std::fs::read(source.join("reference.json")).unwrap()).unwrap();
+        let agent = fx.dir.path().join("agent");
+        let dest = agent.join("experimental/sessions").join(kind);
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::copy(source.join("session.sqlite"), dest.join("session.sqlite")).unwrap();
+        std::fs::write(
+            dest.join("meta.json"),
+            json!({"createdAt":1700000000000_i64,"cwd":fx.project}).to_string(),
+        )
+        .unwrap();
+        let source_bytes = std::fs::read(dest.join("session.sqlite")).unwrap();
+        let provider = Scripted::new(|_, n| match n {
+            0 => R::Tools(
+                None,
+                vec![(
+                    "bash".into(),
+                    json!({"command":"printf 'continued\\n' >> continuation.txt"}),
+                )],
+            ),
+            _ => R::Text("Continued after recovery".into()),
+        });
+        let mut e = fx.start(&provider);
+        assert!(matches!(
+            outcome(&import(&mut e, &agent, &[kind.into()]), kind),
+            ImportSessionOutcome::Imported { .. }
+        ));
+        let before = full_history(&mut e, kind);
+        e.handle.shutdown(Duration::from_secs(5));
+        drop(e);
+        let mut e = fx.start(&provider);
+        e.snapshot(kind);
+        assert_eq!(full_history(&mut e, kind), before);
+        assert!(provider.requests().is_empty());
+        assert!(!fx.project.join("continuation.txt").exists());
+        e.call(Call::SetModel {
+            session: kind.into(),
+            model: "scripted/scripted".into(),
+        })
+        .unwrap();
+        if let Some(original) = reference["submission"]["requestId"].as_str() {
+            // Replaying the failed legacy admission must not turn it into new work.
+            e.prompt(
+                kind,
+                original,
+                reference["messages"][0]["content"].as_str().unwrap(),
+            )
+            .unwrap();
+            assert!(provider.requests().is_empty());
+        }
+        e.prompt(kind, "new-turn", "continue with a new coding turn")
+            .unwrap();
+        assert_eq!(e.settled("new-turn"), RunOutcome::Completed);
+        let requests = provider.requests();
+        assert_eq!(requests.len(), 2);
+        let sent: Vec<_> = requests[0]
+            .messages
+            .iter()
+            .filter(|m| !matches!(m, Message::System(_)))
+            .map(project_native)
+            .collect();
+        let expected: Vec<_> = reference["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                let mut m = m.clone();
+                if let Some(Value::String(text)) = m.get("content") {
+                    m["content"] = json!([{"type":"text","text":text}]);
+                }
+                project_native(&serde_json::from_value(m).unwrap())
+            })
+            .collect();
+        assert_eq!(sent[..sent.len() - 1], expected, "{kind}: provider context");
+        assert_eq!(
+            std::fs::read_to_string(fx.project.join("continuation.txt")).unwrap(),
+            "continued\n"
+        );
+        assert_eq!(
+            std::fs::read(dest.join("session.sqlite")).unwrap(),
+            source_bytes
+        );
+        let after = full_history(&mut e, kind);
+        assert_eq!(&after[..before.len()], &before);
+        e.handle.shutdown(Duration::from_secs(5));
+        drop(e);
+        let mut e = fx.start(&provider);
+        e.snapshot(kind);
+        e.prompt(kind, "new-turn", "continue with a new coding turn")
+            .unwrap();
+        assert_eq!(full_history(&mut e, kind), after);
+        assert_eq!(provider.requests().len(), 2);
+        assert_eq!(
+            std::fs::read_to_string(fx.project.join("continuation.txt")).unwrap(),
+            "continued\n"
+        );
+    }
+}
+
+#[test]
 fn fork_import_lists_independent_branches_and_continues_after_restart() {
     let fx = Fixture::new();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/native-fork-import");

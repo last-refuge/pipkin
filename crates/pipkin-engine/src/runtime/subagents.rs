@@ -280,33 +280,44 @@ impl Shared {
     /// Stop the children of `run`'s subagent calls that have no result yet. Used when the
     /// parent will never wait for them again (its Stop was settled without the run executing
     /// here), so a child must not run on unobserved.
-    pub(super) fn abort_orphaned_children(self: &Arc<Self>, parent: &str, run: u64) {
+    pub(super) fn abort_orphaned_children(
+        self: &Arc<Self>,
+        parent: &str,
+        run: u64,
+    ) -> Result<(), ProtoError> {
         let calls = tokio::task::block_in_place(|| {
             self.store
                 .read(|c| Store::tools_in_state(c, parent, "intent"))
-        })
-        .unwrap_or_default();
+        })?;
+        let mut failure = None;
         for call in calls
             .iter()
             .filter(|c| c.run == Some(run) && c.name == "subagent")
         {
-            self.abort_child(parent, &call.call_id);
+            if let Err(error) = self.abort_child(parent, &call.call_id) {
+                // Still cancel the other children; none may continue unobserved merely
+                // because an earlier child's Stop could not be persisted.
+                failure.get_or_insert(error);
+            }
         }
+        failure.map_or(Ok(()), Err)
     }
 
     /// Stop the child of one subagent call (if it has one and it is still running) and mark
     /// its task aborted. The child's own Stop is durable before its run is settled.
-    pub(super) fn abort_child(self: &Arc<Self>, parent: &str, call_id: &str) {
-        let Ok(Some(task)) = self
+    pub(super) fn abort_child(
+        self: &Arc<Self>,
+        parent: &str,
+        call_id: &str,
+    ) -> Result<(), ProtoError> {
+        let Some(task) = self
             .store
-            .read(|c| Store::task_for_call(c, parent, call_id))
+            .read(|c| Store::task_for_call(c, parent, call_id))?
         else {
-            return;
+            return Ok(());
         };
         let child = task.child_session.clone();
-        let Ok(sess) = self.session(&child) else {
-            return;
-        };
+        let sess = self.session(&child)?;
         let stopped = self.store.request_stop(&child, now_ms());
         if stopped.is_ok() {
             for token in sess
@@ -331,18 +342,31 @@ impl Shared {
                 match active {
                     Some(cancel) => cancel.cancel(),
                     None => {
-                        if let Err(e) = self.settle(&sess, run, RunOutcome::Aborted) {
-                            log::error!("cannot settle subagent {child}: {e}");
-                        }
+                        // The Stop is durable now. Recovery can clear a prior storage
+                        // failure and settle this stopped run without restarting tools.
+                        self.recover_session(&child)?;
                     }
                 }
             }
             Ok(None) => {}
-            Err(e) => log::error!("cannot stop subagent {child}: {e}"),
+            Err(e) => {
+                // Failed persistence still fails execution closed; it cannot justify an
+                // aborted task label or let the parent retire the unresolved call.
+                self.storage_failure(&sess, &e.to_string());
+                if let Ok(parent_session) = self.session(parent) {
+                    self.storage_failure(&parent_session, &e.to_string());
+                }
+                return Err(e.into());
+            }
         }
         if !matches!(task.status.as_str(), "done" | "aborted" | "failed") {
-            self.set_task_status(&task.root, &child, "aborted", None);
+            self.store.tx(|tx| {
+                Store::set_task_status(tx, &child, "aborted", None, now_ms())?;
+                Store::bump(tx, &task.root, now_ms())
+            })?;
+            self.publish_subagents(&task.root);
         }
+        Ok(())
     }
 
     fn set_task_status(&self, root: &str, child: &str, status: &str, result: Option<&str>) {

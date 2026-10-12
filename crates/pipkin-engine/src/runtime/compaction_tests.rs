@@ -773,7 +773,7 @@ fn orphaned_child_abort_reaches_foreground_compaction_without_an_open_child_run(
     });
     let aborter = shared.clone();
     shared.spawn(async move {
-        aborter.abort_child(&parent, "orphan");
+        aborter.abort_child(&parent, "orphan").unwrap();
     });
     let results = replies(&conn, 1);
     assert_eq!(

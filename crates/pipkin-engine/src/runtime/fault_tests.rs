@@ -641,6 +641,101 @@ fn stopping_the_parent_stops_its_running_child() {
 
 #[cfg(unix)]
 #[test]
+fn orphaned_child_stop_storage_failure_cancels_execution_without_claiming_settlement() {
+    let fx = Fixture::new();
+    let provider = Scripted::new(|_, _| {
+        R::Tools(
+            None,
+            vec![(
+                "bash".into(),
+                json!({
+                    "command":"printf 'started\\n' >> orphan-effects; sleep 30; printf 'finished\\n' >> orphan-effects"
+                }),
+            )],
+        )
+    });
+    let mut e = fx.start(&provider);
+    let parent = e.create(&fx.project, "parent");
+    let child = e.create(&fx.project, "child");
+    let shared = e.handle.shared().clone();
+    shared
+        .store
+        .tx(|tx| {
+            Store::create_task(
+                tx,
+                &parent,
+                &parent,
+                "orphan",
+                &child,
+                "child work",
+                crate::util::now_ms(),
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    e.prompt(&child, "child-work", "run the command").unwrap();
+    let effects = fx.project.join("orphan-effects");
+    e.until("orphan tool started", |_| effects.exists());
+    let child_rt = shared.session(&child).unwrap();
+    shared.store.inject(Fault::ReadOnly).unwrap();
+    let aborter = shared.clone();
+    let parent_id = parent.clone();
+    let (sent, received) = std::sync::mpsc::channel();
+    shared.spawn(async move {
+        sent.send(aborter.abort_child(&parent_id, "orphan"))
+            .unwrap();
+    });
+    assert_eq!(
+        received
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap_err()
+            .code,
+        ErrorCode::Storage
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while child_rt.active_run().is_some() {
+        assert!(
+            Instant::now() < deadline,
+            "orphaned child kept executing after Stop storage failure"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(child_rt.failure().is_some());
+    assert!(shared.session(&parent).unwrap().failure().is_some());
+    assert!(matches!(
+        lookup(&mut e, &child, "child-work"),
+        LookupResult::Known { open: true, .. }
+    ));
+    let task = shared
+        .store
+        .read(|c| Store::task_for_call(c, &parent, "orphan"))
+        .unwrap()
+        .unwrap();
+    assert_ne!(task.status, "aborted");
+    assert_eq!(std::fs::read_to_string(&effects).unwrap(), "started\n");
+    shared.store.clear_faults().unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(provider.requests().len(), 1);
+    let aborter = shared.clone();
+    let (sent, received) = std::sync::mpsc::channel();
+    shared.spawn(async move {
+        sent.send(aborter.abort_child(&parent, "orphan")).unwrap();
+    });
+    received
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        settled_by_lookup(&mut e, &child, "child-work"),
+        RunOutcome::Aborted
+    );
+    assert_eq!(provider.requests().len(), 1);
+    assert_eq!(std::fs::read_to_string(&effects).unwrap(), "started\n");
+}
+
+#[cfg(unix)]
+#[test]
 fn a_parent_storage_failure_cancels_child_tools_and_reopens_without_repeating_effects() {
     for fault in [Fault::ReadOnly, Fault::Admission] {
         let fx = Fixture::new();
