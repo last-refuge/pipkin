@@ -2,6 +2,11 @@
 
 This page covers extensions for Pipkin's built-in Rust engine (`crates/pipkin-engine`, module `extensions`). For what the legacy Pi engine supports, see [extensions.md](extensions.md).
 
+Pi extension compatibility is **not a Pipkin requirement**, per the owner's 2026-10-11 scope
+decision. This page documents the optional native facilities already implemented. Existing
+TypeScript packages are unsupported; building a loader, porting packages, remote extension
+services and hot reload are not required for the native-engine release.
+
 ## What an extension can do
 
 The Rust engine's extensions are a port of what the reference engine's **session facets** can reach. Session facets are the chord facet plugin packages that `pi server -e <path>` loads, and that Pipkin's `--pi-extension` passes through. An extension can:
@@ -10,7 +15,7 @@ The Rust engine's extensions are a port of what the reference engine's **session
   - a choice (`select`), a yes/no (`confirm`) or a line of text (`input`);
   - notices at `info`, `warning` or `error` level;
   - keyed status lines.
-- **Drive the session's agent** (the reference `AgentController`): prompt, steer, follow up, cancel a queued input, look up a request key, abort and compact.
+- **Drive the session's agent** (the reference `AgentController`): prompt, steer, follow up, cancel a queued input, look up a request key, wait for an input’s answer, abort and compact.
 - **Read history** a page at a time (the reference `History.page`).
 
 The reference facets cannot add any of the following, and native extensions cannot either:
@@ -76,10 +81,10 @@ pub trait Extension: Send + Sync {
 `ExtensionHost` provides these methods. Agent calls return protocol types and `ProtoError`s.
 
 - Questions and notices: `ask(Question, timeout, CancellationToken) -> Option<Answer>`, `notify`, `set_status`.
-- Agent control: `prompt`, `steer`, `follow_up` (text plus an optional request key) `-> Admission`, `cancel_queued`, `lookup -> LookupResult`, `abort`, `compact`.
+- Agent control: `prompt`, `steer`, `follow_up` (text plus an optional request key) `-> Admission`, `cancel_queued`, `lookup -> LookupResult`, `wait_for_prompt -> PromptResult`, `abort`, `compact`.
 - History: `history_page(before, limit)`.
 
-`CallHost` implements the trait. It sends agent control through the same protocol calls a client uses (`Prompt`, `Enqueue`, `Lookup`, `Stop`, `Compact`, `HistoryPage`, `CancelQueued`). As a result, an extension's input is admitted, journaled and made idempotent like any other.
+`CallHost` implements the trait. It sends agent control through the same protocol calls a client uses (`Prompt`, `Enqueue`, `Lookup`, `WaitForPrompt`, `Stop`, `Compact`, `HistoryPage`, `CancelQueued`). As a result, an extension's input is admitted, journaled and made idempotent like any other.
 
 `ExtensionRunner` runs each extension's activation as its own task:
 
@@ -96,6 +101,32 @@ extension lifetime after previous shutdown completes. Old hosts cannot submit wo
 updates into the replacement lifetime. History and admitted work remain durable.
 
 `extensions::testing::TestHost` (under `cfg(test)` or the `test-support` feature) is a test double. It pairs a real `QuestionHost` with a recording agent.
+
+## Waiting for an input
+
+Rust `Admission.operation_id` and process replies' `operationId` identify an admitted prompt,
+steer or follow-up. Treat them as opaque strings. Native identities use the session's durable
+request key, including an automatically generated key when none was supplied. Engine clients
+use `Call::WaitForPrompt { session, request }` (protocol 8, capability `waitForPrompt`).
+
+Waiting returns only the final answer's text blocks, concatenated without a separator; thinking
+and intermediate tool-round text are excluded. A completed empty answer is an empty string.
+Unanswered results include `aborted`, `model_error` or `no_model`; native recovery can also report
+`interrupted` or `failed`. Unknown keys return `Unknown prompt: <key>`. Reads use durable
+settlement, so a later turn or restart cannot change an earlier answer. Imported keyed inputs
+use their preserved Pi submission's exact answer identity and reason.
+
+Dropping a Rust wait future, cancelling a process `waitForPrompt` request, or disconnecting the
+waiting client abandons the wait without cancelling the input. Use `abort`/`cancelQueued` to
+cancel work. Storage failure ends pending waits with an error, retaining the unsettled input
+for explicit recovery. Engine shutdown ends waits. There are at most 64 pending waits across
+the engine; each connection also retains at most 64 wait tasks through reply delivery. Excess
+waits return `busy`, and normal/control calls retain separate capacity.
+
+Native compaction currently returns synchronously without a durable operation handle. Waiting
+for historical Pi write/compaction submissions or unkeyed imported submissions is not exposed
+by this input-key API; general durable submission identity remains part of the remaining
+service/history work.
 
 ## Out-of-process extensions (any language)
 
@@ -145,9 +176,10 @@ A request looks like `{"id": <string|number>, "method": "...", "params": {...}}`
 | `ask` | `kind` (`select`/`confirm`/`input`), `title`, `message`?, `options`? (`[{value,label,description?}]`), `placeholder`?, `defaultValue`?, `timeoutMs`? (default 120000; 0 = indefinite) | a string (a boolean for `confirm`), or `null` when unanswered |
 | `notify` | `level` (`info`/`warning`/`error`), `message` | `null` |
 | `setStatus` | `key`, `text` (`null` clears) | `null` |
-| `prompt`, `steer`, `followUp` | `text`, `requestKey`? | `{"run": n\|null, "entry": n\|null}` |
+| `prompt`, `steer`, `followUp` | `text`, `requestKey`? | `{"operationId": "opaque-key", "run": n\|null, "entry": n\|null}` |
 | `cancelQueued` | `entry` | `{"outcome": "cancelled"\|"alreadyConsumed"\|"notFound"}` |
 | `lookup` | `requestKey` | the protocol `LookupResult` |
+| `waitForPrompt` | `operationId` (from a prompt/steer/followUp reply) | `{"status":"done","text":"...","reason":null}` or `{"status":"unanswered","text":null,"reason":"..."}` |
 | `abort` | (none) | `{"run": n\|null}` |
 | `compact` | `instructions`? | `null` |
 | `historyPage` | `before`?, `limit` (at most 200) | `{"entries": [...], "hasOlder": bool}`, oldest first |
@@ -170,10 +202,10 @@ Error codes are the protocol's `ErrorCode` names: `invalid` (bad params or a reu
 
 An existing facet package has two options:
 
-1. **Port it** to the native contract, either as a Rust `Extension` or as a process extension in any language. The examples above show both. Ports must account for the missing reference features listed below, including `waitForPrompt`.
+1. **Port it** to the native contract, either as a Rust `Extension` or as a process extension in any language. The examples above show both. Ports must account for the missing reference features listed below, especially custom remote services and reload.
 2. **Keep running it on the legacy Pi engine** (`--engine pi` with `--pi-extension <package>`), unchanged.
 
-The native engine does **not** run arbitrary TypeScript facet packages. The parity row for TypeScript facet compatibility stays **blocked**: it is served only by the legacy Pi bridge.
+The native engine does **not** run arbitrary TypeScript facet packages. TypeScript facet compatibility is **out of scope by owner decision**. The legacy Pi option remains available only during the broader engine transition.
 
 ## Configuration and persistent selections
 
@@ -220,9 +252,8 @@ Runtime wiring is implemented: session snapshots and changes carry the question 
 answer/cancel/dismiss calls reach it, and opening/retiring sessions starts/stops their selected
 native extensions.
 
-## Missing reference features
+## Optional reference features not implemented
 
-- `AgentController.waitForPrompt` (waiting for a prompt's answer text).
 - Facet hot reload (`SessionPlugins.reload`).
 - Services that facets publish to presentations.
 - Execution or conversion of existing TypeScript facet packages; profile persistence does

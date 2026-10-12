@@ -11,7 +11,51 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — persistent native extension profiles
+## Current owner decision — Pi extensions removed from release scope
+
+The user explicitly stated on 2026-10-11 that Pi extensions are not necessary for Pipkin.
+The plan now has an overriding scope amendment. No more TypeScript loader/port, extension
+remote-service, hot-reload or optional extension API parity work is required. Existing tested
+native extension/profile/wait code remains available, but does not delay native default.
+
+Fifteen extension-specific ledger rows are now **OS (out of scope by owner decision)**,
+including their historical evidence. They are not marked passed or absent from the baseline.
+Inventory remains **503 rows: NC 403, NE 25, NP 30, PA 29, BL 0, LB 1, OS 15**;
+**488 non-OS rows**, none fully qualified. Evidence totals retain optional work:
+427 measured, 7 observed, 10 unverified, 59 not started. This scope change supersedes historical
+extension-blocker statements below and in ADR 0006.
+
+Next work is core behavior and migration, including reconciling import protection so a Pi
+extension selection alone does not block history migration; then remaining reliability,
+provider/settings audits, packaging/install/CI and release qualification. Preserve source
+history/state and credentials. Built-in coding tools, providers and subagents remain required.
+
+## Current follow-up — durable input waits
+
+Native profiles are committed as **`67ba56f`**. Input waits/reliability fixes are committed as
+**`2066443`**. Protocol **8** / schema **5** adds durable
+prompt/steer/follow-up waits through the engine protocol and both extension hosts. Results
+come from the input's committed final answer or unanswered reason, including preserved keyed
+Pi submissions. Wait capacity and reply delivery are bounded separately from normal/control
+calls. Cancelling a wait leaves the input running. See
+[wait evidence](pipkin-rust-engine-evidence/prompt-waits.md).
+
+Twelve native wait tests cover final text, queue/Stop/error outcomes, registration races,
+restart/storage recovery, capacity, unread replies, Rust/process cancellation and eleven
+executed Pi service-result projection cases. Startup additionally recovers queues left after
+settlement but before the next run was started. The full suite exposed an endpoint bind-error
+lock-release race; a dedicated RAII lock guard and regression cover inherited descriptors on
+that error path. Final checks: **1430 passed, 0 failed, 53 ignored**, Clippy/formatting clean;
+logs `/tmp/pipkin-wait-{workspace,clippy,fmt}-complete.log`. The original endpoint failure is
+retained in `/tmp/pipkin-wait-workspace.log`.
+
+Ledger: **503 rows; NC 404, NE 29, NP 30, PA 30, BL 9, LB 1; 427 measured, 7 observed,
+10 unverified, 59 not started, 0 currently failed, 0 qualified**. Input waits are implemented;
+general durable identities for historical write/compaction and unkeyed Pi submissions remain
+open. Remote extension services, reload and TypeScript package compatibility are now out of scope
+under the owner decision above. Provider/history gaps and release qualification remain. Native remains opt-in.
+
+## Previous follow-up — persistent native extension profiles
 
 Desktop byte pressure/Stop is committed as **`9047b57`**. Protocol **7** / schema **5** now
 persists native defaults and per-session selections, preserves empty pins, rejects conflicting

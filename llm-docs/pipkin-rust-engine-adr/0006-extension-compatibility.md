@@ -1,10 +1,18 @@
 # ADR 0006: Extension compatibility
 
-**Status:** Proposed; implementation reconciled at `e4c3a8c` (2026-10-11). Native Rust
+**Current owner decision (2026-10-11):** Pi extensions are explicitly not required for Pipkin.
+The [plan amendment](../pipkin-rust-engine-plan.md#owner-scope-change--2026-10-11-pi-extensions-are-not-required)
+supersedes the extension-preservation and release-blocking decisions below. Keep existing
+native implementations, but do not build a TypeScript compatibility layer, require package
+ports, add remote extension services, or implement reload for cutover. Fifteen extension-specific
+ledger rows are OS; built-in tools/providers/subagents and user-data preservation stay in scope.
+The following record is retained as historical design/evidence, not an active compatibility gate.
+
+**Status:** Proposed; implementation updated on top of `67ba56f` (2026-10-11). Native Rust
 and process extension hosts exist (`E/extensions`, `docs/native-extensions.md`), with tested
 ports of the questions and greeting examples. These are not TypeScript package compatibility:
-custom remote services, `waitForPrompt`, hot reload and sticky/per-session profiles remain
-missing. The importer now validates the selected Pi coordination directory's server/session
+custom remote services and hot reload remain missing. Native sticky/session profiles and
+input-result waits are implemented; general submission identities remain open. The importer now validates the selected Pi coordination directory's server/session
 profiles, honors explicit empty per-session overrides, and refuses nonempty or uncertain
 selections before activation (IMP-PLUGIN-STATE). Profiles are rechecked before writing, and
 accepted inspection data/hashes are retained in the import manifest. See the import/retry
@@ -90,7 +98,8 @@ protocol results. Native tests additionally cover conflicts, retirement, stale q
 concurrent preparation/acquisition, storage faults and schema upgrade. See
 [profile evidence](../pipkin-rust-engine-evidence/extension-profiles.md).
 This implements the selection mechanism for native ports; TypeScript execution, custom remote
-services, hot reload and `waitForPrompt` remain separate blockers. The tool/section/hook contract
+services and hot reload remain separate blockers. Input `waitForPrompt` was subsequently
+implemented with protocol 8; see [wait evidence](../pipkin-rust-engine-evidence/prompt-waits.md). The tool/section/hook contract
 in decision 1 remains a proposal, not a claim about the current native extension API.
 
 ## Consequences

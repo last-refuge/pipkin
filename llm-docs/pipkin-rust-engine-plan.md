@@ -1,5 +1,29 @@
 # Pipkin-native Rust engine: comprehensive replatforming plan
 
+
+## Owner scope change — 2026-10-11: Pi extensions are not required
+
+The user explicitly clarified: **“Pi extensions ARE NOT NECESSARY for Pipkin. That's not a
+thing that we need in Pipkin.”** This supersedes every requirement below to preserve, port,
+load, reload, or qualify Pi extension/facet packages before native default or Pi retirement.
+P14 third-party extension compatibility, extension-specific parts of P19, the RE-05 extension
+compatibility spike, and extension-specific RE-16 work are no longer release requirements.
+There is no requirement to add a JavaScript runtime, Node bridge, extension remote services,
+or hot reload. Built-in coding tools, providers/auth, subagents, core UI, history/context,
+durable scheduling and reliability remain required even where Pi implemented them using an
+internal Extension class.
+
+Completed native extension/profile/input-wait code may remain, but completing its optional
+Pi compatibility surface must not delay the release. Stop further extension compatibility
+work. Preserve existing user data; reconcile import policy so a historical extension selection
+alone does not unnecessarily block migration, without silently discarding history/state.
+
+The ledger adds **OS — out of scope by explicit owner decision**. OS retains the historical
+baseline and evidence but is excluded from required release gates; it is neither a pass nor
+“not present in the baseline.” All other parity, no-Pi/no-Node, migration and qualification
+requirements remain in force. Every reference below to “every row” or “no missing capability”
+means every required, non-OS capability under this amended scope.
+
 ## Recommendation and status
 
 **Build a Pipkin-owned Rust engine behind the existing backend boundary. Port the behavior Pipkin needs, not Pi's entire implementation.** Keep Pi available during development and migration, then remove Pi/Node from the default distribution once correctness, provider, migration, performance and installed-workflow gates pass.
