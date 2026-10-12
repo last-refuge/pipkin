@@ -67,7 +67,8 @@ pub struct DemoBackend {
 }
 
 impl DemoBackend {
-    pub fn new(events: async_channel::Sender<BackendEvent>, options: DemoOptions) -> Self {
+    pub fn new(events: impl Into<crate::event_queue::EventSender>, options: DemoOptions) -> Self {
+        let events = events.into();
         let mut scenario = options.scenario.clone();
         if !script::scenario_names().contains(&scenario.as_str()) {
             log::warn!("unknown demo scenario {scenario:?}; using normal");
@@ -190,7 +191,7 @@ struct Run {
 }
 
 struct Ctx {
-    events: async_channel::Sender<BackendEvent>,
+    events: crate::event_queue::EventSender,
     speed: f32,
     hold_steer: bool,
     closed: Cell<bool>,

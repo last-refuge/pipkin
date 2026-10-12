@@ -789,7 +789,14 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
     });
 
     let now = unix_secs();
-    let (event_tx, event_rx) = async_channel::bounded::<BackendEvent>(EVENT_QUEUE);
+    let (event_tx, event_rx) = if options.engine == EngineKind::Native {
+        crate::event_queue::bounded(
+            crate::event_queue::NATIVE_EVENTS,
+            crate::event_queue::NATIVE_BYTES,
+        )
+    } else {
+        crate::event_queue::plain(EVENT_QUEUE)
+    };
     let demo = (options.mode == Mode::Demo).then(|| {
         Arc::new(DemoBackend::new(
             event_tx.clone(),
@@ -1199,12 +1206,14 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                         Err(_) => break,
                     }
                 }
-                let batch = coalesce(batch);
+                let events = coalesce(batch.iter_mut().map(|lease| lease.take()).collect());
                 let alive = weak.update(cx, |m, cx| {
-                    for event in batch {
+                    for event in events {
                         m.apply_event(event, cx);
                     }
                 });
+                // Release admission only after the batch has reached the core.
+                drop(batch);
                 if alive.is_err() {
                     break;
                 }

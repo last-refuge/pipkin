@@ -165,7 +165,7 @@ enum Msg {
 
 pub struct PiBackend {
     config: PiConfig,
-    events: async_channel::Sender<BackendEvent>,
+    events: crate::event_queue::EventSender,
     tx: Sender<Msg>,
     rx: Mutex<Option<Receiver<Msg>>>,
     worker: Mutex<Option<JoinHandle<()>>>,
@@ -176,7 +176,8 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl PiBackend {
-    pub fn new(events: async_channel::Sender<BackendEvent>, config: PiConfig) -> Self {
+    pub fn new(events: impl Into<crate::event_queue::EventSender>, config: PiConfig) -> Self {
+        let events = events.into();
         let (tx, rx) = mpsc::channel();
         PiBackend {
             config,
@@ -259,7 +260,7 @@ struct Run {
 struct Worker {
     config: PiConfig,
     engine: Option<EngineHost>,
-    events: async_channel::Sender<BackendEvent>,
+    events: crate::event_queue::EventSender,
     sink: LifecycleSink,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,

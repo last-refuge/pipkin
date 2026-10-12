@@ -297,7 +297,7 @@ struct Harness {
     backend: NativeBackend,
     storage: Arc<Storage>,
     restore: Restore,
-    events: async_channel::Receiver<BackendEvent>,
+    events: crate::event_queue::EventReceiver,
     life: Arc<Mutex<VecDeque<LifecycleEvent>>>,
     acks: mpsc::Receiver<(ConversationId, RequestId, Result<(), String>)>,
     ack_tx: mpsc::Sender<(ConversationId, RequestId, Result<(), String>)>,
@@ -321,6 +321,15 @@ impl Harness {
     }
 
     fn start_with(config: NativeConfig, db: &Path) -> Harness {
+        Self::start_with_limits(
+            config,
+            db,
+            crate::event_queue::NATIVE_EVENTS,
+            crate::event_queue::NATIVE_BYTES,
+        )
+    }
+
+    fn start_with_limits(config: NativeConfig, db: &Path, count: usize, bytes: usize) -> Harness {
         let storage = Arc::new(Storage::open(db, NAMESPACE).expect("storage"));
         let loaded = storage.load_all().expect("load");
         let mut state = AppState::new(
@@ -348,7 +357,7 @@ impl Harness {
             );
         }
         let restore = Restore::new(loaded, false);
-        let (tx, events) = async_channel::unbounded();
+        let (tx, events) = crate::event_queue::bounded(count, bytes);
         let backend = NativeBackend::new(tx, config);
         let life = Arc::new(Mutex::new(VecDeque::new()));
         let sink = {
@@ -509,8 +518,8 @@ impl Harness {
             };
             self.exec(outcome);
         }
-        while let Ok(event) = self.events.try_recv() {
-            let outcome = self.state.apply_event(event);
+        while let Ok(mut lease) = self.events.try_recv() {
+            let outcome = self.state.apply_event(lease.take());
             self.exec(outcome);
         }
         while let Ok((conversation, request, result)) = self.acks.try_recv() {
@@ -2373,4 +2382,127 @@ fn external_desktops_share_runs_and_reconnect_without_owning_the_server() {
     let probe = crate::install::diagnose_native_attachment(&endpoint, true);
     assert!(!probe.1, "{}", probe.0);
     assert!(probe.0.contains("Ownership: external"));
+}
+
+fn wait_without_ui(what: &str, ready: impl Fn() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ready() {
+        assert!(
+            Instant::now() < deadline,
+            "timed out without consuming UI events: {what}"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn pressure_fixture() -> (Fixture, Harness, String, crate::event_queue::Lease) {
+    let text = "large history 🦀\n".repeat(8192);
+    let reply = text.clone();
+    let fx = Fixture::start(move |_, n| {
+        if n == 0 {
+            Reply::Thinking("thought".into(), reply.clone())
+        } else {
+            Reply::Hang
+        }
+    });
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start_with_limits(fx.native(Duration::from_secs(2)), &db, 128, 1024);
+    h.open_new_conversation(&fx.project);
+    h.send("make history");
+    h.until("large answer committed", |s| {
+        is_idle(s) && assistant_texts(s) == [text.clone()]
+    });
+    h.send("wait for Stop");
+    h.until_asked(&fx, 2);
+    h.until("running", is_running);
+    let c = h.state.current().unwrap();
+    h.backend.request(pipkin_core::BackendRequest::Open {
+        conversation: c.id,
+        generation: c.generation,
+    });
+    // Drain setup traffic only until an actual large history event reaches a UI batch.
+    // Retain its lease without applying it, exactly as a paused controller batch would.
+    // Looking only at queue occupancy races small events still arriving after Running.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let held = loop {
+        if let Ok(mut lease) = h.events.try_recv() {
+            if lease.bytes() > 1024 {
+                break lease;
+            }
+            let out = h.state.apply_event(lease.take());
+            h.exec(out);
+        }
+        assert!(
+            Instant::now() < deadline,
+            "large history never reached the UI batch"
+        );
+        thread::sleep(Duration::from_millis(1));
+    };
+    wait_without_ui("byte pressure", || {
+        let (count, bytes, waiting) = h.backend.events.stats();
+        count == 1 && bytes > 1024 && waiting == 1
+    });
+    (fx, h, text, held)
+}
+
+#[test]
+fn stop_crosses_desktop_byte_pressure_and_settlement_recovers_after_reconnect() {
+    for restart in [false, true] {
+        let (fx, mut h, text, mut held) = pressure_fixture();
+        let db = fx.root.join("app.sqlite3");
+        let engine = fx.engine();
+        let session = engine.shared().store.root_sessions().unwrap()[0].id.clone();
+        let key = h.storage.load_all().unwrap().open_requests[0]
+            .request
+            .0
+            .clone();
+        h.dispatch(Command::Cancel);
+        wait_without_ui("durable aborted result before UI delivery", || {
+            matches!(
+                engine
+                    .shared()
+                    .store
+                    .request(&session, &key)
+                    .unwrap()
+                    .unwrap()
+                    .lookup(),
+                pipkin_engine_protocol::LookupResult::Known {
+                    open: false,
+                    outcome: Some(pipkin_engine_protocol::RunOutcome::Aborted),
+                    ..
+                }
+            )
+        });
+        assert!(
+            matches!(h.state.current().unwrap().run, RunState::Stopping { .. }),
+            "UI has not consumed settlement"
+        );
+        assert_eq!(h.backend.events.stats().0, 1);
+        if restart {
+            drop(engine);
+            fx.restart_engine();
+        }
+        let out = h.state.apply_event(held.take());
+        h.exec(out);
+        drop(held);
+        h.until("settled after draining", is_idle);
+        assert_eq!(assistant_texts(&h.state), [text]);
+        assert_eq!(h.user_messages(), ["make history", "wait for Stop"]);
+        assert_eq!(fx.requests().len(), 2, "no prompt replay during recovery");
+        h.stop();
+        assert_eq!(open_requests(&db), 0, "terminal journal state persisted");
+    }
+}
+
+#[test]
+fn shutdown_releases_a_native_worker_waiting_for_desktop_bytes() {
+    let (_fx, h, _, _held) = pressure_fixture();
+    let started = Instant::now();
+    h.backend.shutdown();
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "shutdown waited for UI consumption"
+    );
+    wait_without_ui("producer released", || h.backend.events.stats().2 == 0);
+    h.storage.shutdown();
 }

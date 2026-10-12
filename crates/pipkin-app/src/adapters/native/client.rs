@@ -193,6 +193,11 @@ impl Client {
     /// Close the sending half, so a worker reading its input sees the end of it. The reader
     /// keeps running until the engine closes its side.
     pub fn close(&self) {
+        let reason = "the connection is closing".to_owned();
+        *lock(&self.shared.closed) = Some(reason.clone());
+        for (_, waiter) in lock(&self.shared.pending).drain() {
+            let _ = waiter.try_send(Err(CallError::Lost(reason.clone())));
+        }
         lock(&self.sender).take();
     }
 
@@ -309,6 +314,31 @@ mod tests {
             },
             rx,
         )
+    }
+
+    #[test]
+    fn close_wakes_pending_calls_without_waiting_for_the_peer() {
+        let (link, from_client, peer) = link();
+        let client = Arc::new(Client::start(link, |_| {}));
+        let caller = client.clone();
+        let (done, result) = mpsc::channel();
+        let thread = thread::spawn(move || {
+            done.send(caller.call(Call::ListSessions, Duration::from_secs(60)))
+                .unwrap();
+        });
+        from_client.recv_timeout(Duration::from_secs(2)).unwrap();
+        client.close();
+        assert!(matches!(
+            result.recv_timeout(Duration::from_secs(1)).unwrap(),
+            Err(CallError::Lost(_))
+        ));
+        assert!(matches!(
+            client.call(Call::ListSessions, Duration::from_secs(1)),
+            Err(CallError::NotSent(_))
+        ));
+        thread.join().unwrap();
+        drop(peer);
+        assert!(client.join_reader(Duration::from_secs(1)));
     }
 
     #[test]

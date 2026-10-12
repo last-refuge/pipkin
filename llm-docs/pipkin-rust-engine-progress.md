@@ -11,7 +11,24 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — bounded provider progress
+## Current follow-up — desktop byte pressure and Stop
+
+Bounded provider progress is committed as **`baf8eff`**. Native desktop events now use
+128-event / 8 MiB owned-payload admission, charged until the controller applies each batch.
+One indivisible oversized event is admitted alone without losing its contents. Stop uses a
+separate bounded worker and preserves submission/connection ordering; shutdown releases
+blocked UI producers. See [desktop pressure evidence](pipkin-rust-engine-evidence/desktop-pressure.md).
+
+The real engine/core/storage tests prove durable Stop before UI consumption, exact saved
+history and journal recovery with/without restart, and shutdown under byte pressure. Required
+checks: **1404 passed, 0 failed, 53 ignored**, Clippy and formatting clean. Logs:
+`/tmp/pipkin-ui-pressure-{workspace,clippy,fmt}.log`. No native-window soak was run.
+Ledger counts remain **503 rows; 423 measured, 7 observed, 0 currently failed, 10 unverified,
+63 not started; 0 qualified**. Lifecycle/catalog/request admission and total heap limits remain
+separate work. Next: extension/profile compatibility and remaining provider/history gaps,
+while completing the broader qualification gates. Native remains opt-in.
+
+## Previous follow-up — bounded provider progress
 
 Shared event delivery is committed as **`e87809f`**. The provider generation loop no longer
 uses an unbounded stream-event channel. An engine-owned sink commits bounded batches directly,
@@ -27,7 +44,7 @@ release streaming benchmarks passed: no missing markers, all cadence p95 values 
 and all 24 scaling cases produce the expected output lengths. CPU/frame growth is approximately linear;
 64-byte chunks show extra write amplification, recorded as a remaining performance concern.
 Raw evidence: `fixtures/native-bench/2026-10-11-provider-progress/`.
-The frontend bus byte/control-pressure work remains next; this change does not cap the full
+At that revision, frontend bus byte/control-pressure work remained next; this change does not cap the full
 assistant message or every parser allocation. Ledger counts remain **503 rows; 423 measured,
 7 observed, 0 currently failed, 10 unverified, 63 not started; 0 qualified**. Native remains opt-in.
 
@@ -381,7 +398,7 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
    and remaining unsupported-history conversion (replacement edits/forks) remain open.
 2. **Transport and compatibility:** durable invalidation replay and bounded engine/reader delivery
    now have passing recovery/pressure evidence. External Unix attachment and serialize-once event fan-out are implemented;
-   provider progress backlog is bounded; frontend byte/control-pressure budgeting remains. TypeScript facets, sticky profiles,
+   provider progress and native frontend event backlogs are bounded, with oversized frontend events admitted alone; Stop bypasses frontend delivery waits. Lifecycle/catalog and normal-request admission remain separate work. TypeScript facets, sticky profiles,
    remote services and reload still depend on Pi.
 3. **Performance:** E2E-37's headless 100 MiB budget now passes on Linux/glibc; an indefinitely flat
    heap, desktop/long-tool/streaming soaks and other allocators/platforms remain unverified.
@@ -401,7 +418,7 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
    commit/snapshot ordering, and the headless memory-budget fix; see delivery/memory evidence.
    Remaining transport and broader memory qualification boundaries are listed above.
 3. Usage counters and positional prompt updates are implemented and tested. Constrained/grammar
-   tool support is implemented with passing targeted/workspace checks. HTTPS proxy/WSS support and cached grammar continuation are now implemented with local TLS tests. Session lifecycle cleanup and external Unix attachment are now implemented. Serialize-once event delivery is implemented. Next: remaining shared-client proxy gaps, frontend/provider queue budgets and facet ports/profile lifecycle while
+   tool support is implemented with passing targeted/workspace checks. HTTPS proxy/WSS support and cached grammar continuation are now implemented with local TLS tests. Session lifecycle cleanup and external Unix attachment are now implemented. Serialize-once event delivery is implemented. Native frontend event byte/control pressure is implemented. Next: remaining shared-client proxy gaps, lifecycle/request admission and facet ports/profile lifecycle while
    keeping Pi as the continuity path.
 4. Add the specific missing assertions in the reconciliation report; build the full native/Pi
    differential harness. Existing disk-full, child recovery and `all` delivery tests do not

@@ -5,6 +5,7 @@ mod adapters;
 mod cache;
 mod controller;
 mod diagnostics;
+mod event_queue;
 mod install;
 mod launch;
 #[cfg(any(target_os = "macos", test))]

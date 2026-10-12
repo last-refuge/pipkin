@@ -13,6 +13,7 @@
 //! mirror; the transcript is remapped and sent at most every `SYNC_INTERVAL`.
 
 pub mod client;
+mod control;
 mod import;
 mod mapping;
 mod mirror;
@@ -22,7 +23,7 @@ pub mod transcript;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -100,12 +101,19 @@ enum Msg {
         step: pipkin_core::ImportStep,
         done: ImportDone,
     },
+    StopFailed {
+        conversation: ConversationId,
+        generation: u64,
+        op: OperationId,
+        message: String,
+    },
     Shutdown,
 }
 
 pub struct NativeBackend {
     config: NativeConfig,
-    events: async_channel::Sender<BackendEvent>,
+    control: Arc<control::Control>,
+    events: crate::event_queue::EventSender,
     tx: Sender<Msg>,
     rx: Mutex<Option<Receiver<Msg>>>,
     worker: Mutex<Option<JoinHandle<()>>>,
@@ -116,10 +124,13 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl NativeBackend {
-    pub fn new(events: async_channel::Sender<BackendEvent>, config: NativeConfig) -> Self {
+    pub fn new(events: impl Into<crate::event_queue::EventSender>, config: NativeConfig) -> Self {
+        let events = events.into();
         let (tx, rx) = mpsc::channel();
+        let control = Arc::new(control::Control::new(tx.clone(), config.call_timeout));
         NativeBackend {
             config,
+            control,
             events,
             tx,
             rx: Mutex::new(Some(rx)),
@@ -147,6 +158,7 @@ impl Backend for NativeBackend {
         };
         let worker = Worker {
             supervisor: Supervisor::new(self.config.host.clone()),
+            control: self.control.clone(),
             config: self.config.clone(),
             events: self.events.clone(),
             sink,
@@ -168,10 +180,16 @@ impl Backend for NativeBackend {
     }
 
     fn request(&self, request: BackendRequest) {
-        let _ = self.tx.send(Msg::Request(request));
+        if !self.control.request(&request) {
+            self.control.submitting(&request);
+            let _ = self.tx.send(Msg::Request(request));
+        }
     }
 
     fn shutdown(&self) {
+        // Release a producer waiting for UI admission before asking it to shut down.
+        self.events.close();
+        self.control.close();
         let _ = self.tx.send(Msg::Shutdown);
         if let Some(handle) = lock(&self.worker).take() {
             // The worker asks the engine to stop, then waits out the supervisor's grace period
@@ -180,7 +198,11 @@ impl Backend for NativeBackend {
             while !handle.is_finished() && Instant::now() < deadline {
                 thread::sleep(Duration::from_millis(10));
             }
+            if handle.is_finished() {
+                let _ = handle.join();
+            }
         }
+        self.control.reap();
     }
 }
 
@@ -205,8 +227,9 @@ struct Run {
 
 struct Worker {
     config: NativeConfig,
+    control: Arc<control::Control>,
     supervisor: Supervisor,
-    events: async_channel::Sender<BackendEvent>,
+    events: crate::event_queue::EventSender,
     sink: LifecycleSink,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
@@ -311,6 +334,17 @@ impl Worker {
                 Err(mpsc::RecvTimeoutError::Timeout) => return false,
                 Err(mpsc::RecvTimeoutError::Disconnected) | Ok(Msg::Shutdown) => return true,
                 Ok(Msg::Request(request)) => self.refuse_offline(request),
+                Ok(Msg::StopFailed {
+                    conversation,
+                    generation,
+                    op,
+                    message,
+                }) => self.emit_op(
+                    conversation,
+                    generation,
+                    op,
+                    EventKind::StopFailed { message },
+                ),
                 Ok(Msg::Import { step, done }) => done(import::unavailable(&step, OFFLINE)),
                 Ok(Msg::Engine { .. }) | Ok(Msg::EngineReady { .. }) | Ok(Msg::Changes { .. }) => {}
             }
@@ -319,6 +353,15 @@ impl Worker {
 
     /// Nothing was sent, so every refusal here is definite.
     fn refuse_offline(&self, request: BackendRequest) {
+        if let BackendRequest::Submit {
+            conversation,
+            generation,
+            op,
+            ..
+        } = &request
+        {
+            self.control.submitted(*conversation, *generation, *op);
+        }
         match request {
             BackendRequest::Open {
                 conversation,
@@ -476,7 +519,7 @@ impl Worker {
         let pending = std::sync::Arc::new(Mutex::new(
             pipkin_engine_protocol::delivery::EventQueue::default(),
         ));
-        let client = Client::start(link, move |inbound| {
+        let client = Arc::new(Client::start(link, move |inbound| {
             if let Inbound::Event { epoch, seq, event } = inbound {
                 let mut queue = lock(&pending);
                 let wake = queue.is_empty();
@@ -490,7 +533,7 @@ impl Worker {
             } else {
                 let _ = lock(&forward).send(Msg::Engine { conn, inbound });
             }
-        });
+        }));
         let welcome = match client.call(
             Call::Hello {
                 protocol: PROTOCOL_VERSION,
@@ -518,6 +561,7 @@ impl Worker {
         };
         let mut live = Live {
             client,
+            control: self.control.clone(),
             timeout: self.config.call_timeout,
             seq: Sequencer::default(),
             durable: welcome
@@ -595,6 +639,17 @@ impl Worker {
                         return Outcome::Shutdown;
                     }
                     Msg::Request(request) => live.handle_request(self, request),
+                    Msg::StopFailed {
+                        conversation,
+                        generation,
+                        op,
+                        message,
+                    } => self.emit_op(
+                        conversation,
+                        generation,
+                        op,
+                        EventKind::StopFailed { message },
+                    ),
                     Msg::Import { step, done } => live.import(self, step, done),
                     Msg::EngineReady { conn, .. } if conn != self.conn => {}
                     Msg::EngineReady { pending, .. } => {
@@ -684,7 +739,8 @@ struct Current {
 }
 
 struct Live {
-    client: Client,
+    client: Arc<Client>,
+    control: Arc<control::Control>,
     timeout: Duration,
     seq: Sequencer,
     durable: bool,
@@ -698,6 +754,13 @@ struct Live {
     auth_done: Option<String>,
     scanning: bool,
     rescan: Option<(ConversationId, u64)>,
+}
+
+impl Drop for Live {
+    fn drop(&mut self) {
+        self.control.clear(&self.client);
+        self.client.close();
+    }
 }
 
 /// How many tool calls in the mapped transcript have finished.
@@ -733,6 +796,7 @@ impl Live {
             Reply::Sessions { sessions } => {
                 self.sessions = mapping::assign_ids(&sessions);
                 self.index = self.sessions.iter().cloned().collect();
+                self.control.bind(&self.client, &self.sessions);
                 Ok(())
             }
             other => Err(CallError::Lost(format!("unexpected reply {other:?}"))),
@@ -1415,29 +1479,8 @@ impl Live {
                     );
                 }
             }
-            BackendRequest::Cancel {
-                conversation,
-                generation,
-                op,
-            } => {
-                let failed = |worker: &Worker, message: String| {
-                    worker.emit_op(
-                        conversation,
-                        generation,
-                        op,
-                        EventKind::StopFailed { message },
-                    )
-                };
-                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
-                    return failed(
-                        worker,
-                        "This conversation is not known to the engine.".into(),
-                    );
-                };
-                // `Stopping` confirms the intent is durable; settlement arrives as an event.
-                if let Err(error) = self.call(Call::Stop { session }) {
-                    failed(worker, format!("Could not ask the engine to stop: {error}"));
-                }
+            request @ BackendRequest::Cancel { .. } => {
+                worker.control.request(&request);
             }
             BackendRequest::CheckStatus {
                 conversation,
@@ -1556,6 +1599,7 @@ impl Live {
         attachments: Vec<Attachment>,
     ) {
         let reject = |worker: &Worker, reason: String| {
+            self.control.submitted(conversation, generation, op);
             worker.emit_op(conversation, generation, op, EventKind::Rejected { reason })
         };
         // Everything up to the send is a definite refusal: nothing left this process.
@@ -1570,6 +1614,10 @@ impl Live {
             Err(reason) => return reject(worker, reason),
         };
         let images = images(&prepared);
+        // A Stop already crossing the wire finishes before a later local prompt is sent.
+        // Stop workers also discard queued requests superseded by that new prompt.
+        let order = self.control.order(conversation);
+        let sending = order.as_ref().map(|o| lock(&o.sending));
         let result = self.call(Call::Prompt {
             session: summary.id.clone(),
             request: request.0.clone(),
@@ -1578,6 +1626,8 @@ impl Live {
             // The engine owns the session's model selection.
             model: None,
         });
+        drop(sending);
+        self.control.submitted(conversation, generation, op);
         match result {
             Ok(Reply::Admitted { .. }) => {
                 worker.runs.insert(

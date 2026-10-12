@@ -84,7 +84,7 @@ The desktop core already routes every backend event through `(conversation, gene
     retain typed frames. Oversized encoding stops at the presentation budget and becomes a
     resync marker. Serialized-body budgets are not total heap limits: one typed value and its
     encoded bytes remain shared until the last subscriber releases them. Reply encoding is
-    per request. Frontend and provider-internal queue budgets remain separate work.
+    per request. Frontend and provider progress admission are described below.
 
 12. **Provider progress:** the generation loop uses an engine-owned synchronous sink rather
     than an unbounded channel. Commit backpressure limits pending batches to 16 KiB of UTF-8
@@ -93,10 +93,18 @@ The desktop core already routes every backend event through `(conversation, gene
     than remaining queued. This does not bound the retained full assistant or all transient
     input-unit allocations. Completion closes the sink and stale callbacks hold only a weak
     reference. See [provider progress evidence](../pipkin-rust-engine-evidence/provider-progress.md).
-13. **Still open:** full external-attachment qualification, end-to-end frontend byte budgeting,
-    parser/input-unit limits and performance qualification. The GPUI/core event bus already
-    has a count bound; byte pressure and control behavior still need work. This ADR does not
-    claim every queue or allocation in the application is now bounded.
+13. **Desktop admission and control:** native core events have 128-event / 8 MiB owned-payload
+    admission. Leases retain their charges through GPUI batch application. One indivisible
+    oversized event is admitted alone, preserving full contents. A separate Stop worker
+    (eight queued requests plus one active) shares the multiplexed client and does not wait
+    for UI delivery. Submission barriers and per-conversation sending order prevent Stop
+    overtaking its prompt or cancelling a later local prompt. Queued Stops retain their original
+    connection/session. Shutdown closes admission and wakes blocked producers; client close
+    wakes pending reply waiters. See [desktop pressure evidence](../pipkin-rust-engine-evidence/desktop-pressure.md).
+14. **Still open:** full external-attachment qualification, lifecycle/catalog and normal desktop
+    request admission, parser/input-unit limits and performance qualification. Full messages,
+    mirrors and core state remain separate from queue accounting. This ADR does not claim
+    every queue or allocation in the application is now bounded.
 
 ## Consequences
 
