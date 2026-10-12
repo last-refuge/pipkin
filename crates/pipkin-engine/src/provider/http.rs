@@ -32,6 +32,7 @@ pub fn client() -> reqwest::Client {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NetSettings {
     pub proxy: ProxyConfig,
+    pub extra_roots: super::trust::ExtraRoots,
     /// Reference `httpIdleTimeoutMs` as the dispatcher's header/body idle timeout: no bytes
     /// for this long on a connection fails the read. `None` disables it.
     pub idle: Option<Duration>,
@@ -46,6 +47,7 @@ impl NetSettings {
     pub fn new(env: &crate::config::Env, global: &crate::config::Settings) -> NetSettings {
         NetSettings {
             proxy: ProxyConfig::from_env(env, global.http_proxy.as_deref()),
+            extra_roots: super::trust::ExtraRoots::from_env(env),
             idle: global.http_idle_timeout(),
             #[cfg(test)]
             test_roots: vec![],
@@ -102,7 +104,7 @@ fn builder(net: &NetSettings) -> reqwest::ClientBuilder {
         builder = builder
             .add_root_certificate(reqwest::Certificate::from_der(root).expect("valid test CA"));
     }
-    builder
+    net.extra_roots.configure_http(builder)
 }
 
 /// `"<status>: <body>"` (or the transport message when there is no response).
@@ -296,6 +298,7 @@ mod tests {
             proxy: ProxyConfig::from_env(&env, None),
             idle,
             test_roots: vec![],
+            extra_roots: Default::default(),
         }
     }
 

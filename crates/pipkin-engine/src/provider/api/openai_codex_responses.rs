@@ -762,6 +762,7 @@ impl OpenAICodexResponses {
                         idle_timeout: timeout,
                         connect_timeout: opts.websocket_connect_timeout,
                         proxy: proxy.as_ref(),
+                        trust: ctx.net.map(|net| &net.extra_roots),
                         session: cache_session,
                         account: &account_id,
                         transport,

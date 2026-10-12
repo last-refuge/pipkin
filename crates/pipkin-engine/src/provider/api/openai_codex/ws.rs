@@ -93,6 +93,7 @@ struct IdleHandle {
 struct Entry {
     id: u64,
     created: Instant,
+    connection_identity: String,
     busy: bool,
     idle: Option<IdleHandle>,
     continuation: Option<Continuation>,
@@ -109,7 +110,7 @@ struct EntryKey {
 #[derive(Default)]
 pub(crate) struct WsState {
     pool: HashMap<String, HashMap<String, Entry>>,
-    /// Test-local certificate roots; production always uses the standard verified roots.
+    /// Test-only override; production uses bundled roots plus configured extra roots.
     #[cfg(test)]
     tls: Option<Arc<ClientConfig>>,
     next_id: u64,
@@ -513,11 +514,23 @@ async fn acquire(
     cancel: &CancellationToken,
     connect_timeout: Option<Duration>,
     proxy: Option<&url::Url>,
+    trust: Option<&crate::provider::trust::ExtraRoots>,
 ) -> Result<Lease, Failure> {
+    let default_trust = crate::provider::trust::ExtraRoots::default();
+    let trust = trust.unwrap_or(&default_trust);
+    let connection_identity = super::super::aws_auth::sha256_hex(
+        serde_json::json!([
+            url,
+            proxy.map(url::Url::as_str),
+            headers,
+            trust.fingerprint()
+        ])
+        .to_string()
+        .as_bytes(),
+    );
+    let tls = Some(trust.tls_config());
     #[cfg(test)]
-    let tls = lock(shared).tls.clone();
-    #[cfg(not(test))]
-    let tls = None;
+    let tls = lock(shared).tls.clone().or(tls);
     let Some(session) = session else {
         let socket = connect(url, headers, cancel, connect_timeout, proxy, tls).await?;
         return Ok(Lease {
@@ -528,6 +541,18 @@ async fn acquire(
     };
     let plan = {
         let mut st = lock(shared);
+        if st
+            .pool
+            .get(session)
+            .and_then(|m| m.get(account))
+            .is_some_and(|e| e.connection_identity != connection_identity)
+            && let Some(entry) = st.remove(session, account)
+            && let Some(idle) = entry.idle
+        {
+            let _ = idle
+                .command
+                .send(IdleCommand::Close("connection_configuration_changed"));
+        }
         let state = st.pool.get(session).and_then(|m| m.get(account)).map(|e| {
             (
                 e.busy,
@@ -603,6 +628,7 @@ async fn acquire(
         Entry {
             id,
             created: Instant::now(),
+            connection_identity,
             busy: true,
             idle: None,
             continuation: None,
@@ -715,6 +741,7 @@ pub(crate) struct WsRequest<'a> {
     pub(crate) connect_timeout: Option<Duration>,
     /// An HTTP or HTTPS proxy to tunnel through with `CONNECT` (see [`connect`]).
     pub(crate) proxy: Option<&'a url::Url>,
+    pub(crate) trust: Option<&'a crate::provider::trust::ExtraRoots>,
     pub(crate) session: Option<&'a str>,
     pub(crate) account: &'a str,
     pub(crate) transport: &'a str,
@@ -737,6 +764,7 @@ pub(crate) async fn run(
         req.cancel,
         req.connect_timeout,
         req.proxy,
+        req.trust,
     )
     .await?;
     let use_cached = matches!(req.transport, "websocket-cached" | "auto");

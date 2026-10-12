@@ -20,6 +20,7 @@ pub mod model;
 pub mod proxy;
 pub mod scripted;
 pub mod sse;
+pub mod trust;
 
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;

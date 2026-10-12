@@ -11,7 +11,38 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — AWS credential cache and helper isolation
+## Current follow-up — configured TLS roots and connection isolation
+
+2026-10-12, following **`d948887`**. Native now honors the engine's
+`NODE_EXTRA_CA_CERTS` configuration for shared HTTP, credential/identity clients and Codex
+WebSockets, including HTTPS proxies. Bundled roots and peer/hostname verification remain
+active. The file loader retains valid certificates preceding a malformed entry, matching the
+executed reference, reports invalid files without exposing contents, and bounds file reads.
+
+Unlike Node's startup-only CA loading, native picks up certificate-file changes at the next
+network snapshot. Pooled WebSockets now separate endpoint, proxy, handshake identity and trust
+configuration, preventing stale connections/continuations after any of those change. The
+existing permanent per-session SSE fallback still applies after a WebSocket transport failure.
+See [trust evidence](pipkin-rust-engine-evidence/extra-ca-trust.md).
+
+Ten cases were executed through Node 26.8.1 and pinned undici 8.10.2 against local TLS. Five new
+native tests cover those outcomes, identity-client propagation, active snapshot retention,
+running-engine reload, HTTP/HTTPS proxy WSS, invalidated pool entries and hostname rejection.
+The corrected focused suite passed **5 tests**. Earlier fixture mistakes (missing new struct
+field/debug accessor mismatch, incorrect fallback expectation and a request outside a Tokio
+reactor) are recorded in the evidence. Required checks passed **1615 tests, 0 failed,
+53 ignored**, with clean Clippy and formatting. Logs: `/tmp/pipkin-extra-ca-tests4.log`,
+`/tmp/pipkin-extra-ca-workspace.log`, `/tmp/pipkin-extra-ca-clippy2.log`,
+`/tmp/pipkin-extra-ca-fmt.log`. Earlier failed fixture runs remain recorded.
+
+Protocol 11 / schema 9 unchanged. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**. Native remains opt-in. OS/Node-specific trust options,
+plain-HTTP proxy tunneling, unusable-proxy diagnostics, credential retries, remaining settings/
+migration behavior, sustained workloads and clean release/CI/platform qualification remain
+open. Owner plan/worktree changes are preserved.
+
+## Previous follow-up — AWS credential cache and helper isolation
 
 2026-10-12, following **`0c3d742`**. The shared AWS credential cache no longer identifies
 process credentials by profile name, assumed roles by profile/role, container credentials by

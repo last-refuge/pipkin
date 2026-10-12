@@ -68,7 +68,7 @@ impl Shared {
         self.net.lock().unwrap_or_else(|e| e.into_inner()).1.clone()
     }
 
-    /// Re-read the engine environment's proxy variables and the global network settings
+    /// Re-read proxy variables, the extra CA bundle and global network settings
     /// (`httpProxy`, `httpIdleTimeoutMs`); rebuild the client (and the sign-in client) when
     /// they changed. Called before each model request and on `RefreshModels`.
     pub fn refresh_net(&self) -> reqwest::Client {

@@ -1,0 +1,83 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "node": "v26.8.1",
+  "undici": {
+    "version": "8.10.2",
+    "integrity": "sha512-/y4/bH9YNU5hi9NIrpOuvGXFcxrj3CMrV+/AYpowAYTpHn8gX/XPFjNy766FPoYY0miQhdW977JFWKGNhBdwyQ==",
+    "entrySha256": "93fc85c00a59b58f410c901e5477d56770de3816bfbe183e751624aeb4a5e6a5"
+  },
+  "dispatcherSha256": "d64922c476d11b90555b8f23cab92ce1f4f83174cb750c125a96d8d4374744e2",
+  "scope": "Real local TLS requests through pinned undici with isolated child startup environments",
+  "cases": [
+    {
+      "name": "unset",
+      "ok": false,
+      "error": "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      "roots": 0,
+      "warning": false
+    },
+    {
+      "name": "valid",
+      "ok": true,
+      "body": "verified",
+      "roots": 1,
+      "warning": false
+    },
+    {
+      "name": "duplicate",
+      "ok": true,
+      "body": "verified",
+      "roots": 2,
+      "warning": false
+    },
+    {
+      "name": "text-prefix",
+      "ok": true,
+      "body": "verified",
+      "roots": 1,
+      "warning": false
+    },
+    {
+      "name": "empty",
+      "ok": false,
+      "error": "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      "roots": 0,
+      "warning": false
+    },
+    {
+      "name": "garbage",
+      "ok": false,
+      "error": "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      "roots": 0,
+      "warning": false
+    },
+    {
+      "name": "malformed",
+      "ok": false,
+      "error": "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      "roots": 0,
+      "warning": true
+    },
+    {
+      "name": "valid-then-malformed",
+      "ok": true,
+      "body": "verified",
+      "roots": 1,
+      "warning": true
+    },
+    {
+      "name": "malformed-then-valid",
+      "ok": false,
+      "error": "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      "roots": 0,
+      "warning": true
+    },
+    {
+      "name": "missing",
+      "ok": false,
+      "error": "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      "roots": 0,
+      "warning": true
+    }
+  ]
+}

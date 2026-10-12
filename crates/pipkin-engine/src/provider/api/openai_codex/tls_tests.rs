@@ -386,3 +386,134 @@ async fn tls_connect_rejects_refused_malformed_and_oversized_proxy_responses() {
         assert!(target.heads.lock().unwrap().is_empty());
     }
 }
+
+#[tokio::test]
+async fn configured_extra_roots_verify_both_hops_and_invalidate_pooled_connections() {
+    use crate::config::{Env, Settings};
+    use crate::provider::http::{NetSettings, client_with};
+    use base64::Engine as _;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("extra.pem");
+    let pem = format!(
+        "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+        base64::engine::general_purpose::STANDARD.encode(CA)
+    );
+    let env = Env::isolated(std::collections::HashMap::from([(
+        "NODE_EXTRA_CA_CERTS".into(),
+        path.display().to_string(),
+    )]));
+    for proxy_tls in [false, true] {
+        std::fs::write(&path, &pem).unwrap();
+        let target = Fixture::start(true, None).await;
+        let proxy = Fixture::proxy(proxy_tls).await;
+        let adapter = OpenAICodexResponses::default();
+        let mut req = req_for(&target, &proxy);
+        let run = |req: crate::provider::ProviderRequest, net: NetSettings| {
+            let adapter = &adapter;
+            async move {
+                adapter
+                    .stream(StreamCtx {
+                        req: &req,
+                        http: &client_with(&net),
+                        net: Some(&net),
+                        events: None,
+                        cancel: CancellationToken::new(),
+                    })
+                    .await
+            }
+        };
+        let good = NetSettings::new(&env, &Settings::default());
+        for _ in 0..2 {
+            let msg = run(req.clone(), good.clone()).await;
+            assert!(
+                !matches!(
+                    msg,
+                    Message::Assistant {
+                        stop_reason: StopReason::Error,
+                        ..
+                    }
+                ),
+                "{msg:?}"
+            );
+        }
+        assert_eq!(
+            adapter
+                .websocket_debug_stats("tls-session")
+                .unwrap()
+                .connections_created,
+            1
+        );
+        assert_eq!(target.frames.lock().unwrap().len(), 2);
+        std::fs::write(&path, "").unwrap();
+        let revoked = NetSettings::new(&env, &Settings::default());
+        let msg = run(req.clone(), revoked).await;
+        assert!(
+            matches!(
+                msg,
+                Message::Assistant {
+                    stop_reason: StopReason::Error,
+                    ..
+                }
+            ),
+            "{msg:?}"
+        );
+        assert_eq!(
+            target.frames.lock().unwrap().len(),
+            2,
+            "revoked roots must not reuse the old connection"
+        );
+        // Pi retains SSE fallback for a session after a transport failure. Preserve that
+        // behavior; a fresh session can verify restored roots over WebSocket again.
+        assert!(is_fallback_active(&adapter.ws, Some("tls-session")));
+        req.session_id = "tls-restored".into();
+        std::fs::write(&path, &pem).unwrap();
+        let msg = run(req.clone(), NetSettings::new(&env, &Settings::default())).await;
+        assert!(
+            !matches!(
+                msg,
+                Message::Assistant {
+                    stop_reason: StopReason::Error,
+                    ..
+                }
+            ),
+            "{msg:?}"
+        );
+        assert_eq!(target.frames.lock().unwrap().len(), 3);
+        // A new destination with the same account/session must not inherit this socket either.
+        let other = Fixture::start(true, None).await;
+        req.model.base_url = other.url.clone();
+        req.base_url = None;
+        let msg = run(req.clone(), good.clone()).await;
+        assert!(
+            !matches!(
+                msg,
+                Message::Assistant {
+                    stop_reason: StopReason::Error,
+                    ..
+                }
+            ),
+            "{msg:?}"
+        );
+        assert_eq!(other.frames.lock().unwrap().len(), 1);
+        assert_eq!(target.frames.lock().unwrap().len(), 3);
+        req.session_id = "wrong-host".into();
+        req.model.base_url = other.url.replace("localhost", "127.0.0.1");
+        let msg = run(req, good).await;
+        assert!(
+            matches!(
+                msg,
+                Message::Assistant {
+                    stop_reason: StopReason::Error,
+                    ..
+                }
+            ),
+            "{msg:?}"
+        );
+        assert_eq!(
+            other.frames.lock().unwrap().len(),
+            1,
+            "extra roots do not bypass hostname verification"
+        );
+        adapter.close_websocket_sessions(None);
+    }
+}
