@@ -1,0 +1,7 @@
+installed package checkpoint passed: upgrade
+older installed package refuses newer engine schema without changing database bytes
+installed package checkpoint passed: rollback
+closed native data/config archive restores every file and permission; SQLite integrity passes
+installed package checkpoint passed: restore
+installed native migration, coding, restart, complete archive/restore, retained output and durable replay passed
+real native upgrade, guarded rollback, full archive restore and continuation passed

@@ -1,0 +1,24 @@
+{
+  "app": {
+    "version": "0.0.1",
+    "revision": "cc8931ccd66803341790f2b9d6a3282633c88efb",
+    "dirty": "false",
+    "binarySha256": "a6f062a2eba1dd60305593ceda0e3b60ec8eae4cf22cc6e5e42873656a99c912"
+  },
+  "archiveSha256": "453240155e84a7cebc4e3195da5a49dfcd6b83aa926ab80ba222ba07a3209040",
+  "archiveBytes": 76943262,
+  "compatibility": {
+    "engine": "native",
+    "engineSelector": "--engine native",
+    "engineProtocol": 12,
+    "engineSchema": 10,
+    "desktopSchema": 8,
+    "nodeMinimum": null
+  },
+  "installedWorkflow": "passed",
+  "upgradeRollbackRestore": "passed",
+  "hostedLinuxRun": 38265023304,
+  "hostedMacOSRun": 38265027473,
+  "hostedStatusAtRecording": "in_progress",
+  "note": "Clean committed source; build-cache symlink excluded locally. No live accounts or owner installation used."
+}

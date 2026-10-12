@@ -11,7 +11,25 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — native build paths and remote backup
+## Current follow-up — clean installed candidate verified
+
+The native-only build-path batch is committed and pushed as **`cc8931c`**. A clean disposable
+checkout produces a native-default archive with **dirty: false**; installed coding, migration,
+restart, real two-artifact upgrade/rollback, schema refusal, full archive restore and uninstall
+retention all pass without Pi/Node. Exact identities and logs are retained in
+`fixtures/native-default/2026-10-12-final/` and [build-path evidence](pipkin-rust-engine-evidence/build-path-retirement.md).
+Required Rust checks remain **1,439 passed / 0 failed / 9 ignored**, clean Clippy/fmt.
+All current CI policy fixture scripts also pass locally.
+
+Final hosted runs on `cc8931c`: Linux **38265023304**, macOS **38265027473**, still running.
+Do not restart unchanged builds. Finish their outcomes and the bounded final ledger audit.
+The ledger now correctly records earlier corrected Linux/macOS passes: **449 measured,
+10 observed, 0 failed, 0 unverified, 45 not started** across 504 rows, with 412 NC, 39 NE,
+37 NP and 16 OS. This is evidence accounting, not a blanket qualification stamp. Remaining
+stale partial-row claims require reconciliation against current code/evidence; do not add
+another soak or experimental-platform expansion. Pi extension compatibility remains OS.
+
+## Prior follow-up — native build paths and remote backup
 
 2026-10-12, following `676fb82`: source setup, packaging, installer, Arch, local release collector
 and macOS bundle now use Rust only. Legacy Pi build/launch jobs and runtime download scripts are
