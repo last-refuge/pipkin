@@ -17,12 +17,13 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::Shared;
+use crate::profiles::{self, ContextMode, LaunchRecord};
 use crate::provider::{BoxFuture, ToolSpec};
 use crate::store::{Store, TaskRow};
-use crate::tools::{Tool, ToolCtx, ToolError, ToolHost, ToolOutput};
+use crate::tools::{SubagentLaunch, Tool, ToolCtx, ToolError, ToolHost, ToolOutput};
 use crate::util::now_ms;
 
-pub const SUBAGENT_DESCRIPTION: &str = "Delegate a self-contained task to a subagent with the same tools and get its answer back. Give it everything it needs to know; it does not see this conversation.";
+pub const SUBAGENT_DESCRIPTION: &str = "Delegate a self-contained task to a subagent and get its answer back. Give it everything it needs to know: by default it starts without this conversation (context \"fresh\"); context \"inherit\" adds a bounded excerpt of recent messages. Profiles: \"worker\" (default: every tool a child can have), \"reviewer\" (read-only: read, plan_read, web_read), \"scout\" (reads plus web search and fetch; cannot change the workspace), or a profile defined in settings. A child never delegates further or asks the person.";
 
 pub struct SubagentTool;
 
@@ -34,7 +35,11 @@ impl Tool for SubagentTool {
             description: SUBAGENT_DESCRIPTION.into(),
             parameters: json!({
                 "type": "object",
-                "properties": {"task": {"type": "string", "description": "What the subagent should do"}},
+                "properties": {
+                    "task": {"type": "string", "description": "What the subagent should do"},
+                    "profile": {"type": "string", "description": "worker (default), reviewer, scout, or a settings-defined profile"},
+                    "context": {"type": "string", "description": "fresh (default) or inherit: whether the child sees a bounded excerpt of this conversation"}
+                },
                 "required": ["task"]
             }),
         }
@@ -51,10 +56,32 @@ impl Tool for SubagentTool {
     ) -> BoxFuture<'a, Result<ToolOutput, ToolError>> {
         Box::pin(async move {
             let task = args.get("task").and_then(Value::as_str).unwrap_or_default();
+            let profile = args
+                .get("profile")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .map(str::to_owned);
+            let context = match args.get("context").and_then(Value::as_str).map(str::trim) {
+                None | Some("") => None,
+                Some(mode) => Some(crate::profiles::ContextMode::parse(mode).ok_or_else(|| {
+                    ToolError::new(format!(
+                        "context must be \"fresh\" or \"inherit\", not {mode:?}"
+                    ))
+                })?),
+            };
             let Some(host) = &ctx.host else {
                 return Err(ToolError::new("No execution host is configured"));
             };
-            match host.subagent(&ctx.call_id, task, ctx.cancel.clone()).await {
+            let launch = SubagentLaunch {
+                task: task.to_owned(),
+                profile,
+                context,
+            };
+            match host
+                .subagent(&ctx.call_id, launch, ctx.cancel.clone())
+                .await
+            {
                 Ok((text, details)) => Ok(ToolOutput {
                     content: Some(vec![Block::text(text)]),
                     details: Some(details),
@@ -92,12 +119,12 @@ impl ToolHost for Host {
     fn subagent<'a>(
         &'a self,
         call_id: &'a str,
-        task: &'a str,
+        launch: SubagentLaunch,
         cancel: CancellationToken,
     ) -> BoxFuture<'a, Result<(String, Value), String>> {
         Box::pin(async move {
             self.shared
-                .run_subagent(&self.parent, call_id, task, cancel)
+                .run_subagent(&self.parent, call_id, launch, cancel)
                 .await
         })
     }
@@ -207,11 +234,32 @@ impl Shared {
         Arc::new(SubagentTool)
     }
 
+    /// Tool names a child could be offered (every built-in but the ones never for children).
+    pub fn child_offerable_tools(&self) -> Vec<String> {
+        self.tools
+            .iter()
+            .map(|t| t.spec().name)
+            .chain(self.plan_tools().iter().map(|t| t.spec().name))
+            .chain(self.web_tools().iter().map(|t| t.spec().name))
+            .filter(|n| !profiles::NEVER_FOR_CHILDREN.contains(&n.as_str()))
+            .collect()
+    }
+
+    /// The frozen launch policy of a child session, if it has one.
+    pub fn child_launch(&self, session: &str) -> Option<LaunchRecord> {
+        self.store
+            .read(|c| Store::task_by_session(c, session))
+            .ok()
+            .flatten()
+            .and_then(|t| t.launch)
+            .and_then(|l| LaunchRecord::from_json(&l))
+    }
+
     async fn run_subagent(
         self: &Arc<Self>,
         parent: &str,
         call_id: &str,
-        task: &str,
+        launch: SubagentLaunch,
         cancel: CancellationToken,
     ) -> Result<(String, Value), String> {
         let parent_row = self
@@ -221,37 +269,154 @@ impl Shared {
             .ok_or("The parent session no longer exists")?;
         let root = parent_row.root.clone().unwrap_or_else(|| parent.to_owned());
         let child_id = format!("{parent}:{call_id}");
-        // Create (or find) the child and its task mapping atomically.
-        let task_row: TaskRow = tokio::task::block_in_place(|| {
-            self.store.tx(|tx| {
-                Store::assert_session_live(tx, parent)?;
-                if let Some(existing) = Store::task_for_call(tx, parent, call_id)? {
-                    return Ok(existing);
+        // An existing child (replay) keeps the policy it was launched with: nothing below
+        // is re-resolved for it.
+        let existing = self
+            .store
+            .read(|c| Store::task_for_call(c, parent, call_id))
+            .map_err(|e| e.to_string())?;
+        let (task_row, created): (TaskRow, bool) = match existing {
+            Some(row) => (row, false),
+            None => {
+                // Resolve the profile, model, context and caps against the parent's settings.
+                let settings = self.settings_for(parent);
+                let offerable = self.child_offerable_tools();
+                let profiles = profiles::profiles_from_settings(&settings, &offerable)
+                    .map_err(|e| format!("Subagent profiles are misconfigured: {e}"))?;
+                let caps = profiles::caps_from_settings(&settings);
+                let name = launch
+                    .profile
+                    .clone()
+                    .unwrap_or_else(|| profiles::DEFAULT_PROFILE.to_owned());
+                let profile = profiles.iter().find(|p| p.name == name).ok_or_else(|| {
+                    format!(
+                        "Unknown subagent profile {name:?} (available: {})",
+                        profiles
+                            .iter()
+                            .map(|p| p.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                })?;
+                let model = profile.model.clone().or_else(|| parent_row.model.clone());
+                if let Some(key) = &model {
+                    let catalog = self.auth.catalog();
+                    let found = catalog.find(key).cloned();
+                    match found {
+                        None => {
+                            return Err(format!(
+                                "Model {key} (profile {name:?}) is not available; no other model is substituted"
+                            ));
+                        }
+                        Some(m) => {
+                            if let Err(crate::auth::AuthError::Unavailable(why)) =
+                                self.auth.availability(&m)
+                            {
+                                return Err(format!(
+                                    "Model {key} (profile {name:?}) is not available: {why}"
+                                ));
+                            }
+                        }
+                    }
                 }
-                let now = now_ms();
-                tx.execute(
-                    "INSERT INTO sessions(id, cwd, title, created_at, updated_at, origin, model,
-                        thinking, subagents_enabled, parent, root, create_key, revision)
-                     VALUES (?1, ?2, NULL, ?3, ?3, ?4, ?5, ?6, 0, ?7, ?8, NULL, 0)",
-                    rusqlite::params![
-                        child_id,
-                        parent_row.cwd,
-                        now,
-                        serde_json::to_string(&Origin::Native).expect("serializes"),
-                        parent_row.model,
-                        parent_row.thinking,
-                        parent,
-                        root
-                    ],
-                )?;
-                let (row, _) =
-                    Store::create_task(tx, &root, parent, call_id, &child_id, task, now)?;
-                Store::bump(tx, &root, now)?;
-                Ok(row)
-            })
-        })
-        .map_err(|e| e.to_string())?;
-        self.publish_subagents(&root);
+                let thinking = profile
+                    .thinking
+                    .clone()
+                    .or_else(|| parent_row.thinking.clone());
+                if let Some(level) = &thinking
+                    && crate::provider::ThinkingLevel::parse(level).is_none()
+                {
+                    return Err(format!(
+                        "Thinking level {level:?} (profile {name:?}) is not valid"
+                    ));
+                }
+                let context = launch.context.unwrap_or(profile.context);
+                let (excerpt, omitted, parent_revision) = if context == ContextMode::Inherit {
+                    let (entries, _) = self.store.page(parent, None, 50).unwrap_or_default();
+                    let (excerpt, omitted) = profiles::context_excerpt(&entries);
+                    (excerpt, omitted, Some(parent_row.revision))
+                } else {
+                    (Vec::new(), 0, None)
+                };
+                let prompt = profiles::compose_prompt(
+                    &launch.task,
+                    &excerpt,
+                    omitted,
+                    parent_revision.unwrap_or(0),
+                );
+                let record = LaunchRecord {
+                    version: profiles::PROFILE_VERSION,
+                    profile: profile.name.clone(),
+                    instructions: profile.instructions.clone(),
+                    tools: match &profile.tools {
+                        profiles::ToolPolicy::All => None,
+                        profiles::ToolPolicy::Only(list) => Some(list.clone()),
+                    },
+                    model: model.clone(),
+                    thinking: thinking.clone(),
+                    context,
+                    parent_revision,
+                    context_messages: excerpt.len(),
+                    context_omitted: omitted,
+                    created_at_ms: now_ms(),
+                };
+                let launch_json = record.to_json();
+                // Create the child and its task mapping atomically, under the caps.
+                let outcome: Result<Result<TaskRow, String>, _> = tokio::task::block_in_place(
+                    || {
+                        self.store.tx(|tx| {
+                        Store::assert_session_live(tx, parent)?;
+                        if let Some(existing) = Store::task_for_call(tx, parent, call_id)? {
+                            return Ok(Ok(existing));
+                        }
+                        let (live, total) = Store::child_counts(tx, &root)?;
+                        if total >= caps.max_total {
+                            return Ok(Err(format!(
+                                "This conversation already has {total} subagents (the limit is {}); no more can be started",
+                                caps.max_total
+                            )));
+                        }
+                        if live >= caps.max_concurrent {
+                            return Ok(Err(format!(
+                                "{live} subagent(s) are already running (the limit is {}); wait for one to finish",
+                                caps.max_concurrent
+                            )));
+                        }
+                        let now = now_ms();
+                        tx.execute(
+                            "INSERT INTO sessions(id, cwd, title, created_at, updated_at, origin, model,
+                                thinking, subagents_enabled, parent, root, create_key, revision)
+                             VALUES (?1, ?2, NULL, ?3, ?3, ?4, ?5, ?6, 0, ?7, ?8, NULL, 0)",
+                            rusqlite::params![
+                                child_id,
+                                parent_row.cwd,
+                                now,
+                                serde_json::to_string(&Origin::Native).expect("serializes"),
+                                model,
+                                thinking,
+                                parent,
+                                root
+                            ],
+                        )?;
+                        let (row, _) = Store::create_task(
+                            tx, &root, parent, call_id, &child_id, &prompt, now,
+                        )?;
+                        Store::set_task_launch(tx, &child_id, &launch_json)?;
+                        Store::bump(tx, &root, now)?;
+                        Ok(Ok(Store::task_by_session(tx, &child_id)?.unwrap_or(row)))
+                    })
+                    },
+                );
+                match outcome.map_err(|e| e.to_string())? {
+                    Ok(row) => (row, true),
+                    Err(refused) => return Err(refused),
+                }
+            }
+        };
+        if created {
+            self.publish_subagents(&root);
+        }
+        let task = task_row.task.as_str();
         let child = task_row.child_session.clone();
         let details = json!({"conversationId": child});
         let key = format!("subagent:{call_id}");
@@ -488,6 +653,11 @@ impl Shared {
                     task: t.task.chars().take(SUBAGENT_TASK_EXCERPT_CHARS).collect(),
                     status: t.status,
                     session: t.child_session,
+                    profile: t
+                        .launch
+                        .as_deref()
+                        .and_then(LaunchRecord::from_json)
+                        .map(|l| l.profile),
                 })
                 .collect(),
             truncated,

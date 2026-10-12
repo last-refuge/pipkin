@@ -750,6 +750,7 @@ fn demo_subagent_directory() -> Vec<SubagentInfo> {
         call_id: format!("demo-simulated-counter-{id}"),
         task: format!("{label} · simulated: count from 1 to 5"),
         status: status.into(),
+        profile: None,
     })
     .collect()
 }

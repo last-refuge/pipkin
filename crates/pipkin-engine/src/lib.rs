@@ -13,6 +13,7 @@ pub mod extensions;
 pub mod host;
 pub mod import;
 pub mod plans;
+pub mod profiles;
 pub mod provider;
 pub mod runtime;
 pub mod store;

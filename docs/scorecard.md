@@ -1,5 +1,29 @@
 # Scorecard
 
+## Subagent profiles, SUB-1 (2026-10-12)
+
+The `subagent` tool takes a profile and a context mode; the resolved policy is frozen in a
+launch record (schema 13) and enforced for the child's life
+([subagent-profiles.md](subagent-profiles.md)). Protocol 15 carries the profile on rows.
+
+- **Measured (automated).** Engine tests: a reviewer child is offered only reads, its
+  `write` is refused and never runs, and its instructions arrive as a system section; a
+  worker keeps everything but delegation and questions; a scout reaches the web but not
+  `bash`; unknown profiles, bad context values, unavailable models and invalid thinking
+  levels fail without creating a child and without substituting a model; misconfigured
+  settings profiles refuse every launch with the reason; inherited context is a bounded,
+  labelled excerpt with the parent's revision recorded, and fresh is the default; the
+  total and concurrent caps refuse the extra call in the same transaction that would create
+  the child; a profile edited after launch does not change a child recovering across a
+  restart while a new child does get it; directory rows carry the profile. Unit tests cover
+  profile labels, settings parsing and validation, launch-record round trips and excerpt
+  bounds. Existing subagent recovery, Stop and paging regressions still pass. The
+  repository gate passed.
+- **Observed.** Nothing native; the inspector shows the profile text on a row but no
+  walkthrough was done.
+- **Unverified.** Live-model behaviour with restricted tool sets; profile overrides naming
+  real provider models. Not a release qualification.
+
 ## Web access, WEB-1 (2026-10-12)
 
 The native engine offers `web_search`, `web_fetch` and `web_read` with retained sources

@@ -21,6 +21,7 @@ pub use view::*;
 // Version 12 carries native-history provenance in snapshots and history pages.
 // Version 13 adds plans: `plan` in snapshots, `PlanChanged`, `Plan`/`UpdatePlan` calls.
 // Version 14 adds `WebSources` (retained web sources) and the `web` capability.
-pub const PROTOCOL_VERSION: u32 = 14;
+// Version 15 carries the launch profile on subagent rows.
+pub const PROTOCOL_VERSION: u32 = 15;
 
 pub mod delivery;

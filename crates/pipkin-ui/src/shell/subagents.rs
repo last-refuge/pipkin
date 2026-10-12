@@ -364,6 +364,14 @@ fn task_row(child: &SubagentInfo) -> TaskRow {
     if summary.trim_end_matches('.') == title {
         summary.clear();
     }
+    // The engine-reported launch profile, shown as given (never inferred from the task).
+    if let Some(profile) = child.profile.as_deref().filter(|p| *p != "worker") {
+        summary = if summary.is_empty() {
+            format!("Profile: {profile}")
+        } else {
+            format!("Profile: {profile} · {summary}")
+        };
+    }
     TaskRow {
         id: child.id,
         title,

@@ -1,6 +1,6 @@
 # Pipkin native capabilities: implementation and comparative review plan
 
-Status: implementation in progress. ASK-1 (the first reviewable change, §13), PLAN-1 and PLAN-2 (§8), WEB-1 (§5) and the per-tool recovery part of F0 item 4 landed on 2026-10-12; see [docs/ask-user-question.md](../docs/ask-user-question.md), [docs/plans.md](../docs/plans.md) and the progress notes under §8 and §13. Everything else remains proposed.
+Status: implementation in progress. ASK-1 (the first reviewable change, §13), PLAN-1 and PLAN-2 (§8), WEB-1 (§5), SUB-1 (§6) and the per-tool recovery part of F0 item 4 landed on 2026-10-12; see [docs/ask-user-question.md](../docs/ask-user-question.md), [docs/plans.md](../docs/plans.md) and the progress notes under §8 and §13. Everything else remains proposed.
 
 Prepared: 2026-10-11 (America/Phoenix). Local audit baseline: Git HEAD `67ba56f6bf525493bf9c33ad1cad8a353d558a92`, plus the working-tree changes present during inspection. External references were read on this date. Reference links to `main` are moving targets, not reproducible dependency pins.
 
@@ -176,6 +176,8 @@ The native [subagent runtime](../crates/pipkin-engine/src/runtime/subagents.rs) 
 - Reuse the existing model/auth catalog and show unavailable routes as errors. Never silently substitute a cheaper or different model.
 - Add bounded context inheritance as an explicit option. Record the source revision and any omitted content. Preserve user requirements; children must not inherit ownership of the parent's goal or permission to spawn another scheduler.
 - Add concurrency and total-child caps, result artifact references and per-child usage. A small structured parallel group is enough initially; delay general script workflows and recursive spawning.
+
+**Progress (2026-10-12).** SUB-1 done: `profiles.rs` (built-in worker/reviewer/scout, settings-defined profiles with validation, launch records, bounded context excerpts), schema 13 (`subagent_tasks.launch`), the extended `subagent` tool (`profile`, `context`), model/thinking validation without substitution, total and concurrent caps checked in the creation transaction, enforcement in the child's tool catalog and a `profile` system section, protocol 15 (`SubagentRow.profile`) and the inspector row label. See [docs/subagent-profiles.md](../docs/subagent-profiles.md). Not done: structured parallel groups, result artifact references, SUB-2 and SUB-3 below.
 
 **SUB-2 — individual controls.** Add engine-authoritative Stop child and, separately, Steer child. The current inspector explicitly has no individual cancellation contract. New controls require typed child authorization, durable request ids and settlement; do not reach into child state from the UI. Report how a stopped/failed child affects its waiting parent.
 

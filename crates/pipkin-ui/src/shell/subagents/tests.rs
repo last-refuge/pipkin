@@ -15,6 +15,7 @@ fn task(id: u64, text: &str, status: &str) -> SubagentInfo {
         call_id: format!("call-{id}"),
         task: text.into(),
         status: status.into(),
+        profile: None,
     }
 }
 

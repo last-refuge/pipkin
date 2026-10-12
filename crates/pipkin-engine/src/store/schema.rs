@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 13;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -328,7 +328,10 @@ CREATE TABLE web_sources (
 ) STRICT;
 CREATE INDEX web_sources_by_call ON web_sources(session, call_id);
 "#;
-const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12];
+// Version 13 records the policy a subagent was launched with (profile, tools, model,
+// context), so enforcement never reads current settings for a running or recovering child.
+const V13: &str = "ALTER TABLE subagent_tasks ADD COLUMN launch TEXT;";
+const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

@@ -414,6 +414,10 @@ pub fn subagents(view: &SubagentsView) -> Result<Vec<SubagentInfo>, String> {
                 call_id: row.call_id.clone(),
                 task: row.task.chars().take(MAX_TASK_CHARS).collect(),
                 status: status.to_owned(),
+                profile: row
+                    .profile
+                    .clone()
+                    .filter(|p| !p.is_empty() && p.len() <= 64),
             })
         })
         .collect()
@@ -810,6 +814,7 @@ mod tests {
             task: "x".repeat(1000),
             status: status.into(),
             session: "s".into(),
+            profile: None,
         }
     }
 

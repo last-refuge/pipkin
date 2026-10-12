@@ -327,6 +327,8 @@ pub struct TaskRow {
     pub result: Option<String>,
     pub result_delivered: bool,
     pub created_at_ms: i64,
+    /// The launch policy (JSON `LaunchRecord`); `None` for children launched before it existed.
+    pub launch: Option<String>,
 }
 
 fn now_ms() -> i64 {
@@ -1675,6 +1677,7 @@ impl Store {
             result: r.get("result")?,
             result_delivered: r.get::<_, i64>("result_delivered")? != 0,
             created_at_ms: r.get("created_at")?,
+            launch: r.get("launch")?,
         })
     }
 
@@ -1747,6 +1750,26 @@ impl Store {
             Self::task_by_child(tx, root, next as u64)?.expect("just inserted"),
             true,
         ))
+    }
+
+    /// Freeze the launch policy of a child (set once, at creation).
+    pub fn set_task_launch(tx: &Connection, child_session: &str, launch: &str) -> Result<()> {
+        tx.execute(
+            "UPDATE subagent_tasks SET launch = ?2 WHERE child_session = ?1 AND launch IS NULL",
+            params![child_session, launch],
+        )?;
+        Ok(())
+    }
+
+    /// `(live, total)` children of a root: live ones are not done, failed or aborted.
+    pub fn child_counts(c: &Connection, root: &str) -> Result<(usize, usize)> {
+        let (live, total): (i64, i64) = c.query_row(
+            "SELECT COALESCE(SUM(CASE WHEN status NOT IN ('done', 'failed', 'aborted') THEN 1 ELSE 0 END), 0),
+                    COUNT(*) FROM subagent_tasks WHERE root = ?1",
+            [root],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok((live as usize, total as usize))
     }
 
     pub fn set_task_status(

@@ -151,6 +151,13 @@ impl Shared {
         // Every session has its own plan (a child's plan is separate from its parent's).
         tools.extend(self.plan_tools());
         tools.extend(self.web_tools());
+        // A child is offered what its frozen launch policy allows; a child from before
+        // launch records existed keeps the full set, as it always had.
+        if row.parent.is_some()
+            && let Some(launch) = self.child_launch(&row.id)
+        {
+            tools.retain(|t| launch.allows(&t.spec().name));
+        }
         tools
     }
 
@@ -1121,6 +1128,8 @@ mod fault_tests;
 mod generation_reference_tests;
 #[cfg(test)]
 mod plan_tests;
+#[cfg(test)]
+mod profile_tests;
 #[cfg(test)]
 mod queue_reference_tests;
 #[cfg(test)]

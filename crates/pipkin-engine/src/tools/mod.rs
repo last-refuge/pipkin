@@ -178,7 +178,7 @@ pub trait ToolHost: Send + Sync {
     fn subagent<'a>(
         &'a self,
         call_id: &'a str,
-        task: &'a str,
+        launch: SubagentLaunch,
         cancel: CancellationToken,
     ) -> BoxFuture<'a, Result<(String, Value), String>>;
 
@@ -262,6 +262,14 @@ pub trait ToolHost: Send + Sync {
     ) -> BoxFuture<'a, Result<(Option<crate::web::SourceRecord>, Option<String>), String>> {
         Box::pin(async { Err("No web service is configured".into()) })
     }
+}
+
+/// What a `subagent` call asks for: the task and, optionally, a profile and context mode.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SubagentLaunch {
+    pub task: String,
+    pub profile: Option<String>,
+    pub context: Option<crate::profiles::ContextMode>,
 }
 
 /// Serializes writes/edits to the same canonical path across sessions in this process.

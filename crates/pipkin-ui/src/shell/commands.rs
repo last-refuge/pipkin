@@ -681,6 +681,7 @@ mod removal_tests {
             call_id: "call".into(),
             task: "Review Rust tests.".into(),
             status: "done".into(),
+            profile: None,
         }];
         let commands = build(&state, None);
         assert!(matches!(
@@ -705,6 +706,7 @@ mod removal_tests {
                 call_id: format!("call-{id}"),
                 task: format!("Task {id}."),
                 status: if id == 7 { "running" } else { "done" }.into(),
+                profile: None,
             })
             .collect();
         // Pi (unpaged): no paging entries, first 100 tasks only.

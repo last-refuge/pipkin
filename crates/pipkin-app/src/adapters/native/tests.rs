@@ -757,6 +757,7 @@ fn child_history_pages_by_cursor_and_the_selected_child_refreshes_live() {
                     // The engine records a finished task as `done`.
                     status: "done".into(),
                     session: "s1:call-3".into(),
+                    profile: None,
                 }],
                 truncated: true,
             });

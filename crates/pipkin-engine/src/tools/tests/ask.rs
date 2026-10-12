@@ -42,7 +42,7 @@ impl ToolHost for Scripted {
     fn subagent<'a>(
         &'a self,
         _call_id: &'a str,
-        _task: &'a str,
+        _launch: crate::tools::SubagentLaunch,
         _cancel: CancellationToken,
     ) -> BoxFuture<'a, Result<(String, Value), String>> {
         Box::pin(async { Err("not in this test".into()) })
@@ -255,7 +255,7 @@ async fn the_default_host_has_no_presentation() {
         fn subagent<'a>(
             &'a self,
             _: &'a str,
-            _: &'a str,
+            _: crate::tools::SubagentLaunch,
             _: CancellationToken,
         ) -> BoxFuture<'a, Result<(String, Value), String>> {
             Box::pin(async { Err("no".into()) })

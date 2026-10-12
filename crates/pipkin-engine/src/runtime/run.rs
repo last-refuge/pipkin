@@ -534,6 +534,11 @@ impl Shared {
         let mut desired = self.system_sections(sess, &row, &specs, &settings);
         // The plan summary is a positional section: it changes between turns without
         // touching the cached prompt resources, and is patched like any other section.
+        if row.parent.is_some()
+            && let Some(instructions) = self.child_launch(&sess.id).and_then(|l| l.instructions)
+        {
+            desired.insert("profile".into(), serde_json::Value::String(instructions));
+        }
         if let Some(plan) = self.plan_section(&sess.id) {
             desired.insert("plan".into(), serde_json::Value::String(plan));
         }

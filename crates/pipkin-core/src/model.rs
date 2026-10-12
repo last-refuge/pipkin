@@ -68,6 +68,8 @@ pub struct SubagentInfo {
     pub call_id: String,
     pub task: String,
     pub status: String,
+    /// The engine-reported launch profile, shown as given.
+    pub profile: Option<String>,
 }
 
 /// Bounded, plain-text child entry prepared outside GPUI rendering.

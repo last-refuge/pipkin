@@ -323,6 +323,10 @@ pub struct SubagentRow {
     /// `pending | running | waiting | completing | completed | failed | stopped`.
     pub status: String,
     pub session: SessionId,
+    /// The profile the child was launched with (`worker`, `reviewer`, `scout`, or a
+    /// settings-defined name); `None` for children launched before profiles existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -655,7 +659,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 14);
+        assert_eq!(crate::PROTOCOL_VERSION, 15);
         let release = Call::ReleaseSession {
             session: "s1".into(),
         };
