@@ -225,6 +225,13 @@ pub fn build(state: &AppState, demo: Option<&DemoControls>) -> Vec<Cmd> {
             Run::Action(Box::new(ShowSubagents)),
         ),
         cmd(
+            "Show plan",
+            "View",
+            None,
+            state.current().is_some_and(|c| c.plan.available),
+            Run::Action(Box::new(ShowPlan)),
+        ),
+        cmd(
             "Copy diagnostics",
             "Support (metadata only; no logs, paths or conversation text)",
             None,

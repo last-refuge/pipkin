@@ -58,7 +58,8 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let agents = self.inspector_tab == InspectorTab::Subagents;
-        if !agents {
+        let plan = self.inspector_tab == InspectorTab::Plan;
+        if !agents && !plan {
             self.refresh_diff_rows(cx);
         }
         let t = cx.theme().clone();
@@ -145,6 +146,8 @@ impl Workspace {
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child(if agents {
                         "Subagents"
+                    } else if plan {
+                        "Plan"
                     } else if demo {
                         "Workspace changes · Demo"
                     } else {
@@ -166,6 +169,8 @@ impl Workspace {
 
         let change_tab = this.clone();
         let agent_tab = this.clone();
+        let plan_tab = this.clone();
+        let plan_available = self.state(cx).current().is_some_and(|c| c.plan.available);
         let tabs = div()
             .id("inspector-tabs")
             .flex()
@@ -179,7 +184,7 @@ impl Workspace {
             .child(
                 Btn::new("inspector-changes-tab")
                     .label("Changes")
-                    .selected(!agents)
+                    .selected(!agents && !plan)
                     .aria("Show this session's uncommitted changes")
                     .on_click(move |_, cx| {
                         change_tab.update(cx, |w, cx| {
@@ -202,7 +207,39 @@ impl Workspace {
                             cx.notify();
                         });
                     }),
-            );
+            )
+            .when(plan_available, |d| {
+                d.child(
+                    Btn::new("inspector-plan-tab")
+                        .label(self.plan_rows.tab_label())
+                        .selected(plan)
+                        .aria(format!(
+                            "Show the plan, {} open, {} finished",
+                            self.plan_rows.open, self.plan_rows.finished
+                        ))
+                        .on_click(move |_, cx| {
+                            plan_tab.update(cx, |w, cx| {
+                                w.inspector_tab = InspectorTab::Plan;
+                                cx.notify();
+                            });
+                        }),
+                )
+            });
+        if plan {
+            return div()
+                .id("inspector")
+                .role(Role::Complementary)
+                .aria_label("Plan inspector")
+                .flex()
+                .flex_col()
+                .size_full()
+                .min_h_0()
+                .bg(c.bg_changes)
+                .child(header)
+                .child(tabs)
+                .child(self.render_plan_panel(cx))
+                .into_any_element();
+        }
         if agents {
             return div()
                 .id("inspector")

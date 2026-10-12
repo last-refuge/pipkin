@@ -23,6 +23,7 @@ pub(super) enum InspectorTab {
     #[default]
     Changes,
     Subagents,
+    Plan,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -125,7 +126,7 @@ impl DirEntry {
 /// reading position: unchanged rows keep their measurements, same-identity rows are remeasured,
 /// and only the differing middle is spliced. Rows inserted above the scroll top shift it, so
 /// the rows being read stay in place. `offset` is the number of fixed rows before the keys.
-fn sync_list(list: &ListState, old: &[(u64, u64)], new: &[(u64, u64)], offset: usize) {
+pub(super) fn sync_list(list: &ListState, old: &[(u64, u64)], new: &[(u64, u64)], offset: usize) {
     let p = old.iter().zip(new).take_while(|(a, b)| a == b).count();
     let s = old[p..]
         .iter()

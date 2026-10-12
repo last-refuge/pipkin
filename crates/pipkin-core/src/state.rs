@@ -14,6 +14,8 @@ pub struct ConversationState {
     pub items: Vec<TranscriptItem>,
     /// Child work belongs to this session; it never changes the parent draft or run state.
     pub subagents: SubagentState,
+    /// The engine's plan for this session; the UI projects it and sends edits back.
+    pub plan: PlanState,
     pub has_older: bool,
     pub loading_older: bool,
     pub opened: bool,
@@ -87,6 +89,7 @@ impl ConversationState {
             updated_at,
             items: Vec::new(),
             subagents: SubagentState::default(),
+            plan: PlanState::default(),
             has_older: false,
             loading_older: false,
             opened: false,
@@ -486,6 +489,19 @@ impl AppState {
         }
     }
 
+    /// Plan edits reach the engine's plan service, one at a time, for an open real session
+    /// whose engine reported a plan.
+    pub fn can_edit_plan(&self) -> bool {
+        self.connection.is_ready()
+            && self.read_only.is_none()
+            && self.current().is_some_and(|c| {
+                c.opened
+                    && c.plan.available
+                    && c.plan.pending_edit.is_none()
+                    && !self.owned_elsewhere(c.id)
+            })
+    }
+
     pub fn availability(&self) -> Availability {
         // Every action below reaches the backend, so none is offered until it is connected.
         if !self.connection.is_ready() {
@@ -831,6 +847,64 @@ impl AppState {
                 }
             }
             Command::LoadOlderSubagent => {}
+            Command::TogglePlanTask(task) => {
+                if let Some(c) = self.selected.and_then(|id| self.conv_mut(id))
+                    && c.plan.available
+                {
+                    c.plan.expanded = if c.plan.expanded == Some(task) {
+                        None
+                    } else if c.plan.task(task).is_some() {
+                        Some(task)
+                    } else {
+                        c.plan.expanded
+                    };
+                    out.notes.push(Note::Other);
+                }
+            }
+            Command::TogglePlanHistory => {
+                if let Some(c) = self.selected.and_then(|id| self.conv_mut(id))
+                    && c.plan.available
+                {
+                    c.plan.history_open = !c.plan.history_open;
+                    out.notes.push(Note::Other);
+                }
+            }
+            Command::DismissPlanError => {
+                if let Some(c) = self.selected.and_then(|id| self.conv_mut(id))
+                    && c.plan.error.take().is_some()
+                {
+                    out.notes.push(Note::Other);
+                }
+            }
+            // The edit goes to the engine, conditional on the revision the person saw; the
+            // engine's answer and its published plan decide what is shown.
+            Command::EditPlanTask { task, edit } if self.can_edit_plan() => {
+                let request = self.alloc_request();
+                let Some(c) = self.selected.and_then(|id| self.conv_mut(id)) else {
+                    return out;
+                };
+                let Some(current) = c.plan.task(task) else {
+                    return out;
+                };
+                if !PlanEdit::offered(current.status).contains(&edit) {
+                    return out;
+                }
+                let (status, reason) = edit.status_and_reason();
+                c.plan.pending_edit = Some(request.clone());
+                c.plan.error = None;
+                out.effects
+                    .push(Effect::Backend(BackendRequest::UpdatePlan {
+                        conversation: c.id,
+                        generation: c.generation,
+                        request,
+                        task,
+                        status,
+                        reason: reason.map(str::to_owned),
+                        expected_revision: c.plan.revision,
+                    }));
+                out.notes.push(Note::Other);
+            }
+            Command::EditPlanTask { .. } => {}
             // Real sessions are created and renamed by the engine; a local-only row would be
             // simulated success.
             Command::RenameConversation(..) if self.mode == Mode::Real => {}
@@ -1934,6 +2008,9 @@ impl AppState {
                 | EventKind::SubagentPage { .. }
                 | EventKind::SubagentOlderPage { .. }
                 | EventKind::SubagentOlderFailed { .. }
+                | EventKind::PlanSynced { .. }
+                | EventKind::PlanEditApplied { .. }
+                | EventKind::PlanEditFailed { .. }
         );
         if scoped && ev.op != c.run.op() {
             return out;
@@ -1977,6 +2054,30 @@ impl AppState {
                         }));
                 }
                 out.notes.push(Note::Other);
+            }
+            EventKind::PlanSynced {
+                revision,
+                tasks,
+                counts,
+                truncated,
+            } => {
+                if c.opened {
+                    c.plan.sync(revision, tasks, counts, truncated);
+                    out.notes.push(Note::Other);
+                }
+            }
+            EventKind::PlanEditApplied { request } => {
+                if c.plan.pending_edit.as_ref() == Some(&request) {
+                    c.plan.pending_edit = None;
+                    out.notes.push(Note::Other);
+                }
+            }
+            EventKind::PlanEditFailed { request, reason } => {
+                if c.plan.pending_edit.as_ref() == Some(&request) {
+                    c.plan.pending_edit = None;
+                    c.plan.error = Some(reason);
+                    out.notes.push(Note::Other);
+                }
             }
             EventKind::SubagentsUnavailable(reason) => {
                 c.subagents.enabled = None;
@@ -2054,6 +2155,7 @@ impl AppState {
                 // Reattachment may land on an older engine with no child service. A prior
                 // session's capability or child selection must not masquerade as current.
                 c.subagents = SubagentState::default();
+                c.plan = PlanState::default();
                 c.streaming_item = None;
                 c.usage = None;
                 c.has_older = has_older;

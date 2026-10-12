@@ -175,6 +175,7 @@ pub struct Workspace {
     pub(super) diff_rows: DiffRows,
     pub(super) inspector_tab: super::subagents::InspectorTab,
     pub(super) subagent_rows: super::subagents::SubagentRows,
+    pub(super) plan_rows: super::plan::PlanRows,
     live_nav: Option<f32>,
     live_insp: Option<f32>,
     last_change_sel: Option<(ConversationId, Option<usize>)>,
@@ -271,6 +272,7 @@ impl Workspace {
             diff_rows: DiffRows::default(),
             inspector_tab: super::subagents::InspectorTab::default(),
             subagent_rows: super::subagents::SubagentRows::default(),
+            plan_rows: super::plan::PlanRows::default(),
             live_nav: None,
             live_insp: None,
             last_change_sel: None,
@@ -324,6 +326,7 @@ impl Workspace {
 
     fn on_model(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.refresh_subagent_rows(cx);
+        self.refresh_plan_rows(cx);
         let entry = self.model.read(cx).entry;
         let challenge = self
             .model
@@ -938,6 +941,15 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.inspector_tab = super::subagents::InspectorTab::Subagents;
+        if self.can_dock_inspector(window, cx) {
+            self.dispatch(Command::SetInspectorOpen(true), cx);
+        } else {
+            self.open_panel(Panel::Inspector, window, cx);
+        }
+        cx.notify();
+    }
+    fn on_show_plan(&mut self, _: &ShowPlan, window: &mut Window, cx: &mut Context<Self>) {
+        self.inspector_tab = super::subagents::InspectorTab::Plan;
         if self.can_dock_inspector(window, cx) {
             self.dispatch(Command::SetInspectorOpen(true), cx);
         } else {
@@ -1588,6 +1600,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_nav))
             .on_action(cx.listener(Self::on_toggle_inspector))
             .on_action(cx.listener(Self::on_show_subagents))
+            .on_action(cx.listener(Self::on_show_plan))
             .on_action(cx.listener(Self::on_focus_composer))
             .on_action(cx.listener(Self::on_focus_transcript))
             .on_action(cx.listener(Self::on_prefs))

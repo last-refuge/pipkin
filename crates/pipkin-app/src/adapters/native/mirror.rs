@@ -21,6 +21,7 @@ pub enum Touched {
     Thinking,
     Ui,
     Subagents,
+    Plan,
     Child(u64),
     HasOlder(bool),
     Model(Option<String>),
@@ -173,7 +174,7 @@ impl Mirror {
             }
             SessionChange::PlanChanged { plan } => {
                 self.plan = plan;
-                Touched::Nothing
+                Touched::Plan
             }
             SessionChange::SummaryChanged { .. } => Touched::Nothing,
         }

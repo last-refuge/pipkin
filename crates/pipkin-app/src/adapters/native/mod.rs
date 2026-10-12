@@ -1085,6 +1085,7 @@ impl Live {
                 );
             }
             Touched::Subagents => self.emit_subagents(worker),
+            Touched::Plan => self.emit_plan(worker),
             Touched::Child(child) => {
                 if current.child == Some(child) {
                     self.load_child(worker, conversation, generation, child);
@@ -1117,6 +1118,22 @@ impl Live {
             let (conversation, generation) = (c.conversation, c.generation);
             self.schedule_changes(worker, conversation, generation);
         }
+    }
+
+    /// The engine's plan for the open session (live tasks), as the core's projection.
+    fn emit_plan(&self, worker: &Worker) {
+        let Some(c) = &self.current else { return };
+        let (revision, tasks, counts, truncated) = mapping::plan(&c.mirror.plan);
+        worker.emit(
+            c.conversation,
+            c.generation,
+            EventKind::PlanSynced {
+                revision,
+                tasks,
+                counts,
+                truncated,
+            },
+        );
     }
 
     fn emit_subagents(&self, worker: &Worker) {
@@ -1439,6 +1456,54 @@ impl Live {
                 child,
                 before,
             } => self.load_older_child(worker, conversation, generation, child, before),
+            BackendRequest::UpdatePlan {
+                conversation,
+                generation,
+                request,
+                task,
+                status,
+                reason,
+                expected_revision,
+            } => {
+                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
+                    worker.emit(
+                        conversation,
+                        generation,
+                        EventKind::PlanEditFailed {
+                            request,
+                            reason: "This conversation is not known to the engine.".into(),
+                        },
+                    );
+                    return;
+                };
+                let op = pipkin_engine_protocol::PlanOp::Update {
+                    task: pipkin_engine_protocol::TaskRef::Id(task),
+                    title: None,
+                    detail: None,
+                    criteria: None,
+                    depends_on: None,
+                    parent: None,
+                    status: Some(mapping::task_status_to_engine(status)),
+                    reason,
+                    owner: None,
+                    add_evidence: Vec::new(),
+                    clear_evidence: false,
+                };
+                // The published plan (PlanChanged), not this reply, shows the new state.
+                let kind = match self.call(Call::UpdatePlan {
+                    session,
+                    request: request.0.clone(),
+                    ops: vec![op],
+                    expected_revision: Some(expected_revision),
+                }) {
+                    Ok(_) => EventKind::PlanEditApplied { request },
+                    Err(error) => EventKind::PlanEditFailed {
+                        request,
+                        reason: error.to_string(),
+                    },
+                };
+                worker.emit(conversation, generation, kind);
+            }
             BackendRequest::SetSubagentsEnabled {
                 conversation,
                 enabled,
@@ -2364,6 +2429,7 @@ impl Live {
         self.refresh_models(worker, Some(summary.id.clone()));
         (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
         self.emit_subagents(worker);
+        self.emit_plan(worker);
         self.schedule_changes(worker, conversation, generation);
         true
     }

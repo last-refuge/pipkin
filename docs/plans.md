@@ -3,12 +3,39 @@
 The native engine keeps one plan per session: a persistent, revisioned list of tasks with
 status, dependencies, completion criteria and evidence. The model changes it with
 `plan_update` and reads it with `plan_read`; clients use `UpdatePlan` and `Plan`; both go
-through the same transactional engine service. This is PLAN-1 of the
-[native capabilities plan](../llm-docs/native-capabilities-implementation-plan.md) (§8).
-PLAN-2, the native progress strip and inspector view, is not implemented yet: the desktop
-mirrors the plan but does not show it.
+through the same transactional engine service. This is PLAN-1 and PLAN-2 of the
+[native capabilities plan](../llm-docs/native-capabilities-implementation-plan.md) (§8):
+the engine service and the desktop's plan view.
 
-Status: implemented and covered by automated engine tests (2026-10-12).
+Status: engine and desktop implemented and covered by automated tests (2026-10-12). The
+native walkthrough of the plan view is still to do (see the scorecard).
+
+## In the desktop
+
+- **Plan strip** above the composer, shown while the plan has live tasks: *N of M tasks
+  done*, the open-status counts and the active tasks' titles, with **Show plan**. It is
+  labelled as task counts and predicts nothing.
+- **Plan inspector tab** (next to Changes and Subagents; also *Show plan* in the palette).
+  The tab badge counts open tasks. Open tasks are listed in the engine's order; finished
+  tasks are counted and listed newest first under **Show finished tasks (N)**. The list is
+  virtualized, so large plans mount only the rows in view.
+- **Expand a task** (click, Enter or Space) for its detail, completion criteria, reason,
+  evidence and owner. A stale completion says so.
+- **Edits** from the expanded task go through the engine's plan service with a fresh request
+  key, conditional on the revision the person saw: *Mark completed*, *Skip*, *Cancel task*
+  for open work and *Reopen* for finished work, each with a fixed, honest reason
+  (`Skipped by the person from the plan view`, and so on). One edit is in flight at a
+  time; a refusal (a conflict, an unmet dependency) is shown on the task until dismissed,
+  and the engine's published plan is what the view shows afterwards.
+- The tab and strip appear only when the engine reported a plan (the `plans` capability
+  path). The legacy Pi engine never reports one, so nothing is emulated. The demo's
+  *subagents* scenario carries a simulated plan whose tasks are marked as such; edits there
+  change only the demo's copy.
+
+Core state lives in `PlanState` (`pipkin-core`): the engine-reported tasks and counts plus the
+person's view choices (expanded task, history open, one pending edit, the last error). The
+projection is reset when a conversation is reopened, so a reattachment to an engine without
+plans cannot show a stale plan.
 
 ## Model
 
@@ -98,8 +125,9 @@ Tool result details carry `plan: {version: 1, outcome: applied | rejected | read
 - Each session has its own plan; a subagent child's plan is separate from its parent's.
   Scoped task references between them are not implemented.
 - Goals are not linked yet (GOAL-1 adds the reference).
-- No native UI yet (PLAN-2). The desktop receives `plan` in snapshots and `PlanChanged`
-  events and keeps them in its session mirror.
+- The desktop offers only status edits with fixed reasons; editing titles, criteria,
+  dependencies or free-text reasons from the UI is not implemented. Typed links from a task
+  to a subagent or job are shown as the owner reference text only.
 - A crash between committing a plan batch and recording the tool result is covered by the
   receipt contract and the recovery registry at the store level; a process-kill fixture for
   that boundary has not been added.

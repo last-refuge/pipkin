@@ -49,6 +49,23 @@ pub(super) fn event_bytes(event: &BackendEvent) -> usize {
             | EventKind::SubagentOlderPage { items, .. } => vec_bytes(items, item),
             EventKind::SubagentsSynced { children, .. }
             | EventKind::SubagentDirectory { children, .. } => vec_bytes(children, child),
+            EventKind::PlanSynced { tasks, .. } => vec_bytes(tasks, |t| {
+                t.title.capacity()
+                    + t.detail.capacity()
+                    + t.criteria.capacity()
+                    + t.reason.as_ref().map_or(0, String::capacity)
+                    + t.owner.as_ref().map_or(0, String::capacity)
+                    + t.depends_on.capacity() * size_of::<u64>()
+                    + vec_bytes(&t.evidence, |e| {
+                        e.kind.capacity()
+                            + e.reference.capacity()
+                            + e.note.as_ref().map_or(0, String::capacity)
+                    })
+            }),
+            EventKind::PlanEditApplied { request } => request.0.capacity(),
+            EventKind::PlanEditFailed { request, reason } => {
+                request.0.capacity() + reason.capacity()
+            }
             EventKind::UsageSynced(u) => {
                 u.session_id.capacity()
                     + vec_bytes(&u.models, |v| v.0.capacity())

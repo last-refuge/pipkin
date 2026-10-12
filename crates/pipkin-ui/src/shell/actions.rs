@@ -9,6 +9,7 @@ actions!(
         ToggleNav,
         ToggleInspector,
         ShowSubagents,
+        ShowPlan,
         FocusComposer,
         FocusTranscript,
         OpenPreferences,

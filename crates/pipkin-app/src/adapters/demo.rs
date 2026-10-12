@@ -96,6 +96,7 @@ impl DemoBackend {
             seen_ops: HashSet::new(),
             scripts: HashMap::new(),
             subagent_sessions: HashMap::new(),
+            demo_plans: HashMap::new(),
         };
         std::thread::Builder::new()
             .name("pi-demo-backend".into())
@@ -309,6 +310,8 @@ struct Worker {
     /// Only explicitly opened subagent fixtures may answer child requests. The generation
     /// is the attachment identity, not a real-mode or engine-evidence override.
     subagent_sessions: HashMap<ConversationId, (u64, bool)>,
+    /// The simulated plan of an opened subagent fixture; edits change only this copy.
+    demo_plans: HashMap<ConversationId, (u64, Vec<PlanTask>)>,
 }
 
 impl Worker {
@@ -413,7 +416,49 @@ impl Worker {
                             children: demo_subagent_directory(),
                         },
                     );
+                    self.demo_plans.insert(conversation, (1, demo_plan_tasks()));
+                    self.emit_plan(conversation, generation);
                 }
+            }
+            BackendRequest::UpdatePlan {
+                conversation,
+                generation,
+                request,
+                task,
+                status,
+                reason,
+                expected_revision,
+            } => {
+                let attached = self
+                    .subagent_sessions
+                    .get(&conversation)
+                    .is_some_and(|(current, _)| *current == generation);
+                let outcome = match self.demo_plans.get_mut(&conversation) {
+                    Some((revision, tasks)) if attached => {
+                        if *revision != expected_revision {
+                            Err(format!(
+                                "the plan is at revision {revision}, not {expected_revision}"
+                            ))
+                        } else if let Some(t) = tasks.iter_mut().find(|t| t.id == task) {
+                            *revision += 1;
+                            t.status = status;
+                            t.reason = reason;
+                            t.revision = *revision;
+                            Ok(())
+                        } else {
+                            Err(format!("task #{task} does not exist"))
+                        }
+                    }
+                    _ => Err("Demo plan unavailable for this attachment.".into()),
+                };
+                let kind = match outcome {
+                    Ok(()) => {
+                        self.emit_plan(conversation, generation);
+                        EventKind::PlanEditApplied { request }
+                    }
+                    Err(reason) => EventKind::PlanEditFailed { request, reason },
+                };
+                self.ctx.emit(conversation, generation, None, kind);
             }
             BackendRequest::OpenSubagent {
                 conversation,
@@ -637,6 +682,61 @@ impl Worker {
 
 /// Synthetic backend-owned directory. IDs are local to each demo parent attachment;
 /// no real call IDs, usage ledger, tool results or execution evidence are fabricated.
+impl Worker {
+    fn emit_plan(&self, conversation: ConversationId, generation: u64) {
+        let Some((revision, tasks)) = self.demo_plans.get(&conversation) else {
+            return;
+        };
+        let mut counts = PlanCounts::default();
+        for t in tasks {
+            match t.status {
+                PlanTaskStatus::Pending => counts.pending += 1,
+                PlanTaskStatus::Active => counts.active += 1,
+                PlanTaskStatus::Blocked => counts.blocked += 1,
+                PlanTaskStatus::Completed => counts.completed += 1,
+                PlanTaskStatus::Skipped => counts.skipped += 1,
+                PlanTaskStatus::Cancelled => counts.cancelled += 1,
+            }
+        }
+        self.ctx.emit(
+            conversation,
+            generation,
+            None,
+            EventKind::PlanSynced {
+                revision: *revision,
+                tasks: tasks.clone(),
+                counts,
+                truncated: false,
+            },
+        );
+    }
+}
+
+/// A static simulated plan; no engine applied these tasks.
+fn demo_plan_tasks() -> Vec<PlanTask> {
+    let task = |id: u64, title: &str, status: PlanTaskStatus, deps: &[u64]| PlanTask {
+        id,
+        parent: None,
+        title: format!("{title} · simulated"),
+        detail: "Demo · simulated agent. This task was not executed.".into(),
+        status,
+        reason: None,
+        depends_on: deps.to_vec(),
+        criteria: "Visual fixture only".into(),
+        evidence: Vec::new(),
+        owner: None,
+        archived: false,
+        stale: false,
+        revision: 1,
+    };
+    vec![
+        task(1, "Count with Counter A", PlanTaskStatus::Completed, &[]),
+        task(2, "Count with Counter B", PlanTaskStatus::Active, &[1]),
+        task(3, "Compare the counters", PlanTaskStatus::Blocked, &[2]),
+        task(4, "Write the report", PlanTaskStatus::Pending, &[3]),
+    ]
+}
+
 fn demo_subagent_directory() -> Vec<SubagentInfo> {
     [
         (1, "Counter A", "running"),
@@ -811,7 +911,22 @@ mod unit {
                 .collect::<Vec<_>>(),
             ["running", "done", "failed"]
         );
-        let mut snapshot = format!("{opened:?}\n{directory:?}");
+        let plan = receive(&rx);
+        let EventKind::PlanSynced {
+            revision,
+            ref tasks,
+            counts,
+            truncated,
+        } = plan.kind
+        else {
+            panic!("expected the simulated plan")
+        };
+        assert_eq!(
+            (revision, tasks.len(), counts.live(), truncated),
+            (1, 4, 4, false)
+        );
+        assert!(tasks.iter().all(|t| t.title.ends_with("· simulated")));
+        let mut snapshot = format!("{opened:?}\n{directory:?}\n{plan:?}");
         for child in 1..=3 {
             backend.request(BackendRequest::OpenSubagent {
                 conversation,
@@ -870,8 +985,10 @@ mod unit {
             conversation,
             generation: 9,
         });
+        // Opened, the directory and the simulated plan.
         receive(&rx);
         receive(&rx);
+        assert!(matches!(receive(&rx).kind, EventKind::PlanSynced { .. }));
         for (generation, child) in [(8, 1), (9, 99)] {
             backend.request(BackendRequest::OpenSubagent {
                 conversation,

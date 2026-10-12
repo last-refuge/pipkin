@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 
 use pipkin_core::{
     AppState, Backend, Bootstrap, ChangesState, Command, Connection, ConversationId, Delivery,
-    Effect, ImportFlow, ImportKind, ItemKind, LifecycleEvent, Mode, Outcome, QueueMode, RequestId,
-    RunState, describe_attachment,
+    Effect, ImportFlow, ImportKind, ItemKind, LifecycleEvent, Mode, Outcome, PlanEdit,
+    PlanTaskStatus, QueueMode, RequestId, RunState, describe_attachment,
 };
 use pipkin_engine::config::{EngineConfig, Env};
 use pipkin_engine::provider::ProviderRequest;
@@ -2943,4 +2943,104 @@ fn removal_of_the_open_running_conversation_updates_desktop_even_without_live_ev
         });
         h.stop();
     }
+}
+
+// ------------------------------------------------------------------------------------ plans
+
+/// The model's plan reaches the desktop's projection, and the person's edit goes back
+/// through the engine's plan service and comes back as the engine's own state.
+#[test]
+fn the_models_plan_is_mirrored_and_a_persons_edit_round_trips_through_the_engine() {
+    let fx = Fixture::start(|req, _| {
+        let last_is_user = matches!(
+            req.messages
+                .iter()
+                .rev()
+                .find(|m| !matches!(m, Message::System(_))),
+            Some(Message::User { .. })
+        );
+        if last_is_user {
+            Reply::Tools(
+                None,
+                vec![(
+                    "plan_update".into(),
+                    json!({"ops": [
+                        {"op": "create", "ref": "a", "title": "Write migration"},
+                        {"op": "create", "title": "Add tests", "dependsOn": ["a"]},
+                        {"op": "update", "task": "a", "status": "active"}
+                    ]}),
+                )],
+            )
+        } else {
+            Reply::Text("Planned.".into())
+        }
+    });
+    let mut h = Harness::start(&fx, &fx.root.join("app.sqlite3"));
+    h.open_new_conversation(&fx.project);
+    // The plan follows the open event over the same channel; an empty plan is still a plan.
+    h.until("the engine reported its (empty) plan", |s| {
+        s.current().is_some_and(|c| c.plan.available)
+    });
+    assert!(h.state.current().unwrap().plan.tasks.is_empty());
+    h.send("plan it");
+    h.until("the plan reached the desktop", |s| {
+        is_idle(s) && s.current().is_some_and(|c| c.plan.tasks.len() == 2)
+    });
+    let plan = h.state.current().unwrap().plan.clone();
+    assert_eq!(plan.revision, 1);
+    assert_eq!(plan.tasks[0].status, PlanTaskStatus::Active);
+    assert_eq!(plan.tasks[1].depends_on, [1]);
+    assert_eq!((plan.counts.active, plan.counts.pending), (1, 1));
+    assert!(h.state.can_edit_plan());
+    // The person marks the first task completed; the engine's published plan shows it.
+    h.dispatch(Command::EditPlanTask {
+        task: 1,
+        edit: PlanEdit::Complete,
+    });
+    h.until("the edit was applied by the engine", |s| {
+        s.current().is_some_and(|c| {
+            c.plan.pending_edit.is_none()
+                && c.plan.revision == 2
+                && c.plan
+                    .task(1)
+                    .is_some_and(|t| t.status == PlanTaskStatus::Completed)
+        })
+    });
+    assert_eq!(h.state.current().unwrap().plan.error, None);
+    // A reopen carries its reason into the engine's record.
+    h.dispatch(Command::EditPlanTask {
+        task: 1,
+        edit: PlanEdit::Reopen,
+    });
+    h.until("the task was reopened", |s| {
+        s.current().is_some_and(|c| {
+            c.plan.revision == 3
+                && c.plan.task(1).is_some_and(|t| {
+                    t.status == PlanTaskStatus::Pending
+                        && t.reason.as_deref() == Some("Reopened by the person from the plan view")
+                })
+        })
+    });
+    // An edit the engine refuses (completing a task whose dependency is open) reports why
+    // and changes nothing.
+    h.dispatch(Command::EditPlanTask {
+        task: 2,
+        edit: PlanEdit::Complete,
+    });
+    h.until("the refusal arrived", |s| {
+        s.current()
+            .is_some_and(|c| c.plan.pending_edit.is_none() && c.plan.error.is_some())
+    });
+    let plan = &h.state.current().unwrap().plan;
+    assert!(
+        plan.error
+            .as_deref()
+            .unwrap()
+            .contains("#2 cannot be completed while it depends on #1"),
+        "{:?}",
+        plan.error
+    );
+    assert_eq!(plan.revision, 3);
+    assert_eq!(plan.task(2).unwrap().status, PlanTaskStatus::Pending);
+    h.stop();
 }

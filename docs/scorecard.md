@@ -1,5 +1,28 @@
 # Scorecard
 
+## Plan view, PLAN-2 (2026-10-12)
+
+The desktop shows the engine's plan ([plans.md](plans.md)): a strip above the composer, a Plan
+inspector tab with a virtualized task list, expandable task detail, and status edits that go
+back through the engine's plan service.
+
+- **Measured (automated).** Core tests: a plan is unavailable until an opened session
+  reports one and resets on reopen; other-generation and other-conversation plans land
+  where they belong; expand/history survive resyncs and collapse when a task disappears;
+  edits send one `UpdatePlan` under a fresh request key conditional on the revision, one at
+  a time, with answers matched by request and refusals kept until dismissed. UI tests: row
+  projection (open first, finished counted then listed newest first, expansion marked),
+  labels and counts lines, in-place reprojection at a new revision. Adapter: the demo's
+  simulated plan in the subagents scenario snapshot. End to end with the real engine: the
+  model's `plan_update` reaches the desktop's projection; *Mark completed* and *Reopen* round
+  trip through the engine and come back as its state with the recorded reason; an edit the
+  engine refuses reports the rule and changes nothing. The repository gate passed.
+- **Observed.** Nothing native yet: no walkthrough of the Plan tab, strip or edit buttons in
+  a real window.
+- **Unverified.** Keyboard-only expansion and edits, screen-reader naming of task rows and
+  the error alert, narrow drawer layout, light/dark themes, and thousands-of-rows scrolling
+  in a real window. Not a release qualification.
+
 ## Persistent plans, PLAN-1 (2026-10-12)
 
 The native engine now owns a per-session plan ([plans.md](plans.md)): schema 11 tables, the

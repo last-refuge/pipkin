@@ -6,13 +6,13 @@ use std::collections::{BTreeSet, HashMap};
 
 use pipkin_core::onboarding::{SignInChallenge, SignInProvider, SignInSnapshot, SignInStatus};
 use pipkin_core::{
-    Bootstrap, ConversationId, EventKind, ModelInfo, Project, ProjectId, SubagentInfo, UiAnswer,
-    UiNotice, UiNoticeLevel, UiRequest, UiRequestItem, UiRequestKind, project_id_for_path,
-    project_name_for_path,
+    Bootstrap, ConversationId, EventKind, ModelInfo, PlanCounts, PlanEvidence, PlanTask,
+    PlanTaskStatus, Project, ProjectId, SubagentInfo, UiAnswer, UiNotice, UiNoticeLevel, UiRequest,
+    UiRequestItem, UiRequestKind, project_id_for_path, project_name_for_path,
 };
 use pipkin_engine_protocol::{
     Answer, AuthSnapshot, AuthStatus, Block, CredentialKind, Entry, EntryKind, ErrorCode, Message,
-    ModelsView, Origin, QuestionKind, RunOutcome, SessionSummary, SubagentsView, UiView,
+    ModelsView, Origin, PlanView, QuestionKind, RunOutcome, SessionSummary, SubagentsView, UiView,
 };
 
 use crate::adapters::session::{self, Session};
@@ -301,6 +301,91 @@ pub fn answer(answer: UiAnswer) -> Answer {
 
 /// The child directory with the status names the core (and the Pi adapter) use. Anything
 /// malformed makes the directory unavailable rather than partially shown.
+/// Most plan tasks carried to the core; the engine already bounds live tasks below this.
+const MAX_PLAN_TASKS_SHOWN: usize = 2_048;
+const MAX_PLAN_TEXT_CHARS: usize = 4_096;
+
+fn plan_status(status: pipkin_engine_protocol::TaskStatus) -> PlanTaskStatus {
+    use pipkin_engine_protocol::TaskStatus as S;
+    match status {
+        S::Pending => PlanTaskStatus::Pending,
+        S::Active => PlanTaskStatus::Active,
+        S::Blocked => PlanTaskStatus::Blocked,
+        S::Completed => PlanTaskStatus::Completed,
+        S::Skipped => PlanTaskStatus::Skipped,
+        S::Cancelled => PlanTaskStatus::Cancelled,
+    }
+}
+
+pub fn task_status_to_engine(status: PlanTaskStatus) -> pipkin_engine_protocol::TaskStatus {
+    use pipkin_engine_protocol::TaskStatus as S;
+    match status {
+        PlanTaskStatus::Pending => S::Pending,
+        PlanTaskStatus::Active => S::Active,
+        PlanTaskStatus::Blocked => S::Blocked,
+        PlanTaskStatus::Completed => S::Completed,
+        PlanTaskStatus::Skipped => S::Skipped,
+        PlanTaskStatus::Cancelled => S::Cancelled,
+    }
+}
+
+fn clip_chars(text: &str, max: usize) -> String {
+    text.chars().take(max).collect()
+}
+
+/// The engine's plan view as the core's projection: `(revision, tasks, counts, truncated)`.
+/// Text is bounded; `truncated` also covers tasks this mapping left out.
+pub fn plan(view: &PlanView) -> (u64, Vec<PlanTask>, PlanCounts, bool) {
+    let tasks: Vec<PlanTask> = view
+        .tasks
+        .iter()
+        .take(MAX_PLAN_TASKS_SHOWN)
+        .map(|t| PlanTask {
+            id: t.id,
+            parent: t.parent,
+            title: clip_chars(&t.title, MAX_PLAN_TEXT_CHARS),
+            detail: clip_chars(&t.detail, MAX_PLAN_TEXT_CHARS),
+            status: plan_status(t.status),
+            reason: t
+                .reason
+                .as_deref()
+                .map(|r| clip_chars(r, MAX_PLAN_TEXT_CHARS)),
+            depends_on: t.depends_on.clone(),
+            criteria: clip_chars(&t.criteria, MAX_PLAN_TEXT_CHARS),
+            evidence: t
+                .evidence
+                .iter()
+                .map(|e| PlanEvidence {
+                    kind: clip_chars(&e.kind, MAX_PLAN_TEXT_CHARS),
+                    reference: clip_chars(&e.reference, MAX_PLAN_TEXT_CHARS),
+                    note: e
+                        .note
+                        .as_deref()
+                        .map(|n| clip_chars(n, MAX_PLAN_TEXT_CHARS)),
+                })
+                .collect(),
+            owner: t
+                .owner
+                .as_deref()
+                .map(|o| clip_chars(o, MAX_PLAN_TEXT_CHARS)),
+            archived: t.archived,
+            stale: t.stale,
+            revision: t.revision,
+        })
+        .collect();
+    let counts = PlanCounts {
+        pending: view.counts.pending,
+        active: view.counts.active,
+        blocked: view.counts.blocked,
+        completed: view.counts.completed,
+        skipped: view.counts.skipped,
+        cancelled: view.counts.cancelled,
+        archived: view.counts.archived,
+    };
+    let truncated = view.truncated || view.tasks.len() > MAX_PLAN_TASKS_SHOWN;
+    (view.revision, tasks, counts, truncated)
+}
+
 pub fn subagents(view: &SubagentsView) -> Result<Vec<SubagentInfo>, String> {
     if view.children.len() > MAX_CHILDREN {
         return Err("This session has too many subagents to display safely.".into());

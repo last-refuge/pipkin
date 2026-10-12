@@ -1,6 +1,6 @@
 # Pipkin native capabilities: implementation and comparative review plan
 
-Status: implementation in progress. ASK-1 (the first reviewable change, §13), PLAN-1 (§8) and the per-tool recovery part of F0 item 4 landed on 2026-10-12; see [docs/ask-user-question.md](../docs/ask-user-question.md), [docs/plans.md](../docs/plans.md) and the progress notes under §8 and §13. Everything else remains proposed.
+Status: implementation in progress. ASK-1 (the first reviewable change, §13), PLAN-1 and PLAN-2 (§8) and the per-tool recovery part of F0 item 4 landed on 2026-10-12; see [docs/ask-user-question.md](../docs/ask-user-question.md), [docs/plans.md](../docs/plans.md) and the progress notes under §8 and §13. Everything else remains proposed.
 
 Prepared: 2026-10-11 (America/Phoenix). Local audit baseline: Git HEAD `67ba56f6bf525493bf9c33ad1cad8a353d558a92`, plus the working-tree changes present during inspection. External references were read on this date. Reference links to `main` are moving targets, not reproducible dependency pins.
 
@@ -235,6 +235,8 @@ Proposed record: task id, plan id, optional parent task, title, detail, status, 
 - Persist task history and current state independently of transcript compaction. Inject a concise active-plan summary with a retrieval tool for details. Fork/import semantics must be explicit: copy a snapshot with provenance, not shared mutable ownership.
 
 **Progress (2026-10-12).** PLAN-1 done: `plans.rs` (pure domain), `store/plans.rs` (schema 11: `plans`, `plan_tasks`, `plan_events`, `plan_receipts`), `tools/plan.rs` (`plan_update`, `plan_read`), `runtime/plans.rs` (service, `UpdatePlan`/`Plan` calls, `PlanChanged`, `plan` snapshot field, `plan` system section), protocol 13, capability `plans`. Idempotent receipts keyed `call:<id>` / `client:<key>` satisfy F0 item 5 for this domain. See [docs/plans.md](../docs/plans.md). Not done: goal linkage, scoped task references to children, a crash fixture at the batch/result boundary, and PLAN-2 below.
+
+**Progress (2026-10-12).** PLAN-2 done: core `PlanState` projection with `PlanSynced`/`PlanEditApplied`/`PlanEditFailed` events and `TogglePlanTask`/`TogglePlanHistory`/`EditPlanTask` commands; native adapter mapping and `UpdatePlan` round trip; demo coverage in the subagents scenario; `shell/plan.rs` (virtualized Plan inspector tab with expandable task detail and status edits), a composer-side plan strip, the `ShowPlan` action and palette entry. Native verification of the view is still open (see `docs/scorecard.md`).
 
 **PLAN-2 — UI.** Show a collapsible progress strip and an inspector plan view. Completed tasks move into history but remain inspectable. Expand one task to see criteria/evidence and linked agent/job. The model receives user edits through the same revisioned engine service. Task-count progress is labelled as task counts, not a prediction of time or overall goal completion.
 

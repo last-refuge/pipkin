@@ -28,6 +28,17 @@ pub enum Command {
     ShowMoreSubagentHistory,
     /// Read the page of child activity before the oldest shown entry (paged engines only).
     LoadOlderSubagent,
+    /// Show one plan task in full, or collapse it again.
+    TogglePlanTask(u64),
+    /// List or hide the plan's finished tasks (a projection, not deletion).
+    TogglePlanHistory,
+    /// Change a task's status from the plan view, through the engine's plan service.
+    EditPlanTask {
+        task: u64,
+        edit: PlanEdit,
+    },
+    /// Dismiss the message about a refused plan edit.
+    DismissPlanError,
     NewConversation,
     RenameConversation(ConversationId, String),
     SetSearch(String),
@@ -169,6 +180,18 @@ pub enum BackendRequest {
         conversation: ConversationId,
         generation: u64,
         enabled: bool,
+    },
+    /// One status change of a plan task, under a fresh idempotency key and conditional on
+    /// the plan revision the person was looking at. Answered by `PlanEditApplied` or
+    /// `PlanEditFailed` naming the same request; the new plan arrives as `PlanSynced`.
+    UpdatePlan {
+        conversation: ConversationId,
+        generation: u64,
+        request: RequestId,
+        task: u64,
+        status: PlanTaskStatus,
+        reason: Option<String>,
+        expected_revision: u64,
     },
     /// The bounded page of `child`'s history strictly before the item `before`. Answered by
     /// `SubagentOlderPage` or `SubagentOlderFailed` naming the same child and cursor.
@@ -344,6 +367,21 @@ pub enum EventKind {
     SubagentOlderFailed {
         child: u64,
         before: ItemId,
+        reason: String,
+    },
+    /// The session's plan as the engine holds it (live tasks). Engines without plans never
+    /// send it, so the plan stays unavailable rather than empty.
+    PlanSynced {
+        revision: u64,
+        tasks: Vec<PlanTask>,
+        counts: PlanCounts,
+        truncated: bool,
+    },
+    PlanEditApplied {
+        request: RequestId,
+    },
+    PlanEditFailed {
+        request: RequestId,
         reason: String,
     },
     /// The engine's authoritative per-session ledger, independent of the displayed history.

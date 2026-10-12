@@ -593,3 +593,211 @@ pub fn prompt_title(text: &str) -> String {
     let cut: String = collapsed.chars().take(TITLE_CHARS).collect();
     format!("{}\u{2026}", cut.trim_end())
 }
+
+// ------------------------------------------------------------------------------- plans
+
+/// The state of one plan task, as the engine reports it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PlanTaskStatus {
+    Pending,
+    Active,
+    Blocked,
+    Completed,
+    Skipped,
+    Cancelled,
+}
+
+impl PlanTaskStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PlanTaskStatus::Pending => "pending",
+            PlanTaskStatus::Active => "active",
+            PlanTaskStatus::Blocked => "blocked",
+            PlanTaskStatus::Completed => "completed",
+            PlanTaskStatus::Skipped => "skipped",
+            PlanTaskStatus::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<PlanTaskStatus> {
+        Some(match s {
+            "pending" => PlanTaskStatus::Pending,
+            "active" => PlanTaskStatus::Active,
+            "blocked" => PlanTaskStatus::Blocked,
+            "completed" => PlanTaskStatus::Completed,
+            "skipped" => PlanTaskStatus::Skipped,
+            "cancelled" => PlanTaskStatus::Cancelled,
+            _ => return None,
+        })
+    }
+
+    /// Completed, skipped or cancelled: finished one way or another.
+    pub fn finished(self) -> bool {
+        matches!(
+            self,
+            PlanTaskStatus::Completed | PlanTaskStatus::Skipped | PlanTaskStatus::Cancelled
+        )
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            PlanTaskStatus::Pending => "Pending",
+            PlanTaskStatus::Active => "Active",
+            PlanTaskStatus::Blocked => "Blocked",
+            PlanTaskStatus::Completed => "Completed",
+            PlanTaskStatus::Skipped => "Skipped",
+            PlanTaskStatus::Cancelled => "Cancelled",
+        }
+    }
+}
+
+/// Evidence attached to a task by whoever completed it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlanEvidence {
+    pub kind: String,
+    pub reference: String,
+    pub note: Option<String>,
+}
+
+/// One task of the engine's plan. The engine owns it; the UI only projects it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlanTask {
+    pub id: u64,
+    pub parent: Option<u64>,
+    pub title: String,
+    pub detail: String,
+    pub status: PlanTaskStatus,
+    pub reason: Option<String>,
+    pub depends_on: Vec<u64>,
+    pub criteria: String,
+    pub evidence: Vec<PlanEvidence>,
+    pub owner: Option<String>,
+    pub archived: bool,
+    /// A completion whose basis changed since (a dependency reopened, criteria revised).
+    pub stale: bool,
+    pub revision: u64,
+}
+
+/// Task counts among live tasks, plus archived. Counts of tasks, never a prediction.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PlanCounts {
+    pub pending: u32,
+    pub active: u32,
+    pub blocked: u32,
+    pub completed: u32,
+    pub skipped: u32,
+    pub cancelled: u32,
+    pub archived: u32,
+}
+
+impl PlanCounts {
+    pub fn open(&self) -> u32 {
+        self.pending + self.active + self.blocked
+    }
+
+    pub fn finished(&self) -> u32 {
+        self.completed + self.skipped + self.cancelled
+    }
+
+    pub fn live(&self) -> u32 {
+        self.open() + self.finished()
+    }
+}
+
+/// An edit the person can make to a task from the plan view. Each maps to one status change
+/// with a fixed, honest reason; the engine validates it like any model edit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlanEdit {
+    Complete,
+    Reopen,
+    Skip,
+    Cancel,
+}
+
+impl PlanEdit {
+    /// The status and reason this edit asks the engine for.
+    pub fn status_and_reason(self) -> (PlanTaskStatus, Option<&'static str>) {
+        match self {
+            PlanEdit::Complete => (PlanTaskStatus::Completed, None),
+            PlanEdit::Reopen => (
+                PlanTaskStatus::Pending,
+                Some("Reopened by the person from the plan view"),
+            ),
+            PlanEdit::Skip => (
+                PlanTaskStatus::Skipped,
+                Some("Skipped by the person from the plan view"),
+            ),
+            PlanEdit::Cancel => (
+                PlanTaskStatus::Cancelled,
+                Some("Cancelled by the person from the plan view"),
+            ),
+        }
+    }
+
+    /// Which edits a task in `status` offers.
+    pub fn offered(status: PlanTaskStatus) -> &'static [PlanEdit] {
+        if status.finished() {
+            &[PlanEdit::Reopen]
+        } else {
+            &[PlanEdit::Complete, PlanEdit::Skip, PlanEdit::Cancel]
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            PlanEdit::Complete => "Mark completed",
+            PlanEdit::Reopen => "Reopen",
+            PlanEdit::Skip => "Skip",
+            PlanEdit::Cancel => "Cancel task",
+        }
+    }
+}
+
+/// The session's plan as last reported by the engine. `available` is false until an engine
+/// that provides plans has reported one (an empty plan is reported as available with no
+/// tasks); Pi and the demo's ordinary scenarios never set it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PlanState {
+    pub available: bool,
+    pub revision: u64,
+    /// Live tasks in the engine's display order.
+    pub tasks: Vec<PlanTask>,
+    pub counts: PlanCounts,
+    /// The engine left out some archived tasks to stay within bounds.
+    pub truncated: bool,
+    /// The one task shown in full (criteria, evidence, actions).
+    pub expanded: Option<u64>,
+    /// Finished tasks are listed (a projection; nothing is deleted when collapsed).
+    pub history_open: bool,
+    /// One edit in flight; its answer must name this request.
+    pub pending_edit: Option<RequestId>,
+    /// Why the last edit was refused.
+    pub error: Option<String>,
+}
+
+impl PlanState {
+    pub fn task(&self, id: u64) -> Option<&PlanTask> {
+        self.tasks.iter().find(|t| t.id == id)
+    }
+
+    /// Reset everything the engine reports; keep what the person chose to look at.
+    pub(crate) fn sync(
+        &mut self,
+        revision: u64,
+        tasks: Vec<PlanTask>,
+        counts: PlanCounts,
+        truncated: bool,
+    ) {
+        self.available = true;
+        self.revision = revision;
+        self.tasks = tasks;
+        self.counts = counts;
+        self.truncated = truncated;
+        if self
+            .expanded
+            .is_some_and(|id| !self.tasks.iter().any(|t| t.id == id))
+        {
+            self.expanded = None;
+        }
+    }
+}

@@ -531,6 +531,36 @@ impl Workspace {
                 .into_any_element()
         };
         let goal = self.state(cx).current().and_then(|cv| cv.goal.clone());
+        // The plan strip: task counts only, with the open tasks' titles, never a prediction.
+        let plan_strip = self
+            .state(cx)
+            .current()
+            .map(|cv| &cv.plan)
+            .filter(|p| p.available && p.counts.live() > 0)
+            .map(|p| {
+                let mut titles: Vec<String> = p
+                    .tasks
+                    .iter()
+                    .filter(|t| t.status == pipkin_core::PlanTaskStatus::Active)
+                    .take(2)
+                    .map(|t| t.title.clone())
+                    .collect();
+                if titles.is_empty() {
+                    titles.extend(
+                        p.tasks
+                            .iter()
+                            .filter(|t| !t.status.finished())
+                            .take(1)
+                            .map(|t| t.title.clone()),
+                    );
+                }
+                let mut detail = super::plan::counts_line(&p.counts);
+                if !titles.is_empty() {
+                    detail.push_str(" · ");
+                    detail.push_str(&titles.join(" · "));
+                }
+                detail
+            });
         let no_models = models.is_empty();
         // This build cannot send, or the built-in engine owns this conversation.
         let read_only = match self.state(cx).current() {
@@ -1012,6 +1042,33 @@ impl Workspace {
                     .flex()
                     .flex_col()
                     .children(not_sent)
+                    .children(plan_strip.map(|detail| {
+                        strip(
+                            cx,
+                            "circle-check",
+                            c.text_muted,
+                            "Plan",
+                            &detail,
+                            vec![
+                                Btn::new("show-plan")
+                                    .label("Show plan")
+                                    .aria("Show the plan in the inspector")
+                                    .compact()
+                                    .on_click({
+                                        let this = this.clone();
+                                        move |window, cx| {
+                                            this.update(cx, |_, cx| {
+                                                window.dispatch_action(
+                                                    Box::new(super::actions::ShowPlan),
+                                                    cx,
+                                                );
+                                            })
+                                        }
+                                    })
+                                    .into_any_element(),
+                            ],
+                        )
+                    }))
                     .children(goal.map(|goal| {
                         let state = goal
                             .paused
