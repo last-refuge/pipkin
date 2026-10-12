@@ -11,7 +11,32 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — built-in orphan/fault recovery and migration
+## Current follow-up — executed generation control-flow comparison
+
+2026-10-12, following **`9fd1bb5`**, protocol 12/schema 10 unchanged. Twenty-five cases
+execute the pinned Pi durable Harness with deterministic normalized model responses, then
+compare native provider traces, full history, outcomes, compactions and restart/replay.
+Forty-eight classifier cases and seven delay calculations also agree. See
+[generation evidence](pipkin-rust-engine-evidence/generation-control-flow.md).
+
+The differential run reproduced native tool execution from final stop/length content,
+overflow errors taking ordinary transient retries, and unsolicited retries after provider
+aborts. Native now starts tools only on `toolUse`, excludes overflow from ordinary retries,
+and settles provider aborts as model failures while preserving their text. Missing error
+text uses the reference stop-reason diagnostic. Existing user Stop and crash-retry tests pass.
+
+Source and execution also correct GEN-09's earlier SDK-versus-durable assumption: silent
+successful/length overflow signals stay final in the shipped Pi generation path, as native
+already does. The generic sequential-setting override is not forwarded by the shipped
+coding-agent/overlays; existing per-tool scheduling remains covered. No extension work added.
+
+Required checks: **1,649 passed, 0 failed, 56 ignored**, clean Clippy/all-targets and formatting.
+GEN-01/03/04/06/07/08/09 evidence is updated; aggregate counts stay **445 measured,
+9 observed, 1 unverified, 49 not started; 0 fully qualified**. Other reference/release gates,
+installed/desktop fault checks, sustained desktop use, CI/platform and notice review,
+native-default and Pi retirement remain open. Owner plan/worktree changes are preserved.
+
+## Prior follow-up — built-in orphan/fault recovery and migration
 
 2026-10-12, following **`2369416`**, protocol 12/schema 10 unchanged. Actual pinned Pi
 Harness/SQLite execution captures newer built-in generation, compaction and tool tasks

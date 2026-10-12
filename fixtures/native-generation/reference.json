@@ -1,0 +1,6565 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "packages/durable/src/harness/generation.ts": "bcfc8584adb9987173a7db528eceb8054151fd879ef88de4e878c63d234f7274",
+    "packages/durable/src/harness/tool.ts": "8027ca9ef3e6feb2a803b9c57f34a903b3f8a706864360c6a50f2aa2dbc34bb8",
+    "packages/durable/src/harness/compaction.ts": "cf8fb28b0ad9cb06d209168f845d8f416e8203ca431a1824860ea57e24a90400",
+    "packages/durable/src/harness/context.ts": "c79961dc4090bc1a6765ac82099e7ec477d737f047189e9cefc94673a8c377c4",
+    "packages/ai/src/utils/retry.ts": "9fd3268543035cb93ae3a572b4b16ba2ba76a5d76a2ae691e45968d3442c3d71",
+    "packages/ai/src/utils/overflow.ts": "2fa34713faa32430af3295ac25a10fd2e361cc0343b0f554491c16d2a2f44fc9",
+    "packages/coding-agent/src/experimental/durable/harness-setup.ts": "648ab09320b4b8ea4177226d21d377ca6aad1555c778c9bc61756289ac0ea0f1"
+  },
+  "node": "v26.8.1",
+  "scope": "Actual durable Harness with CodingTools and deterministic normalized provider responses; no cloud requests. Raw retry/overflow classifiers also executed.",
+  "retry": {
+    "enabled": true,
+    "maxRetries": 2,
+    "baseDelayMs": 1,
+    "maxAgentDelayMs": 2
+  },
+  "cases": [
+    {
+      "name": "plain-answer",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "answer"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ],
+              "stopReason": "stop"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "stopReason": "stop"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown-tool",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "call-one",
+              "name": "not-installed",
+              "arguments": {
+                "path": "must-not-write.txt",
+                "content": "unexpected"
+              }
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "handled unavailable tool"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "toolCall",
+                  "id": "call-one",
+                  "name": "not-installed",
+                  "arguments": {
+                    "path": "must-not-write.txt",
+                    "content": "unexpected"
+                  }
+                }
+              ],
+              "stopReason": "toolUse"
+            }
+          },
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "toolCall",
+                    "id": "call-one",
+                    "name": "not-installed",
+                    "arguments": {
+                      "path": "must-not-write.txt",
+                      "content": "unexpected"
+                    }
+                  }
+                ],
+                "stopReason": "toolUse"
+              },
+              {
+                "role": "toolResult",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<harness>\n[error] Tool not-installed is not available\n</harness>"
+                  }
+                ],
+                "toolCallId": "call-one",
+                "toolName": "not-installed",
+                "isError": true
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "handled unavailable tool"
+                }
+              ],
+              "stopReason": "stop"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call-one",
+                "name": "not-installed",
+                "arguments": {
+                  "path": "must-not-write.txt",
+                  "content": "unexpected"
+                }
+              }
+            ],
+            "stopReason": "toolUse"
+          },
+          {
+            "role": "toolResult",
+            "content": [
+              {
+                "type": "text",
+                "text": "<harness>\n[error] Tool not-installed is not available\n</harness>"
+              }
+            ],
+            "toolCallId": "call-one",
+            "toolName": "not-installed",
+            "isError": true
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "handled unavailable tool"
+              }
+            ],
+            "stopReason": "stop"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11
+                }
+              }
+            }
+          },
+          {
+            "id": 13,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 14
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "unoffered-subagent",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "call-one",
+              "name": "subagent",
+              "arguments": {
+                "path": "must-not-write.txt",
+                "content": "unexpected"
+              }
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "handled unavailable subagent"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "toolCall",
+                  "id": "call-one",
+                  "name": "subagent",
+                  "arguments": {
+                    "path": "must-not-write.txt",
+                    "content": "unexpected"
+                  }
+                }
+              ],
+              "stopReason": "toolUse"
+            }
+          },
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "toolCall",
+                    "id": "call-one",
+                    "name": "subagent",
+                    "arguments": {
+                      "path": "must-not-write.txt",
+                      "content": "unexpected"
+                    }
+                  }
+                ],
+                "stopReason": "toolUse"
+              },
+              {
+                "role": "toolResult",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<harness>\n[error] Tool subagent is not available\n</harness>"
+                  }
+                ],
+                "toolCallId": "call-one",
+                "toolName": "subagent",
+                "isError": true
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "handled unavailable subagent"
+                }
+              ],
+              "stopReason": "stop"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call-one",
+                "name": "subagent",
+                "arguments": {
+                  "path": "must-not-write.txt",
+                  "content": "unexpected"
+                }
+              }
+            ],
+            "stopReason": "toolUse"
+          },
+          {
+            "role": "toolResult",
+            "content": [
+              {
+                "type": "text",
+                "text": "<harness>\n[error] Tool subagent is not available\n</harness>"
+              }
+            ],
+            "toolCallId": "call-one",
+            "toolName": "subagent",
+            "isError": true
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "handled unavailable subagent"
+              }
+            ],
+            "stopReason": "stop"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11
+                }
+              }
+            }
+          },
+          {
+            "id": 13,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 14
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "stop-with-tool-call",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "call-one",
+              "name": "write",
+              "arguments": {
+                "path": "must-not-write.txt",
+                "content": "unexpected"
+              }
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "toolCall",
+                  "id": "call-one",
+                  "name": "write",
+                  "arguments": {
+                    "path": "must-not-write.txt",
+                    "content": "unexpected"
+                  }
+                }
+              ],
+              "stopReason": "stop"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call-one",
+                "name": "write",
+                "arguments": {
+                  "path": "must-not-write.txt",
+                  "content": "unexpected"
+                }
+              }
+            ],
+            "stopReason": "stop"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "length-with-tool-call",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "call-one",
+              "name": "write",
+              "arguments": {
+                "path": "must-not-write.txt",
+                "content": "unexpected"
+              }
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "length",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "toolCall",
+                  "id": "call-one",
+                  "name": "write",
+                  "arguments": {
+                    "path": "must-not-write.txt",
+                    "content": "unexpected"
+                  }
+                }
+              ],
+              "stopReason": "length"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call-one",
+                "name": "write",
+                "arguments": {
+                  "path": "must-not-write.txt",
+                  "content": "unexpected"
+                }
+              }
+            ],
+            "stopReason": "length"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty-tool-use",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "empty round"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "empty round"
+                }
+              ],
+              "stopReason": "toolUse"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "empty round"
+              }
+            ],
+            "stopReason": "toolUse"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "retry-then-answer",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 overloaded"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "connection reset before headers"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "recovered"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "503 overloaded"
+            }
+          },
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "connection reset before headers"
+            }
+          },
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "recovered"
+                }
+              ],
+              "stopReason": "stop"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503 overloaded"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "connection reset before headers"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "recovered"
+              }
+            ],
+            "stopReason": "stop"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 13
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "retry-exhausted",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 overloaded"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 overloaded"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 overloaded"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 overloaded"
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "503 overloaded",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "503 overloaded"
+            }
+          },
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "503 overloaded"
+            }
+          },
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "503 overloaded"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503 overloaded"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503 overloaded"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503 overloaded"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "503 overloaded",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "retry-disabled",
+      "retry": {
+        "enabled": false,
+        "maxRetries": 2,
+        "baseDelayMs": 1,
+        "maxAgentDelayMs": 2
+      },
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 overloaded"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "unexpected"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "503 overloaded",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "503 overloaded"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503 overloaded"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "503 overloaded",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "billing-beats-retry",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "429 billing limit"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "unexpected"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "429 billing limit",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "429 billing limit"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "429 billing limit"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "429 billing limit",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "subscription-limit",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "429 subscription_sharing_usage_limit_exceeded"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "unexpected"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "429 subscription_sharing_usage_limit_exceeded",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "429 subscription_sharing_usage_limit_exceeded"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "429 subscription_sharing_usage_limit_exceeded"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "429 subscription_sharing_usage_limit_exceeded",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "subscription-unavailable",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "subscription_sharing_usage_unavailable"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "recovered"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "subscription_sharing_usage_unavailable"
+            }
+          },
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "recovered"
+                }
+              ],
+              "stopReason": "stop"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "subscription_sharing_usage_unavailable"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "recovered"
+              }
+            ],
+            "stopReason": "stop"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 12
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "overflow-beats-retry-disabled-compaction",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 prompt too long"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "unexpected"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "503 prompt too long",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "503 prompt too long"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503 prompt too long"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "503 prompt too long",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "overflow-no-summary-prefix",
+      "compaction": true,
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 prompt too long"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "unexpected"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "503 prompt too long",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "503 prompt too long"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503 prompt too long"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "503 prompt too long",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "rate-limit-excludes-overflow",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "429 rate limit: prompt too long"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "recovered"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "429 rate limit: prompt too long"
+            }
+          },
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "recovered"
+                }
+              ],
+              "stopReason": "stop"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "429 rate limit: prompt too long"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "recovered"
+              }
+            ],
+            "stopReason": "stop"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 12
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "cerebras-bodyless-overflow",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "cerebras",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "413 status code (no body) 503 overloaded"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "unexpected"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "413 status code (no body) 503 overloaded",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "413 status code (no body) 503 overloaded"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "413 status code (no body) 503 overloaded"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "413 status code (no body) 503 overloaded",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "other-bodyless-retry",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "413 status code (no body) 503 overloaded"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "recovered"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "413 status code (no body) 503 overloaded"
+            }
+          },
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "recovered"
+                }
+              ],
+              "stopReason": "stop"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "413 status code (no body) 503 overloaded"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "recovered"
+              }
+            ],
+            "stopReason": "stop"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 12
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "overflow-compact-recover",
+      "seed": 4,
+      "compaction": true,
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 prompt too long"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "recovered"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "summaries": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "retained summary"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "503 prompt too long"
+            }
+          },
+          {
+            "summary": true,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<conversation>\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n</conversation>\n\nThe messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work. If the conversation starts with an earlier summary, preserve its information and fold the newer messages into it.\n\nUse this EXACT format:\n\n## Goal\n[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]\n\n## Constraints & Preferences\n- [Any constraints, preferences, or requirements mentioned by user]\n- [Or \"(none)\" if none were mentioned]\n\n## Progress\n### Done\n- [x] [Completed tasks/changes]\n\n### In Progress\n- [ ] [Current work]\n\n### Blocked\n- [Issues preventing progress, if any]\n\n## Key Decisions\n- **[Decision]**: [Brief rationale]\n\n## Next Steps\n1. [Ordered list of what should happen next]\n\n## Critical Context\n- [Any data, examples, or references needed to continue]\n- [Or \"(none)\" if not applicable]\n\nKeep each section concise. Preserve exact file paths, function names, and error messages."
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "retained summary"
+                }
+              ],
+              "stopReason": "stop"
+            }
+          },
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "The conversation history before this point was compacted into the following summary:\n\n<summary>\nretained summary\n</summary>"
+                  }
+                ]
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "recovered"
+                }
+              ],
+              "stopReason": "stop"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503 prompt too long"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "The conversation history before this point was compacted into the following summary:\n\n<summary>\nretained summary\n</summary>"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "recovered"
+              }
+            ],
+            "stopReason": "stop"
+          }
+        ],
+        "compactions": 1,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11
+                }
+              }
+            }
+          },
+          {
+            "id": 14,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 15
+                }
+              }
+            }
+          },
+          {
+            "id": 18,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 19
+                }
+              }
+            }
+          },
+          {
+            "id": 22,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 23
+                }
+              }
+            }
+          },
+          {
+            "id": 26,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 31
+                }
+              }
+            }
+          },
+          {
+            "id": 28,
+            "conversationId": 1,
+            "kind": "pi.compaction",
+            "version": 1,
+            "input": {
+              "reason": "overflow"
+            },
+            "owner": 26,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 29
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "overflow-after-compaction",
+      "seed": 4,
+      "compaction": true,
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 prompt too long"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 prompt too long"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "unexpected"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "summaries": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "retained summary"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "503 prompt too long",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "503 prompt too long"
+            }
+          },
+          {
+            "summary": true,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<conversation>\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n</conversation>\n\nThe messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work. If the conversation starts with an earlier summary, preserve its information and fold the newer messages into it.\n\nUse this EXACT format:\n\n## Goal\n[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]\n\n## Constraints & Preferences\n- [Any constraints, preferences, or requirements mentioned by user]\n- [Or \"(none)\" if none were mentioned]\n\n## Progress\n### Done\n- [x] [Completed tasks/changes]\n\n### In Progress\n- [ ] [Current work]\n\n### Blocked\n- [Issues preventing progress, if any]\n\n## Key Decisions\n- **[Decision]**: [Brief rationale]\n\n## Next Steps\n1. [Ordered list of what should happen next]\n\n## Critical Context\n- [Any data, examples, or references needed to continue]\n- [Or \"(none)\" if not applicable]\n\nKeep each section concise. Preserve exact file paths, function names, and error messages."
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "retained summary"
+                }
+              ],
+              "stopReason": "stop"
+            }
+          },
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "The conversation history before this point was compacted into the following summary:\n\n<summary>\nretained summary\n</summary>"
+                  }
+                ]
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "503 prompt too long"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503 prompt too long"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "The conversation history before this point was compacted into the following summary:\n\n<summary>\nretained summary\n</summary>"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503 prompt too long"
+          }
+        ],
+        "compactions": 1,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11
+                }
+              }
+            }
+          },
+          {
+            "id": 14,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 15
+                }
+              }
+            }
+          },
+          {
+            "id": 18,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 19
+                }
+              }
+            }
+          },
+          {
+            "id": 22,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 23
+                }
+              }
+            }
+          },
+          {
+            "id": 26,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "503 prompt too long",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": 28,
+            "conversationId": 1,
+            "kind": "pi.compaction",
+            "version": 1,
+            "input": {
+              "reason": "overflow"
+            },
+            "owner": 26,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 29
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "overflow-failed-summary",
+      "seed": 4,
+      "compaction": true,
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "503 prompt too long"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "unexpected"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "summaries": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1,
+          "errorMessage": "401 invalid summary credential"
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "503 prompt too long",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "earlier conversation with several words"
+                  }
+                ]
+              },
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "seed answer"
+                  }
+                ],
+                "stopReason": "stop"
+              },
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "503 prompt too long"
+            }
+          },
+          {
+            "summary": true,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<conversation>\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n\n[User]: earlier conversation with several words\n\n[Assistant]: seed answer\n</conversation>\n\nThe messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work. If the conversation starts with an earlier summary, preserve its information and fold the newer messages into it.\n\nUse this EXACT format:\n\n## Goal\n[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]\n\n## Constraints & Preferences\n- [Any constraints, preferences, or requirements mentioned by user]\n- [Or \"(none)\" if none were mentioned]\n\n## Progress\n### Done\n- [x] [Completed tasks/changes]\n\n### In Progress\n- [ ] [Current work]\n\n### Blocked\n- [Issues preventing progress, if any]\n\n## Key Decisions\n- **[Decision]**: [Brief rationale]\n\n## Next Steps\n1. [Ordered list of what should happen next]\n\n## Critical Context\n- [Any data, examples, or references needed to continue]\n- [Or \"(none)\" if not applicable]\n\nKeep each section concise. Preserve exact file paths, function names, and error messages."
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error",
+              "errorMessage": "401 invalid summary credential"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "earlier conversation with several words"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "seed answer"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503 prompt too long"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11
+                }
+              }
+            }
+          },
+          {
+            "id": 14,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 15
+                }
+              }
+            }
+          },
+          {
+            "id": 18,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 19
+                }
+              }
+            }
+          },
+          {
+            "id": 22,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 23
+                }
+              }
+            }
+          },
+          {
+            "id": 26,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "503 prompt too long",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": 28,
+            "conversationId": 1,
+            "kind": "pi.compaction",
+            "version": 1,
+            "input": {
+              "reason": "overflow"
+            },
+            "owner": 26,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "Summarization failed: 401 invalid summary credential",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "silent-overflow-stays-answer",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "retained answer"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 300000,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "retained answer"
+                }
+              ],
+              "stopReason": "stop"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "retained answer"
+              }
+            ],
+            "stopReason": "stop"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "length-zero-output-stays-answer",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 200000,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "length",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "done",
+        "reason": null,
+        "detail": null,
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "length"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "length"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "provider-aborted-without-user-stop",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "provider partial"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "aborted",
+          "timestamp": 1,
+          "errorMessage": "provider aborted"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "unexpected"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "provider aborted",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "provider partial"
+                }
+              ],
+              "stopReason": "aborted",
+              "errorMessage": "provider aborted"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "provider partial"
+              }
+            ],
+            "stopReason": "aborted",
+            "errorMessage": "provider aborted"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "provider aborted",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "provider-aborted-without-error-text",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "provider partial"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "aborted",
+          "timestamp": 1
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "unexpected"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "Model response ended with stop reason aborted",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "provider partial"
+                }
+              ],
+              "stopReason": "aborted"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "provider partial"
+              }
+            ],
+            "stopReason": "aborted"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "Model response ended with stop reason aborted",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "provider-error-without-error-text",
+      "responses": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "error",
+          "timestamp": 1
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "unexpected"
+            }
+          ],
+          "api": "faux",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1
+        }
+      ],
+      "expected": {
+        "status": "unanswered",
+        "reason": "model_error",
+        "detail": "Model response ended with stop reason error",
+        "requests": [
+          {
+            "summary": false,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "perform the requested turn"
+                  }
+                ]
+              }
+            ],
+            "response": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ],
+              "stopReason": "error"
+            }
+          }
+        ],
+        "history": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "perform the requested turn"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
+            "stopReason": "error"
+          }
+        ],
+        "compactions": 0,
+        "tasks": [
+          {
+            "id": 9,
+            "conversationId": 1,
+            "kind": "pi.generation",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "Model response ended with stop reason error",
+                  "detail": {
+                    "reason": "model_error"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "classifications": [
+    {
+      "case": "plain-answer",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "answer"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "unknown-tool",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call-one",
+            "name": "not-installed",
+            "arguments": {
+              "path": "must-not-write.txt",
+              "content": "unexpected"
+            }
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "unknown-tool",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "handled unavailable tool"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "unoffered-subagent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call-one",
+            "name": "subagent",
+            "arguments": {
+              "path": "must-not-write.txt",
+              "content": "unexpected"
+            }
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "unoffered-subagent",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "handled unavailable subagent"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "stop-with-tool-call",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call-one",
+            "name": "write",
+            "arguments": {
+              "path": "must-not-write.txt",
+              "content": "unexpected"
+            }
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "length-with-tool-call",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call-one",
+            "name": "write",
+            "arguments": {
+              "path": "must-not-write.txt",
+              "content": "unexpected"
+            }
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "length",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "empty-tool-use",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "empty round"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "retry-then-answer",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 overloaded"
+      },
+      "retry": true,
+      "overflow": false
+    },
+    {
+      "case": "retry-then-answer",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "connection reset before headers"
+      },
+      "retry": true,
+      "overflow": false
+    },
+    {
+      "case": "retry-then-answer",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "recovered"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "retry-exhausted",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 overloaded"
+      },
+      "retry": true,
+      "overflow": false
+    },
+    {
+      "case": "retry-exhausted",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 overloaded"
+      },
+      "retry": true,
+      "overflow": false
+    },
+    {
+      "case": "retry-exhausted",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 overloaded"
+      },
+      "retry": true,
+      "overflow": false
+    },
+    {
+      "case": "retry-exhausted",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 overloaded"
+      },
+      "retry": true,
+      "overflow": false
+    },
+    {
+      "case": "retry-disabled",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 overloaded"
+      },
+      "retry": true,
+      "overflow": false
+    },
+    {
+      "case": "retry-disabled",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "unexpected"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "billing-beats-retry",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "429 billing limit"
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "billing-beats-retry",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "unexpected"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "subscription-limit",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "429 subscription_sharing_usage_limit_exceeded"
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "subscription-limit",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "unexpected"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "subscription-unavailable",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "subscription_sharing_usage_unavailable"
+      },
+      "retry": true,
+      "overflow": false
+    },
+    {
+      "case": "subscription-unavailable",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "recovered"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "overflow-beats-retry-disabled-compaction",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 prompt too long"
+      },
+      "retry": true,
+      "overflow": true
+    },
+    {
+      "case": "overflow-beats-retry-disabled-compaction",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "unexpected"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "overflow-no-summary-prefix",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 prompt too long"
+      },
+      "retry": true,
+      "overflow": true
+    },
+    {
+      "case": "overflow-no-summary-prefix",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "unexpected"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "rate-limit-excludes-overflow",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "429 rate limit: prompt too long"
+      },
+      "retry": true,
+      "overflow": false
+    },
+    {
+      "case": "rate-limit-excludes-overflow",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "recovered"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "cerebras-bodyless-overflow",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "cerebras",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "413 status code (no body) 503 overloaded"
+      },
+      "retry": true,
+      "overflow": true
+    },
+    {
+      "case": "cerebras-bodyless-overflow",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "unexpected"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "other-bodyless-retry",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "413 status code (no body) 503 overloaded"
+      },
+      "retry": true,
+      "overflow": false
+    },
+    {
+      "case": "other-bodyless-retry",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "recovered"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "overflow-compact-recover",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 prompt too long"
+      },
+      "retry": true,
+      "overflow": true
+    },
+    {
+      "case": "overflow-compact-recover",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "recovered"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "overflow-after-compaction",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 prompt too long"
+      },
+      "retry": true,
+      "overflow": true
+    },
+    {
+      "case": "overflow-after-compaction",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 prompt too long"
+      },
+      "retry": true,
+      "overflow": true
+    },
+    {
+      "case": "overflow-after-compaction",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "unexpected"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "overflow-failed-summary",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1,
+        "errorMessage": "503 prompt too long"
+      },
+      "retry": true,
+      "overflow": true
+    },
+    {
+      "case": "overflow-failed-summary",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "unexpected"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "silent-overflow-stays-answer",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "retained answer"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 300000,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": true
+    },
+    {
+      "case": "length-zero-output-stays-answer",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 200000,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "length",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": true
+    },
+    {
+      "case": "provider-aborted-without-user-stop",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "provider partial"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "aborted",
+        "timestamp": 1,
+        "errorMessage": "provider aborted"
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "provider-aborted-without-user-stop",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "unexpected"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "provider-aborted-without-error-text",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "provider partial"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "aborted",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "provider-aborted-without-error-text",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "unexpected"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "provider-error-without-error-text",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    },
+    {
+      "case": "provider-error-without-error-text",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "unexpected"
+          }
+        ],
+        "api": "faux",
+        "provider": "faux",
+        "model": "faux-1",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1
+      },
+      "retry": false,
+      "overflow": false
+    }
+  ],
+  "delays": [
+    {
+      "attempt": 0,
+      "value": 7
+    },
+    {
+      "attempt": 1,
+      "value": 7
+    },
+    {
+      "attempt": 2,
+      "value": 14
+    },
+    {
+      "attempt": 3,
+      "value": 28
+    },
+    {
+      "attempt": 10,
+      "value": 1000
+    },
+    {
+      "attempt": 53,
+      "value": 1000
+    },
+    {
+      "attempt": 1024,
+      "value": 1000
+    }
+  ]
+}

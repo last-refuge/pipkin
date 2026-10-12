@@ -197,10 +197,8 @@ impl Shared {
             Ok(c.query_row("SELECT EXISTS(SELECT 1 FROM compactions WHERE session = ?1 AND operation_key = ?2)",
                 rusqlite::params![sess.id, compaction_key], |r| r.get::<_,bool>(0))?)
         }).map_err(ProtoError::from)?;
-        if !state.overflow_compacted
-            && (admitted
-                || (settings.compaction.enabled && errors::is_context_overflow(message, window)))
-        {
+        let overflow = errors::is_context_overflow(message, window);
+        if !state.overflow_compacted && (admitted || (settings.compaction.enabled && overflow)) {
             let result = self
                 .compact_key(sess, Some(run), &compaction_key, None, cancel)
                 .await;
@@ -226,16 +224,18 @@ impl Shared {
         state.failures = state.failures.saturating_add(1);
         state.handled_error = Some(entry);
         let retry = &settings.retry;
-        state.retry_until =
-            (retry.enabled && state.failures <= retry.max_retries && errors::is_retryable(message))
-                .then(|| {
-                    let delay = errors::retry_delay_ms(
-                        state.failures,
-                        retry.base_delay_ms,
-                        retry.max_agent_delay_ms,
-                    );
-                    at_ms.saturating_add(i64::try_from(delay).unwrap_or(i64::MAX))
-                });
+        state.retry_until = (!overflow
+            && retry.enabled
+            && state.failures <= retry.max_retries
+            && errors::is_retryable(message))
+        .then(|| {
+            let delay = errors::retry_delay_ms(
+                state.failures,
+                retry.base_delay_ms,
+                retry.max_agent_delay_ms,
+            );
+            at_ms.saturating_add(i64::try_from(delay).unwrap_or(i64::MAX))
+        });
         self.commit(sess, |tx| {
             Store::save_generation_state(tx, run, &state)?;
             Ok(((), vec![]))
@@ -284,10 +284,10 @@ impl Shared {
                             .map(|(id, name, args)| (id.to_owned(), name.to_owned(), args.clone()))
                             .collect();
                         let has_calls = !message.tool_calls().is_empty();
-                        if !pending.is_empty()
-                            && *stop_reason != StopReason::Aborted
-                            && *stop_reason != StopReason::Error
-                        {
+                        // Only a tool-use response starts a round. Providers can include
+                        // tool-shaped content in a final stop/length response; preserve it
+                        // in history without granting execution authority.
+                        if !pending.is_empty() && *stop_reason == StopReason::ToolUse {
                             return Ok(Step::Tools(pending));
                         }
                         if *stop_reason == StopReason::Error {
@@ -305,7 +305,7 @@ impl Shared {
                                 None => Step::Failed(match message {
                                     Message::Assistant { error_message, .. } => error_message
                                         .clone()
-                                        .unwrap_or_else(|| "The model failed.".into()),
+                                        .unwrap_or_else(|| "Model response ended with stop reason error".into()),
                                     _ => unreachable!(),
                                 }),
                             });
@@ -318,7 +318,14 @@ impl Shared {
                         match stop_reason {
                             StopReason::Stop | StopReason::Length => Ok(Step::Final),
                             StopReason::ToolUse if !has_calls => Ok(Step::Final),
-                            // Results recorded or an interrupted partial: ask the model again.
+                            // An adapter abort without our cancellation intent is a terminal
+                            // model failure, not permission to silently make another request.
+                            StopReason::Aborted => Ok(Step::Failed(match message {
+                                Message::Assistant { error_message, .. } => error_message
+                                    .clone().unwrap_or_else(|| "Model response ended with stop reason aborted".into()),
+                                _ => unreachable!(),
+                            })),
+                            // The tool round's results are recorded: ask the model again.
                             _ => Ok(Step::Request),
                         }
                     }
