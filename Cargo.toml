@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/pipkin-core", "crates/pipkin-ui", "crates/pipkin-app", "crates/pi-client", "crates/pipkin-engine-protocol", "crates/pipkin-engine"]
-exclude = ["zed"]
+exclude = ["zed", "vendor/reqwest-0.12.28"]
 
 [workspace.package]
 edition = "2024"
@@ -16,3 +16,7 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "a8468907
 
 [profile.release]
 debug = "line-tables-only"
+
+[patch.crates-io]
+# CONNECT for plain HTTP targets; defaults unchanged for other reqwest consumers.
+reqwest = { path = "vendor/reqwest-0.12.28" }

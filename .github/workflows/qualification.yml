@@ -109,6 +109,8 @@ jobs:
         run: |
           mkdir -p qualification-logs
           set -o pipefail
+          python3 scripts/verify-reqwest-vendor.py
+          python3 scripts/test-reqwest-vendor.py
           cargo test --workspace --locked 2>&1 | tee qualification-logs/workspace.log
           cargo clippy --workspace --all-targets --locked 2>&1 | tee qualification-logs/clippy.log
           cargo fmt --all --check

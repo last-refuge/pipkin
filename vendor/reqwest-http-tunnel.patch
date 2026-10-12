@@ -1,0 +1,196 @@
+--- a/src/connect.rs
++++ b/src/connect.rs
+@@ -1,3 +1,5 @@
++// Modified by Pipkin: opt-in CONNECT tunnels for HTTP origins.
++// See PIPKIN-PATCH.md at this crate's root.
+ #[cfg(feature = "__tls")]
+ use http::header::HeaderValue;
+ #[cfg(feature = "__tls")]
+@@ -87,12 +89,17 @@
+ }
+ 
+ impl ConnectorBuilder {
+-    pub(crate) fn build(self, layers: Vec<BoxedConnectorLayer>) -> Connector
++    pub(crate) fn build(
++        self,
++        layers: Vec<BoxedConnectorLayer>,
++        http_proxy_tunnel: bool,
++    ) -> Connector
+ where {
+         // construct the inner tower service
+         let mut base_service = ConnectorService {
+             inner: self.inner,
+             proxies: self.proxies,
++            http_proxy_tunnel,
+             verbose: self.verbose,
+             #[cfg(feature = "__tls")]
+             nodelay: self.nodelay,
+@@ -484,6 +491,7 @@
+ pub(crate) struct ConnectorService {
+     inner: Inner,
+     proxies: Arc<Vec<ProxyMatcher>>,
++    http_proxy_tunnel: bool,
+     verbose: verbose::Wrapper,
+     /// When there is a single timeout layer and no other layers,
+     /// we embed it directly inside our base Service::call().
+@@ -791,17 +799,26 @@
+             _ => (),
+         }
+ 
++        // hyper-util's Tunnel defaults an absent destination port to 443.
++        // Supply HTTP's port explicitly when tunneling a plain HTTP origin.
++        let tunnel_dst = if dst.scheme_str() == Some("http") && dst.port_u16().is_none() {
++            Uri::builder()
++                .scheme("http")
++                .authority(format!("{}:80", dst.host().ok_or("no host in url")?))
++                .path_and_query("/")
++                .build()?
++        } else {
++            dst.clone()
++        };
+         let proxy_dst = proxy.uri().clone();
+-        #[cfg(feature = "__tls")]
+         let auth = proxy.basic_auth().cloned();
+ 
+-        #[cfg(feature = "__tls")]
+         let misc = proxy.custom_headers().clone();
+ 
+         match &self.inner {
+             #[cfg(feature = "default-tls")]
+             Inner::DefaultTls(http, tls) => {
+-                if dst.scheme() == Some(&Scheme::HTTPS) {
++                if dst.scheme_str() == Some("https") || self.http_proxy_tunnel {
+                     log::trace!("tunneling HTTPS over proxy");
+                     let tls_connector = tokio_native_tls::TlsConnector::from(tls.clone());
+                     let inner =
+@@ -823,7 +840,14 @@
+                     }
+                     // We don't wrap this again in an HttpsConnector since that uses Maybe,
+                     // and we know this is definitely HTTPS.
+-                    let tunneled = tunnel.call(dst.clone()).await?;
++                    let tunneled = tunnel.call(tunnel_dst.clone()).await?;
++                    if dst.scheme_str() == Some("http") {
++                        return Ok(Conn {
++                            inner: self.verbose.wrap(tunneled),
++                            is_proxy: false,
++                            tls_info: false,
++                        });
++                    }
+                     let tls_connector = tokio_native_tls::TlsConnector::from(tls.clone());
+                     let io = tls_connector
+                         .connect(dst.host().ok_or("no host in url")?, TokioIo::new(tunneled))
+@@ -843,7 +867,7 @@
+                 tls,
+                 tls_proxy,
+             } => {
+-                if dst.scheme() == Some(&Scheme::HTTPS) {
++                if dst.scheme_str() == Some("https") || self.http_proxy_tunnel {
+                     use rustls_pki_types::ServerName;
+                     use std::convert::TryFrom;
+                     use tokio_rustls::TlsConnector as RustlsConnector;
+@@ -867,7 +891,14 @@
+                     }
+                     // We don't wrap this again in an HttpsConnector since that uses Maybe,
+                     // and we know this is definitely HTTPS.
+-                    let tunneled = tunnel.call(dst.clone()).await?;
++                    let tunneled = tunnel.call(tunnel_dst.clone()).await?;
++                    if dst.scheme_str() == Some("http") {
++                        return Ok(Conn {
++                            inner: self.verbose.wrap(tunneled),
++                            is_proxy: false,
++                            tls_info: false,
++                        });
++                    }
+                     let host = dst.host().ok_or("no host in url")?.to_string();
+                     let server_name = ServerName::try_from(host.as_str().to_owned())
+                         .map_err(|_| "Invalid Server Name")?;
+@@ -885,7 +916,25 @@
+                 }
+             }
+             #[cfg(not(feature = "__tls"))]
+-            Inner::Http(_) => (),
++            Inner::Http(http) => {
++                if self.http_proxy_tunnel {
++                    let mut tunnel = hyper_util::client::legacy::connect::proxy::Tunnel::new(
++                        proxy_dst, http.clone(),
++                    );
++                    if let Some(auth) = auth {
++                        tunnel = tunnel.with_auth(auth);
++                    }
++                    if let Some(headers) = misc {
++                        tunnel = tunnel.with_headers(headers);
++                    }
++                    let tunneled = tunnel.call(tunnel_dst).await?;
++                    return Ok(Conn {
++                        inner: self.verbose.wrap(tunneled),
++                        is_proxy: false,
++                        tls_info: false,
++                    });
++                }
++            },
+         }
+ 
+         self.connect_with_maybe_proxy(proxy_dst, true).await
+--- a/src/async_impl/client.rs
++++ b/src/async_impl/client.rs
+@@ -1,3 +1,5 @@
++// Modified by Pipkin: opt-in CONNECT tunnels for HTTP origins.
++// See PIPKIN-PATCH.md at this crate's root.
+ #[cfg(any(feature = "native-tls", feature = "__rustls",))]
+ use std::any::Any;
+ use std::future::Future;
+@@ -179,6 +181,7 @@
+     #[cfg(any(feature = "native-tls", feature = "__rustls"))]
+     identity: Option<Identity>,
+     proxies: Vec<ProxyMatcher>,
++    http_proxy_tunnel: bool,
+     auto_sys_proxy: bool,
+     redirect_policy: redirect::Policy,
+     retry_policy: crate::retry::Builder,
+@@ -306,6 +309,7 @@
+                 #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
+                 tcp_user_timeout: Some(Duration::from_secs(30)),
+                 proxies: Vec::new(),
++                http_proxy_tunnel: false,
+                 auto_sys_proxy: true,
+                 redirect_policy: redirect::Policy::default(),
+                 retry_policy: crate::retry::Builder::default(),
+@@ -1005,7 +1009,9 @@
+             Some(format!("{:?}", &config.redirect_policy))
+         };
+ 
+-        let hyper_client = builder.build(connector_builder.build(config.connector_layers));
++        let hyper_client = builder.build(
++            connector_builder.build(config.connector_layers, config.http_proxy_tunnel),
++        );
+         let hyper_service = HyperService {
+             hyper: hyper_client,
+         };
+@@ -1092,8 +1098,9 @@
+                 total_timeout: RequestConfig::new(config.timeout),
+                 hyper,
+                 proxies,
+-                proxies_maybe_http_auth,
+-                proxies_maybe_http_custom_headers,
++                proxies_maybe_http_auth: proxies_maybe_http_auth && !config.http_proxy_tunnel,
++                proxies_maybe_http_custom_headers: proxies_maybe_http_custom_headers
++                    && !config.http_proxy_tunnel,
+                 https_only: config.https_only,
+                 redirect_policy_desc,
+             }),
+@@ -1406,6 +1413,15 @@
+ 
+     // Proxy options
+ 
++    /// Use CONNECT tunnels for HTTP origins as well as HTTPS origins.
++    ///
++    /// Disabled by default. When enabled, proxy authentication and custom proxy
++    /// headers are sent on CONNECT, not on the request inside the tunnel.
++    pub fn http_proxy_tunnel(mut self, enabled: bool) -> ClientBuilder {
++        self.config.http_proxy_tunnel = enabled;
++        self
++    }
++
+     /// Add a `Proxy` to the list of proxies the `Client` will use.
+     ///
+     /// # Note

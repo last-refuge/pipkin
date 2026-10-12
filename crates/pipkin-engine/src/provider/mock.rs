@@ -88,19 +88,49 @@ impl MockServer {
     pub async fn start(
         handler: impl Fn(&Recorded, usize) -> MockResponse + Send + Sync + 'static,
     ) -> MockServer {
+        Self::start_inner(handler, false).await
+    }
+
+    pub async fn start_tls(
+        handler: impl Fn(&Recorded, usize) -> MockResponse + Send + Sync + 'static,
+    ) -> MockServer {
+        Self::start_inner(handler, true).await
+    }
+
+    async fn start_inner(
+        handler: impl Fn(&Recorded, usize) -> MockResponse + Send + Sync + 'static,
+        tls: bool,
+    ) -> MockServer {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let url = format!("http://{}", listener.local_addr().unwrap());
+        let url = if tls {
+            format!(
+                "https://localhost:{}",
+                listener.local_addr().unwrap().port()
+            )
+        } else {
+            format!("http://{}", listener.local_addr().unwrap())
+        };
+        let acceptor = test_tls_acceptor();
         let requests: Arc<Mutex<Vec<Recorded>>> = Arc::default();
         let handler: Arc<Handler> = Arc::new(handler);
         let recorded = requests.clone();
         let task = tokio::spawn(async move {
             loop {
-                let Ok((mut sock, _)) = listener.accept().await else {
+                let Ok((tcp, _)) = listener.accept().await else {
                     return;
                 };
                 let handler = handler.clone();
                 let recorded = recorded.clone();
+                let acceptor = acceptor.clone();
                 tokio::spawn(async move {
+                    let mut sock: Box<dyn TunnelSocket> = if tls {
+                        let Ok(stream) = acceptor.accept(tcp).await else {
+                            return;
+                        };
+                        Box::new(stream)
+                    } else {
+                        Box::new(tcp)
+                    };
                     let Some(req) = read_request(&mut sock).await else {
                         return;
                     };
@@ -158,7 +188,9 @@ impl MockServer {
     }
 }
 
-async fn read_request(sock: &mut tokio::net::TcpStream) -> Option<Recorded> {
+pub(crate) async fn read_request(
+    sock: &mut (impl tokio::io::AsyncRead + Unpin),
+) -> Option<Recorded> {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 8192];
     let end = loop {
@@ -199,4 +231,86 @@ async fn read_request(sock: &mut tokio::net::TcpStream) -> Option<Recorded> {
         headers,
         body,
     })
+}
+
+/// A real local CONNECT proxy, forwarding only to the explicitly supplied test endpoint.
+/// The proxy never resolves the authority requested by the client.
+pub struct TunnelProxy {
+    pub url: String,
+    requests: Arc<Mutex<Vec<Recorded>>>,
+    task: tokio::task::JoinHandle<()>,
+}
+impl Drop for TunnelProxy {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+trait TunnelSocket: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> TunnelSocket for T {}
+impl TunnelProxy {
+    pub async fn start(target_url: &str, tls: bool) -> Self {
+        let target = url::Url::parse(target_url).unwrap();
+        let upstream = (
+            target.host_str().unwrap().to_owned(),
+            target.port_or_known_default().unwrap(),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!(
+            "{}://{}:{}",
+            if tls { "https" } else { "http" },
+            if tls { "localhost" } else { "127.0.0.1" },
+            listener.local_addr().unwrap().port()
+        );
+        let acceptor = test_tls_acceptor();
+        let requests: Arc<Mutex<Vec<Recorded>>> = Arc::default();
+        let recorded = requests.clone();
+        let task = tokio::spawn(async move {
+            let mut connections = tokio::task::JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted=listener.accept()=> {
+                        let Ok((tcp,_))=accepted else {return};let upstream=upstream.clone();let recorded=recorded.clone();let acceptor=acceptor.clone();
+                        connections.spawn(async move {
+                            let mut socket:Box<dyn TunnelSocket>=if tls {let Ok(s)=acceptor.accept(tcp).await else {return};Box::new(s)}else{Box::new(tcp)};
+                            let Some(request)=read_request(&mut socket).await else {return};
+                            recorded.lock().unwrap().push(request.clone());
+                            if request.method!="CONNECT" {let _=socket.write_all(b"HTTP/1.1 405 CONNECT required\r\nContent-Length: 0\r\n\r\n").await;return;}
+                            let Ok(mut destination)=tokio::net::TcpStream::connect(upstream).await else {return};
+                            if socket.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await.is_err(){return;}
+                            let _=tokio::io::copy_bidirectional(&mut socket,&mut destination).await;
+                        });
+                    },
+                    _=connections.join_next(),if !connections.is_empty()=>{}
+                }
+            }
+        });
+        Self {
+            url,
+            requests,
+            task,
+        }
+    }
+    pub fn requests(&self) -> Vec<Recorded> {
+        self.requests.lock().unwrap().clone()
+    }
+}
+
+fn test_tls_acceptor() -> tokio_rustls::TlsAcceptor {
+    use tokio_rustls::rustls::{
+        ServerConfig,
+        pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
+    };
+    tokio_rustls::TlsAcceptor::from(Arc::new(
+        ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![CertificateDer::from(
+                    include_bytes!("../../../../fixtures/native-tls/localhost.der").to_vec(),
+                )],
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+                    include_bytes!("../../../../fixtures/native-tls/localhost-key.der").to_vec(),
+                )),
+            )
+            .unwrap(),
+    ))
 }

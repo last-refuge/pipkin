@@ -80,6 +80,7 @@ pub(crate) fn client_with_identity(
 
 fn builder(net: &NetSettings) -> reqwest::ClientBuilder {
     let mut builder = reqwest::Client::builder()
+        .http_proxy_tunnel(true)
         .user_agent(concat!("pipkin/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(30))
         .pool_idle_timeout(Duration::from_secs(90))
@@ -338,20 +339,156 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn plain_http_requests_are_forwarded_through_the_configured_proxy() {
+    async fn http_proxy_connect_matches_eight_executed_undici_cases() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/native-http-tunnel/reference.json"
+        ))
+        .unwrap();
+        let cases = fixture["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 8);
+        for case in cases {
+            let target = if case["targetTls"] == true {
+                MockServer::start_tls(|_, _| ok()).await
+            } else {
+                MockServer::start(|_, _| ok()).await
+            };
+            let proxy =
+                crate::provider::mock::TunnelProxy::start(&target.url, case["proxyTls"] == true)
+                    .await;
+            let proxy_url = proxy.url.replacen("://", "://us%65r:p%40ss@", 1);
+            let mut settings = net(
+                &[("HTTP_PROXY", &proxy_url), ("HTTPS_PROXY", &proxy_url)],
+                None,
+            );
+            settings.test_roots =
+                vec![include_bytes!("../../../../fixtures/native-tls/ca.der").to_vec()];
+            let client = client_with(&settings);
+            let response = client
+                .post(case["url"].as_str().unwrap())
+                .header("Authorization", "Bearer origin-secret")
+                .body("{}")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status().as_u16(),
+                case["status"].as_u64().unwrap() as u16
+            );
+            assert_eq!(
+                response.json::<serde_json::Value>().await.unwrap(),
+                case["body"]
+            );
+            let requests = proxy.requests();
+            assert_eq!(requests.len(), 1, "{}", case["name"]);
+            let connect = &requests[0];
+            let actual = serde_json::json!({"method":connect.method,"authority":connect.path,"authorization":connect.header("authorization"),"proxyAuthorization":connect.header("proxy-authorization")});
+            assert_eq!(actual, case["connects"][0], "{}", case["name"]);
+            assert!(connect.body.is_empty());
+            let requests = target.requests();
+            assert_eq!(requests.len(), 1);
+            let origin = &requests[0];
+            let actual = serde_json::json!({"method":origin.method,"path":origin.path,"authorization":origin.header("authorization"),"proxyAuthorization":origin.header("proxy-authorization"),"body":String::from_utf8_lossy(&origin.body)});
+            assert_eq!(actual, case["originRequests"][0], "{}", case["name"]);
+            // Default-port normalization must preserve the brackets around IPv6 authorities.
+            if case["targetTls"] == false {
+                client
+                    .get("http://[::1]/ipv6")
+                    .send()
+                    .await
+                    .unwrap()
+                    .bytes()
+                    .await
+                    .unwrap();
+                assert_eq!(proxy.requests().last().unwrap().path, "[::1]:80");
+                assert_eq!(target.requests().last().unwrap().path, "/ipv6");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn upstream_proxy_default_still_forwards_without_the_opt_in() {
         let proxy = MockServer::start(|_, _| ok()).await;
-        let client = client_with(&net(&[("HTTP_PROXY", &proxy.url)], None));
-        let resp = client
-            .post("http://provider.test:8080/v1/chat")
-            .body("{}")
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .proxy(reqwest::Proxy::all(&proxy.url).unwrap())
+            .build()
+            .unwrap();
+        client
+            .get("http://provider.test/default")
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), 200);
-        let seen = proxy.requests();
-        assert_eq!(seen.len(), 1);
-        assert_eq!(seen[0].method, "POST");
-        assert_eq!(seen[0].path, "http://provider.test:8080/v1/chat");
+        let requests = proxy.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, "GET");
+        assert_eq!(requests[0].path, "http://provider.test/default");
+    }
+
+    #[tokio::test]
+    async fn a_plain_http_tunnel_is_pooled_and_connect_timeout_closes_its_socket() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            for _ in 0..2 {
+                let req = crate::provider::mock::read_request(&mut socket)
+                    .await
+                    .unwrap();
+                assert_eq!(req.path, "/pooled");
+                socket
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                    .await
+                    .unwrap();
+            }
+        });
+        let proxy = crate::provider::mock::TunnelProxy::start(&target, false).await;
+        let client = client_with(&net(&[("HTTP_PROXY", &proxy.url)], None));
+        for _ in 0..2 {
+            assert_eq!(
+                client
+                    .get("http://provider.test/pooled")
+                    .send()
+                    .await
+                    .unwrap()
+                    .text()
+                    .await
+                    .unwrap(),
+                "ok"
+            );
+        }
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(proxy.requests().len(), 1);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let req = crate::provider::mock::read_request(&mut socket)
+                .await
+                .unwrap();
+            assert_eq!(req.method, "CONNECT");
+            let mut byte = [0];
+            tokio::time::timeout(Duration::from_secs(5), socket.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap()
+        });
+        let client = client_with(&net(&[("HTTP_PROXY", &url)], None));
+        let error = client
+            .get("http://provider.test/stall")
+            .timeout(Duration::from_millis(100))
+            .send()
+            .await
+            .unwrap_err();
+        assert!(error.is_timeout());
+        assert_eq!(
+            task.await.unwrap(),
+            0,
+            "a timed-out CONNECT must close its socket"
+        );
     }
 
     #[tokio::test]

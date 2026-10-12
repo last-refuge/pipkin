@@ -11,7 +11,36 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — configured TLS roots and connection isolation
+## Current follow-up — plain HTTP CONNECT proxy parity
+
+2026-10-12, following **`bdc7a26`**. Native now tunnels HTTP origins through HTTP/HTTPS
+proxies with CONNECT, matching pinned Pi's undici configuration. An additive, default-off
+option in a locally vendored reqwest 0.12.28 retains the existing HTTP/TLS implementation,
+pooling and timeouts. The archive was verified against the committed Cargo.lock checksum;
+all original licenses remain, source modifications are identified, and the package inventory
+includes the patch and provenance. Packaging and qualification CI verify the vendor tree.
+
+Eight executed Node 26.8.1 / undici 8.10.2 reference cases cover origin/proxy protocols and
+ports. Native comparisons check authority, body, authorization and credential separation.
+Additional tests cover IPv6 default ports, pool reuse, stalled CONNECT cleanup, NO_PROXY,
+runtime setting changes, catalog requests and unchanged behavior without the opt-in.
+See [HTTP CONNECT evidence](pipkin-rust-engine-evidence/http-connect-tunnels.md).
+
+The corrected proxy suite passed **22 tests**, the HTTP suite **8 tests**, and final workspace
+checks **1617 tests, 0 failed, 53 ignored**, with clean Clippy and formatting. Initial compile,
+fixture and lint corrections remain recorded in the evidence. Vendor verification, tamper
+checks and license inventory generation passed. No installed package, GitHub CI run or
+additional platform acceptance is claimed. Logs: `/tmp/pipkin-http-tunnel-workspace2.log`,
+`/tmp/pipkin-http-tunnel-clippy2.log`, `/tmp/pipkin-http-tunnel-fmt.log`.
+
+Protocol 11 / schema 9 unchanged. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**. Native remains opt-in. Unusable-proxy diagnostics,
+credential retry comparisons, OS/Node-specific trust scope, remaining settings/migration,
+sustained workloads and clean release/CI/platform qualification remain open. Owner plan and
+worktree changes are preserved.
+
+## Previous follow-up — configured TLS roots and connection isolation
 
 2026-10-12, following **`d948887`**. Native now honors the engine's
 `NODE_EXTRA_CA_CERTS` configuration for shared HTTP, credential/identity clients and Codex

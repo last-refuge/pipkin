@@ -349,7 +349,8 @@ async fn header_timeouts_retry_at_most_twice_and_body_stalls_are_bounded() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn refresh_uses_the_engine_proxy_without_provider_headers() {
-    let proxy = MockServer::start(|_, _| response(&catalog())).await;
+    let target = MockServer::start(|_, _| response(&catalog())).await;
+    let proxy = crate::provider::mock::TunnelProxy::start(&target.url, false).await;
     let mut fx = Fixture::new(&[
         ("OPENAI_API_KEY", "private-key"),
         ("HTTP_PROXY", &proxy.url),
@@ -360,12 +361,13 @@ async fn refresh_uses_the_engine_proxy_without_provider_headers() {
     assert!(auth.catalog().find("openai/catalog-test").is_some());
     let requests = proxy.requests();
     assert_eq!(requests.len(), 1);
-    assert!(
-        requests[0]
-            .path
-            .starts_with("http://catalog.invalid/api/models/providers/openai?")
-    );
+    assert_eq!(requests[0].method, "CONNECT");
+    assert_eq!(requests[0].path, "catalog.invalid:80");
     assert!(requests[0].header("authorization").is_none());
+    let origin = target.requests();
+    assert_eq!(origin.len(), 1);
+    assert!(origin[0].path.starts_with("/api/models/providers/openai?"));
+    assert!(origin[0].header("authorization").is_none());
 }
 
 #[tokio::test(flavor = "multi_thread")]

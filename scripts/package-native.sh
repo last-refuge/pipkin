@@ -12,6 +12,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 cd "$here"
+python3 scripts/verify-reqwest-vendor.py
 version=$(cargo pkgid -p pipkin-app | sed 's/.*[#@]//')
 arch=$(uname -m)
 target=$(rustc -vV | awk '/^host:/ {print $2}')

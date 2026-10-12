@@ -1,0 +1,229 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "node": "v26.8.1",
+  "undici": {
+    "version": "8.10.2",
+    "integrity": "sha512-/y4/bH9YNU5hi9NIrpOuvGXFcxrj3CMrV+/AYpowAYTpHn8gX/XPFjNy766FPoYY0miQhdW977JFWKGNhBdwyQ==",
+    "entrySha256": "93fc85c00a59b58f410c901e5477d56770de3816bfbe183e751624aeb4a5e6a5"
+  },
+  "dispatcherSha256": "d64922c476d11b90555b8f23cab92ce1f4f83174cb750c125a96d8d4374744e2",
+  "scope": "Eight real local origin/proxy combinations using pinned EnvHttpProxyAgent with proxyTunnel:true; synthetic credentials",
+  "cases": [
+    {
+      "name": "http-via-http-default",
+      "url": "http://provider.test/v1/chat",
+      "proxyTls": false,
+      "targetTls": false,
+      "status": 200,
+      "body": {
+        "ok": true
+      },
+      "connects": [
+        {
+          "method": "CONNECT",
+          "authority": "provider.test:80",
+          "authorization": null,
+          "proxyAuthorization": "Basic dXNlcjpwQHNz"
+        }
+      ],
+      "originRequests": [
+        {
+          "method": "POST",
+          "path": "/v1/chat",
+          "authorization": "Bearer origin-secret",
+          "proxyAuthorization": null,
+          "body": "{}"
+        }
+      ]
+    },
+    {
+      "name": "http-via-http-port",
+      "url": "http://provider.test:8080/v1/chat",
+      "proxyTls": false,
+      "targetTls": false,
+      "status": 200,
+      "body": {
+        "ok": true
+      },
+      "connects": [
+        {
+          "method": "CONNECT",
+          "authority": "provider.test:8080",
+          "authorization": null,
+          "proxyAuthorization": "Basic dXNlcjpwQHNz"
+        }
+      ],
+      "originRequests": [
+        {
+          "method": "POST",
+          "path": "/v1/chat",
+          "authorization": "Bearer origin-secret",
+          "proxyAuthorization": null,
+          "body": "{}"
+        }
+      ]
+    },
+    {
+      "name": "https-via-http-default",
+      "url": "https://localhost/v1/chat",
+      "proxyTls": false,
+      "targetTls": true,
+      "status": 200,
+      "body": {
+        "ok": true
+      },
+      "connects": [
+        {
+          "method": "CONNECT",
+          "authority": "localhost:443",
+          "authorization": null,
+          "proxyAuthorization": "Basic dXNlcjpwQHNz"
+        }
+      ],
+      "originRequests": [
+        {
+          "method": "POST",
+          "path": "/v1/chat",
+          "authorization": "Bearer origin-secret",
+          "proxyAuthorization": null,
+          "body": "{}"
+        }
+      ]
+    },
+    {
+      "name": "https-via-http-port",
+      "url": "https://localhost:8443/v1/chat",
+      "proxyTls": false,
+      "targetTls": true,
+      "status": 200,
+      "body": {
+        "ok": true
+      },
+      "connects": [
+        {
+          "method": "CONNECT",
+          "authority": "localhost:8443",
+          "authorization": null,
+          "proxyAuthorization": "Basic dXNlcjpwQHNz"
+        }
+      ],
+      "originRequests": [
+        {
+          "method": "POST",
+          "path": "/v1/chat",
+          "authorization": "Bearer origin-secret",
+          "proxyAuthorization": null,
+          "body": "{}"
+        }
+      ]
+    },
+    {
+      "name": "http-via-https-default",
+      "url": "http://provider.test/v1/chat",
+      "proxyTls": true,
+      "targetTls": false,
+      "status": 200,
+      "body": {
+        "ok": true
+      },
+      "connects": [
+        {
+          "method": "CONNECT",
+          "authority": "provider.test:80",
+          "authorization": null,
+          "proxyAuthorization": "Basic dXNlcjpwQHNz"
+        }
+      ],
+      "originRequests": [
+        {
+          "method": "POST",
+          "path": "/v1/chat",
+          "authorization": "Bearer origin-secret",
+          "proxyAuthorization": null,
+          "body": "{}"
+        }
+      ]
+    },
+    {
+      "name": "http-via-https-port",
+      "url": "http://provider.test:8080/v1/chat",
+      "proxyTls": true,
+      "targetTls": false,
+      "status": 200,
+      "body": {
+        "ok": true
+      },
+      "connects": [
+        {
+          "method": "CONNECT",
+          "authority": "provider.test:8080",
+          "authorization": null,
+          "proxyAuthorization": "Basic dXNlcjpwQHNz"
+        }
+      ],
+      "originRequests": [
+        {
+          "method": "POST",
+          "path": "/v1/chat",
+          "authorization": "Bearer origin-secret",
+          "proxyAuthorization": null,
+          "body": "{}"
+        }
+      ]
+    },
+    {
+      "name": "https-via-https-default",
+      "url": "https://localhost/v1/chat",
+      "proxyTls": true,
+      "targetTls": true,
+      "status": 200,
+      "body": {
+        "ok": true
+      },
+      "connects": [
+        {
+          "method": "CONNECT",
+          "authority": "localhost:443",
+          "authorization": null,
+          "proxyAuthorization": "Basic dXNlcjpwQHNz"
+        }
+      ],
+      "originRequests": [
+        {
+          "method": "POST",
+          "path": "/v1/chat",
+          "authorization": "Bearer origin-secret",
+          "proxyAuthorization": null,
+          "body": "{}"
+        }
+      ]
+    },
+    {
+      "name": "https-via-https-port",
+      "url": "https://localhost:8443/v1/chat",
+      "proxyTls": true,
+      "targetTls": true,
+      "status": 200,
+      "body": {
+        "ok": true
+      },
+      "connects": [
+        {
+          "method": "CONNECT",
+          "authority": "localhost:8443",
+          "authorization": null,
+          "proxyAuthorization": "Basic dXNlcjpwQHNz"
+        }
+      ],
+      "originRequests": [
+        {
+          "method": "POST",
+          "path": "/v1/chat",
+          "authorization": "Bearer origin-secret",
+          "proxyAuthorization": null,
+          "body": "{}"
+        }
+      ]
+    }
+  ]
+}

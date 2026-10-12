@@ -706,16 +706,21 @@ fn model_thinking_levels_apply_to_new_sessions_and_model_switches() {
     assert_eq!(session_model(&mut e, &s).1, "minimal");
 }
 
-/// A local "provider" and a recording "proxy"; both answer with a non-retryable 400 so a run
-/// settles at once.
-fn servers(rt: &tokio::runtime::Runtime) -> (MockServer, MockServer) {
+/// Separate direct/proxied origins return a non-retryable 400; a real CONNECT proxy routes
+/// to the second origin so the test can distinguish direct and tunneled traffic.
+fn servers(
+    rt: &tokio::runtime::Runtime,
+) -> (MockServer, crate::provider::mock::TunnelProxy, MockServer) {
     let refuse = |_: &crate::provider::mock::Recorded, _| {
         MockResponse::json(400, &json!({"error": {"message": "refused by test"}}))
     };
-    (
-        rt.block_on(MockServer::start(refuse)),
-        rt.block_on(MockServer::start(refuse)),
-    )
+    let provider = rt.block_on(MockServer::start(refuse));
+    let proxied = rt.block_on(MockServer::start(refuse));
+    let proxy = rt.block_on(crate::provider::mock::TunnelProxy::start(
+        &proxied.url,
+        false,
+    ));
+    (provider, proxy, proxied)
 }
 
 fn local_session(fx: &Fixture, provider_url: &str, env: Env) -> (Engine, String) {
@@ -731,7 +736,7 @@ fn local_session(fx: &Fixture, provider_url: &str, env: Env) -> (Engine, String)
 #[test]
 fn engine_env_proxy_variables_route_model_requests() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let (provider, proxy) = servers(&rt);
+    let (provider, proxy, proxied) = servers(&rt);
     let fx = Fixture::new();
     let env = Env::isolated(HashMap::from([("HTTP_PROXY".into(), proxy.url.clone())]));
     let (mut e, s) = local_session(&fx, &provider.url, env);
@@ -740,16 +745,16 @@ fn engine_env_proxy_variables_route_model_requests() {
     assert!(provider.requests().is_empty());
     let seen = proxy.requests();
     assert_eq!(seen.len(), 1);
-    assert_eq!(
-        seen[0].path,
-        format!("{}/v1/chat/completions", provider.url)
-    );
+    assert_eq!(seen[0].path, provider.url.strip_prefix("http://").unwrap());
+    assert_eq!(seen[0].method, "CONNECT");
+    assert_eq!(proxied.requests().len(), 1);
+    assert_eq!(proxied.requests()[0].path, "/v1/chat/completions");
 }
 
 #[test]
 fn settings_http_proxy_is_applied_without_a_restart_and_unsupported_proxies_fail_clearly() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let (provider, proxy) = servers(&rt);
+    let (provider, proxy, proxied) = servers(&rt);
     let fx = Fixture::new();
     let (mut e, s) = local_session(&fx, &provider.url, Env::isolated(HashMap::new()));
     e.prompt(&s, "r1", "hi").unwrap();
@@ -790,6 +795,7 @@ fn settings_http_proxy_is_applied_without_a_restart_and_unsupported_proxies_fail
     e.prompt(&s, "r4", "fourth").unwrap();
     e.settled("r4");
     assert_eq!(provider.requests().len(), 2);
+    assert_eq!(proxied.requests().len(), 1);
     assert_eq!(proxy.requests().len(), 1);
 }
 

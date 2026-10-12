@@ -207,7 +207,7 @@ fn an_isolated_engine_ignores_proxies_in_the_process_environment() {
     );
     assert!(proxy.lines().is_empty(), "{:?}", proxy.lines());
 
-    // The process environment: the same request goes through the proxy (absolute-form).
+    // The process environment: the same request attempts a CONNECT tunnel through the proxy.
     let mut ambient = Client::start(&dir.path().join("ambient"), Env::process(), &provider.url);
     assert!(matches!(
         ambient.prompt_once(&project),
@@ -217,8 +217,8 @@ fn an_isolated_engine_ignores_proxies_in_the_process_environment() {
     assert_eq!(
         proxy.lines(),
         vec![format!(
-            "POST {}/v1/chat/completions HTTP/1.1",
-            provider.url
+            "CONNECT {} HTTP/1.1",
+            provider.url.strip_prefix("http://").unwrap()
         )]
     );
 }

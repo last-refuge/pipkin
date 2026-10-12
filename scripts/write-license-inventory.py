@@ -110,8 +110,20 @@ for identity in sorted(seen):
             break
     if package.get('license_file'):
         inherited = [Path(package['license_file'])]
+    source = package['source'] or 'Pipkin workspace'
+    vendor_patch = None
+    if package['source'] is None and directory.resolve().is_relative_to((ROOT / 'vendor').resolve()):
+        source = 'Vendored dependency; see ' + str(directory.relative_to(ROOT)) + '/PIPKIN-PATCH.md'
+        if package['name'] == 'reqwest':
+            vendor_patch = OUT / 'patches' / f"reqwest-{package['version']}"
+            vendor_patch.mkdir(parents=True, exist_ok=True)
+            for path in [directory / 'PIPKIN-PATCH.md', ROOT / 'vendor/reqwest-provenance.json', ROOT / 'vendor/reqwest-http-tunnel.patch']:
+                shutil.copyfile(path, vendor_patch / path.name)
+            source = 'Vendored dependency; see ' + str((vendor_patch / 'PIPKIN-PATCH.md').relative_to(OUT))
     collect('rust', package['name'], package['version'], package['license'],
-            package['source'] or 'Pipkin workspace', directory, inherited)
+            source, directory, inherited)
+    if vendor_patch is not None:
+        records[-1]['patchProvenance'] = str(vendor_patch.relative_to(OUT))
     if package['license'] == 'MPL-2.0':
         # Ship the exact unmodified registry source, not just a vague source offer.
         target = OUT / 'sources' / f"{package['name']}-{package['version']}"
