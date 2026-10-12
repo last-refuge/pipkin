@@ -1,0 +1,351 @@
+== building release engine
+   Compiling pipkin-engine v0.0.1 (/home/jason/coding/pipkin/crates/pipkin-engine)
+    Finished `release` profile [optimized + debuginfo] target(s) in 21.42s
+    Finished `release` profile [optimized + debuginfo] target(s) in 22.13s
+  Executable tests/perf.rs (target/release/deps/perf-579df25b6622f8d2)
+== machine: { "cpu": "Intel(R) Core(TM) Ultra X7 358H", "logicalCpus": 16, "memTotalKiB": 65326544, "kernel": "7.2.5-3-omarchy", "governor": "powersave", "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)", "gitRevision": "63bd9ae1e0aa6cd746ced79bed0b6de3756e7075", "gitDirty": true, "loadavg": "5.62 5.77 4.76 1/3632 1448489", "scratch": "/home/jason/coding/pipkin/target/tmp", "scratchFilesystem": "btrfs", "releaseProfile": "workspace [profile.release]: opt-level 3, debug = line-tables-only"}
+== test soak_1500 (loadavg 5.62 5.77 4.76)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.14s
+     Running tests/perf.rs (target/release/deps/perf-579df25b6622f8d2)
+
+running 1 test
+test soak_1500 ... soak-1500 turn 1: rss 21908 KiB pss 19268 KiB fds 13 threads 7 turn 5.8 ms
+soak-1500 turn 50: rss 22740 KiB pss 20100 KiB fds 13 threads 8 turn 4.8 ms
+soak-1500 turn 100: rss 23372 KiB pss 20740 KiB fds 13 threads 8 turn 7.7 ms
+soak-1500 turn 150: rss 23692 KiB pss 21052 KiB fds 13 threads 8 turn 7.1 ms
+soak-1500 turn 200: rss 23984 KiB pss 21344 KiB fds 13 threads 8 turn 8.7 ms
+soak-1500 turn 250: rss 24248 KiB pss 21608 KiB fds 13 threads 8 turn 9.1 ms
+soak-1500 turn 300: rss 24460 KiB pss 21820 KiB fds 13 threads 8 turn 9.8 ms
+soak-1500 turn 350: rss 24584 KiB pss 21944 KiB fds 13 threads 8 turn 11.6 ms
+soak-1500 turn 400: rss 24696 KiB pss 22068 KiB fds 13 threads 8 turn 14.1 ms
+soak-1500 turn 450: rss 24932 KiB pss 22304 KiB fds 13 threads 8 turn 13.8 ms
+soak-1500 turn 500: rss 25128 KiB pss 22503 KiB fds 13 threads 8 turn 14.6 ms
+soak-1500 turn 550: rss 25308 KiB pss 22668 KiB fds 13 threads 8 turn 18.1 ms
+soak-1500 turn 600: rss 25480 KiB pss 22848 KiB fds 13 threads 8 turn 19.3 ms
+soak-1500 turn 650: rss 25640 KiB pss 23000 KiB fds 13 threads 8 turn 20.1 ms
+soak-1500 turn 700: rss 25832 KiB pss 23191 KiB fds 13 threads 8 turn 18.9 ms
+soak-1500 turn 750: rss 26016 KiB pss 23383 KiB fds 13 threads 8 turn 24.6 ms
+soak-1500 turn 800: rss 26184 KiB pss 23544 KiB fds 13 threads 8 turn 21.1 ms
+soak-1500 turn 850: rss 26380 KiB pss 23740 KiB fds 13 threads 8 turn 24.7 ms
+soak-1500 turn 900: rss 26608 KiB pss 23968 KiB fds 13 threads 8 turn 28.7 ms
+soak-1500 turn 950: rss 26712 KiB pss 24072 KiB fds 13 threads 8 turn 24.0 ms
+soak-1500 turn 1000: rss 26760 KiB pss 24120 KiB fds 13 threads 8 turn 26.7 ms
+soak-1500 turn 1050: rss 26864 KiB pss 24224 KiB fds 13 threads 8 turn 31.9 ms
+soak-1500 turn 1100: rss 26956 KiB pss 24316 KiB fds 13 threads 8 turn 63.4 ms
+soak-1500 turn 1150: rss 27004 KiB pss 24368 KiB fds 13 threads 8 turn 28.6 ms
+soak-1500 turn 1200: rss 27060 KiB pss 24420 KiB fds 13 threads 8 turn 29.7 ms
+soak-1500 turn 1250: rss 27116 KiB pss 24481 KiB fds 13 threads 8 turn 29.6 ms
+soak-1500 turn 1300: rss 27212 KiB pss 24577 KiB fds 13 threads 8 turn 30.1 ms
+soak-1500 turn 1350: rss 27224 KiB pss 24584 KiB fds 13 threads 8 turn 33.4 ms
+soak-1500 turn 1400: rss 27308 KiB pss 24669 KiB fds 13 threads 8 turn 33.1 ms
+soak-1500 turn 1450: rss 27404 KiB pss 24765 KiB fds 13 threads 8 turn 35.3 ms
+soak-1500 turn 1500: rss 27540 KiB pss 24901 KiB fds 13 threads 8 turn 35.6 ms
+soak-1500 turn 1550: rss 27592 KiB pss 24952 KiB fds 13 threads 8 turn 36.0 ms
+soak-1500 turn 1600: rss 27456 KiB pss 24815 KiB fds 13 threads 8 turn 37.0 ms
+{
+  "warmupTurns": 100,
+  "measuredTurns": 1500,
+  "newSessionEvery": 0,
+  "engineEnv": [],
+  "reply": "answer <n>: + \"words \" x 40 (no tools), as the reference soak",
+  "rssKiBIdleBefore": 25096.0,
+  "pssKiBIdleBefore": 22456.0,
+  "rssKiBAfterTurn1": 21908.0,
+  "rssKiBAfterLastTurn": 27456.0,
+  "pssKiBAfterLastTurn": 24815.0,
+  "rssKiBIdleAfter": 27456.0,
+  "pssKiBIdleAfter": 24816.0,
+  "rssKiBPeakSampled50ms": 39840,
+  "vmHwmKiB": 39748.0,
+  "maxProcessesSeen": 1,
+  "maxFdsSeen": 14,
+  "fdsIdleBefore": 13.0,
+  "fdsIdleAfter": 13.0,
+  "threadsIdleAfter": 8.0,
+  "rssSlopeKiBPerTurnMeasured": 2.729,
+  "rssSlopeKiBPerTurnSecondHalf": 1.44,
+  "pssSlopeKiBPerTurnMeasured": 2.726,
+  "fdSlopePerTurnMeasured": 0.0,
+  "turnLatencyMs": {
+    "n": 1500,
+    "p50": 24.896,
+    "p95": 43.745,
+    "min": 5.828,
+    "max": 299.722,
+    "mean": 27.355
+  },
+  "wallSecs": 41.842,
+  "engineCpuSecsTotal": 34.78,
+  "engineCpuMsPerMeasuredTurn": 22.98,
+  "dbBytes": 3309568,
+  "walBytes": 4185952,
+  "providerRequestBytesTotal": 459260683,
+  "openSessionAfterSoak": {
+    "ms": 1.397,
+    "replyBytes": 93260,
+    "entries": 200,
+    "hasOlder": true
+  },
+  "exitAfterStdinCloseMs": 13.89
+}
+wrote /home/jason/coding/pipkin/fixtures/native-bench/2026-10-11-event-reclaimed/soak-1500.json
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 45.94s
+
+== test soak_diagnostic (loadavg 3.90 5.29 4.65)
+   Compiling pipkin-engine-protocol v0.0.1 (/home/jason/coding/pipkin/crates/pipkin-engine-protocol)
+   Compiling pipkin-engine v0.0.1 (/home/jason/coding/pipkin/crates/pipkin-engine)
+    Finished `release` profile [optimized + debuginfo] target(s) in 26.08s
+     Running tests/perf.rs (target/release/deps/perf-579df25b6622f8d2)
+
+running 1 test
+test soak_diagnostic ... soak-diag-new-session-every-10 turn 1: rss 21884 KiB pss 19288 KiB fds 13 threads 7 turn 5.9 ms
+soak-diag-new-session-every-10 turn 50: rss 22724 KiB pss 20123 KiB fds 13 threads 8 turn 3.9 ms
+soak-diag-new-session-every-10 turn 100: rss 23056 KiB pss 20454 KiB fds 13 threads 8 turn 4.2 ms
+soak-diag-new-session-every-10 turn 150: rss 23304 KiB pss 20722 KiB fds 13 threads 8 turn 4.8 ms
+soak-diag-new-session-every-10 turn 200: rss 23540 KiB pss 20954 KiB fds 13 threads 8 turn 3.5 ms
+soak-diag-new-session-every-10 turn 250: rss 23724 KiB pss 21138 KiB fds 13 threads 8 turn 4.8 ms
+soak-diag-new-session-every-10 turn 300: rss 23916 KiB pss 21314 KiB fds 13 threads 8 turn 5.1 ms
+soak-diag-new-session-every-10 turn 350: rss 24076 KiB pss 21482 KiB fds 13 threads 8 turn 4.4 ms
+soak-diag-new-session-every-10 turn 400: rss 24256 KiB pss 21654 KiB fds 13 threads 8 turn 4.1 ms
+soak-diag-new-session-every-10 turn 450: rss 24468 KiB pss 21866 KiB fds 13 threads 8 turn 3.8 ms
+soak-diag-new-session-every-10 turn 500: rss 24636 KiB pss 22037 KiB fds 13 threads 8 turn 4.9 ms
+soak-diag-new-session-every-10 turn 550: rss 24824 KiB pss 22222 KiB fds 13 threads 8 turn 4.6 ms
+soak-diag-new-session-every-10 turn 600: rss 24976 KiB pss 22378 KiB fds 13 threads 8 turn 5.0 ms
+soak-diag-new-session-every-10 turn 650: rss 25180 KiB pss 22594 KiB fds 13 threads 8 turn 4.1 ms
+soak-diag-new-session-every-10 turn 700: rss 25336 KiB pss 22750 KiB fds 13 threads 8 turn 4.5 ms
+soak-diag-new-session-every-10 turn 750: rss 25516 KiB pss 22930 KiB fds 13 threads 8 turn 5.7 ms
+soak-diag-new-session-every-10 turn 800: rss 25700 KiB pss 23110 KiB fds 13 threads 8 turn 4.7 ms
+soak-diag-new-session-every-10 turn 850: rss 25876 KiB pss 23290 KiB fds 13 threads 8 turn 5.6 ms
+soak-diag-new-session-every-10 turn 900: rss 26172 KiB pss 23574 KiB fds 13 threads 10 turn 4.8 ms
+soak-diag-new-session-every-10 turn 950: rss 26320 KiB pss 23734 KiB fds 13 threads 10 turn 26.8 ms
+soak-diag-new-session-every-10 turn 1000: rss 26460 KiB pss 23858 KiB fds 13 threads 10 turn 5.6 ms
+soak-diag-new-session-every-10 turn 1050: rss 26560 KiB pss 23958 KiB fds 13 threads 10 turn 5.9 ms
+soak-diag-new-session-every-10 turn 1100: rss 26624 KiB pss 24022 KiB fds 13 threads 10 turn 6.0 ms
+soak-diag-new-session-every-10 turn 1150: rss 26688 KiB pss 24094 KiB fds 13 threads 10 turn 5.4 ms
+soak-diag-new-session-every-10 turn 1200: rss 26764 KiB pss 24163 KiB fds 13 threads 10 turn 6.2 ms
+soak-diag-new-session-every-10 turn 1250: rss 26828 KiB pss 24231 KiB fds 13 threads 10 turn 7.4 ms
+soak-diag-new-session-every-10 turn 1300: rss 26876 KiB pss 24291 KiB fds 13 threads 10 turn 29.3 ms
+soak-diag-new-session-every-10 turn 1350: rss 26984 KiB pss 24380 KiB fds 13 threads 10 turn 134.0 ms
+soak-diag-new-session-every-10 turn 1400: rss 27032 KiB pss 24437 KiB fds 13 threads 10 turn 8.4 ms
+soak-diag-new-session-every-10 turn 1450: rss 27096 KiB pss 24501 KiB fds 13 threads 10 turn 5.5 ms
+soak-diag-new-session-every-10 turn 1500: rss 27164 KiB pss 24570 KiB fds 13 threads 10 turn 4.6 ms
+soak-diag-new-session-every-10 turn 1550: rss 27192 KiB pss 24606 KiB fds 13 threads 10 turn 4.9 ms
+soak-diag-new-session-every-10 turn 1600: rss 27256 KiB pss 24666 KiB fds 13 threads 10 turn 4.5 ms
+{
+  "warmupTurns": 100,
+  "measuredTurns": 1500,
+  "newSessionEvery": 10,
+  "engineEnv": [],
+  "reply": "answer <n>: + \"words \" x 40 (no tools), as the reference soak",
+  "rssKiBIdleBefore": 25052.0,
+  "pssKiBIdleBefore": 22452.0,
+  "rssKiBAfterTurn1": 21884.0,
+  "rssKiBAfterLastTurn": 27256.0,
+  "pssKiBAfterLastTurn": 24666.0,
+  "rssKiBIdleAfter": 27268.0,
+  "pssKiBIdleAfter": 24666.0,
+  "rssKiBPeakSampled50ms": 27272,
+  "vmHwmKiB": 27268.0,
+  "maxProcessesSeen": 1,
+  "maxFdsSeen": 14,
+  "fdsIdleBefore": 13.0,
+  "fdsIdleAfter": 13.0,
+  "threadsIdleAfter": 10.0,
+  "rssSlopeKiBPerTurnMeasured": 2.872,
+  "rssSlopeKiBPerTurnSecondHalf": 1.609,
+  "pssSlopeKiBPerTurnMeasured": 2.872,
+  "fdSlopePerTurnMeasured": 0.0,
+  "turnLatencyMs": {
+    "n": 1500,
+    "p50": 4.95,
+    "p95": 24.873,
+    "min": 3.224,
+    "max": 550.896,
+    "mean": 9.143
+  },
+  "wallSecs": 14.891,
+  "engineCpuSecsTotal": 6.01,
+  "engineCpuMsPerMeasuredTurn": 3.86,
+  "dbBytes": 3440640,
+  "walBytes": 4198312,
+  "providerRequestBytesTotal": 14073703,
+  "openSessionAfterSoak": {
+    "ms": 1.556,
+    "replyBytes": 9975,
+    "entries": 20,
+    "hasOlder": false
+  },
+  "exitAfterStdinCloseMs": 23.794
+}
+wrote /home/jason/coding/pipkin/fixtures/native-bench/2026-10-11-event-reclaimed/soak-diag-new-session-every-10.json
+soak-diag-glibc-fixed-mmap-threshold turn 1: rss 21924 KiB pss 19387 KiB fds 13 threads 7 turn 7.3 ms
+soak-diag-glibc-fixed-mmap-threshold turn 50: rss 22636 KiB pss 20111 KiB fds 13 threads 8 turn 6.9 ms
+soak-diag-glibc-fixed-mmap-threshold turn 100: rss 23148 KiB pss 20611 KiB fds 13 threads 8 turn 9.3 ms
+soak-diag-glibc-fixed-mmap-threshold turn 150: rss 23548 KiB pss 21011 KiB fds 13 threads 8 turn 7.7 ms
+soak-diag-glibc-fixed-mmap-threshold turn 200: rss 23932 KiB pss 21399 KiB fds 13 threads 9 turn 11.2 ms
+soak-diag-glibc-fixed-mmap-threshold turn 250: rss 24516 KiB pss 21983 KiB fds 13 threads 9 turn 14.6 ms
+soak-diag-glibc-fixed-mmap-threshold turn 300: rss 24748 KiB pss 22211 KiB fds 13 threads 9 turn 14.8 ms
+soak-diag-glibc-fixed-mmap-threshold turn 350: rss 24908 KiB pss 22371 KiB fds 13 threads 9 turn 15.9 ms
+soak-diag-glibc-fixed-mmap-threshold turn 400: rss 25080 KiB pss 22543 KiB fds 13 threads 9 turn 16.7 ms
+soak-diag-glibc-fixed-mmap-threshold turn 450: rss 25196 KiB pss 22658 KiB fds 13 threads 9 turn 16.1 ms
+soak-diag-glibc-fixed-mmap-threshold turn 500: rss 25404 KiB pss 22875 KiB fds 13 threads 9 turn 19.2 ms
+soak-diag-glibc-fixed-mmap-threshold turn 550: rss 25576 KiB pss 23039 KiB fds 13 threads 9 turn 19.1 ms
+soak-diag-glibc-fixed-mmap-threshold turn 600: rss 25748 KiB pss 23211 KiB fds 13 threads 9 turn 20.3 ms
+soak-diag-glibc-fixed-mmap-threshold turn 650: rss 25888 KiB pss 23359 KiB fds 13 threads 9 turn 21.0 ms
+soak-diag-glibc-fixed-mmap-threshold turn 700: rss 26092 KiB pss 23559 KiB fds 13 threads 9 turn 23.1 ms
+soak-diag-glibc-fixed-mmap-threshold turn 750: rss 26216 KiB pss 23694 KiB fds 13 threads 9 turn 24.1 ms
+soak-diag-glibc-fixed-mmap-threshold turn 800: rss 26452 KiB pss 23915 KiB fds 13 threads 9 turn 30.5 ms
+soak-diag-glibc-fixed-mmap-threshold turn 850: rss 26684 KiB pss 24154 KiB fds 13 threads 9 turn 34.6 ms
+soak-diag-glibc-fixed-mmap-threshold turn 900: rss 26832 KiB pss 24298 KiB fds 13 threads 9 turn 29.4 ms
+soak-diag-glibc-fixed-mmap-threshold turn 950: rss 26864 KiB pss 24333 KiB fds 13 threads 9 turn 35.0 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1000: rss 26872 KiB pss 24334 KiB fds 13 threads 9 turn 23.8 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1050: rss 26972 KiB pss 24434 KiB fds 13 threads 9 turn 38.5 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1100: rss 27052 KiB pss 24514 KiB fds 13 threads 9 turn 27.7 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1150: rss 27176 KiB pss 24643 KiB fds 13 threads 9 turn 49.4 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1200: rss 27240 KiB pss 24703 KiB fds 13 threads 9 turn 71.8 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1250: rss 27316 KiB pss 24779 KiB fds 13 threads 9 turn 36.2 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1300: rss 27336 KiB pss 24799 KiB fds 13 threads 9 turn 38.9 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1350: rss 27424 KiB pss 24890 KiB fds 13 threads 9 turn 42.3 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1400: rss 27404 KiB pss 24867 KiB fds 13 threads 9 turn 33.4 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1450: rss 27452 KiB pss 24916 KiB fds 13 threads 9 turn 34.3 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1500: rss 27464 KiB pss 24928 KiB fds 13 threads 9 turn 41.8 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1550: rss 27488 KiB pss 24952 KiB fds 13 threads 9 turn 44.1 ms
+soak-diag-glibc-fixed-mmap-threshold turn 1600: rss 27632 KiB pss 25096 KiB fds 13 threads 9 turn 37.5 ms
+{
+  "warmupTurns": 100,
+  "measuredTurns": 1500,
+  "newSessionEvery": 0,
+  "engineEnv": [
+    "GLIBC_TUNABLES=glibc.malloc.mmap_threshold=131072:glibc.malloc.arena_max=1"
+  ],
+  "reply": "answer <n>: + \"words \" x 40 (no tools), as the reference soak",
+  "rssKiBIdleBefore": 25052.0,
+  "pssKiBIdleBefore": 22515.0,
+  "rssKiBAfterTurn1": 21924.0,
+  "rssKiBAfterLastTurn": 27632.0,
+  "pssKiBAfterLastTurn": 25096.0,
+  "rssKiBIdleAfter": 27632.0,
+  "pssKiBIdleAfter": 25096.0,
+  "rssKiBPeakSampled50ms": 38932,
+  "vmHwmKiB": 39796.0,
+  "maxProcessesSeen": 1,
+  "maxFdsSeen": 14,
+  "fdsIdleBefore": 13.0,
+  "fdsIdleAfter": 13.0,
+  "threadsIdleAfter": 9.0,
+  "rssSlopeKiBPerTurnMeasured": 2.682,
+  "rssSlopeKiBPerTurnSecondHalf": 1.177,
+  "pssSlopeKiBPerTurnMeasured": 2.681,
+  "fdSlopePerTurnMeasured": 0.0,
+  "turnLatencyMs": {
+    "n": 1500,
+    "p50": 28.338,
+    "p95": 55.785,
+    "min": 6.304,
+    "max": 319.93,
+    "mean": 31.787
+  },
+  "wallSecs": 48.6,
+  "engineCpuSecsTotal": 40.76,
+  "engineCpuMsPerMeasuredTurn": 26.933,
+  "dbBytes": 3309568,
+  "walBytes": 4185952,
+  "providerRequestBytesTotal": 459303883,
+  "openSessionAfterSoak": {
+    "ms": 1.659,
+    "replyBytes": 93287,
+    "entries": 200,
+    "hasOlder": true
+  },
+  "exitAfterStdinCloseMs": 12.882
+}
+wrote /home/jason/coding/pipkin/fixtures/native-bench/2026-10-11-event-reclaimed/soak-diag-glibc-fixed-mmap-threshold.json
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 71.74s
+
+== test stream_latency (loadavg 5.51 5.70 4.87)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.16s
+     Running tests/perf.rs (target/release/deps/perf-579df25b6622f8d2)
+
+running 1 test
+test stream_latency ... {"gapMs":0,"chunks":2000,"bytesPerChunk":32,"chunkToCommittedDeltaMs":{"n":2000,"p50":15.402,"p95":16.23,"min":4.416,"max":16.343,"mean":12.908},"missingMarkers":0,"markersFirstSeenInFinalEntry":1268,"deltaFrames":732,"promptToSettledMs":22.656}
+{"gapMs":2,"chunks":1000,"bytesPerChunk":32,"chunkToCommittedDeltaMs":{"n":1000,"p50":24.113,"p95":43.681,"min":2.73,"max":48.903,"mean":24.227},"missingMarkers":0,"markersFirstSeenInFinalEntry":5,"deltaFrames":995,"promptToSettledMs":2096.47}
+{"gapMs":5,"chunks":600,"bytesPerChunk":32,"chunkToCommittedDeltaMs":{"n":600,"p50":24.919,"p95":44.766,"min":2.491,"max":51.8,"mean":25.142},"missingMarkers":0,"markersFirstSeenInFinalEntry":0,"deltaFrames":600,"promptToSettledMs":3097.37}
+{"gapMs":20,"chunks":250,"bytesPerChunk":32,"chunkToCommittedDeltaMs":{"n":250,"p50":23.756,"p95":44.959,"min":2.306,"max":47.252,"mean":25.276},"missingMarkers":0,"markersFirstSeenInFinalEntry":0,"deltaFrames":250,"promptToSettledMs":5082.739}
+{"gapMs":100,"chunks":60,"bytesPerChunk":32,"chunkToCommittedDeltaMs":{"n":60,"p50":44.465,"p95":47.611,"min":42.354,"max":56.294,"mean":45.271},"missingMarkers":0,"markersFirstSeenInFinalEntry":0,"deltaFrames":60,"promptToSettledMs":6222.883}
+wrote /home/jason/coding/pipkin/fixtures/native-bench/2026-10-11-event-reclaimed/stream-latency.json
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 16.57s
+
+== test stop_latency (loadavg 4.31 5.41 4.79)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.14s
+     Running tests/perf.rs (target/release/deps/perf-579df25b6622f8d2)
+
+running 1 test
+test stop_latency ... {
+  "runs": 20,
+  "streaming": {
+    "stopReplyMs": {
+      "n": 20,
+      "p50": 1.98,
+      "p95": 2.756,
+      "min": 1.574,
+      "max": 6.234,
+      "mean": 2.255
+    },
+    "stopToSettledAbortedMs": {
+      "n": 20,
+      "p50": 4.154,
+      "p95": 5.312,
+      "min": 3.695,
+      "max": 16.178,
+      "mean": 4.895
+    },
+    "stopToProviderConnectionClosedMs": {
+      "n": 20,
+      "p50": 2.048,
+      "p95": 2.962,
+      "min": 1.679,
+      "max": 6.507,
+      "mean": 2.348
+    }
+  },
+  "bashSleepTool": {
+    "stopReplyMs": {
+      "n": 20,
+      "p50": 2.344,
+      "p95": 3.063,
+      "min": 1.932,
+      "max": 3.47,
+      "mean": 2.456
+    },
+    "stopToSettledAbortedMs": {
+      "n": 20,
+      "p50": 5.098,
+      "p95": 6.725,
+      "min": 4.259,
+      "max": 12.052,
+      "mean": 5.692
+    },
+    "stopToToolProcessGoneMs": {
+      "n": 20,
+      "p50": 5.176,
+      "p95": 6.797,
+      "min": 4.304,
+      "max": 12.093,
+      "mean": 5.755
+    },
+    "maxDescendantsAfter": 0
+  }
+}
+wrote /home/jason/coding/pipkin/fixtures/native-bench/2026-10-11-event-reclaimed/stop-latency.json
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 2.50s
+
+== binary sizes
+== done: /home/jason/coding/pipkin/fixtures/native-bench/2026-10-11-event-reclaimed

@@ -526,7 +526,7 @@ fn a_v1_database_is_backed_up_before_adding_durable_retry_state() {
         .unwrap();
         // Reconstruct the actual v1 schema, retaining a nonempty history/catalog.
         s.tx(|tx| {
-            tx.execute_batch("DROP TABLE generation_state; PRAGMA user_version = 1;")?;
+            tx.execute_batch("DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE generation_state; PRAGMA user_version = 1;")?;
             Ok(())
         })
         .unwrap();
@@ -545,7 +545,7 @@ fn a_v1_database_is_backed_up_before_adding_durable_retry_state() {
             .len(),
         1
     );
-    assert_eq!(upgraded.read(schema::version).unwrap(), 2);
+    assert_eq!(upgraded.read(schema::version).unwrap(), SCHEMA_VERSION);
     assert!(
         upgraded
             .read(|c| Store::generation_state(c, 1))
@@ -584,4 +584,98 @@ fn a_v1_database_is_backed_up_before_adding_durable_retry_state() {
             0o600
         );
     }
+}
+
+#[test]
+fn outbox_invalidation_is_atomic_with_state_and_rolls_back_on_failure() {
+    let s = store();
+    session(&s, "s");
+    let cursor = s.catch_up(0, 256).unwrap().head;
+    s.fail_next_write();
+    assert!(
+        s.set_session_field("s", SessionField::Title(Some("lost".into())))
+            .is_err()
+    );
+    assert_eq!(s.catch_up(cursor, 256).unwrap().head, cursor);
+    assert!(s.session("s").unwrap().unwrap().title.is_none());
+    s.set_session_field("s", SessionField::Title(Some("saved".into())))
+        .unwrap();
+    let page = s.catch_up(cursor, 256).unwrap();
+    assert_eq!(page.events.len(), 1);
+    assert_eq!(page.events[0].session, "s");
+    assert_eq!(
+        page.events[0].revision,
+        s.session("s").unwrap().unwrap().revision
+    );
+    assert_eq!(page.through, cursor + 1);
+}
+
+#[test]
+fn outbox_is_bounded_paged_and_survives_reopen_with_explicit_reset() {
+    let tmp = tempfile::tempdir().unwrap();
+    let s = Store::open(tmp.path()).unwrap();
+    session(&s, "s");
+    // One transaction exercises retention without 5000 fsyncs.
+    s.tx(|tx| {
+        for i in 0..5000 {
+            Store::bump(tx, "s", i)?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    let old = s.catch_up(0, 256).unwrap();
+    assert!(old.reset);
+    assert_eq!(old.head, 5001);
+    let page = s.catch_up(5001 - 4096, 9000).unwrap();
+    assert!(!page.reset);
+    assert_eq!(page.events.len(), 256);
+    assert_eq!(page.events[0].cursor, 906);
+    assert!(
+        page.events
+            .windows(2)
+            .all(|w| w[1].cursor == w[0].cursor + 1)
+    );
+    assert_eq!(
+        s.read(
+            |c| Ok(c.query_row("SELECT COUNT(*) FROM event_outbox", [], |r| r
+                .get::<_, i64>(0))?)
+        )
+        .unwrap(),
+        4096
+    );
+    drop(s);
+    let s = Store::open(tmp.path()).unwrap();
+    assert_eq!(s.catch_up(5001 - 4096, 9000).unwrap(), page);
+    assert!(s.catch_up(u64::MAX, 1).unwrap().reset);
+    assert!(s.catch_up(5001, 1).unwrap().events.is_empty());
+}
+
+#[test]
+fn a_v2_database_is_backed_up_before_adding_the_outbox() {
+    let tmp = tempfile::tempdir().unwrap();
+    {
+        let s = Store::open(tmp.path()).unwrap();
+        session(&s, "existing");
+        s.tx(|tx| {
+            tx.execute_batch("DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; PRAGMA user_version = 2;")?;
+            Ok(())
+        }).unwrap();
+    }
+    let s = Store::open(tmp.path()).unwrap();
+    assert!(s.session("existing").unwrap().is_some());
+    s.set_session_field("existing", SessionField::Title(Some("updated".into())))
+        .unwrap();
+    assert_eq!(s.catch_up(0, 10).unwrap().events.len(), 1);
+    let backup = Connection::open_with_flags(
+        tmp.path().join("engine.sqlite.v2.bak"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    assert_eq!(schema::version(&backup).unwrap(), 2);
+    assert_eq!(
+        backup
+            .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
 }

@@ -1,10 +1,12 @@
 //! Calls, replies and events.
 //!
 //! Every call gets exactly one reply with the same id. Events carry a monotonically increasing
-//! `seq` within one engine `epoch`; a client that sees a gap (or a new epoch) discards what it
+//! `seq` per connection within one engine `epoch`; a client that sees a gap (or a new epoch) discards what it
 //! derived from events and re-reads snapshots. Admission, settlement and question answers are
 //! durable before they are acknowledged or published, so a resync never loses an outcome: it
-//! is found again with `Lookup`.
+//! is found again with `Lookup`. `CatchUp` pages transactionally stored session invalidations
+//! by a separate durable cursor; re-read affected state before `AckEvents`. Expired cursors
+//! explicitly reset to the current head. Auth/progress remain volatile.
 
 use serde::{Deserialize, Serialize};
 
@@ -105,6 +107,15 @@ pub enum Call {
     Hello {
         protocol: u32,
         client: String,
+    },
+    /// Read bounded durable invalidations after a cursor. Re-read affected snapshots before
+    /// acknowledging `through`; a reset means the retained range no longer covers `after`.
+    CatchUp {
+        after: u64,
+        limit: u32,
+    },
+    AckEvents {
+        through: u64,
     },
     ListSessions,
     /// Idempotent under `request`: the same key returns the same session.
@@ -331,6 +342,7 @@ pub struct ToolOutputView {
 #[serde(tag = "reply", rename_all = "camelCase")]
 pub enum Reply {
     Welcome(Welcome),
+    Events(EventPage),
     Sessions {
         sessions: Vec<SessionSummary>,
     },
@@ -432,6 +444,8 @@ pub enum SessionChange {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "camelCase")]
 pub enum Event {
+    /// Live presentation was coalesced. Catch up from the durable cursor and refresh volatile state.
+    ResyncRequired,
     SessionsChanged,
     Session {
         session: SessionId,
@@ -444,4 +458,22 @@ pub enum Event {
     Notice {
         message: String,
     },
+}
+
+/// Ordered, transactionally recorded snapshot invalidations, independent of live event epochs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DurableEvent {
+    pub cursor: u64,
+    pub session: String,
+    pub revision: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventPage {
+    pub events: Vec<DurableEvent>,
+    pub through: u64,
+    pub head: u64,
+    pub reset: bool,
 }

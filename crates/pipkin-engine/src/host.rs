@@ -15,17 +15,22 @@ use crate::config::EngineConfig;
 
 /// A client's end of a connection.
 pub struct Connection {
-    pub(crate) tx: tokio::sync::mpsc::UnboundedSender<ClientFrame>,
-    pub(crate) rx: mpsc::Receiver<ServerFrame>,
+    pub(crate) control: tokio::sync::mpsc::Sender<ClientFrame>,
+    pub(crate) tx: tokio::sync::mpsc::Sender<ClientFrame>,
+    pub(crate) rx: crate::delivery::Receiver,
     pub(crate) client: u64,
 }
 
 impl Connection {
-    /// Queue a frame for the engine. Fails only when the engine is gone.
+    /// Queue a frame without blocking. Refuses when its lane is full or the engine is gone.
     pub fn send(&self, frame: ClientFrame) -> Result<(), String> {
-        self.tx
-            .send(frame)
-            .map_err(|_| "the engine has stopped".to_owned())
+        if frame.call.lane() == pipkin_engine_protocol::Lane::Control {
+            &self.control
+        } else {
+            &self.tx
+        }
+        .try_send(frame)
+        .map_err(|_| "the engine is stopped or its input queue is full".to_owned())
     }
 
     pub fn recv_timeout(&self, timeout: Duration) -> Result<ServerFrame, mpsc::RecvTimeoutError> {
@@ -41,22 +46,33 @@ impl Connection {
     }
 
     /// Split into a sender handle and the receiver (for a reader thread).
-    pub fn split(self) -> (Sender, mpsc::Receiver<ServerFrame>) {
-        (Sender { tx: self.tx }, self.rx)
+    pub fn split(self) -> (Sender, crate::delivery::Receiver) {
+        (
+            Sender {
+                tx: self.tx,
+                control: self.control,
+            },
+            self.rx,
+        )
     }
 }
 
 /// The sending half of a [`Connection`].
 #[derive(Clone)]
 pub struct Sender {
-    tx: tokio::sync::mpsc::UnboundedSender<ClientFrame>,
+    tx: tokio::sync::mpsc::Sender<ClientFrame>,
+    control: tokio::sync::mpsc::Sender<ClientFrame>,
 }
 
 impl Sender {
     pub fn send(&self, frame: ClientFrame) -> Result<(), String> {
-        self.tx
-            .send(frame)
-            .map_err(|_| "the engine has stopped".to_owned())
+        if frame.call.lane() == pipkin_engine_protocol::Lane::Control {
+            &self.control
+        } else {
+            &self.tx
+        }
+        .try_send(frame)
+        .map_err(|_| "the engine is stopped or its input queue is full".to_owned())
     }
 }
 
@@ -70,6 +86,17 @@ pub fn start(config: EngineConfig) -> Result<EngineHandle, String> {
 /// The private worker mode: serve one client over stdin/stdout frames until the client
 /// closes the channel or sends `Shutdown`. Returns the process exit code.
 pub fn run_stdio(config: EngineConfig) -> i32 {
+    // This entry point owns a dedicated worker process. Keep large temporary context buffers
+    // independently releasable instead of letting glibc's adaptive mmap threshold retain them
+    // in thread arenas. Use one arena so request buffers freed on a different runtime thread
+    // are reused rather than stranded in per-thread heaps. Never change an embedding
+    // application's allocator policy.
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: mallopt is thread-safe and accepts integer settings, not pointers.
+    unsafe {
+        libc::mallopt(libc::M_MMAP_THRESHOLD, 128 * 1024);
+        libc::mallopt(libc::M_ARENA_MAX, 1);
+    }
     use std::io::{BufReader, BufWriter};
 
     let handle = match start(config) {

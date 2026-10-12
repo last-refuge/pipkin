@@ -1169,3 +1169,148 @@ fn tool_rounds_run_in_parallel_unless_a_tool_is_sequential() {
     let sequential = probe_round(true);
     assert_eq!(sequential, ["start a", "end a", "start b", "end b"]);
 }
+
+#[test]
+fn catch_up_acknowledgments_are_monotone_and_connection_scoped() {
+    let fx = Fixture::new();
+    let provider = Scripted::new(|_, _| R::Text("ok".into()));
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "create");
+    assert!(e.call(Call::AckEvents { through: 1 }).is_err());
+    let Reply::Events(page) = e
+        .call(Call::CatchUp {
+            after: 0,
+            limit: 256,
+        })
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(page.events[0].session, s);
+    assert!(
+        e.call(Call::AckEvents {
+            through: page.through + 1
+        })
+        .is_err()
+    );
+    e.call(Call::AckEvents {
+        through: page.through,
+    })
+    .unwrap();
+    e.call(Call::AckEvents {
+        through: page.through,
+    })
+    .unwrap();
+    assert!(e.call(Call::AckEvents { through: 0 }).is_err());
+    let second = e.handle.connect("second");
+    second
+        .send(ClientFrame {
+            id: 1,
+            lane: Lane::Normal,
+            call: Call::AckEvents {
+                through: page.through,
+            },
+        })
+        .unwrap();
+    assert!(matches!(
+        second.recv_timeout(Duration::from_secs(2)).unwrap(),
+        ServerFrame::Reply { result: Err(_), .. }
+    ));
+}
+
+#[test]
+fn slow_client_coalesces_without_blocking_stop_or_another_client() {
+    let fx = Fixture::new();
+    let provider = Scripted::new(|_, _| R::Hang);
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "create");
+    e.prompt(&s, "p", "wait").unwrap();
+    let slow = e.handle.connect("slow");
+    for _ in 0..10000 {
+        e.handle
+            .shared()
+            .publish_to(slow.client_id(), Event::SessionsChanged);
+    }
+    let at = Instant::now();
+    e.call(Call::Stop { session: s.clone() }).unwrap();
+    e.until("stop settles despite undrained client", |events| {
+        events.iter().any(|event| {
+            matches!(
+                event,
+                Event::Session {
+                    change: SessionChange::RunSettled {
+                        outcome: RunOutcome::Aborted,
+                        ..
+                    },
+                    ..
+                }
+            )
+        })
+    });
+    assert!(at.elapsed() < Duration::from_secs(2));
+    assert!(matches!(
+        slow.try_recv(),
+        Ok(ServerFrame::Event {
+            event: Event::ResyncRequired,
+            ..
+        })
+    ));
+    let Reply::Events(page) = e
+        .call(Call::CatchUp {
+            after: 0,
+            limit: 256,
+        })
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(page.events.iter().any(|v| v.session == s));
+    assert!(matches!(
+        e.call(Call::Lookup {
+            session: s,
+            request: "p".into()
+        })
+        .unwrap(),
+        Reply::Lookup(LookupResult::Known {
+            open: false,
+            outcome: Some(RunOutcome::Aborted),
+            ..
+        })
+    ));
+}
+
+#[test]
+fn concurrent_and_private_publications_have_contiguous_per_client_sequences() {
+    let fx = Fixture::new();
+    let provider = Scripted::new(|_, _| R::Text("ok".into()));
+    let e = fx.start(&provider);
+    let a = e.handle.connect("a");
+    let b = e.handle.connect("b");
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            let shared = e.handle.shared();
+            let client = a.client_id();
+            scope.spawn(move || {
+                for _ in 0..10 {
+                    shared.publish(Event::ModelsChanged);
+                    shared.publish_to(client, Event::SessionsChanged);
+                }
+            });
+        }
+    });
+    for conn in [&a, &b] {
+        let mut n = 0;
+        while let Ok(ServerFrame::Event { seq, .. }) = conn.try_recv() {
+            n += 1;
+            assert_eq!(seq, n);
+        }
+        assert_eq!(
+            n,
+            if conn.client_id() == a.client_id() {
+                80
+            } else {
+                40
+            }
+        );
+    }
+}

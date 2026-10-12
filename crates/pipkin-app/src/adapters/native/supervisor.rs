@@ -178,18 +178,18 @@ pub enum HostSpec {
 
 /// Frames to the worker go through a writer thread, so a send never blocks the adapter. Dropping
 /// the last sender ends the thread, which closes the worker's stdin.
-struct PipeSender(mpsc::Sender<ClientFrame>);
+struct PipeSender(mpsc::SyncSender<ClientFrame>);
 
 impl FrameSender for PipeSender {
     fn send(&mut self, frame: ClientFrame) -> Result<(), String> {
         self.0
-            .send(frame)
+            .try_send(frame)
             .map_err(|_| "the engine worker's input is closed".to_owned())
     }
 }
 
 fn pipe_sender(stdin: ChildStdin) -> PipeSender {
-    let (tx, rx) = mpsc::channel::<ClientFrame>();
+    let (tx, rx) = mpsc::sync_channel::<ClientFrame>(64);
     thread::Builder::new()
         .name("native-engine-writer".into())
         .spawn(move || {

@@ -1,5 +1,10 @@
 # Remaining parity reconciliation
 
+**2026-10-11 follow-up:** the headless memory-budget failure and missing durable catch-up
+have new implementation/measurement evidence in [durable delivery and memory](durable-delivery-memory.md).
+This document retains its original historical results; broader qualification remains open.
+
+
 Code identity: **`e4c3a8c`**, branch `native-engine`, 2026-10-11. Reference identity remains
 `d2a311097cbcf669e699479587332ae3988a49d0` plus the two pinned Pipkin overlays in the
 [ledger](../pipkin-rust-engine-parity.md). This is a source/evidence reconciliation, not a new

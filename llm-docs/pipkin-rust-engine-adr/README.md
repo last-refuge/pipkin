@@ -7,13 +7,14 @@ progress: `llm-docs/pipkin-rust-engine-progress.md`, parity ledger:
 Reference revision for every `<pi-staged>` citation: `d2a311097cbcf669e699479587332ae3988a49d0`
 with both Pipkin overlays applied exactly as `scripts/build-engine.sh` stages a clean release.
 Native status was reconciled at `e4c3a8c`, then updated for schema 2/protocol 3 import protection
-and durable retries on 2026-10-11 (see the import/retry evidence record); historical
+and durable retries, then schema 3/protocol 4 durable delivery and memory reclamation
+on 2026-10-11 (see the corresponding evidence records); historical
 measurements retain their original identities in the evidence records.
 
 | ADR | Decision | Status |
 | --- | --- | --- |
 | [0001](0001-execution-topology.md) | Owned worker child of the same executable; in-process host for tests and benchmarks | Accepted; host, desktop supervisor and worker entry implemented |
-| [0002](0002-protocol-and-transport.md) | Length-prefixed JSON frames over inherited pipes; epoch/seq events, snapshots on gaps, control lane | Accepted; durable outbox/cursor not yet implemented |
+| [0002](0002-protocol-and-transport.md) | Length-prefixed JSON frames over inherited pipes; epoch/seq events, snapshots on gaps, control lane | Accepted; bounded live delivery, atomic invalidation outbox and acknowledged catch-up implemented; external attach and serialize-once fan-out open |
 | [0003](0003-durable-store-and-recovery.md) | One SQLite store per data root, explicit schema, short transactions, state-driven run loop, fail closed, `synchronous=FULL` | Accepted; implemented; injected storage faults and actual worker SIGKILL tested |
 | [0004](0004-stop-and-queue-semantics.md) | Reference queue boundaries; Stop retires inputs with a `retired` flag instead of omit-edit entries | Accepted; differential context test pending |
 | [0005](0005-tool-replay-and-subagent-recovery.md) | Unsafe-by-default replay; subagent is the replay-safe registration with an atomic child mapping | Accepted; tools and recorded-contract check implemented; build provenance proposed |

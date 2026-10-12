@@ -76,6 +76,8 @@ impl Shared {
         let shared = self.clone();
         self.spawn(async move {
             let outcome = shared.drive(&sess, run, &cancel).await;
+            // Release temporary context buffers before reporting an idle/settled run.
+            shared.reclaim_idle_pages();
             {
                 let mut active = sess.active.lock().unwrap_or_else(|e| e.into_inner());
                 if active.as_ref().is_some_and(|a| a.run == run) {
@@ -981,5 +983,20 @@ fn message_model(m: &Message) -> &str {
     match m {
         Message::Assistant { model, .. } => model,
         _ => "",
+    }
+}
+
+impl Shared {
+    /// Growing context creates short-lived allocations in many size classes. glibc otherwise
+    /// retains their free pages in worker arenas. Return them at the run boundary, after the
+    /// request future (and its buffers) has been dropped, before publishing settlement.
+    fn reclaim_idle_pages(&self) {
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        tokio::task::block_in_place(|| {
+            // SAFETY: malloc_trim is thread-safe, takes no pointers, and only releases free pages.
+            unsafe {
+                libc::malloc_trim(0);
+            }
+        });
     }
 }

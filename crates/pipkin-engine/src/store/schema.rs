@@ -1,4 +1,4 @@
-//! Schema versions and migrations. Version 2 adds durable generation retry state.
+//! Schema versions and migrations. Version 2 adds durable retries; version 3 the change outbox.
 
 use std::path::Path;
 
@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -168,7 +168,26 @@ CREATE TABLE generation_state (
 ) STRICT;
 "#;
 
-const MIGRATIONS: &[&str] = &[V1, V2];
+const V3: &str = r#"
+CREATE TABLE event_outbox (
+    cursor INTEGER PRIMARY KEY AUTOINCREMENT,
+    session TEXT NOT NULL,
+    revision INTEGER NOT NULL
+) STRICT;
+CREATE TRIGGER event_session_insert AFTER INSERT ON sessions BEGIN
+    INSERT INTO event_outbox(session, revision) VALUES (NEW.id, NEW.revision);
+END;
+CREATE TRIGGER event_session_revision AFTER UPDATE OF revision ON sessions
+WHEN NEW.revision != OLD.revision BEGIN
+    INSERT INTO event_outbox(session, revision) VALUES (NEW.id, NEW.revision);
+END;
+-- Bounded retention, even with no client connected. Older cursors must resnapshot.
+CREATE TRIGGER event_retention AFTER INSERT ON event_outbox BEGIN
+    DELETE FROM event_outbox WHERE cursor <= NEW.cursor - 4096;
+END;
+"#;
+
+const MIGRATIONS: &[&str] = &[V1, V2, V3];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

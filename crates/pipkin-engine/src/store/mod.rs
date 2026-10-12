@@ -13,6 +13,7 @@
 //! everything, then commit in one short transaction.
 
 mod generation;
+mod outbox;
 mod schema;
 pub use generation::GenerationState;
 

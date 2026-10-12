@@ -999,3 +999,45 @@ fn sigkill_around_retry_classification_preserves_the_deadline_and_attempt_budget
         w.close();
     }
 }
+
+#[test]
+fn sigkill_between_state_commit_and_publication_is_recovered_from_the_outbox() {
+    let stub = Stub::start(|_, _| text_plan("answered once"));
+    let p = Profile::new(&stub.url());
+    let mut w = Worker::start(&p, Some("after_state_commit_before_delivery"));
+    let s = w.create(&p.project);
+    let Reply::Events(before) = w.ok(Call::CatchUp {
+        after: 0,
+        limit: 256,
+    }) else {
+        panic!()
+    };
+    w.ok(Call::AckEvents {
+        through: before.through,
+    });
+    assert!(w.prompt(&s, "k1", "hello").is_none());
+    w.reap_killed();
+    let mut w = Worker::start(&p, None);
+    let Reply::Events(after) = w.ok(Call::CatchUp {
+        after: before.through,
+        limit: 256,
+    }) else {
+        panic!()
+    };
+    assert!(!after.reset);
+    assert!(
+        after
+            .events
+            .iter()
+            .any(|e| e.session == s && e.cursor > before.through)
+    );
+    assert_eq!(w.settled(&s, "k1"), RunOutcome::Completed);
+    let snap = w.snapshot(&s);
+    assert_eq!(count(&snap, "user"), 1);
+    assert_eq!(count(&snap, "assistant"), 1);
+    assert_eq!(stub.bodies().len(), 1);
+    w.ok(Call::AckEvents {
+        through: after.through,
+    });
+    w.close();
+}

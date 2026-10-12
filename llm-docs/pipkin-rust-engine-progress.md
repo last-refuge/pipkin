@@ -11,7 +11,29 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — plugin import protection and durable retries
+## Current follow-up — durable delivery and memory reclamation
+
+The prior import/retry batch is committed as **`63bd9ae`**. This follow-up (2026-10-11)
+implements protocol **4** / schema **3**: transactionally recorded invalidations,
+acknowledged bounded catch-up pages, explicit retention resets, bounded per-client and
+reader presentation, separate reply/control capacity, and serialized commit/publication.
+Catch-up preserves paged history and the selected subagent; a missed final event is recovered
+without requiring subsequent live traffic. A real SIGKILL before publication is covered.
+
+Linux/glibc private workers now reuse one allocator arena, keep large allocations releasable,
+and trim free pages before settlement. The unchanged 100 + 1500-turn headless soak went from
+**114,804 KiB idle / 116,692 KiB sampled peak** to **27,456 / 39,840 KiB**. Second-half
+slope fell from **54.848 to 1.440 KiB/turn**; idle fds stayed 13 and there was one process.
+This fixes the measured 100 MiB budget failure, not every desktop/platform memory gate.
+See [implementation, tests and raw measurements](pipkin-rust-engine-evidence/durable-delivery-memory.md).
+
+Final required checks: **1331 passed, 0 failed, 53 ignored**, Clippy and formatting clean.
+Ledger: **503 rows; 419 measured, 7 observed, 0 currently failed, 10 unverified,
+67 not started; 0 qualified**. Both new measured rows are explicitly partial. Historical
+failures remain in their evidence records. Dispositions remain NC 402, NE 23, PA 33,
+NP 30, BL 14, LB 1, RC 0. Native remains opt-in; Pi remains the default.
+
+## Historical follow-up — plugin import protection and durable retries
 
 Implemented on top of `92629ec` (2026-10-11). See
 [import/retry evidence](pipkin-rust-engine-evidence/import-protection-durable-retries.md).
@@ -61,8 +83,8 @@ Full records: `llm-docs/pipkin-rust-engine-adr/` (index in its `README.md`).
 | ADR | Decision (summary) | Status |
 | --- | --- | --- |
 | 0001 Execution topology | One shipped `pipkin` executable; a private worker mode runs the GPUI-free `pipkin-engine` as an **owned child** over inherited pipes; one engine process for all conversations; in-process host (same API) for tests/headless/benchmark; not a sandbox | Accepted; implemented (`--engine-worker`, `App/adapters/native/supervisor.rs`, headless `pipkin-engine` binary) |
-| 0002 Protocol and transport | Length-prefixed JSON frames (32 MiB max); typed `Call`/`Reply`/`Event`; `epoch`+`seq` events, session `revision`, snapshot on gap; control lane for Stop/Shutdown; protocol version mismatch refused | Accepted; protocol **3** (adds import `serverDir` and requires profile protection); durable outbox/acknowledged cursor and bounded fan-out still not built |
-| 0003 Durable store and recovery | One OS-locked SQLite store per data root; explicit schema v2, backup-before-migrate, newer refused untouched; short transactions; state-driven run loop; fail closed on storage error; `synchronous=FULL` (reference `NORMAL`) | Accepted; implemented; actual worker SIGKILL and injected disk-full/read-only cases tested; v1 → v2 backup/migration tested; power loss unverified |
+| 0002 Protocol and transport | Length-prefixed JSON frames (32 MiB max); typed `Call`/`Reply`/`Event`; `epoch`+`seq` events, session `revision`, snapshot on gap; control lane for Stop/Shutdown; protocol version mismatch refused | Accepted; protocol **4**, durable invalidation outbox/acknowledged catch-up and bounded delivery implemented; serialize-once fan-out/external attachment open |
+| 0003 Durable store and recovery | One OS-locked SQLite store per data root; explicit schema v3, backup-before-migrate, newer refused untouched; short transactions; state-driven run loop; fail closed on storage error; `synchronous=FULL` (reference `NORMAL`) | Accepted; implemented; actual worker SIGKILL and injected disk-full/read-only cases tested; v1 → current and v2 → v3 backup/migration tested; power loss unverified |
 | 0004 Stop and queue | Reference queue boundaries and outcomes; durable Stop intent then cancellation; retirement by `entries.retired` flag instead of `pi.cancelled-input` omit-edit entries | Accepted; implemented; `all` delivery modes tested; differential qualification and general Stop-after-completion race pending |
 | 0005 Tool replay and subagent recovery | Intent before effect; unsafe-by-default replay; `subagent` is the replay-safe registration with an atomic `(parent session, call)` → child mapping and once-only delivery; recorded-contract check | Accepted; implemented incl. recorded-contract check; mismatch, disabled recovery and Stop-child tests pass |
 | 0006 Extension compatibility | Native versioned extension contract + out-of-process protocol; existing TypeScript facet packages need Node, so their rows stay **blocked** and run on the **legacy bridge** (Pi) | Proposed; native contract implemented (`E/extensions`, `docs/native-extensions.md`); TS facets blocked |
@@ -213,23 +235,27 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
 1. **Correctness and migration gaps:** system prompt patches are flattened and reasoning/1h-cache
    counters are not represented. Plugin-profile import protection and durable retry waits/counts
    are now implemented and tested; TypeScript execution and unsupported-history conversion remain open.
-2. **Transport and compatibility:** durable event replay/backpressure and external attach are
-   missing; TypeScript facets, sticky profiles, remote services and reload still depend on Pi.
-3. **Performance:** E2E-37 remains failed; no new soak evidence supersedes it. Package reduction
-   needs a comparable clean reference build, and desktop latency/resource gates remain open.
+2. **Transport and compatibility:** durable invalidation replay and bounded engine/reader delivery
+   now have passing recovery/pressure evidence. External attach, serialize-once fan-out and
+   frontend/provider-internal queue budgeting remain. TypeScript facets, sticky profiles,
+   remote services and reload still depend on Pi.
+3. **Performance:** E2E-37's headless 100 MiB budget now passes on Linux/glibc; an indefinitely flat
+   heap, desktop/long-tool/streaming soaks and other allocators/platforms remain unverified.
+   Package reduction needs a comparable clean reference build; desktop latency gates remain open.
 4. **Qualification:** no complete backend-parameterized differential harness; targeted test,
    live-provider, platform, installed-app and native-package CI gates remain. Claude lifecycle
    smoke has passed but is not full provider/platform qualification.
 5. **Product decisions/reachability:** ledger D-01..D-10 remain open where stated; D-11 ownership
    transfer is implemented and resolved. A known missing baseline behavior is required work,
-   not automatically a request to waive parity (notably REC-RETRY).
+   not automatically a request to waive parity.
 
 ## 8. Next implementation batches
 
 1. Completed this batch: plugin-profile import fails closed; retry count/deadline survive restart,
    with failure injection, actual SIGKILL and desktop ownership regression tests.
-2. Next: implement bounded event delivery with durable catch-up and acknowledged cursors; investigate
-   E2E-37 with the existing soak diagnostics and repeat the same measurement after a fix.
+2. Completed next batch: bounded delivery, atomic invalidation outbox, acknowledged catch-up,
+   commit/snapshot ordering, and the headless memory-budget fix; see delivery/memory evidence.
+   Remaining transport and broader memory qualification boundaries are listed above.
 3. Close protocol/context gaps (usage counters, positional prompt updates), Codex WebSocket
    lifecycle/proxy gaps and external attachment. Resolve facet ports/profile lifecycle while
    keeping Pi as the continuity path.

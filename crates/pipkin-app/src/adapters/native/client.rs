@@ -47,6 +47,13 @@ impl FrameReceiver for mpsc::Receiver<ServerFrame> {
     }
 }
 
+impl FrameReceiver for pipkin_engine::delivery::Receiver {
+    fn recv(&mut self) -> Result<ServerFrame, String> {
+        pipkin_engine::delivery::Receiver::recv(self)
+            .map_err(|_| "the engine closed the connection".to_owned())
+    }
+}
+
 /// What the reader thread hands to the adapter, in arrival order.
 #[derive(Debug)]
 pub enum Inbound {
@@ -226,8 +233,8 @@ pub enum SeqCheck {
 }
 
 /// Tracks `(epoch, seq)` of one connection's events. The epoch comes from `Welcome`; the first
-/// event after it sets the sequence baseline (the engine numbers events across all clients, so
-/// the first one this client sees need not be 1).
+/// event after it sets the sequence baseline. Protocol 4 sequences events per connection;
+/// private events for a different client do not create gaps.
 #[derive(Clone, Debug, Default)]
 pub struct Sequencer {
     epoch: Option<u64>,

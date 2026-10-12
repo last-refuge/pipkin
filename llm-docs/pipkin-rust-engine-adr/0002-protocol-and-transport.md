@@ -1,12 +1,11 @@
 # ADR 0002: Protocol and transport
 
-**Status:** Accepted; implementation reconciled at `e4c3a8c` (2026-10-11). Protocol **3**,
-frame limits, epoch/seq events, control lane, version refusal and desktop NativeBackend are
-implemented. The **durable ordered outbox with acknowledged cursors and paged catch-up is not
-implemented**: events publish in memory after commit and clients resync snapshots on a gap.
-Version 3 adds explicit import `serverDir` and requires plugin-profile inspection; older workers
-are refused rather than silently ignoring the guard. Per-client channels remain unbounded; item 9
-is still required. Implementation follow-up: `../pipkin-rust-engine-evidence/import-protection-durable-retries.md`.
+**Status:** Accepted; updated 2026-10-11 on top of `63bd9ae`. Protocol **4** adds
+`CatchUp`, `AckEvents`, `EventPage` and `ResyncRequired`; schema **3** records ordered session
+invalidations in the same transaction as the state change. Engine and desktop-reader presentation
+queues are bounded. See [delivery and memory evidence](../pipkin-rust-engine-evidence/durable-delivery-memory.md).
+Protocol 3's import-profile protection is retained. External attachment and serialize-once
+multi-subscriber fan-out remain separate work.
 
 ## Context
 
@@ -38,14 +37,14 @@ The desktop core already routes every backend event through `(conversation, gene
    `SessionChange` variants replace generic Chord service calls and replicated-state ops;
    transcript updates are per-entry `EntryAppended`/`EntryReplaced`/`EntryDelta`, not
    whole-conversation reserialization.
-4. **Ordering and gaps:** `seq` is monotonically increasing within one engine `epoch`; every
+4. **Ordering and gaps:** `seq` is monotonically increasing per connection within one engine `epoch`; every
    session change also carries the session `revision`. A gap or a new epoch makes the client
    discard derived state and re-read `OpenSession` snapshots (`Reply::Snapshot`) and `Lookup`
    outcomes. Admission, settlement and question answers are committed before they are
    acknowledged or published (ADR 0003), so a resync never loses an outcome.
 5. **Control lane:** `Call::Stop` and `Call::Shutdown` are `Lane::Control` and are handled
    ahead of queued normal calls (`Call::lane`).
-6. **Versioning:** `PROTOCOL_VERSION = 3`; `Hello` with any other version is refused
+6. **Versioning:** `PROTOCOL_VERSION = 4`; `Hello` with any other version is refused
    (`ErrorCode::Incompatible`); the reply `Welcome` carries engine version/revision, schema,
    epoch and capabilities. No guessing across versions.
 7. **Errors:** a closed taxonomy (`Incompatible, NotFound, Conflict, Invalid, TooLarge, Busy,
@@ -55,11 +54,30 @@ The desktop core already routes every backend event through `(conversation, gene
 8. **Secrets on the wire:** sign-in answers and API keys travel as `Secret`, whose `Debug`
    prints `[redacted]`; `AuthSnapshot`/`AuthChallenge` debug output omits URLs/codes. Auth
    state is client-scoped (`Shared::publish_to`) and never enters a durable outbox.
-9. **Still to build (tracked, not waived):** durable outbox + acknowledged cursor + paged
-   catch-up; coalesced/bounded progress with backpressure so a slow client cannot block Stop
-   or grow memory without bound (today the per-client channel is an unbounded
-   `std::sync::mpsc`); an opt-in owner-authenticated endpoint for external attachment
-   (P19); serialize-once fan-out for multiple subscribers.
+9. **Durable catch-up:** SQLite triggers append `(cursor, session, revision)` on session
+   creation/revision changes, atomically with the mutation. These are snapshot invalidations,
+   not a second copy of transcript deltas. Admission and terminal outcomes remain in the
+   permanent request/run ledger. `CatchUp {after, limit}` returns at most 256 records plus
+   `through`, `head`, and `reset`; retention is the latest 4096 records regardless of clients.
+   A cursor outside that range explicitly requires full snapshots/Lookup. It never silently
+   skips outcomes. The client re-reads state before `AckEvents {through}`; acknowledgments
+   are monotone and limited to cursors delivered on that connection. Ack state is connection
+   scoped, not a persistent client identity. A reconnect may supply its last cursor; the
+   desktop currently starts at zero and rebuilds from authoritative state after reconnect.
+10. **Bounded delivery:** engine and desktop reader each retain at most 128 live events / 2 MiB
+    of serialized event bodies. Overflow coalesces the whole pending presentation prefix into
+    one `ResyncRequired`, carrying its latest sequence; private auth state is reread, never
+    persisted. Replies have 16 separate slots with asynchronous backpressure, preserving
+    already-published events but bypassing later progress. Engine input has 64 normal / 8
+    control slots and 16 / 4 active dispatch slots; the actual Call determines its lane.
+    The desktop pipe writer has 64 slots. Full input is refused, not unboundedly queued.
+    The adapter polls catch-up every second (one page per pass), so a missing final event
+    with no subsequent live traffic is still recovered. Paged history and the selected child
+    survive resync. Session commit/publication is serialized; snapshots verify their revision.
+11. **Still open:** an opt-in owner-authenticated external endpoint (P19), serialize-once
+    fan-out, and end-to-end frontend presentation budgeting. The shared GPUI/core event bus
+    and provider-internal stream channels are outside this transport change; this ADR does
+    not claim every queue in the application is now bounded.
 
 ## Consequences
 
@@ -67,8 +85,8 @@ The desktop core already routes every backend event through `(conversation, gene
 - The Chord replicated-state contract (`pi.transcript` ops) is not reproduced; parity is
   asserted on desktop-visible outcomes and effective model context, not on op streams. Rows
   `SVC-TRANSCRIPT-STATE` and `XPORT-*` in the parity ledger carry this.
-- Unbounded per-client channels are a known gap against the plan's boundedness requirement
-  until item 9 lands.
+- Catch-up replays durable invalidations and re-reads saved outcomes; it does not replay
+  mutations, old auth challenges, or every historical progress delta.
 
 ## References
 

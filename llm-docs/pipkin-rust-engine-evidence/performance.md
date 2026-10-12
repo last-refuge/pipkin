@@ -1,5 +1,10 @@
 # Native engine performance (plan §7 scorecard)
 
+**2026-10-11 follow-up:** the headless memory-budget failure and missing durable catch-up
+have new implementation/measurement evidence in [durable delivery and memory](durable-delivery-memory.md).
+This document retains its original historical results; broader qualification remains open.
+
+
 Measured 2026-10-11 on the integrated `native-engine` tree (commit `9b64a99`; the harness files below
 were uncommitted while it ran, so `machine.json` says `gitDirty: true`; no engine source was changed
 for the recorded numbers except the one labelled experiment). Compared with the frozen reference

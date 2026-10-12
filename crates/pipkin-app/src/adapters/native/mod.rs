@@ -80,6 +80,10 @@ impl NativeConfig {
 }
 
 enum Msg {
+    EngineReady {
+        conn: u64,
+        pending: std::sync::Arc<Mutex<pipkin_engine_protocol::delivery::EventQueue>>,
+    },
     Request(BackendRequest),
     Engine {
         conn: u64,
@@ -308,7 +312,7 @@ impl Worker {
                 Err(mpsc::RecvTimeoutError::Disconnected) | Ok(Msg::Shutdown) => return true,
                 Ok(Msg::Request(request)) => self.refuse_offline(request),
                 Ok(Msg::Import { step, done }) => done(import::unavailable(&step, OFFLINE)),
-                Ok(Msg::Engine { .. }) | Ok(Msg::Changes { .. }) => {}
+                Ok(Msg::Engine { .. }) | Ok(Msg::EngineReady { .. }) | Ok(Msg::Changes { .. }) => {}
             }
         }
     }
@@ -469,8 +473,23 @@ impl Worker {
         self.conn += 1;
         let conn = self.conn;
         let forward = Mutex::new(self.tx.clone());
+        let pending = std::sync::Arc::new(Mutex::new(
+            pipkin_engine_protocol::delivery::EventQueue::default(),
+        ));
         let client = Client::start(link, move |inbound| {
-            let _ = lock(&forward).send(Msg::Engine { conn, inbound });
+            if let Inbound::Event { epoch, seq, event } = inbound {
+                let mut queue = lock(&pending);
+                let wake = queue.is_empty();
+                queue.push(epoch, seq, *event);
+                if wake {
+                    let _ = lock(&forward).send(Msg::EngineReady {
+                        conn,
+                        pending: pending.clone(),
+                    });
+                }
+            } else {
+                let _ = lock(&forward).send(Msg::Engine { conn, inbound });
+            }
         });
         let welcome = match client.call(
             Call::Hello {
@@ -501,6 +520,13 @@ impl Worker {
             client,
             timeout: self.config.call_timeout,
             seq: Sequencer::default(),
+            durable: welcome
+                .capabilities
+                .iter()
+                .any(|c| c == "durableInvalidations"),
+            cursor: 0,
+            needs_resync: false,
+            next_catch_up: Instant::now(),
             sessions: Vec::new(),
             index: HashMap::new(),
             models: Vec::new(),
@@ -535,6 +561,9 @@ impl Worker {
         loop {
             let wait = live
                 .next_wakeup()
+                .into_iter()
+                .chain(live.durable.then_some(live.next_catch_up))
+                .min()
                 .map(|at| at.saturating_duration_since(Instant::now()));
             let first = match wait {
                 Some(wait) => match self.rx.recv_timeout(wait) {
@@ -565,6 +594,24 @@ impl Worker {
                     }
                     Msg::Request(request) => live.handle_request(self, request),
                     Msg::Import { step, done } => live.import(self, step, done),
+                    Msg::EngineReady { conn, .. } if conn != self.conn => {}
+                    Msg::EngineReady { pending, .. } => {
+                        // Drain under the lock, then release it before doing any engine calls.
+                        let frames: Vec<_> = {
+                            let mut q = lock(&pending);
+                            std::iter::from_fn(|| q.pop()).collect()
+                        };
+                        for frame in frames {
+                            if let pipkin_engine_protocol::ServerFrame::Event {
+                                epoch,
+                                seq,
+                                event,
+                            } = frame
+                            {
+                                live.observe_event(self, epoch, seq, event);
+                            }
+                        }
+                    }
                     Msg::Engine { conn, .. } if conn != self.conn => {}
                     Msg::Engine {
                         inbound: Inbound::Closed(reason),
@@ -580,15 +627,7 @@ impl Worker {
                     Msg::Engine {
                         inbound: Inbound::Event { epoch, seq, event },
                         ..
-                    } => match live.seq.observe(epoch, seq) {
-                        SeqCheck::InOrder => live.handle_event(self, *event),
-                        SeqCheck::Gap | SeqCheck::NewEpoch => {
-                            log::info!(
-                                "engine events skipped (epoch {epoch}, seq {seq}); re-reading"
-                            );
-                            live.resync(self);
-                        }
-                    },
+                    } => live.observe_event(self, epoch, seq, *event),
                     Msg::Changes {
                         conversation,
                         generation,
@@ -602,6 +641,9 @@ impl Worker {
                         workspace,
                     ),
                 }
+            }
+            if live.durable && Instant::now() >= live.next_catch_up {
+                live.catch_up(self, false);
             }
             live.flush_sync(self, false);
             live.flush_child(self);
@@ -643,6 +685,10 @@ struct Live {
     client: Client,
     timeout: Duration,
     seq: Sequencer,
+    durable: bool,
+    cursor: u64,
+    needs_resync: bool,
+    next_catch_up: Instant,
     sessions: Vec<(ConversationId, SessionSummary)>,
     index: HashMap<ConversationId, SessionSummary>,
     models: Vec<ModelInfo>,
@@ -807,6 +853,7 @@ impl Live {
 
     fn handle_event(&mut self, worker: &mut Worker, event: Event) {
         match event {
+            Event::ResyncRequired => self.catch_up(worker, true),
             Event::SessionsChanged => {
                 if self.refresh_sessions().is_ok() {
                     (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
@@ -963,7 +1010,9 @@ impl Live {
                 worker.emit(conversation, generation, EventKind::HasOlder(has_older))
             }
             Touched::Model(model) => (worker.sink)(LifecycleEvent::ModelSelected(model)),
-            Touched::Lost => self.resync(worker),
+            Touched::Lost => {
+                self.resync(worker);
+            }
         }
     }
 
@@ -1048,18 +1097,79 @@ impl Live {
 
     /// Re-read everything derived from events: the catalogue, the open session, and the outcome
     /// of every run and queue request in doubt.
-    fn resync(&mut self, worker: &mut Worker) {
-        if self.refresh_sessions().is_ok() {
-            (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
+    fn resync(&mut self, worker: &mut Worker) -> bool {
+        if self.refresh_sessions().is_err() {
+            return false;
         }
-        if let Some((conversation, generation)) = self
+        (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
+        if let Some((conversation, generation, child)) = self
             .current
             .as_ref()
-            .map(|c| (c.conversation, c.generation))
+            .map(|c| (c.conversation, c.generation, c.child))
         {
-            self.open(worker, conversation, generation, false);
+            if !self.open(worker, conversation, generation, false) {
+                return false;
+            }
+            if let Some(child) = child {
+                if let Some(c) = self.current.as_mut() {
+                    c.child = Some(child);
+                }
+                self.load_child(worker, conversation, generation, child);
+            }
         }
         self.reconcile(worker);
+        true
+    }
+
+    fn observe_event(&mut self, worker: &mut Worker, epoch: u64, seq: u64, event: Event) {
+        match self.seq.observe(epoch, seq) {
+            SeqCheck::InOrder => self.handle_event(worker, event),
+            SeqCheck::Gap | SeqCheck::NewEpoch => self.catch_up(worker, true),
+        }
+    }
+
+    fn catch_up(&mut self, worker: &mut Worker, force: bool) {
+        // A transient read failure must not consume a reset request, especially for volatile
+        // auth state which intentionally has no durable invalidation to trigger a later retry.
+        let force = force || self.needs_resync;
+        self.needs_resync = force;
+        self.next_catch_up = Instant::now() + Duration::from_secs(1);
+        if !self.durable {
+            self.resync(worker);
+            return;
+        }
+        // One bounded page per pass keeps Stop responsive even with a large backlog.
+        let Ok(Reply::Events(page)) = self.call(Call::CatchUp {
+            after: self.cursor,
+            limit: 256,
+        }) else {
+            return;
+        };
+        if (force || page.reset || !page.events.is_empty()) && !self.resync(worker) {
+            return;
+        }
+        if force {
+            let Ok(Reply::Auth(auth)) = self.call(Call::AuthState) else {
+                return;
+            };
+            self.publish_auth(worker, &auth);
+            self.refresh_models(worker, None);
+        }
+        self.needs_resync = false;
+        // A Lookup refusal leaves an operation in doubt. Poll it again even if its durable
+        // invalidation has already been acknowledged and no further live event will arrive.
+        self.reconcile(worker);
+        if self
+            .call(Call::AckEvents {
+                through: page.through,
+            })
+            .is_ok()
+        {
+            self.cursor = page.through;
+            if self.cursor < page.head {
+                self.next_catch_up = Instant::now();
+            }
+        }
     }
 
     /// Ask the engine about every admitted run and every queue request in doubt.
@@ -1903,13 +2013,14 @@ impl Live {
         conversation: ConversationId,
         generation: u64,
         initial: bool,
-    ) {
+    ) -> bool {
         let fail = |worker: &Worker, message: String| {
             if initial {
                 worker.emit(conversation, generation, EventKind::OpenFailed { message });
             } else {
                 log::warn!("could not refresh {conversation:?}: {message}");
             }
+            false
         };
         let Some(summary) = self.session_of(conversation).cloned() else {
             return fail(
@@ -1925,7 +2036,7 @@ impl Live {
         {
             self.rescan = None;
         }
-        let snapshot = match self.call(Call::OpenSession {
+        let mut snapshot = match self.call(Call::OpenSession {
             session: summary.id.clone(),
             window: None,
         }) {
@@ -1933,6 +2044,34 @@ impl Live {
             Ok(other) => return fail(worker, format!("unexpected reply {other:?}")),
             Err(error) => return fail(worker, format!("Could not read the conversation: {error}")),
         };
+        // Catch-up must not collapse history the person already paged in. Refresh the same
+        // range from the store, including any changed retirement/result state, before replacing it.
+        let oldest = (!initial)
+            .then(|| {
+                self.current
+                    .as_ref()
+                    .filter(|c| c.conversation == conversation)
+                    .and_then(|c| c.mirror.oldest())
+            })
+            .flatten();
+        if let Some(oldest) = oldest {
+            while snapshot.has_older && snapshot.entries.first().is_some_and(|e| e.id > oldest) {
+                let before = snapshot.entries.first().map(|e| e.id);
+                match self.call(Call::HistoryPage {
+                    session: summary.id.clone(),
+                    before,
+                    limit: HISTORY_PAGE,
+                }) {
+                    Ok(Reply::Page { entries, has_older })
+                        if !entries.is_empty() && entries.first().map(|e| e.id) < before =>
+                    {
+                        snapshot.has_older = has_older;
+                        snapshot.entries.splice(0..0, entries);
+                    }
+                    _ => return fail(worker, "Could not refresh the loaded history".into()),
+                }
+            }
+        }
         let previous = self
             .current
             .take()
@@ -2045,6 +2184,7 @@ impl Live {
         (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
         self.emit_subagents(worker);
         self.schedule_changes(worker, conversation, generation);
+        true
     }
 
     /// Collect uncommitted Git changes scoped to the session's file mutations, off this thread.

@@ -8,6 +8,26 @@ use crate::store::Store;
 impl Shared {
     /// Everything needed to show a session, read at one revision.
     pub fn snapshot(&self, session: &str, window: u32) -> Result<SessionSnapshot, ProtoError> {
+        // Writers serialize publication with their state commit. Field changes outside that
+        // path are detected by checking the revision again before accepting the snapshot.
+        let _publication = self.publication.lock().unwrap_or_else(|e| e.into_inner());
+        for _ in 0..16 {
+            let snapshot = self.snapshot_once(session, window)?;
+            if self
+                .store
+                .session(session)?
+                .is_some_and(|r| r.revision == snapshot.revision)
+            {
+                return Ok(snapshot);
+            }
+        }
+        Err(ProtoError::new(
+            ErrorCode::Busy,
+            "Session changed while reading; retry the snapshot",
+        ))
+    }
+
+    fn snapshot_once(&self, session: &str, window: u32) -> Result<SessionSnapshot, ProtoError> {
         let row = self.store.session(session)?.ok_or_else(|| {
             ProtoError::new(
                 ErrorCode::NotFound,

@@ -42,6 +42,8 @@ const WAIT: Duration = Duration::from_secs(30);
 /// What the fault link does to the next prompt, steer or follow-up.
 #[derive(Default)]
 struct Faults {
+    drop_events: AtomicBool,
+    refuse_lookups: AtomicUsize,
     drop_prompt_reply: AtomicBool,
     drop_prompt: AtomicBool,
     /// Let the next steer or follow-up reach the engine, then drop its reply and sever.
@@ -93,7 +95,7 @@ impl FrameSender for FaultSender {
 }
 
 struct FaultReceiver {
-    inner: mpsc::Receiver<ServerFrame>,
+    inner: pipkin_engine::delivery::Receiver,
     faults: Arc<Faults>,
     severed: Arc<AtomicBool>,
 }
@@ -111,6 +113,30 @@ impl FrameReceiver for FaultReceiver {
                     return Err("the engine stopped".to_owned());
                 }
             };
+            if matches!(&frame, ServerFrame::Event { .. })
+                && self.faults.drop_events.load(Ordering::SeqCst)
+            {
+                self.faults.fired.fetch_add(1, Ordering::SeqCst);
+                continue;
+            }
+            if let ServerFrame::Reply {
+                id,
+                result: Ok(pipkin_engine_protocol::Reply::Lookup(_)),
+            } = &frame
+                && self
+                    .faults
+                    .refuse_lookups
+                    .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                    .is_ok()
+            {
+                return Ok(ServerFrame::Reply {
+                    id: *id,
+                    result: Err(pipkin_engine_protocol::ProtoError::new(
+                        pipkin_engine_protocol::ErrorCode::Storage,
+                        "transient lookup failure",
+                    )),
+                });
+            }
             if let ServerFrame::Reply { id, .. } = &frame {
                 if self.faults.swallow.lock().unwrap().remove(id) {
                     continue;
@@ -2267,4 +2293,25 @@ fn a_plugin_selection_added_after_the_import_offer_never_transfers_ownership() {
     );
     assert_eq!(std::fs::read_to_string(profile).unwrap(), content);
     h.stop();
+}
+
+#[test]
+fn durable_catch_up_recovers_a_missing_terminal_event_without_later_live_traffic() {
+    let fx = Fixture::start(|_, _| Reply::Text("saved without delivery".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    fx.faults.drop_events.store(true, Ordering::SeqCst);
+    // Saved settlement must remain recoverable after its invalidation is acknowledged,
+    // even when the first reconciliation attempts fail and there is no later event.
+    fx.faults.refuse_lookups.store(3, Ordering::SeqCst);
+    h.send("do this once");
+    h.until(
+        "durable catch-up recovers history and settles the operation",
+        |s| is_idle(s) && assistant_texts(s) == ["saved without delivery".to_owned()],
+    );
+    assert!(fx.faults.fired.load(Ordering::SeqCst) > 0);
+    assert_eq!(fx.requests().len(), 1);
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
 }

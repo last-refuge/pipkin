@@ -106,6 +106,15 @@ and retires the instruction. Native engine schema 2 upgrades schema 1 only after
 `engine.sqlite.v1.bak` beside the database. Older binaries refuse the newer schema; keep the backup if rollback is
 needed. Schema 1 did not persist retry deadlines, so an upgrade cannot restore a prior deadline that was never saved.
 
+Schema 3 adds a durable event catch-up log and first saves `engine.sqlite.v2.bak` when upgrading
+schema 2. Slow native clients coalesce streamed presentation, reread saved state, and reconcile
+pending requests; they do not resend prompts to recover missing updates. This preserves loaded
+history and the selected child conversation. Protocol 4 rejects mismatched older workers.
+On Linux/glibc, the private worker limits allocator arenas and releases unused pages at run
+boundaries to avoid retaining large temporary context buffers. This does not shorten saved
+history or change the machine's allocator environment/configuration.
+
+
 For prolonged **Stopping**, an unresolved outcome, or a lost connection:
 
 1. Keep the saved history and submission journal. Wait for reconnect/reconciliation; do not infer settlement from

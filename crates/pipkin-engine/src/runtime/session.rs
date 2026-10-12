@@ -164,6 +164,8 @@ impl Shared {
                 ),
             ));
         }
+        // Keep transaction order and live publication order identical across concurrent runs.
+        let _publication = self.publication.lock().unwrap_or_else(|e| e.into_inner());
         let id = sess.id.clone();
         let result = tokio::task::block_in_place(|| {
             self.store.tx(|tx| {
@@ -178,6 +180,7 @@ impl Shared {
         });
         match result {
             Ok((value, changes, revision)) => {
+                super::faults::crash_point("after_state_commit_before_delivery");
                 for change in changes {
                     self.publish(Event::Session {
                         session: id.clone(),

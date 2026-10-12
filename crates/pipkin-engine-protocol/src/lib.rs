@@ -19,4 +19,6 @@ pub use view::*;
 
 /// Wire protocol version. Bump on any incompatible change to [`api`], [`content`] or [`view`].
 // Version 3 requires plugin-profile inspection for imports, including explicit serverDir.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
+
+pub mod delivery;

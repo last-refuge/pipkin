@@ -312,13 +312,16 @@ impl Shared {
     }
 
     pub fn publish_subagents(&self, root: &str) {
+        let _publication = self.publication.lock().unwrap_or_else(|e| e.into_inner());
+        // Revision first: never label an older view with a newer revision. A concurrent write
+        // will publish again; publishers serialize and re-read after taking this lock.
+        let revision = self
+            .store
+            .session(root)
+            .ok()
+            .flatten()
+            .map_or(0, |s| s.revision);
         if let Ok(view) = self.subagents_view(root) {
-            let revision = self
-                .store
-                .session(root)
-                .ok()
-                .flatten()
-                .map_or(0, |s| s.revision);
             self.publish(Event::Session {
                 session: root.to_owned(),
                 revision,

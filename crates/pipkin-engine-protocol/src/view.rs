@@ -636,7 +636,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 3);
+        assert_eq!(crate::PROTOCOL_VERSION, 4);
     }
 
     fn view(id: &str, status: ImportSessionStatus) -> ImportSessionView {

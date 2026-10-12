@@ -1283,6 +1283,24 @@ fn soak_with(name: &str, warmup: usize, turns: usize, every: usize, opts: SoakOp
     println!("{}", serde_json::to_string_pretty(&out["summary"]).unwrap());
     out["samples"] = json!(samples);
     finish(out, name);
+    // Plan §7's native worker memory budget, with the original 100 + 1500 turn workload.
+    // Keep this a release/ignored qualification test, not a timing-sensitive default unit test.
+    if name == "soak-1500" && warmup == 100 && turns == 1500 {
+        assert!(
+            get(after, "rssKiB") <= 100.0 * 1024.0,
+            "idle RSS exceeds 100 MiB"
+        );
+        assert!(
+            get(after, "hwmKiB") <= 100.0 * 1024.0,
+            "peak RSS exceeds 100 MiB"
+        );
+        assert_eq!(
+            get(after, "fds"),
+            get(first, "fds"),
+            "file descriptors grew"
+        );
+        assert_eq!(max_procs, 1, "text soak created descendant processes");
+    }
 }
 
 #[test]

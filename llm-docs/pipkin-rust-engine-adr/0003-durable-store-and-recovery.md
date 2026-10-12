@@ -1,13 +1,15 @@
 # ADR 0003: Durable store and recovery
 
-**Status:** Accepted; implementation reconciled at `e4c3a8c` (2026-10-11). Schema 2,
+**Status:** Accepted; updated on top of `63bd9ae` (2026-10-11). Schema 3,
 OS-locked storage, admission ledger, runs, streamed chunks, tool intent/result/output, usage,
 subagent tasks, `kv` and `import_map` are implemented. Injected disk-full/read-only faults at
 admission and mid-run are covered in `runtime/fault_tests.rs`. Actual worker SIGKILL boundaries,
 damaged-database refusal without mutation and orphan process reaping are covered in
 `tests/crash_points.rs`; a second process is refused in `tests/worker_process.rs`.
 The v1 → v2 migration is tested with an admitted request, open run and history entry; the private
-backup retains schema 1. Power loss remains unverified. See
+backup retains schema 1. The v2 → v3 outbox migration also preserves a private v2 backup. A real SIGKILL
+between state commit and publication is recovered through paged catch-up and Lookup.
+Power loss remains unverified. See
 `../pipkin-rust-engine-evidence/import-protection-durable-retries.md`.
 
 ## Context
@@ -37,7 +39,7 @@ each commit durable progress (`scheduler.ts:893-896`); on open every `running` t
    has been fsynced. This is a deliberate strengthening over the reference `NORMAL`
    (intentional improvement I-02 in the parity ledger); process-kill tests do not prove power
    loss and none is claimed.
-3. **Schema:** explicit `PRAGMA user_version`; `SCHEMA_VERSION = 2`; ordered `MIGRATIONS`.
+3. **Schema:** explicit `PRAGMA user_version`; `SCHEMA_VERSION = 3`; ordered `MIGRATIONS`.
    A newer database is refused **before** any pragma change (`schema::open`); an older one is
    backed up with the SQLite backup API next to itself, then migrated inside one transaction.
    Database and migration-backup file mode `0600` on Unix.
@@ -50,10 +52,11 @@ each commit durable progress (`scheduler.ts:893-896`); on open every `running` t
    dropped-byte count), `usage`, `subagent_tasks` (unique `(parent_session, parent_call)` and
    unique `child_session`, `result_delivered`), `kv` (engine/extension state preserved
    verbatim), `import_map`; schema 2 adds `generation_state` keyed by run (failure count, handled error,
-   retry deadline and overflow-compaction marker). No rebuildable projections yet.
+   retry deadline and overflow-compaction marker). Schema 3 adds a bounded `event_outbox`
+   of session/revision invalidations, written by triggers in the same transaction.
 5. **Transactions:** every mutation is one short transaction that bumps the session revision;
    nothing awaits network, processes or people inside it (`Store::tx`). Events are published
-   only after commit.
+   only after commit; the invalidation survives death before live publication.
 6. **Admission:** same key + same payload returns the original admission; same key with a
    different payload is `ErrorCode::Conflict` (intentional improvement I-01: the reference
    ignores content, `harness/submissions.ts:160-219`). Busy + prompt is refused without

@@ -45,8 +45,9 @@ pub struct Shared {
     pub generations: Arc<Semaphore>,
     pub processes: Arc<Semaphore>,
     pub locks: Arc<MutationLocks>,
-    seq: AtomicU64,
-    clients: Mutex<HashMap<u64, std::sync::mpsc::Sender<ServerFrame>>>,
+    publication: Mutex<()>,
+    clients: Mutex<HashMap<u64, crate::delivery::Delivery>>,
+    cursors: Mutex<HashMap<u64, (u64, u64)>>,
     sessions: Mutex<HashMap<String, Arc<SessionRt>>>,
     handle: tokio::runtime::Handle,
     me: std::sync::Weak<Shared>,
@@ -85,31 +86,19 @@ impl Shared {
 
     /// Publish a committed event to every connected client.
     pub fn publish(&self, event: Event) {
-        let seq = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let frame = ServerFrame::Event {
-            epoch: self.epoch,
-            seq,
-            event,
-        };
         let mut clients = self.clients.lock().unwrap_or_else(|e| e.into_inner());
-        clients.retain(|_, tx| tx.send(frame.clone()).is_ok());
+        clients.retain(|_, tx| tx.event(self.epoch, event.clone()));
     }
 
-    /// Send to one client only (volatile, client-scoped events like sign-in state).
+    /// Client-local state has its own sequence; another client's sign-in never creates gaps.
     pub fn publish_to(&self, client: u64, event: Event) {
-        let seq = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let frame = ServerFrame::Event {
-            epoch: self.epoch,
-            seq,
-            event,
-        };
         if let Some(tx) = self
             .clients
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(&client)
         {
-            let _ = tx.send(frame);
+            tx.event(self.epoch, event);
         }
     }
 
@@ -264,7 +253,8 @@ impl EngineHandle {
             adapters,
             tools,
             locks: Arc::default(),
-            seq: AtomicU64::new(0),
+            cursors: Mutex::new(HashMap::new()),
+            publication: Mutex::new(()),
             clients: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
             handle: runtime.handle().clone(),
@@ -314,8 +304,9 @@ impl EngineHandle {
     /// A new client connection.
     pub fn connect(&self, _name: &str) -> Connection {
         let client = self.next_client.fetch_add(1, Ordering::SeqCst);
-        let (in_tx, mut in_rx) = mpsc::unbounded_channel::<ClientFrame>();
-        let (out_tx, out_rx) = std::sync::mpsc::channel::<ServerFrame>();
+        let (in_tx, mut in_rx) = mpsc::channel::<ClientFrame>(64);
+        let (control, mut controls) = mpsc::channel::<ClientFrame>(8);
+        let (out_tx, out_rx) = crate::delivery::channel();
         self.shared
             .clients
             .lock()
@@ -329,29 +320,40 @@ impl EngineHandle {
             .as_ref()
         {
             rt.spawn(async move {
-                while let Some(frame) = in_rx.recv().await {
+                let normal_slots = Arc::new(Semaphore::new(16));
+                let control_slots = Arc::new(Semaphore::new(4));
+                loop {
+                    // Reserve a task slot before dequeuing, keeping queued and active calls bounded.
+                    // Control has independent capacity and is polled first.
+                    let (frame, permit) = tokio::select! {
+                        biased;
+                        v = async {
+                            let p = control_slots.clone().acquire_owned().await.ok()?;
+                            Some((controls.recv().await?, p))
+                        }, if !controls.is_closed() || !controls.is_empty() => match v { Some(v) => v, None => continue },
+                        v = async {
+                            let p = normal_slots.clone().acquire_owned().await.ok()?;
+                            Some((in_rx.recv().await?, p))
+                        }, if !in_rx.is_closed() || !in_rx.is_empty() => match v { Some(v) => v, None => continue },
+                        else => break,
+                    };
                     let shared = shared.clone();
                     let out = out_tx.clone();
-                    // Every call runs concurrently; per-session mutations serialize on the
-                    // session lock, and Stop takes only that lock (never waits on a run).
                     tokio::spawn(async move {
+                        let _permit = permit;
                         let result = dispatch(&shared, client, frame.call).await;
-                        let _ = out.send(ServerFrame::Reply {
-                            id: frame.id,
-                            result,
-                        });
+                        out.reply(ServerFrame::Reply { id: frame.id, result }).await;
                     });
                 }
-                shared
-                    .clients
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .remove(&client);
+                shared.clients.lock().unwrap_or_else(|e| e.into_inner()).remove(&client);
+                shared.cursors.lock().unwrap_or_else(|e| e.into_inner()).remove(&client);
                 shared.auth.client_gone(client);
+                out_tx.close();
             });
         }
         Connection {
             tx: in_tx,
+            control,
             rx: out_rx,
             client,
         }
@@ -360,6 +362,15 @@ impl EngineHandle {
     /// Orderly stop: extensions are deactivated (their processes ended) and questions
     /// cancelled; runs in flight stay unsettled in the store and resume on the next start.
     pub fn shutdown(&self, timeout: Duration) {
+        for delivery in self
+            .shared
+            .clients
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+        {
+            delivery.close();
+        }
         // Pooled provider connections (Codex WebSockets) belong to this engine's lifetime.
         for adapter in self.shared.adapters.adapters() {
             adapter.close_sessions(None);
@@ -439,12 +450,32 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
                 schema: crate::store::SCHEMA_VERSION,
                 epoch: shared.epoch,
                 capabilities: vec![
+                    "durableInvalidations".into(),
                     "subagents".into(),
                     "questions".into(),
                     "compaction".into(),
                     "toolOutput".into(),
                 ],
             }))
+        }
+        Call::CatchUp { after, limit } => {
+            let page = shared.store.catch_up(after, limit)?;
+            let mut cursors = shared.cursors.lock().unwrap_or_else(|e| e.into_inner());
+            let cursor = cursors.entry(client).or_default();
+            cursor.1 = cursor.1.max(page.through);
+            Ok(Reply::Events(page))
+        }
+        Call::AckEvents { through } => {
+            let mut cursors = shared.cursors.lock().unwrap_or_else(|e| e.into_inner());
+            let cursor = cursors.entry(client).or_default();
+            if through > cursor.1 || through < cursor.0 {
+                return Err(ProtoError::new(
+                    ErrorCode::Invalid,
+                    "Cursor was not delivered or moves backwards",
+                ));
+            }
+            cursor.0 = through;
+            Ok(Reply::Ok)
         }
         Call::ListSessions => Ok(Reply::Sessions {
             sessions: shared.summaries()?,
