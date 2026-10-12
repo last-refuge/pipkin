@@ -338,14 +338,15 @@ impl Shared {
         Settings::load(&self.config.config_dir, cwd.as_deref()).0
     }
 
-    /// One model exchange. `Ok(Some(message))` is the committed final message; `Err(Some)`
-    /// settles the run (no model, no credentials); `Err(None)` leaves it unsettled.
+    /// One model exchange. The final message moves into durable publication; the caller
+    /// reads the committed state on its next step. `Err(Some)` settles the run; `Err(None)`
+    /// leaves it unsettled after a storage failure.
     async fn request(
         self: &Arc<Self>,
         sess: &Arc<SessionRt>,
         run: u64,
         cancel: &CancellationToken,
-    ) -> Result<Option<Message>, Option<RunOutcome>> {
+    ) -> Result<(), Option<RunOutcome>> {
         let Prepared {
             req,
             adapter,
@@ -356,7 +357,7 @@ impl Shared {
         } = self.prepare(sess).await?;
         let _permit = tokio::select! {
             p = self.generations.clone().acquire_owned() => p.ok(),
-            _ = cancel.cancelled() => return Ok(None),
+            _ = cancel.cancelled() => return Ok(()),
         };
         let progress = progress::Progress::new(
             self.clone(),
@@ -388,11 +389,25 @@ impl Shared {
         // The final message carries everything; uncommitted deltas need no separate commit.
         let session = sess.id.clone();
         let usage_key = model.key();
-        let final_message = message.clone();
+        let is_error = matches!(
+            &message,
+            Message::Assistant {
+                stop_reason: StopReason::Error,
+                ..
+            }
+        );
+        let usage = match &message {
+            Message::Assistant { usage, .. }
+                if usage.total_tokens > 0 || usage.cost.total > 0.0 =>
+            {
+                Some(usage.clone())
+            }
+            _ => None,
+        };
         let committed = self.commit(sess, move |tx| {
             let now = now_ms();
             let kind = EntryKind::Message {
-                message: final_message.clone(),
+                message,
                 mode: InputMode::Prompt,
                 request: None,
                 partial: false,
@@ -410,22 +425,14 @@ impl Shared {
                     SessionChange::EntryReplaced { entry }
                 }
                 None => SessionChange::EntryAppended {
-                    entry: Store::append_entry(tx, &session, now, Some(run), &kind)?,
+                    entry: Store::append_entry_owned(tx, &session, now, Some(run), kind)?,
                 },
             };
-            if !matches!(
-                &final_message,
-                Message::Assistant {
-                    stop_reason: StopReason::Error,
-                    ..
-                }
-            ) {
+            if !is_error {
                 Store::reset_generation_state(tx, run)?;
             }
             let mut changes = vec![change];
-            if let Message::Assistant { usage, .. } = &final_message
-                && (usage.total_tokens > 0 || usage.cost.total > 0.0)
-            {
+            if let Some(usage) = &usage {
                 Store::add_usage(tx, &session, "model", &usage_key, usage)?;
                 changes.push(SessionChange::UsageChanged {
                     usage: Store::usage_in(tx, &session)?,
@@ -436,7 +443,7 @@ impl Shared {
         match committed {
             Ok(()) => {
                 super::faults::crash_point("after_generation_result");
-                Ok(Some(message))
+                Ok(())
             }
             Err(_) => Err(None),
         }

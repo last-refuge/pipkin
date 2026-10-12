@@ -745,13 +745,34 @@ impl Store {
         run: Option<u64>,
         kind: &EntryKind,
     ) -> Result<Entry> {
+        Self::append_entry_payload(tx, session, at_ms, run, std::borrow::Cow::Borrowed(kind))
+    }
+
+    /// Move an already-owned payload into the committed entry without retaining a second copy.
+    pub fn append_entry_owned(
+        tx: &Connection,
+        session: &str,
+        at_ms: i64,
+        run: Option<u64>,
+        kind: EntryKind,
+    ) -> Result<Entry> {
+        Self::append_entry_payload(tx, session, at_ms, run, std::borrow::Cow::Owned(kind))
+    }
+
+    fn append_entry_payload(
+        tx: &Connection,
+        session: &str,
+        at_ms: i64,
+        run: Option<u64>,
+        kind: std::borrow::Cow<'_, EntryKind>,
+    ) -> Result<Entry> {
         let next: i64 = tx.query_row(
             "SELECT COALESCE(MAX(id), 0) + 1 FROM entries WHERE session = ?1",
             [session],
             |r| r.get(0),
         )?;
         let next = next.max(Self::entry_floor(tx, session)? as i64);
-        Self::insert_entry(tx, session, next as u64, at_ms, run, kind, false)
+        Self::insert_entry_payload(tx, session, next as u64, at_ms, run, kind, false)
     }
 
     /// Immutable import boundary: no schema write or source-profile access is needed.
@@ -781,7 +802,27 @@ impl Store {
         kind: &EntryKind,
         retired: bool,
     ) -> Result<Entry> {
-        let partial = matches!(kind, EntryKind::Message { partial: true, .. });
+        Self::insert_entry_payload(
+            tx,
+            session,
+            id,
+            at_ms,
+            run,
+            std::borrow::Cow::Borrowed(kind),
+            retired,
+        )
+    }
+
+    fn insert_entry_payload(
+        tx: &Connection,
+        session: &str,
+        id: u64,
+        at_ms: i64,
+        run: Option<u64>,
+        kind: std::borrow::Cow<'_, EntryKind>,
+        retired: bool,
+    ) -> Result<Entry> {
+        let partial = matches!(kind.as_ref(), EntryKind::Message { partial: true, .. });
         tx.execute(
             "INSERT INTO entries(session, id, at_ms, run, retired, partial, kind, body)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -792,8 +833,8 @@ impl Store {
                 run.map(|r| r as i64),
                 retired as i64,
                 partial as i64,
-                entry_kind_name(kind),
-                json(kind)
+                entry_kind_name(&kind),
+                json(&kind)
             ],
         )?;
         Ok(Entry {
@@ -801,7 +842,8 @@ impl Store {
             at_ms,
             run,
             retired,
-            kind: kind.clone(),
+            // Borrowed callers clone only after SQLite serialization/binding has finished.
+            kind: kind.into_owned(),
         })
     }
 

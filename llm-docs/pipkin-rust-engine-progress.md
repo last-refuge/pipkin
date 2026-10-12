@@ -11,7 +11,33 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — release performance qualification measurements
+## Current follow-up — final-response ownership and large-output memory
+
+2026-10-12, following **`368fdca`**, protocol 12 / schema 9 unchanged. Generation finalization
+now moves the response into durable commit/publication instead of cloning it twice and returning
+an unused copy. A new owned append path also avoids copying final-only provider replies;
+borrowed callers keep their late-copy behavior through the shared insertion helper. Usage,
+error classification, source/provider metadata, transaction ordering and crash points are preserved.
+
+Repeated all 27 streaming scaling cases through 10 MiB, all five latency cadences, and the full
+100+1500-turn text soak on the final release implementation. **Worst 10 MiB VmHWM including
+history reopen: 98,112 KiB (95.81 MiB)**, down from 118,496 KiB (115.72 MiB). Exact output
+lengths and cleared stream chunks are now asserted in the benchmark. Streaming p95 ≤45.851 ms,
+zero missing markers. Soak idle/peak 30,292/41,684 KiB, 13→13 fds, one process; second-half
+RSS slope +1.694 KiB/turn. Request bytes equal the preceding workload. No universal memory,
+indefinite-leak-freedom or desktop speed claim is made.
+
+See [owned final-message evidence](pipkin-rust-engine-evidence/owned-final-message.md) for
+both intermediate and final raw measurements, binary identity and verification scope.
+Required workspace checks: **1634 passed, 0 failed, 53 ignored**, clean Clippy
+(all targets) and formatting.
+Inventory remains **504 rows, 488 non-OS; NC 412, NE 38, NP 37, PA 0, BL 0, LB 1,
+OS 16; 444 measured, 7 observed, 1 unverified, 52 not started; 0 fully qualified**.
+Native remains opt-in. Sustained large-context/long-tool/multi-session/desktop workloads,
+remaining core/transport comparisons, installed/rollback, CI/platform and native-default/
+Pi-removal qualification remain open. Owner changes preserved.
+
+## Previous follow-up — release performance qualification measurements
 
 2026-10-12, engine **`4a9d4eb`**, protocol 12 / schema 9. Ran all six requested release
 benchmarks on the current engine: readiness, full 100+1500-turn soak, stream latency,

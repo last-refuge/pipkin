@@ -1440,6 +1440,7 @@ fn stream_latency() {
                 _ => missing += 1,
             }
         }
+        assert_eq!(missing, 0, "stream markers were lost at {gap} ms cadence");
         let row = json!({
             "gapMs": gap,
             "chunks": count,
@@ -1464,7 +1465,7 @@ fn stream_latency() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// 4. Streaming scaling: 1/2/4/8 MiB single replies
+// 4. Streaming scaling: 1/2/4/8/10 MiB single replies
 // ---------------------------------------------------------------------------------------------
 
 fn scaling_case(stub: &Stub, mib: f64, chunk: usize) -> Value {
@@ -1539,6 +1540,11 @@ fn scaling_case(stub: &Stub, mib: f64, chunk: usize) -> Value {
         })
         .max()
         .unwrap_or(0);
+    assert_eq!(
+        final_len as u64, bytes,
+        "final stored output must be complete"
+    );
+    let after_open = mem_sample(e.pid);
     let _ = e.shutdown();
     // After an orderly exit: the database alone.
     let conn = rusqlite::Connection::open_with_flags(
@@ -1551,6 +1557,7 @@ fn scaling_case(stub: &Stub, mib: f64, chunk: usize) -> Value {
     let pages = q("PRAGMA page_count");
     let free = q("PRAGMA freelist_count");
     let chunks_left = q("SELECT COUNT(*) FROM entry_chunks");
+    assert_eq!(chunks_left, 0, "finalized stream chunks must be released");
     let (db2, wal2) = p.db_bytes();
     json!({
         "mib": mib,
@@ -1579,7 +1586,7 @@ fn scaling_case(stub: &Stub, mib: f64, chunk: usize) -> Value {
         "dbPagesAfterExit": pages, "dbPageSize": page_size, "dbFreelistPages": free,
         "entryChunksLeft": chunks_left,
         "memory": row_before_exit,
-        "openSessionAfter": { "ms": ms(open_d), "replyBytes": open_len },
+        "openSessionAfter": { "ms": ms(open_d), "replyBytes": open_len, "memory": after_open },
     })
 }
 

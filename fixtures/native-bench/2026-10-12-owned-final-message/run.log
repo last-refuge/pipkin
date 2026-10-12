@@ -1,0 +1,268 @@
+== building release engine
+   Compiling pipkin-engine v0.0.1 (/home/jason/coding/pipkin/crates/pipkin-engine)
+    Finished `release` profile [optimized + debuginfo] target(s) in 16.37s
+    Finished `release` profile [optimized + debuginfo] target(s) in 23.83s
+  Executable tests/perf.rs (target/release/deps/perf-2b0c118f5de90675)
+== machine: { "cpu": "Intel(R) Core(TM) Ultra X7 358H", "logicalCpus": 16, "memTotalKiB": 65326544, "kernel": "7.2.5-3-omarchy", "governor": "powersave", "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)", "gitRevision": "368fdca3d2103ffd6f6bc95f57ed32b9989479c6", "gitDirty": true, "loadavg": "4.78 2.93 2.66 2/3187 3265588", "scratch": "/home/jason/coding/pipkin/target/tmp", "scratchFilesystem": "btrfs", "releaseProfile": "workspace [profile.release]: opt-level 3, debug = line-tables-only"}
+== test stream_scaling (loadavg 4.78 2.93 2.66)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.14s
+     Running tests/perf.rs (target/release/deps/perf-2b0c118f5de90675)
+
+running 1 test
+test stream_scaling ... {"mib":1.0,"chunkBytes":1024,"chunks":1024,"replyTextBytes":1048576,"finalEntryTextBytes":1048576,"wallMs":93.79,"firstDeltaMs":8.497,"engineCpuSecs":0.06,"providerSseBytes":1207698,"clientFrames":1032,"clientBytes":2318887,"clientDeltaFrames":1024,"clientLargestFrameBytes":1049228,"io":{"wcharBytes":9608469,"wcharMinusClientBytes":7289582,"writeBytes":9809920,"syscw":4549,"rcharBytes":3207339},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":1675264,"walBytesAfter":4124152,"dbFileBytesAfterExit":2748416,"walBytesAfterExit":0,"dbPagesAfterExit":671,"dbPageSize":4096,"dbFreelistPages":356,"entryChunksLeft":0,"memory":{"rssKiBBefore":23324,"rssKiBAfter":25180,"vmHwmKiB":32136},"openSessionAfter":{"ms":3.392,"replyBytes":1062380,"memory":{"rssKiB":25208,"hwmKiB":32136,"rssAnonKiB":10224,"rssFileKiB":14984,"pssKiB":22627,"pssAnonKiB":10224,"threads":8,"fds":13,"children":0,"cpuSecs":0.07}},"rep":0}
+{"mib":2.0,"chunkBytes":1024,"chunks":2048,"replyTextBytes":2097152,"finalEntryTextBytes":2097152,"wallMs":202.312,"firstDeltaMs":10.136,"engineCpuSecs":0.13,"providerSseBytes":2414994,"clientFrames":2055,"clientBytes":2538636,"clientDeltaFrames":2048,"clientLargestFrameBytes":1240,"io":{"wcharBytes":19741722,"wcharMinusClientBytes":17203086,"writeBytes":26181632,"syscw":9533,"rcharBytes":13267115},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":5267456,"walBytesAfter":7436632,"dbFileBytesAfterExit":5267456,"walBytesAfterExit":0,"dbPagesAfterExit":1286,"dbPageSize":4096,"dbFreelistPages":713,"entryChunksLeft":0,"memory":{"rssKiBBefore":23484,"rssKiBAfter":25320,"vmHwmKiB":39508},"openSessionAfter":{"ms":10.285,"replyBytes":2110957,"memory":{"rssKiB":25356,"hwmKiB":39508,"rssAnonKiB":10200,"rssFileKiB":15156,"pssKiB":22739,"pssAnonKiB":10200,"threads":7,"fds":13,"children":0,"cpuSecs":0.14}},"rep":0}
+{"mib":4.0,"chunkBytes":1024,"chunks":4096,"replyTextBytes":4194304,"finalEntryTextBytes":4194304,"wallMs":384.499,"firstDeltaMs":17.146,"engineCpuSecs":0.24,"providerSseBytes":4829586,"clientFrames":4103,"clientBytes":5078156,"clientDeltaFrames":4096,"clientLargestFrameBytes":1240,"io":{"wcharBytes":40170154,"wcharMinusClientBytes":35091998,"writeBytes":54644736,"syscw":19441,"rcharBytes":27152555},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":10285056,"walBytesAfter":10304152,"dbFileBytesAfterExit":10285056,"walBytesAfterExit":0,"dbPagesAfterExit":2511,"dbPageSize":4096,"dbFreelistPages":1424,"entryChunksLeft":0,"memory":{"rssKiBBefore":23132,"rssKiBAfter":25036,"vmHwmKiB":53416},"openSessionAfter":{"ms":13.835,"replyBytes":4208109,"memory":{"rssKiB":25068,"hwmKiB":53416,"rssAnonKiB":10240,"rssFileKiB":14828,"pssKiB":22462,"pssAnonKiB":10240,"threads":8,"fds":13,"children":0,"cpuSecs":0.25}},"rep":0}
+{"mib":8.0,"chunkBytes":1024,"chunks":8192,"replyTextBytes":8388608,"finalEntryTextBytes":8388608,"wallMs":760.047,"firstDeltaMs":27.694,"engineCpuSecs":0.44,"providerSseBytes":9658770,"clientFrames":8199,"clientBytes":10157196,"clientDeltaFrames":8192,"clientLargestFrameBytes":1240,"io":{"wcharBytes":81201234,"wcharMinusClientBytes":71044038,"writeBytes":110186496,"syscw":38482,"rcharBytes":54956203},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":20336640,"walBytesAfter":16096872,"dbFileBytesAfterExit":20336640,"walBytesAfterExit":0,"dbPagesAfterExit":4965,"dbPageSize":4096,"dbFreelistPages":2850,"entryChunksLeft":0,"memory":{"rssKiBBefore":23404,"rssKiBAfter":25272,"vmHwmKiB":82224},"openSessionAfter":{"ms":24.083,"replyBytes":8402413,"memory":{"rssKiB":25300,"hwmKiB":82224,"rssAnonKiB":10252,"rssFileKiB":15048,"pssKiB":22664,"pssAnonKiB":10252,"threads":8,"fds":13,"children":0,"cpuSecs":0.47}},"rep":0}
+{"mib":10.0,"chunkBytes":1024,"chunks":10240,"replyTextBytes":10485760,"finalEntryTextBytes":10485760,"wallMs":949.791,"firstDeltaMs":30.921,"engineCpuSecs":0.56,"providerSseBytes":12073362,"clientFrames":10247,"clientBytes":12696971,"clientDeltaFrames":10240,"clientLargestFrameBytes":1241,"io":{"wcharBytes":101753729,"wcharMinusClientBytes":89056758,"writeBytes":136601600,"syscw":48489,"rcharBytes":68845739},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":25358336,"walBytesAfter":19009712,"dbFileBytesAfterExit":25358336,"walBytesAfterExit":0,"dbPagesAfterExit":6191,"dbPageSize":4096,"dbFreelistPages":3562,"entryChunksLeft":0,"memory":{"rssKiBBefore":23456,"rssKiBAfter":25376,"vmHwmKiB":97576},"openSessionAfter":{"ms":26.548,"replyBytes":10499565,"memory":{"rssKiB":25404,"hwmKiB":97576,"rssAnonKiB":10216,"rssFileKiB":15188,"pssKiB":22787,"pssAnonKiB":10216,"threads":8,"fds":13,"children":0,"cpuSecs":0.59}},"rep":0}
+{"mib":0.25,"chunkBytes":64,"chunks":4096,"replyTextBytes":262144,"finalEntryTextBytes":262144,"wallMs":85.481,"firstDeltaMs":14.441,"engineCpuSecs":0.06,"providerSseBytes":897426,"clientFrames":4104,"clientBytes":1406055,"clientDeltaFrames":4096,"clientLargestFrameBytes":262796,"io":{"wcharBytes":4781925,"wcharMinusClientBytes":3375870,"writeBytes":5840896,"syscw":6994,"rcharBytes":171},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":4096,"walBytesAfter":3802792,"dbFileBytesAfterExit":1351680,"walBytesAfterExit":0,"dbPagesAfterExit":330,"dbPageSize":4096,"dbFreelistPages":207,"entryChunksLeft":0,"memory":{"rssKiBBefore":23128,"rssKiBAfter":24744,"vmHwmKiB":27204},"openSessionAfter":{"ms":1.24,"replyBytes":275948,"memory":{"rssKiB":24780,"hwmKiB":27204,"rssAnonKiB":9912,"rssFileKiB":14868,"pssKiB":22172,"pssAnonKiB":9912,"threads":8,"fds":13,"children":0,"cpuSecs":0.08}},"rep":0}
+{"mib":0.5,"chunkBytes":64,"chunks":8192,"replyTextBytes":524288,"finalEntryTextBytes":524288,"wallMs":156.519,"firstDeltaMs":18.441,"engineCpuSecs":0.11,"providerSseBytes":1794450,"clientFrames":8200,"clientBytes":2810983,"clientDeltaFrames":8192,"clientLargestFrameBytes":524940,"io":{"wcharBytes":11127517,"wcharMinusClientBytes":8316534,"writeBytes":13103104,"syscw":13890,"rcharBytes":3862699},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":1679360,"walBytesAfter":4161232,"dbFileBytesAfterExit":2473984,"walBytesAfterExit":0,"dbPagesAfterExit":604,"dbPageSize":4096,"dbFreelistPages":417,"entryChunksLeft":0,"memory":{"rssKiBBefore":23320,"rssKiBAfter":25292,"vmHwmKiB":28580},"openSessionAfter":{"ms":2.712,"replyBytes":538092,"memory":{"rssKiB":25312,"hwmKiB":28580,"rssAnonKiB":10320,"rssFileKiB":14992,"pssKiB":22664,"pssAnonKiB":10320,"threads":8,"fds":13,"children":0,"cpuSecs":0.13}},"rep":0}
+{"mib":1.0,"chunkBytes":64,"chunks":16384,"replyTextBytes":1048576,"finalEntryTextBytes":1048576,"wallMs":310.095,"firstDeltaMs":31.027,"engineCpuSecs":0.22,"providerSseBytes":3588498,"clientFrames":16392,"clientBytes":5631595,"clientDeltaFrames":16384,"clientLargestFrameBytes":1049230,"io":{"wcharBytes":26547969,"wcharMinusClientBytes":20916374,"writeBytes":30769152,"syscw":28669,"rcharBytes":13279403},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":4710400,"walBytesAfter":5298352,"dbFileBytesAfterExit":4710400,"walBytesAfterExit":0,"dbPagesAfterExit":1150,"dbPageSize":4096,"dbFreelistPages":833,"entryChunksLeft":0,"memory":{"rssKiBBefore":23424,"rssKiBAfter":25460,"vmHwmKiB":32500},"openSessionAfter":{"ms":3.176,"replyBytes":1062381,"memory":{"rssKiB":25472,"hwmKiB":32500,"rssAnonKiB":10372,"rssFileKiB":15100,"pssKiB":22836,"pssAnonKiB":10372,"threads":8,"fds":13,"children":0,"cpuSecs":0.25}},"rep":0}
+{"mib":2.0,"chunkBytes":64,"chunks":32768,"replyTextBytes":2097152,"finalEntryTextBytes":2097152,"wallMs":621.672,"firstDeltaMs":52.097,"engineCpuSecs":0.46,"providerSseBytes":7176594,"clientFrames":32776,"clientBytes":9186347,"clientDeltaFrames":32768,"clientLargestFrameBytes":578,"io":{"wcharBytes":51064793,"wcharMinusClientBytes":41878446,"writeBytes":61870080,"syscw":58995,"rcharBytes":31449899},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":9179136,"walBytesAfter":10267072,"dbFileBytesAfterExit":9179136,"walBytesAfterExit":0,"dbPagesAfterExit":2241,"dbPageSize":4096,"dbFreelistPages":1667,"entryChunksLeft":0,"memory":{"rssKiBBefore":23400,"rssKiBAfter":25440,"vmHwmKiB":39504},"openSessionAfter":{"ms":9.728,"replyBytes":2110957,"memory":{"rssKiB":25456,"hwmKiB":39504,"rssAnonKiB":10380,"rssFileKiB":15076,"pssKiB":22844,"pssAnonKiB":10380,"threads":8,"fds":13,"children":0,"cpuSecs":0.49}},"rep":0}
+{"mib":1.0,"chunkBytes":1024,"chunks":1024,"replyTextBytes":1048576,"finalEntryTextBytes":1048576,"wallMs":104.765,"firstDeltaMs":9.334,"engineCpuSecs":0.07,"providerSseBytes":1207698,"clientFrames":1032,"clientBytes":2318887,"clientDeltaFrames":1024,"clientLargestFrameBytes":1049228,"io":{"wcharBytes":9607653,"wcharMinusClientBytes":7288766,"writeBytes":13103104,"syscw":4447,"rcharBytes":3207339},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":1675264,"walBytesAfter":4124152,"dbFileBytesAfterExit":2748416,"walBytesAfterExit":0,"dbPagesAfterExit":671,"dbPageSize":4096,"dbFreelistPages":356,"entryChunksLeft":0,"memory":{"rssKiBBefore":23412,"rssKiBAfter":25216,"vmHwmKiB":32260},"openSessionAfter":{"ms":3.37,"replyBytes":1062380,"memory":{"rssKiB":25244,"hwmKiB":32260,"rssAnonKiB":10156,"rssFileKiB":15088,"pssKiB":22631,"pssAnonKiB":10156,"threads":7,"fds":13,"children":0,"cpuSecs":0.08}},"rep":1}
+{"mib":2.0,"chunkBytes":1024,"chunks":2048,"replyTextBytes":2097152,"finalEntryTextBytes":2097152,"wallMs":190.419,"firstDeltaMs":9.948,"engineCpuSecs":0.11,"providerSseBytes":2414994,"clientFrames":2055,"clientBytes":2538636,"clientDeltaFrames":2048,"clientLargestFrameBytes":1240,"io":{"wcharBytes":19742978,"wcharMinusClientBytes":17204342,"writeBytes":26968064,"syscw":9690,"rcharBytes":13267115},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":5267456,"walBytesAfter":7436632,"dbFileBytesAfterExit":5267456,"walBytesAfterExit":0,"dbPagesAfterExit":1286,"dbPageSize":4096,"dbFreelistPages":713,"entryChunksLeft":0,"memory":{"rssKiBBefore":23380,"rssKiBAfter":25172,"vmHwmKiB":39608},"openSessionAfter":{"ms":5.9,"replyBytes":2110957,"memory":{"rssKiB":25200,"hwmKiB":39608,"rssAnonKiB":10152,"rssFileKiB":15048,"pssKiB":22564,"pssAnonKiB":10152,"threads":7,"fds":13,"children":0,"cpuSecs":0.13}},"rep":1}
+{"mib":4.0,"chunkBytes":1024,"chunks":4096,"replyTextBytes":4194304,"finalEntryTextBytes":4194304,"wallMs":396.651,"firstDeltaMs":15.416,"engineCpuSecs":0.24,"providerSseBytes":4829586,"clientFrames":4103,"clientBytes":5078156,"clientDeltaFrames":4096,"clientLargestFrameBytes":1240,"io":{"wcharBytes":40170522,"wcharMinusClientBytes":35092366,"writeBytes":55398400,"syscw":19487,"rcharBytes":27152555},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":10285056,"walBytesAfter":10304152,"dbFileBytesAfterExit":10285056,"walBytesAfterExit":0,"dbPagesAfterExit":2511,"dbPageSize":4096,"dbFreelistPages":1424,"entryChunksLeft":0,"memory":{"rssKiBBefore":23204,"rssKiBAfter":25116,"vmHwmKiB":53236},"openSessionAfter":{"ms":14.303,"replyBytes":4208109,"memory":{"rssKiB":25128,"hwmKiB":53236,"rssAnonKiB":10256,"rssFileKiB":14872,"pssKiB":22522,"pssAnonKiB":10256,"threads":8,"fds":13,"children":0,"cpuSecs":0.25}},"rep":1}
+{"mib":8.0,"chunkBytes":1024,"chunks":8192,"replyTextBytes":8388608,"finalEntryTextBytes":8388608,"wallMs":778.491,"firstDeltaMs":27.965,"engineCpuSecs":0.47,"providerSseBytes":9658770,"clientFrames":8199,"clientBytes":10157196,"clientDeltaFrames":8192,"clientLargestFrameBytes":1240,"io":{"wcharBytes":81208706,"wcharMinusClientBytes":71051510,"writeBytes":110366720,"syscw":39416,"rcharBytes":54956203},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":20336640,"walBytesAfter":16096872,"dbFileBytesAfterExit":20336640,"walBytesAfterExit":0,"dbPagesAfterExit":4965,"dbPageSize":4096,"dbFreelistPages":2850,"entryChunksLeft":0,"memory":{"rssKiBBefore":23320,"rssKiBAfter":25148,"vmHwmKiB":82012},"openSessionAfter":{"ms":24.704,"replyBytes":8402413,"memory":{"rssKiB":25180,"hwmKiB":82012,"rssAnonKiB":10180,"rssFileKiB":15000,"pssKiB":22592,"pssAnonKiB":10180,"threads":7,"fds":13,"children":0,"cpuSecs":0.5}},"rep":1}
+{"mib":10.0,"chunkBytes":1024,"chunks":10240,"replyTextBytes":10485760,"finalEntryTextBytes":10485760,"wallMs":960.426,"firstDeltaMs":28.487,"engineCpuSecs":0.56,"providerSseBytes":12073362,"clientFrames":10247,"clientBytes":12696971,"clientDeltaFrames":10240,"clientLargestFrameBytes":1241,"io":{"wcharBytes":101755305,"wcharMinusClientBytes":89058334,"writeBytes":137076736,"syscw":48686,"rcharBytes":68845739},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":25358336,"walBytesAfter":19009712,"dbFileBytesAfterExit":25358336,"walBytesAfterExit":0,"dbPagesAfterExit":6191,"dbPageSize":4096,"dbFreelistPages":3562,"entryChunksLeft":0,"memory":{"rssKiBBefore":23344,"rssKiBAfter":25192,"vmHwmKiB":97856},"openSessionAfter":{"ms":25.356,"replyBytes":10499565,"memory":{"rssKiB":25212,"hwmKiB":97856,"rssAnonKiB":10152,"rssFileKiB":15060,"pssKiB":22595,"pssAnonKiB":10152,"threads":7,"fds":13,"children":0,"cpuSecs":0.6}},"rep":1}
+{"mib":0.25,"chunkBytes":64,"chunks":4096,"replyTextBytes":262144,"finalEntryTextBytes":262144,"wallMs":86.596,"firstDeltaMs":14.114,"engineCpuSecs":0.07,"providerSseBytes":897426,"clientFrames":4104,"clientBytes":1406055,"clientDeltaFrames":4096,"clientLargestFrameBytes":262796,"io":{"wcharBytes":4781733,"wcharMinusClientBytes":3375678,"writeBytes":5808128,"syscw":6970,"rcharBytes":171},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":4096,"walBytesAfter":3802792,"dbFileBytesAfterExit":1351680,"walBytesAfterExit":0,"dbPagesAfterExit":330,"dbPageSize":4096,"dbFreelistPages":207,"entryChunksLeft":0,"memory":{"rssKiBBefore":23136,"rssKiBAfter":24644,"vmHwmKiB":27288},"openSessionAfter":{"ms":0.814,"replyBytes":275948,"memory":{"rssKiB":24680,"hwmKiB":27288,"rssAnonKiB":9872,"rssFileKiB":14808,"pssKiB":22092,"pssAnonKiB":9872,"threads":7,"fds":13,"children":0,"cpuSecs":0.09}},"rep":1}
+{"mib":0.5,"chunkBytes":64,"chunks":8192,"replyTextBytes":524288,"finalEntryTextBytes":524288,"wallMs":155.829,"firstDeltaMs":15.7,"engineCpuSecs":0.11,"providerSseBytes":1794450,"clientFrames":8200,"clientBytes":2810983,"clientDeltaFrames":8192,"clientLargestFrameBytes":524940,"io":{"wcharBytes":11121645,"wcharMinusClientBytes":8310662,"writeBytes":13135872,"syscw":13156,"rcharBytes":3862699},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":1679360,"walBytesAfter":4161232,"dbFileBytesAfterExit":2473984,"walBytesAfterExit":0,"dbPagesAfterExit":604,"dbPageSize":4096,"dbFreelistPages":417,"entryChunksLeft":0,"memory":{"rssKiBBefore":23364,"rssKiBAfter":25392,"vmHwmKiB":28796},"openSessionAfter":{"ms":1.834,"replyBytes":538092,"memory":{"rssKiB":25416,"hwmKiB":28796,"rssAnonKiB":10332,"rssFileKiB":15084,"pssKiB":22795,"pssAnonKiB":10332,"threads":8,"fds":13,"children":0,"cpuSecs":0.14}},"rep":1}
+{"mib":1.0,"chunkBytes":64,"chunks":16384,"replyTextBytes":1048576,"finalEntryTextBytes":1048576,"wallMs":325.654,"firstDeltaMs":29.483,"engineCpuSecs":0.26,"providerSseBytes":3588498,"clientFrames":16392,"clientBytes":5631595,"clientDeltaFrames":16384,"clientLargestFrameBytes":1049230,"io":{"wcharBytes":26540593,"wcharMinusClientBytes":20908998,"writeBytes":30769152,"syscw":27747,"rcharBytes":13279403},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":4710400,"walBytesAfter":5298352,"dbFileBytesAfterExit":4710400,"walBytesAfterExit":0,"dbPagesAfterExit":1150,"dbPageSize":4096,"dbFreelistPages":833,"entryChunksLeft":0,"memory":{"rssKiBBefore":23460,"rssKiBAfter":25428,"vmHwmKiB":32440},"openSessionAfter":{"ms":4.4,"replyBytes":1062381,"memory":{"rssKiB":25440,"hwmKiB":32440,"rssAnonKiB":10332,"rssFileKiB":15108,"pssKiB":22807,"pssAnonKiB":10332,"threads":7,"fds":13,"children":0,"cpuSecs":0.27}},"rep":1}
+{"mib":2.0,"chunkBytes":64,"chunks":32768,"replyTextBytes":2097152,"finalEntryTextBytes":2097152,"wallMs":583.317,"firstDeltaMs":49.002,"engineCpuSecs":0.45,"providerSseBytes":7176594,"clientFrames":32775,"clientBytes":9185963,"clientDeltaFrames":32768,"clientLargestFrameBytes":578,"io":{"wcharBytes":51062289,"wcharMinusClientBytes":41876326,"writeBytes":62459904,"syscw":58729,"rcharBytes":31449899},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":9179136,"walBytesAfter":10267072,"dbFileBytesAfterExit":9179136,"walBytesAfterExit":0,"dbPagesAfterExit":2241,"dbPageSize":4096,"dbFreelistPages":1667,"entryChunksLeft":0,"memory":{"rssKiBBefore":23164,"rssKiBAfter":25180,"vmHwmKiB":38984},"openSessionAfter":{"ms":7.423,"replyBytes":2110957,"memory":{"rssKiB":25196,"hwmKiB":38984,"rssAnonKiB":10324,"rssFileKiB":14872,"pssKiB":22548,"pssAnonKiB":10324,"threads":7,"fds":13,"children":0,"cpuSecs":0.46}},"rep":1}
+{"mib":1.0,"chunkBytes":1024,"chunks":1024,"replyTextBytes":1048576,"finalEntryTextBytes":1048576,"wallMs":103.879,"firstDeltaMs":8.126,"engineCpuSecs":0.06,"providerSseBytes":1207698,"clientFrames":1032,"clientBytes":2318887,"clientDeltaFrames":1024,"clientLargestFrameBytes":1049228,"io":{"wcharBytes":9607629,"wcharMinusClientBytes":7288742,"writeBytes":12972032,"syscw":4444,"rcharBytes":3207339},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":1675264,"walBytesAfter":4124152,"dbFileBytesAfterExit":2748416,"walBytesAfterExit":0,"dbPagesAfterExit":671,"dbPageSize":4096,"dbFreelistPages":356,"entryChunksLeft":0,"memory":{"rssKiBBefore":23400,"rssKiBAfter":25192,"vmHwmKiB":32532},"openSessionAfter":{"ms":3.574,"replyBytes":1062380,"memory":{"rssKiB":25220,"hwmKiB":32532,"rssAnonKiB":10176,"rssFileKiB":15044,"pssKiB":22588,"pssAnonKiB":10176,"threads":7,"fds":13,"children":0,"cpuSecs":0.08}},"rep":2}
+{"mib":2.0,"chunkBytes":1024,"chunks":2048,"replyTextBytes":2097152,"finalEntryTextBytes":2097152,"wallMs":202.85,"firstDeltaMs":12.322,"engineCpuSecs":0.13,"providerSseBytes":2414994,"clientFrames":2055,"clientBytes":2538636,"clientDeltaFrames":2048,"clientLargestFrameBytes":1240,"io":{"wcharBytes":19742690,"wcharMinusClientBytes":17204054,"writeBytes":27820032,"syscw":9654,"rcharBytes":13267115},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":5267456,"walBytesAfter":7436632,"dbFileBytesAfterExit":5267456,"walBytesAfterExit":0,"dbPagesAfterExit":1286,"dbPageSize":4096,"dbFreelistPages":713,"entryChunksLeft":0,"memory":{"rssKiBBefore":23328,"rssKiBAfter":25112,"vmHwmKiB":39136},"openSessionAfter":{"ms":6.803,"replyBytes":2110957,"memory":{"rssKiB":25128,"hwmKiB":39136,"rssAnonKiB":10112,"rssFileKiB":15016,"pssKiB":22515,"pssAnonKiB":10112,"threads":7,"fds":13,"children":0,"cpuSecs":0.14}},"rep":2}
+{"mib":4.0,"chunkBytes":1024,"chunks":4096,"replyTextBytes":4194304,"finalEntryTextBytes":4194304,"wallMs":380.738,"firstDeltaMs":15.335,"engineCpuSecs":0.22,"providerSseBytes":4829586,"clientFrames":4103,"clientBytes":5078156,"clientDeltaFrames":4096,"clientLargestFrameBytes":1240,"io":{"wcharBytes":40168242,"wcharMinusClientBytes":35090086,"writeBytes":55414784,"syscw":19202,"rcharBytes":27152555},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":10285056,"walBytesAfter":10304152,"dbFileBytesAfterExit":10285056,"walBytesAfterExit":0,"dbPagesAfterExit":2511,"dbPageSize":4096,"dbFreelistPages":1424,"entryChunksLeft":0,"memory":{"rssKiBBefore":23380,"rssKiBAfter":25304,"vmHwmKiB":53916},"openSessionAfter":{"ms":14.474,"replyBytes":4208109,"memory":{"rssKiB":25316,"hwmKiB":53916,"rssAnonKiB":10240,"rssFileKiB":15076,"pssKiB":22703,"pssAnonKiB":10240,"threads":8,"fds":13,"children":0,"cpuSecs":0.24}},"rep":2}
+{"mib":8.0,"chunkBytes":1024,"chunks":8192,"replyTextBytes":8388608,"finalEntryTextBytes":8388608,"wallMs":785.325,"firstDeltaMs":24.424,"engineCpuSecs":0.46,"providerSseBytes":9658770,"clientFrames":8199,"clientBytes":10157196,"clientDeltaFrames":8192,"clientLargestFrameBytes":1240,"io":{"wcharBytes":81203082,"wcharMinusClientBytes":71045886,"writeBytes":110301184,"syscw":38713,"rcharBytes":54956203},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":20336640,"walBytesAfter":16096872,"dbFileBytesAfterExit":20336640,"walBytesAfterExit":0,"dbPagesAfterExit":4965,"dbPageSize":4096,"dbFreelistPages":2850,"entryChunksLeft":0,"memory":{"rssKiBBefore":23264,"rssKiBAfter":25104,"vmHwmKiB":82224},"openSessionAfter":{"ms":22.231,"replyBytes":8402413,"memory":{"rssKiB":25124,"hwmKiB":82224,"rssAnonKiB":10184,"rssFileKiB":14940,"pssKiB":22529,"pssAnonKiB":10184,"threads":7,"fds":13,"children":0,"cpuSecs":0.5}},"rep":2}
+{"mib":10.0,"chunkBytes":1024,"chunks":10240,"replyTextBytes":10485760,"finalEntryTextBytes":10485760,"wallMs":958.37,"firstDeltaMs":28.598,"engineCpuSecs":0.55,"providerSseBytes":12073362,"clientFrames":10247,"clientBytes":12696971,"clientDeltaFrames":10240,"clientLargestFrameBytes":1241,"io":{"wcharBytes":101752281,"wcharMinusClientBytes":89055310,"writeBytes":136585216,"syscw":48308,"rcharBytes":68845739},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":25358336,"walBytesAfter":19009712,"dbFileBytesAfterExit":25358336,"walBytesAfterExit":0,"dbPagesAfterExit":6191,"dbPageSize":4096,"dbFreelistPages":3562,"entryChunksLeft":0,"memory":{"rssKiBBefore":23280,"rssKiBAfter":25208,"vmHwmKiB":97560},"openSessionAfter":{"ms":31.576,"replyBytes":10499565,"memory":{"rssKiB":25232,"hwmKiB":97560,"rssAnonKiB":10240,"rssFileKiB":14992,"pssKiB":22615,"pssAnonKiB":10240,"threads":8,"fds":13,"children":0,"cpuSecs":0.58}},"rep":2}
+{"mib":0.25,"chunkBytes":64,"chunks":4096,"replyTextBytes":262144,"finalEntryTextBytes":262144,"wallMs":84.014,"firstDeltaMs":11.807,"engineCpuSecs":0.07,"providerSseBytes":897426,"clientFrames":4104,"clientBytes":1406055,"clientDeltaFrames":4096,"clientLargestFrameBytes":262796,"io":{"wcharBytes":4781053,"wcharMinusClientBytes":3374998,"writeBytes":5808128,"syscw":6885,"rcharBytes":171},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":4096,"walBytesAfter":3802792,"dbFileBytesAfterExit":1351680,"walBytesAfterExit":0,"dbPagesAfterExit":330,"dbPageSize":4096,"dbFreelistPages":207,"entryChunksLeft":0,"memory":{"rssKiBBefore":23440,"rssKiBAfter":24968,"vmHwmKiB":27600},"openSessionAfter":{"ms":1.646,"replyBytes":275948,"memory":{"rssKiB":25004,"hwmKiB":27600,"rssAnonKiB":9892,"rssFileKiB":15112,"pssKiB":22356,"pssAnonKiB":9892,"threads":8,"fds":13,"children":0,"cpuSecs":0.08}},"rep":2}
+{"mib":0.5,"chunkBytes":64,"chunks":8192,"replyTextBytes":524288,"finalEntryTextBytes":524288,"wallMs":168.527,"firstDeltaMs":18.765,"engineCpuSecs":0.14,"providerSseBytes":1794450,"clientFrames":8200,"clientBytes":2810983,"clientDeltaFrames":8192,"clientLargestFrameBytes":524940,"io":{"wcharBytes":11125653,"wcharMinusClientBytes":8314670,"writeBytes":13135872,"syscw":13657,"rcharBytes":3862699},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":1679360,"walBytesAfter":4161232,"dbFileBytesAfterExit":2473984,"walBytesAfterExit":0,"dbPagesAfterExit":604,"dbPageSize":4096,"dbFreelistPages":417,"entryChunksLeft":0,"memory":{"rssKiBBefore":23192,"rssKiBAfter":25144,"vmHwmKiB":28508},"openSessionAfter":{"ms":2.468,"replyBytes":538092,"memory":{"rssKiB":25156,"hwmKiB":28508,"rssAnonKiB":10292,"rssFileKiB":14864,"pssKiB":22512,"pssAnonKiB":10292,"threads":7,"fds":13,"children":0,"cpuSecs":0.15}},"rep":2}
+{"mib":1.0,"chunkBytes":64,"chunks":16384,"replyTextBytes":1048576,"finalEntryTextBytes":1048576,"wallMs":314.762,"firstDeltaMs":30.518,"engineCpuSecs":0.23,"providerSseBytes":3588498,"clientFrames":16392,"clientBytes":5631595,"clientDeltaFrames":16384,"clientLargestFrameBytes":1049230,"io":{"wcharBytes":26535641,"wcharMinusClientBytes":20904046,"writeBytes":30736384,"syscw":27128,"rcharBytes":13279403},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":4710400,"walBytesAfter":5298352,"dbFileBytesAfterExit":4710400,"walBytesAfterExit":0,"dbPagesAfterExit":1150,"dbPageSize":4096,"dbFreelistPages":833,"entryChunksLeft":0,"memory":{"rssKiBBefore":23180,"rssKiBAfter":25140,"vmHwmKiB":32068},"openSessionAfter":{"ms":3.525,"replyBytes":1062381,"memory":{"rssKiB":25152,"hwmKiB":32068,"rssAnonKiB":10280,"rssFileKiB":14872,"pssKiB":22550,"pssAnonKiB":10280,"threads":7,"fds":13,"children":0,"cpuSecs":0.26}},"rep":2}
+{"mib":2.0,"chunkBytes":64,"chunks":32768,"replyTextBytes":2097152,"finalEntryTextBytes":2097152,"wallMs":592.033,"firstDeltaMs":50.845,"engineCpuSecs":0.46,"providerSseBytes":7176594,"clientFrames":32775,"clientBytes":9185963,"clientDeltaFrames":32768,"clientLargestFrameBytes":578,"io":{"wcharBytes":51064841,"wcharMinusClientBytes":41878878,"writeBytes":62230528,"syscw":59048,"rcharBytes":31449899},"dbFileBytesBefore":4096,"walBytesBefore":449112,"dbFileBytesAfter":9179136,"walBytesAfter":10267072,"dbFileBytesAfterExit":9179136,"walBytesAfterExit":0,"dbPagesAfterExit":2241,"dbPageSize":4096,"dbFreelistPages":1667,"entryChunksLeft":0,"memory":{"rssKiBBefore":23212,"rssKiBAfter":25180,"vmHwmKiB":38984},"openSessionAfter":{"ms":7.266,"replyBytes":2110957,"memory":{"rssKiB":25200,"hwmKiB":38984,"rssAnonKiB":10320,"rssFileKiB":14880,"pssKiB":22588,"pssAnonKiB":10320,"threads":7,"fds":13,"children":0,"cpuSecs":0.47}},"rep":2}
+[
+  {
+    "chunkBytes": 1024,
+    "mib": 1.0,
+    "sizeRatio": 1.0,
+    "wallMs": 1.0,
+    "engineCpuSecs": 1.0,
+    "clientBytes": 1.0,
+    "clientFrames": 1.0,
+    "io.wcharMinusClientBytes": 1.0,
+    "io.writeBytes": 1.0,
+    "dbFileBytesAfterExit": 1.0,
+    "memory.vmHwmKiB": 1.0
+  },
+  {
+    "chunkBytes": 1024,
+    "mib": 2.0,
+    "sizeRatio": 2.0,
+    "wallMs": 1.948,
+    "engineCpuSecs": 2.167,
+    "clientBytes": 1.095,
+    "clientFrames": 1.991,
+    "io.wcharMinusClientBytes": 2.36,
+    "io.writeBytes": 2.079,
+    "dbFileBytesAfterExit": 1.917,
+    "memory.vmHwmKiB": 1.225
+  },
+  {
+    "chunkBytes": 1024,
+    "mib": 4.0,
+    "sizeRatio": 4.0,
+    "wallMs": 3.701,
+    "engineCpuSecs": 4.0,
+    "clientBytes": 2.19,
+    "clientFrames": 3.976,
+    "io.wcharMinusClientBytes": 4.815,
+    "io.writeBytes": 4.271,
+    "dbFileBytesAfterExit": 3.742,
+    "memory.vmHwmKiB": 1.656
+  },
+  {
+    "chunkBytes": 1024,
+    "mib": 8.0,
+    "sizeRatio": 8.0,
+    "wallMs": 7.494,
+    "engineCpuSecs": 7.667,
+    "clientBytes": 4.38,
+    "clientFrames": 7.945,
+    "io.wcharMinusClientBytes": 9.747,
+    "io.writeBytes": 8.503,
+    "dbFileBytesAfterExit": 7.399,
+    "memory.vmHwmKiB": 2.549
+  },
+  {
+    "chunkBytes": 1024,
+    "mib": 10.0,
+    "sizeRatio": 10.0,
+    "wallMs": 9.226,
+    "engineCpuSecs": 9.333,
+    "clientBytes": 5.475,
+    "clientFrames": 9.929,
+    "io.wcharMinusClientBytes": 12.218,
+    "io.writeBytes": 10.53,
+    "dbFileBytesAfterExit": 9.227,
+    "memory.vmHwmKiB": 3.025
+  },
+  {
+    "chunkBytes": 64,
+    "mib": 0.25,
+    "sizeRatio": 1.0,
+    "wallMs": 1.0,
+    "engineCpuSecs": 1.0,
+    "clientBytes": 1.0,
+    "clientFrames": 1.0,
+    "io.wcharMinusClientBytes": 1.0,
+    "io.writeBytes": 1.0,
+    "dbFileBytesAfterExit": 1.0,
+    "memory.vmHwmKiB": 1.0
+  },
+  {
+    "chunkBytes": 64,
+    "mib": 0.5,
+    "sizeRatio": 2.0,
+    "wallMs": 1.831,
+    "engineCpuSecs": 1.571,
+    "clientBytes": 1.999,
+    "clientFrames": 1.998,
+    "io.wcharMinusClientBytes": 2.463,
+    "io.writeBytes": 2.262,
+    "dbFileBytesAfterExit": 1.83,
+    "memory.vmHwmKiB": 1.047
+  },
+  {
+    "chunkBytes": 64,
+    "mib": 1.0,
+    "sizeRatio": 4.0,
+    "wallMs": 3.682,
+    "engineCpuSecs": 3.286,
+    "clientBytes": 4.005,
+    "clientFrames": 3.994,
+    "io.wcharMinusClientBytes": 6.194,
+    "io.writeBytes": 5.298,
+    "dbFileBytesAfterExit": 3.485,
+    "memory.vmHwmKiB": 1.189
+  },
+  {
+    "chunkBytes": 64,
+    "mib": 2.0,
+    "sizeRatio": 8.0,
+    "wallMs": 6.926,
+    "engineCpuSecs": 6.571,
+    "clientBytes": 6.533,
+    "clientFrames": 7.986,
+    "io.wcharMinusClientBytes": 12.406,
+    "io.writeBytes": 10.714,
+    "dbFileBytesAfterExit": 6.791,
+    "memory.vmHwmKiB": 1.429
+  }
+]
+wrote /home/jason/coding/pipkin/fixtures/native-bench/2026-10-12-owned-final-message/stream-scaling.json
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 18.25s
+
+== test stream_latency (loadavg 4.24 2.90 2.66)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.13s
+     Running tests/perf.rs (target/release/deps/perf-2b0c118f5de90675)
+
+running 1 test
+test stream_latency ... {"gapMs":0,"chunks":2000,"bytesPerChunk":32,"chunkToCommittedDeltaMs":{"n":2000,"p50":17.427,"p95":33.055,"min":1.869,"max":36.299,"mean":18.504},"missingMarkers":0,"markersFirstSeenInFinalEntry":80,"deltaFrames":1920,"promptToSettledMs":43.653}
+{"gapMs":2,"chunks":1000,"bytesPerChunk":32,"chunkToCommittedDeltaMs":{"n":1000,"p50":24.557,"p95":44.032,"min":3.016,"max":46.847,"mean":24.582},"missingMarkers":0,"markersFirstSeenInFinalEntry":8,"deltaFrames":992,"promptToSettledMs":2101.604}
+{"gapMs":5,"chunks":600,"bytesPerChunk":32,"chunkToCommittedDeltaMs":{"n":600,"p50":24.534,"p95":44.621,"min":2.343,"max":47.175,"mean":24.743},"missingMarkers":0,"markersFirstSeenInFinalEntry":5,"deltaFrames":595,"promptToSettledMs":3077.829}
+{"gapMs":20,"chunks":250,"bytesPerChunk":32,"chunkToCommittedDeltaMs":{"n":250,"p50":25.822,"p95":47.042,"min":3.148,"max":197.903,"mean":32.767},"missingMarkers":0,"markersFirstSeenInFinalEntry":1,"deltaFrames":249,"promptToSettledMs":5094.156}
+{"gapMs":100,"chunks":60,"bytesPerChunk":32,"chunkToCommittedDeltaMs":{"n":60,"p50":43.284,"p95":43.66,"min":42.104,"max":43.943,"mean":43.242},"missingMarkers":0,"markersFirstSeenInFinalEntry":0,"deltaFrames":60,"promptToSettledMs":6217.759}
+wrote /home/jason/coding/pipkin/fixtures/native-bench/2026-10-12-owned-final-message/stream-latency.json
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 16.59s
+
+== test soak_1500 (loadavg 3.52 2.82 2.64)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.14s
+     Running tests/perf.rs (target/release/deps/perf-2b0c118f5de90675)
+
+running 1 test
+test soak_1500 ... soak-1500 turn 1: rss 23504 KiB pss 20891 KiB fds 13 threads 7 turn 8.3 ms
+soak-1500 turn 50: rss 24576 KiB pss 21963 KiB fds 13 threads 8 turn 5.3 ms
+soak-1500 turn 100: rss 25088 KiB pss 22475 KiB fds 13 threads 8 turn 8.3 ms
+soak-1500 turn 150: rss 25572 KiB pss 22959 KiB fds 13 threads 8 turn 8.0 ms
+soak-1500 turn 200: rss 25856 KiB pss 23243 KiB fds 13 threads 8 turn 9.5 ms
+soak-1500 turn 250: rss 26172 KiB pss 23559 KiB fds 13 threads 8 turn 10.7 ms
+soak-1500 turn 300: rss 26392 KiB pss 23779 KiB fds 13 threads 8 turn 13.8 ms
+soak-1500 turn 350: rss 26624 KiB pss 24011 KiB fds 13 threads 8 turn 14.2 ms
+soak-1500 turn 400: rss 26860 KiB pss 24247 KiB fds 13 threads 8 turn 15.8 ms
+soak-1500 turn 450: rss 27080 KiB pss 24467 KiB fds 13 threads 8 turn 15.0 ms
+soak-1500 turn 500: rss 27284 KiB pss 24671 KiB fds 13 threads 8 turn 18.4 ms
+soak-1500 turn 550: rss 27508 KiB pss 24895 KiB fds 13 threads 8 turn 20.7 ms
+soak-1500 turn 600: rss 27668 KiB pss 25055 KiB fds 13 threads 8 turn 18.1 ms
+soak-1500 turn 650: rss 27908 KiB pss 25295 KiB fds 13 threads 8 turn 19.4 ms
+soak-1500 turn 700: rss 28192 KiB pss 25579 KiB fds 13 threads 8 turn 23.8 ms
+soak-1500 turn 750: rss 28456 KiB pss 25843 KiB fds 13 threads 8 turn 24.3 ms
+soak-1500 turn 800: rss 28680 KiB pss 26067 KiB fds 13 threads 8 turn 26.6 ms
+soak-1500 turn 850: rss 28852 KiB pss 26239 KiB fds 13 threads 8 turn 27.1 ms
+soak-1500 turn 900: rss 29028 KiB pss 26415 KiB fds 13 threads 8 turn 29.6 ms
+soak-1500 turn 950: rss 29248 KiB pss 26634 KiB fds 13 threads 8 turn 30.4 ms
+soak-1500 turn 1000: rss 29444 KiB pss 26831 KiB fds 13 threads 8 turn 27.2 ms
+soak-1500 turn 1050: rss 29448 KiB pss 26835 KiB fds 13 threads 8 turn 28.2 ms
+soak-1500 turn 1100: rss 29632 KiB pss 27019 KiB fds 13 threads 8 turn 29.1 ms
+soak-1500 turn 1150: rss 29688 KiB pss 27075 KiB fds 13 threads 8 turn 36.0 ms
+soak-1500 turn 1200: rss 29816 KiB pss 27203 KiB fds 13 threads 8 turn 37.8 ms
+soak-1500 turn 1250: rss 29932 KiB pss 27319 KiB fds 13 threads 8 turn 31.8 ms
+soak-1500 turn 1300: rss 30008 KiB pss 27395 KiB fds 13 threads 8 turn 36.4 ms
+soak-1500 turn 1350: rss 30052 KiB pss 27439 KiB fds 13 threads 8 turn 36.7 ms
+soak-1500 turn 1400: rss 30056 KiB pss 27443 KiB fds 13 threads 8 turn 56.3 ms
+soak-1500 turn 1450: rss 30164 KiB pss 27551 KiB fds 13 threads 8 turn 36.9 ms
+soak-1500 turn 1500: rss 30292 KiB pss 27679 KiB fds 13 threads 8 turn 37.6 ms
+soak-1500 turn 1550: rss 30272 KiB pss 27659 KiB fds 13 threads 8 turn 39.3 ms
+soak-1500 turn 1600: rss 30384 KiB pss 27771 KiB fds 13 threads 8 turn 40.6 ms
+{
+  "warmupTurns": 100,
+  "measuredTurns": 1500,
+  "newSessionEvery": 0,
+  "engineEnv": [],
+  "reply": "answer <n>: + \"words \" x 40 (no tools), as the reference soak",
+  "rssKiBIdleBefore": 26624.0,
+  "pssKiBIdleBefore": 24011.0,
+  "rssKiBAfterTurn1": 23504.0,
+  "rssKiBAfterLastTurn": 30384.0,
+  "pssKiBAfterLastTurn": 27771.0,
+  "rssKiBIdleAfter": 30384.0,
+  "pssKiBIdleAfter": 27771.0,
+  "rssKiBPeakSampled50ms": 42308,
+  "vmHwmKiB": 42028.0,
+  "maxProcessesSeen": 1,
+  "maxFdsSeen": 14,
+  "fdsIdleBefore": 13.0,
+  "fdsIdleAfter": 13.0,
+  "threadsIdleAfter": 8.0,
+  "rssSlopeKiBPerTurnMeasured": 3.46,
+  "rssSlopeKiBPerTurnSecondHalf": 1.898,
+  "pssSlopeKiBPerTurnMeasured": 3.46,
+  "fdSlopePerTurnMeasured": 0.0,
+  "turnLatencyMs": {
+    "n": 1500,
+    "p50": 26.568,
+    "p95": 39.835,
+    "min": 6.5,
+    "max": 56.345,
+    "mean": 25.523
+  },
+  "wallSecs": 39.115,
+  "engineCpuSecsTotal": 32.78,
+  "engineCpuMsPerMeasuredTurn": 21.6,
+  "dbBytes": 3379200,
+  "walBytes": 4181832,
+  "providerRequestBytesTotal": 466676683,
+  "openSessionAfterSoak": {
+    "ms": 2.063,
+    "replyBytes": 94697,
+    "entries": 200,
+    "hasOlder": true
+  },
+  "exitAfterStdinCloseMs": 13.892
+}
+wrote /home/jason/coding/pipkin/fixtures/native-bench/2026-10-12-owned-final-message/soak-1500.json
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 43.20s
+
+== binary sizes
+== done: /home/jason/coding/pipkin/fixtures/native-bench/2026-10-12-owned-final-message

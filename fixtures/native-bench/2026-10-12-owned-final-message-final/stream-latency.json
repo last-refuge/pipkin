@@ -1,0 +1,97 @@
+{
+  "test": "stream-latency",
+  "engine": "/home/jason/coding/pipkin/target/release/pipkin-engine",
+  "profile": "release",
+  "scratch": "/home/jason/coding/pipkin/target/tmp",
+  "loadavgStart": "3.37 3.03 2.74 1/3158 3273162",
+  "unixTime": 1791798141,
+  "note": "engine flush policy at this revision: synchronous commit backpressure at 16 KiB or 128 deltas, otherwise 40 ms from the oldest pending delta (runtime/run/progress.rs); every commit is a WAL transaction with synchronous=FULL",
+  "cadences": [
+    {
+      "gapMs": 0,
+      "chunks": 2000,
+      "bytesPerChunk": 32,
+      "chunkToCommittedDeltaMs": {
+        "n": 2000,
+        "p50": 14.249,
+        "p95": 27.751,
+        "min": 1.763,
+        "max": 30.913,
+        "mean": 15.172
+      },
+      "missingMarkers": 0,
+      "markersFirstSeenInFinalEntry": 80,
+      "deltaFrames": 1920,
+      "promptToSettledMs": 38.781
+    },
+    {
+      "gapMs": 2,
+      "chunks": 1000,
+      "bytesPerChunk": 32,
+      "chunkToCommittedDeltaMs": {
+        "n": 1000,
+        "p50": 24.207,
+        "p95": 43.913,
+        "min": 2.883,
+        "max": 46.91,
+        "mean": 24.465
+      },
+      "missingMarkers": 0,
+      "markersFirstSeenInFinalEntry": 8,
+      "deltaFrames": 992,
+      "promptToSettledMs": 2098.858
+    },
+    {
+      "gapMs": 5,
+      "chunks": 600,
+      "bytesPerChunk": 32,
+      "chunkToCommittedDeltaMs": {
+        "n": 600,
+        "p50": 24.614,
+        "p95": 44.415,
+        "min": 2.713,
+        "max": 45.907,
+        "mean": 24.738
+      },
+      "missingMarkers": 0,
+      "markersFirstSeenInFinalEntry": 5,
+      "deltaFrames": 595,
+      "promptToSettledMs": 3073.203
+    },
+    {
+      "gapMs": 20,
+      "chunks": 250,
+      "bytesPerChunk": 32,
+      "chunkToCommittedDeltaMs": {
+        "n": 250,
+        "p50": 25.382,
+        "p95": 45.851,
+        "min": 3.056,
+        "max": 47.31,
+        "mean": 27.97
+      },
+      "missingMarkers": 0,
+      "markersFirstSeenInFinalEntry": 1,
+      "deltaFrames": 249,
+      "promptToSettledMs": 5086.59
+    },
+    {
+      "gapMs": 100,
+      "chunks": 60,
+      "bytesPerChunk": 32,
+      "chunkToCommittedDeltaMs": {
+        "n": 60,
+        "p50": 43.383,
+        "p95": 44.046,
+        "min": 42.177,
+        "max": 44.485,
+        "mean": 43.375
+      },
+      "missingMarkers": 0,
+      "markersFirstSeenInFinalEntry": 0,
+      "deltaFrames": 60,
+      "promptToSettledMs": 6219.853
+    }
+  ],
+  "loadavgEnd": "3.37 3.03 2.74 1/3158 3273162"
+}

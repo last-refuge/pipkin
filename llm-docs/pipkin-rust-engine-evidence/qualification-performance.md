@@ -1,5 +1,8 @@
 # Native engine performance qualification follow-up
 
+Follow-up: [final-response ownership](owned-final-message.md) reduces the measured 10 MiB
+peak below 100 MiB. The original measurements and failure below remain historical evidence.
+
 2026-10-12. Engine source `4a9d4eb0e3ec92dce50d02ab160547c4e0e50172`, protocol 12 / schema 9.
 Binary SHA-256 `8cc567be7256ab7b19620fd8d7574f4240f0fc2d65b00f5851b99c2c52964c70`.
 Engine source is committed; benchmark repairs, this evidence and owner documentation changes
