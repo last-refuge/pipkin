@@ -11,7 +11,24 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — remote backup and cutover preparation
+## Current follow-up — focused parity assertions complete
+
+2026-10-12, following **`252938a`**. Required checks pass **1,664 tests, zero failed,
+54 ignored**, clean Clippy/all-targets and formatting. Five added checks cover engine
+selected-model visibility, configured durable retry caps, real-worker frame/log secret
+redaction, imported terminal reason preservation, and native missing-attachment rejection
+with explicit successful retry. [Evidence](pipkin-rust-engine-evidence/final-parity-assertions.md).
+Stale OpenCode attribution and Anthropic federation claims are corrected using prior audit
+and implemented evidence. No additional performance workload is required by this batch.
+
+Corrected macOS run **38260978574** passes engine/protocol/process and worker/diagnostic
+checks; only a desktop reconnect test fails because it mistakes old UI Ready for a new
+connection. The test now consumes the disconnect first and passes locally; hosted rerun
+pending. Linux run **38262069375** remains active on `252938a`. This batch is committed
+and pushed immediately. Default remains Pi until the actual removal and final candidate
+qualification; experimental macOS/X11 limitations remain explicit.
+
+## Prior follow-up — remote backup and cutover preparation
 
 2026-10-12, following **`9a8d0eb`**. All completed migration commits are remotely backed
 up on `origin/codex/native-engine-qualification`; this batch is pushed immediately too.

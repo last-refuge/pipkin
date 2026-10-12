@@ -747,6 +747,83 @@ fn import(agent: &Agent, store: &Store, id: &str) -> Result<ImportOutcome, Impor
 // ---------------------------------------------------------------------------- tests
 
 #[test]
+fn imported_lookup_preserves_all_reference_failure_reasons_and_raw_records() {
+    // Reasons from the pinned durable harness: live.ts, inbox.ts, generation.ts and
+    // scheduler.ts. The existing captured orphan fixtures separately exercise real Pi runs.
+    let reasons = [
+        "aborted",
+        "model_error",
+        "no_model",
+        "stale",
+        "reset",
+        "faulted",
+        "missing_task",
+        "task_too_old",
+        "migration_failed",
+    ];
+    let agent = Agent::new();
+    let mut legacy = agent.session("outcomes");
+    legacy.conversation(json!({"id": 1}));
+    idle_docs(&mut legacy, 20, 1);
+    let records: Vec<_> = reasons
+        .iter()
+        .enumerate()
+        .map(|(index, reason)| {
+            input_submission(
+                100 + index as i64,
+                1,
+                Some(reason),
+                "unanswered",
+                json!({"reason": reason, "detail": "retained detail", "entry": 2 + index}),
+            )
+        })
+        .collect();
+    for (index, record) in records.iter().enumerate() {
+        legacy.entry(user(2 + index as i64, 1, json!("prior prompt"), 10));
+        legacy.submission(record.clone());
+    }
+    drop(legacy);
+    let before = snapshot(&agent.dir("outcomes"));
+    let store = Store::memory().unwrap();
+    import(&agent, &store, "outcomes").unwrap();
+    for reason in reasons {
+        let request = store.request("outcomes", reason).unwrap().unwrap();
+        assert_eq!(request.state, RequestState::Settled);
+        let expected = match reason {
+            "aborted" => RunOutcome::Aborted,
+            "model_error" => RunOutcome::ModelError {
+                detail: "retained detail".into(),
+            },
+            "no_model" => RunOutcome::NoModel {
+                detail: "retained detail".into(),
+            },
+            _ => RunOutcome::Failed {
+                detail: format!("{reason}: retained detail"),
+            },
+        };
+        assert_eq!(request.outcome, Some(expected));
+        assert!(matches!(
+            request.lookup(),
+            pipkin_engine_protocol::LookupResult::Known { open: false, .. }
+        ));
+        let crate::store::prompt_result::PromptState::Settled(result) =
+            store.prompt_result("outcomes", reason).unwrap()
+        else {
+            panic!("imported request must remain settled");
+        };
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({"status":"unanswered", "text":null, "reason":reason})
+        );
+    }
+    let raw: Value =
+        serde_json::from_str(&store.kv_get("outcomes", "pi.submissions").unwrap().unwrap())
+            .unwrap();
+    assert_eq!(raw, json!(records));
+    assert_eq!(snapshot(&agent.dir("outcomes")), before);
+}
+
+#[test]
 fn imports_a_rich_session_losslessly_with_the_same_effective_context() {
     let agent = Agent::new();
     plugin_profile(

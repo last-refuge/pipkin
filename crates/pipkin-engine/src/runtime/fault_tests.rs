@@ -1076,6 +1076,33 @@ fn retry_deadline_and_attempt_budget_survive_a_restart() {
 }
 
 #[test]
+fn configured_retry_cap_bounds_the_durable_runtime_deadline() {
+    let fx = Fixture::new();
+    with_settings(
+        &fx,
+        json!({"retry": {
+            "maxRetries": 2, "baseDelayMs": 30000, "maxAgentDelayMs": 1500
+        }}),
+    );
+    let provider = Scripted::new(|_, _| R::Error("503: overloaded".into()));
+    let mut e = fx.start(&provider);
+    let session = e.create(&fx.project, "capped");
+    let before = crate::util::now_ms();
+    e.prompt(&session, "capped", "go").unwrap();
+    let state = retry_checkpoint(&e, &session, 1).1;
+    let after = crate::util::now_ms();
+    let deadline = state.retry_until.unwrap();
+    assert!(deadline >= before + 1500, "cap must not eliminate the wait");
+    assert!(
+        deadline <= after + 1500,
+        "runtime must apply the configured cap"
+    );
+    e.call(Call::Stop { session }).unwrap();
+    assert_eq!(e.settled("capped"), RunOutcome::Aborted);
+    assert_eq!(provider.requests().len(), 1);
+}
+
+#[test]
 fn an_expired_retry_deadline_does_not_restart_the_delay() {
     let fx = Fixture::new();
     with_settings(&fx, json!({"retry":{"baseDelayMs":30000}}));

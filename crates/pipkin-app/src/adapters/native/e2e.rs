@@ -1247,6 +1247,40 @@ fn attachments_reach_the_model_as_text_and_image_and_come_back_as_chips() {
 }
 
 #[test]
+fn vanished_attachment_rejects_native_submission_and_preserves_the_draft_for_retry() {
+    let fx = Fixture::start(|_, _| Reply::Text("read attachment".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let file = fx.project.join("notes.txt");
+    std::fs::write(&file, "retained notes").unwrap();
+    h.dispatch(Command::AddAttachments(vec![describe_attachment(&file)]));
+    h.dispatch(Command::EditDraft("review notes".into()));
+    std::fs::remove_file(&file).unwrap();
+    h.dispatch(Command::Submit);
+    h.until("missing attachment refuses the native turn", |s| {
+        matches!(s.current().unwrap().run, RunState::Failed { .. })
+    });
+    assert!(fx.requests().is_empty());
+    let draft = &h.state.current().unwrap().draft;
+    assert_eq!(draft.text, "review notes");
+    assert_eq!(draft.attachments.len(), 1);
+    std::fs::write(&file, "retained notes").unwrap();
+    h.dispatch(Command::Retry);
+    h.until("explicit retry sends the restored attachment", |s| {
+        is_idle(s) && assistant_texts(s) == ["read attachment"]
+    });
+    assert_eq!(fx.requests().len(), 1);
+    assert!(
+        fx.requests()[0]
+            .messages
+            .iter()
+            .any(|m| m.text().contains("retained notes"))
+    );
+    h.stop();
+}
+
+#[test]
 fn effort_is_the_engines_and_is_restored_per_conversation() {
     let fx = Fixture::start(|_, _| Reply::Text("ok".into()));
     let db = fx.root.join("app.sqlite3");
@@ -2813,6 +2847,11 @@ fn external_desktops_share_runs_and_reconnect_without_owning_the_server() {
         is_idle(s) && assistant_texts(s).contains(&"continued".into())
     });
     drop(server);
+    // Consume the old connection's disconnect before accepting Ready again. Otherwise
+    // a fast server restart lets this test send while the UI still shows the old Ready.
+    b.until("B observes the closed external connection", |s| {
+        s.connection != Connection::Ready
+    });
     fx.restart_engine();
     let _server = pipkin_engine::endpoint::Server::start(fx.engine(), &endpoint).unwrap();
     b.until("B reconnects to the owner's restarted server", |s| {

@@ -132,6 +132,45 @@ fn session_model(e: &mut Engine, session: &str) -> (Option<String>, String) {
 }
 
 #[test]
+fn models_view_keeps_an_unavailable_selection_without_inventing_unknown_models() {
+    let fx = Fixture::new();
+    let mut config = fx.config();
+    let mut unavailable = config.extra_models[0].clone();
+    unavailable.provider = "requires-key".into();
+    unavailable.api = "openai-completions".into();
+    let selected = unavailable.key();
+    config.extra_models.push(unavailable);
+    let mut e = fx.start_config(&Scripted::echo("ok"), config);
+    let session = e.create(&fx.project, "selection");
+    assert!(
+        !models(&mut e, None)
+            .models
+            .iter()
+            .any(|m| m.key == selected)
+    );
+    for key in [&selected, "unknown/model"] {
+        e.handle
+            .shared()
+            .store
+            .set_session_field(
+                &session,
+                crate::store::SessionField::Model(Some(key.into())),
+            )
+            .unwrap();
+        let view = models(&mut e, Some(&session));
+        assert_eq!(view.selected.as_deref(), Some(key));
+        let matches: Vec<_> = view.models.iter().filter(|m| m.key == key).collect();
+        if key == selected {
+            assert_eq!(matches.len(), 1);
+            assert!(!matches[0].available);
+            assert!(matches[0].note.is_some());
+        } else {
+            assert!(matches.is_empty());
+        }
+    }
+}
+
+#[test]
 fn thinking_cycles_match_the_executed_reference_service() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../fixtures/native-thinking/reference.json"

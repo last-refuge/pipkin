@@ -40,3 +40,12 @@ Cutover preparation after `9a8d0eb`: required local checks pass **1,659 tests, z
 ordinary tests. Shared native/Pi desktop helpers are decoupled without behavior changes.
 Both native jobs retain build caches even after failures; Linux gains the native-only manual
 option too. The successful local package is still opt-in and not a final native-only release.
+
+Follow-up: Linux native-only run [38262069375](https://github.com/last-refuge/pipkin/actions/runs/38262069375)
+executes the package fix on `252938a`; the superseded run's legacy job was cancelled to
+avoid duplicate Pi work. Corrected macOS run [38260978574](https://github.com/last-refuge/pipkin/actions/runs/38260978574)
+passes engine/protocol/process and worker/diagnostic checks. One native adapter reconnect
+test fails (94 pass): it accepts an old Ready before processing disconnect. The test now
+observes disconnect before restarting and locally passes. Full follow-up workspace:
+**1,664 passed, zero failed, 54 ignored**, clean Clippy/fmt. See
+[focused assertions](final-parity-assertions.md). Hosted macOS rerun remains required.
