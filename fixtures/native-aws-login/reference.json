@@ -1,0 +1,341 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sources": {
+    "credential-provider-login": {
+      "version": "3.972.77",
+      "integrity": "sha512-Jb59xfEISoN5mmbnA+HYqdtrSX3CgCtJoof+V5D8/TgUI56W63GEEd5Y58WijU3Ou6+WEgaLD1feVzaRXV5IDQ==",
+      "file": "dist-cjs/index.js",
+      "sha256": "3ada1d4c0fbc6d888cee050b741348fc66ba455b5624203816e408ab5470e910"
+    },
+    "nested-clients": {
+      "version": "3.997.44",
+      "integrity": "sha512-NhEgryjlBF9w38ZXqGymQV28IhkYa1mKhlbYnqIis57AYwWGVYfUPgg/qC2rLRqOUfblxx++irvju10kVTa8Vw==",
+      "file": "dist-cjs/submodules/signin/index.js",
+      "sha256": "330e28ade42770ec996a415560829bc9a8c13ba5beac1ed56ac63ec0d176e6ef"
+    }
+  },
+  "scope": "Synthetic credentials and recording SDK request handler; no live AWS requests",
+  "session": "arn:aws:iam::123456789012:user/synthetic",
+  "cacheName": "d1e4b07498efae88d022337a36635d6fb4d3e094f36a20964bd6d98acb8bb096.json",
+  "dpopKey": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIMlqos2Udxf/bl7+7YOpbP0U42iiI5rxsSIqUmG+ZZDuoAoGCCqGSM49\nAwEHoUQDQgAE20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwbheXjy7HMo\n1YbPM6HS+T9jw7rgjUYPqNkcVKXFhiZzrA==\n-----END EC PRIVATE KEY-----\n",
+  "publicJwk": {
+    "kty": "EC",
+    "x": "20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwY",
+    "y": "4Xl48uxzKNWGzzOh0vk_Y8O64I1GD6jZHFSlxYYmc6w",
+    "crv": "P-256"
+  },
+  "cases": [
+    {
+      "name": "valid",
+      "token": {
+        "accessToken": {
+          "accessKeyId": "OLD-ID",
+          "secretAccessKey": "old-secret",
+          "sessionToken": "old-session",
+          "accountId": "123456789012",
+          "expiresAt": "2099-01-01T00:00:00Z"
+        },
+        "clientId": "client",
+        "refreshToken": "old-refresh",
+        "dpopKey": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIMlqos2Udxf/bl7+7YOpbP0U42iiI5rxsSIqUmG+ZZDuoAoGCCqGSM49\nAwEHoUQDQgAE20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwbheXjy7HMo\n1YbPM6HS+T9jw7rgjUYPqNkcVKXFhiZzrA==\n-----END EC PRIVATE KEY-----\n",
+        "custom": {
+          "keep": true
+        }
+      },
+      "requests": [],
+      "credentials": {
+        "accessKeyId": "OLD-ID",
+        "secretAccessKey": "old-secret",
+        "sessionToken": "old-session",
+        "accountId": "123456789012"
+      },
+      "saved": {
+        "accessKeyId": "OLD-ID",
+        "refreshToken": "old-refresh",
+        "custom": {
+          "keep": true
+        }
+      }
+    },
+    {
+      "name": "refresh",
+      "token": {
+        "accessToken": {
+          "accessKeyId": "OLD-ID",
+          "secretAccessKey": "old-secret",
+          "sessionToken": "old-session",
+          "accountId": "123456789012",
+          "expiresAt": "2000-01-01T00:00:00Z"
+        },
+        "clientId": "client",
+        "refreshToken": "old-refresh",
+        "dpopKey": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIMlqos2Udxf/bl7+7YOpbP0U42iiI5rxsSIqUmG+ZZDuoAoGCCqGSM49\nAwEHoUQDQgAE20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwbheXjy7HMo\n1YbPM6HS+T9jw7rgjUYPqNkcVKXFhiZzrA==\n-----END EC PRIVATE KEY-----\n",
+        "custom": {
+          "keep": true
+        }
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/v1/token",
+          "host": "us-west-2.signin.aws.amazon.com",
+          "body": {
+            "clientId": "client",
+            "grantType": "refresh_token",
+            "refreshToken": "old-refresh"
+          },
+          "header": {
+            "alg": "ES256",
+            "typ": "dpop+jwt",
+            "jwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwY",
+              "y": "4Xl48uxzKNWGzzOh0vk_Y8O64I1GD6jZHFSlxYYmc6w"
+            }
+          },
+          "payload": {
+            "htm": "POST",
+            "htu": "https://us-west-2.signin.aws.amazon.com/v1/token"
+          },
+          "signatureValid": true
+        }
+      ],
+      "credentials": {
+        "accessKeyId": "NEW-ID",
+        "secretAccessKey": "new-secret",
+        "sessionToken": "new-session",
+        "accountId": "123456789012"
+      },
+      "saved": {
+        "accessKeyId": "NEW-ID",
+        "refreshToken": "new-refresh",
+        "custom": {
+          "keep": true
+        }
+      }
+    },
+    {
+      "name": "refresh-default-expiry",
+      "token": {
+        "accessToken": {
+          "accessKeyId": "OLD-ID",
+          "secretAccessKey": "old-secret",
+          "sessionToken": "old-session",
+          "accountId": "123456789012",
+          "expiresAt": "2000-01-01T00:00:00Z"
+        },
+        "clientId": "client",
+        "refreshToken": "old-refresh",
+        "dpopKey": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIMlqos2Udxf/bl7+7YOpbP0U42iiI5rxsSIqUmG+ZZDuoAoGCCqGSM49\nAwEHoUQDQgAE20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwbheXjy7HMo\n1YbPM6HS+T9jw7rgjUYPqNkcVKXFhiZzrA==\n-----END EC PRIVATE KEY-----\n",
+        "custom": {
+          "keep": true
+        }
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/v1/token",
+          "host": "us-west-2.signin.aws.amazon.com",
+          "body": {
+            "clientId": "client",
+            "grantType": "refresh_token",
+            "refreshToken": "old-refresh"
+          },
+          "header": {
+            "alg": "ES256",
+            "typ": "dpop+jwt",
+            "jwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwY",
+              "y": "4Xl48uxzKNWGzzOh0vk_Y8O64I1GD6jZHFSlxYYmc6w"
+            }
+          },
+          "payload": {
+            "htm": "POST",
+            "htu": "https://us-west-2.signin.aws.amazon.com/v1/token"
+          },
+          "signatureValid": true
+        }
+      ],
+      "credentials": {
+        "accessKeyId": "NEW-ID",
+        "secretAccessKey": "new-secret",
+        "sessionToken": "new-session",
+        "accountId": "123456789012"
+      },
+      "saved": {
+        "accessKeyId": "NEW-ID",
+        "refreshToken": "new-refresh",
+        "custom": {
+          "keep": true
+        }
+      }
+    },
+    {
+      "name": "transient-failure",
+      "token": {
+        "accessToken": {
+          "accessKeyId": "OLD-ID",
+          "secretAccessKey": "old-secret",
+          "sessionToken": "old-session",
+          "accountId": "123456789012",
+          "expiresAt": "2026-10-12T07:08:14.349Z"
+        },
+        "clientId": "client",
+        "refreshToken": "old-refresh",
+        "dpopKey": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIMlqos2Udxf/bl7+7YOpbP0U42iiI5rxsSIqUmG+ZZDuoAoGCCqGSM49\nAwEHoUQDQgAE20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwbheXjy7HMo\n1YbPM6HS+T9jw7rgjUYPqNkcVKXFhiZzrA==\n-----END EC PRIVATE KEY-----\n",
+        "custom": {
+          "keep": true
+        }
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/v1/token",
+          "host": "us-west-2.signin.aws.amazon.com",
+          "body": {
+            "clientId": "client",
+            "grantType": "refresh_token",
+            "refreshToken": "old-refresh"
+          },
+          "header": {
+            "alg": "ES256",
+            "typ": "dpop+jwt",
+            "jwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwY",
+              "y": "4Xl48uxzKNWGzzOh0vk_Y8O64I1GD6jZHFSlxYYmc6w"
+            }
+          },
+          "payload": {
+            "htm": "POST",
+            "htu": "https://us-west-2.signin.aws.amazon.com/v1/token"
+          },
+          "signatureValid": true
+        }
+      ],
+      "credentials": {
+        "accessKeyId": "OLD-ID",
+        "secretAccessKey": "old-secret",
+        "sessionToken": "old-session",
+        "accountId": "123456789012"
+      },
+      "saved": {
+        "accessKeyId": "OLD-ID",
+        "refreshToken": "old-refresh",
+        "custom": {
+          "keep": true
+        }
+      }
+    },
+    {
+      "name": "expired-failure",
+      "token": {
+        "accessToken": {
+          "accessKeyId": "OLD-ID",
+          "secretAccessKey": "old-secret",
+          "sessionToken": "old-session",
+          "accountId": "123456789012",
+          "expiresAt": "2000-01-01T00:00:00Z"
+        },
+        "clientId": "client",
+        "refreshToken": "old-refresh",
+        "dpopKey": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIMlqos2Udxf/bl7+7YOpbP0U42iiI5rxsSIqUmG+ZZDuoAoGCCqGSM49\nAwEHoUQDQgAE20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwbheXjy7HMo\n1YbPM6HS+T9jw7rgjUYPqNkcVKXFhiZzrA==\n-----END EC PRIVATE KEY-----\n",
+        "custom": {
+          "keep": true
+        }
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/v1/token",
+          "host": "us-west-2.signin.aws.amazon.com",
+          "body": {
+            "clientId": "client",
+            "grantType": "refresh_token",
+            "refreshToken": "old-refresh"
+          },
+          "header": {
+            "alg": "ES256",
+            "typ": "dpop+jwt",
+            "jwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwY",
+              "y": "4Xl48uxzKNWGzzOh0vk_Y8O64I1GD6jZHFSlxYYmc6w"
+            }
+          },
+          "payload": {
+            "htm": "POST",
+            "htu": "https://us-west-2.signin.aws.amazon.com/v1/token"
+          },
+          "signatureValid": true
+        }
+      ],
+      "error": "Failed to refresh token: Unknown: synthetic failure. Please re-authenticate using aws login",
+      "saved": {
+        "accessKeyId": "OLD-ID",
+        "refreshToken": "old-refresh",
+        "custom": {
+          "keep": true
+        }
+      }
+    },
+    {
+      "name": "access-denied",
+      "token": {
+        "accessToken": {
+          "accessKeyId": "OLD-ID",
+          "secretAccessKey": "old-secret",
+          "sessionToken": "old-session",
+          "accountId": "123456789012",
+          "expiresAt": "2026-10-12T07:08:14.352Z"
+        },
+        "clientId": "client",
+        "refreshToken": "old-refresh",
+        "dpopKey": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIMlqos2Udxf/bl7+7YOpbP0U42iiI5rxsSIqUmG+ZZDuoAoGCCqGSM49\nAwEHoUQDQgAE20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwbheXjy7HMo\n1YbPM6HS+T9jw7rgjUYPqNkcVKXFhiZzrA==\n-----END EC PRIVATE KEY-----\n",
+        "custom": {
+          "keep": true
+        }
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/v1/token",
+          "host": "us-west-2.signin.aws.amazon.com",
+          "body": {
+            "clientId": "client",
+            "grantType": "refresh_token",
+            "refreshToken": "old-refresh"
+          },
+          "header": {
+            "alg": "ES256",
+            "typ": "dpop+jwt",
+            "jwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "20ijh0x3AuzOeCyoQYDqRzHnxu1GI3JF5Y1oFkIEKwY",
+              "y": "4Xl48uxzKNWGzzOh0vk_Y8O64I1GD6jZHFSlxYYmc6w"
+            }
+          },
+          "payload": {
+            "htm": "POST",
+            "htu": "https://us-west-2.signin.aws.amazon.com/v1/token"
+          },
+          "signatureValid": true
+        }
+      ],
+      "error": "Your session has expired. Please reauthenticate.",
+      "saved": {
+        "accessKeyId": "OLD-ID",
+        "refreshToken": "old-refresh",
+        "custom": {
+          "keep": true
+        }
+      }
+    }
+  ]
+}

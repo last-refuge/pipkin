@@ -11,7 +11,34 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — AWS IAM Identity Center credentials
+## Current follow-up — AWS login-session credentials
+
+2026-10-12, following **`fe4a15a`**. Native Bedrock now resolves the separate AWS CLI
+`login_session` cache, generates verified P-256 DPoP refresh proofs, atomically saves rotated
+credentials and preserves account/unknown metadata. Concurrent requests share the refresh
+owner; canceled callers cannot abandon token rotation. Access denial is final even with a
+still-valid old token or malformed denial body. The proof binds to the normalized URL sent
+by the HTTP client. See [AWS login evidence](pipkin-rust-engine-evidence/aws-login.md).
+
+Eight new tests cover six executed SDK outcomes, signature verification, unique proof IDs,
+cache paths/permissions, cancellation/concurrency, a newer login, malformed/oversized responses,
+a real thirty-second timeout and two signed Bedrock turns reusing the committed credentials.
+Required checks: **1566 passed, 0 failed, 53 ignored**, clean Clippy and formatting. Final
+logs: `/tmp/pipkin-login-workspace2.log`, `/tmp/pipkin-login-clippy2.log`,
+`/tmp/pipkin-login-fmt2.log`. The initial workspace run also passed; the final rerun includes
+the endpoint-normalization assertion. No failed behavior was waived. Protocol 11 / schema 9
+unchanged.
+
+Inventory remains **504 rows, 488 non-OS; NC 412, NE 38, NP 37, PA 0, BL 0, LB 1,
+OS 16; 444 measured, 7 observed, 1 unverified, 52 not started; 0 fully qualified**.
+The AWS login implementation gap is closed; these local comparisons do not establish live
+AWS, SDK credential retry middleware, complete provider or release qualification.
+
+Next: remaining Google ADC/proxy/configuration gaps and provider credential-cache isolation
+review, sustained workloads, clean release comparisons and CI/platform acceptance. Native
+remains opt-in. Unrelated owner plan/worktree changes remain untouched.
+
+## Previous follow-up — AWS IAM Identity Center credentials
 
 2026-10-12, following **`8a0ac3d`**. Native Bedrock now resolves legacy and session-based
 SSO profiles, refreshes eligible cached tokens, preserves rotating credentials after caller

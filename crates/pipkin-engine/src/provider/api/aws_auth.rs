@@ -22,6 +22,7 @@
 //! 5. EC2 instance metadata (IMDSv2 with v1 fallback) unless `AWS_EC2_METADATA_DISABLED`.
 //!
 //! IAM Identity Center profiles use the AWS CLI token cache, including session-token refresh.
+//! `login_session` profiles use the distinct AWS login cache with P-256 DPoP refresh proofs.
 //! MFA role profiles require a callback which neither Pipkin nor the pinned Pi adapter supplies;
 //! they fail explicitly. Temporary credentials are cached in-process until five minutes
 //! before they expire. STS honours `AWS_ENDPOINT_URL_STS` / `AWS_ENDPOINT_URL`.
@@ -36,6 +37,8 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
+#[path = "aws_login.rs"]
+mod login;
 #[path = "aws_sso.rs"]
 mod sso;
 
@@ -594,6 +597,9 @@ fn from_profile<'a>(input: &'a ChainInput<'a>, name: String, visited: Vec<String
         .any(|key| get(key).is_some())
         {
             return sso::resolve(input, p).await.map_err(fatal_str);
+        }
+        if get("login_session").is_some() {
+            return login::resolve(input, p).await.map_err(fatal_str);
         }
         Err(ChainError::Next(format!(
             "Profile {name} did not contain credentials"

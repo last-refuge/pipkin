@@ -14,6 +14,9 @@ engine and is available without a Pi installation or network access.
   through `AWS_PROFILE` or the Bedrock profile option. Session-based SSO profiles can refresh
   cached tokens; expired legacy SSO profiles require another CLI login. MFA role profiles
   requiring an interactive code callback need externally obtained temporary credentials.
+- Bedrock also supports the separate `login_session` profiles created by `aws login`.
+  It reads the AWS login cache, refreshes temporary credentials with signed proofs, and
+  saves rotated tokens. `AWS_LOGIN_CACHE_DIRECTORY` overrides the default cache directory.
 - The engine configuration directory holds `auth.json`, `models.json` and `settings.json`.
   The desktop's `--engine-config-dir` and `--engine-data-dir` select engine configuration
   and history; `--data-dir` selects desktop drafts/cache. Do not expose stored credentials.

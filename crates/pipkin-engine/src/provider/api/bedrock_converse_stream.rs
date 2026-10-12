@@ -1685,6 +1685,95 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn aws_login_cache_refresh_signs_the_bedrock_request() {
+        let bytes = golden_stream();
+        let server = MockServer::start(move |req, _| {
+            if req.path == "/v1/token" {
+                assert!(req.header("dpop").is_some());
+                MockResponse::json(
+                    200,
+                    &json!({"accessToken": {
+                    "accessKeyId":"LOGIN-ID", "secretAccessKey":"login-secret",
+                    "sessionToken":"login-session"
+                }, "refreshToken":"login-refresh", "expiresIn":3600}),
+                )
+            } else {
+                eventstream(bytes.clone(), 10000)
+            }
+        })
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let reference: Value = serde_json::from_str(include_str!(
+            "../../../../../fixtures/native-aws-login/reference.json"
+        ))
+        .unwrap();
+        std::fs::write(
+            dir.path().join("config"),
+            format!(
+                "[profile login]\nlogin_session={}\nregion=us-west-2\n",
+                reference["session"].as_str().unwrap()
+            ),
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("credentials"), "").unwrap();
+        std::fs::write(
+            dir.path().join(reference["cacheName"].as_str().unwrap()),
+            reference["cases"][1]["token"].to_string(),
+        )
+        .unwrap();
+        let mut req = request(model(
+            "anthropic.claude-sonnet-4-5-20250929-v1:0",
+            json!({}),
+        ));
+        req.base_url = Some(server.url.clone());
+        req.env = HashMap::from([
+            ("AWS_PROFILE".into(), "login".into()),
+            ("AWS_REGION".into(), "us-west-2".into()),
+            (
+                "AWS_CONFIG_FILE".into(),
+                dir.path().join("config").display().to_string(),
+            ),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE".into(),
+                dir.path().join("credentials").display().to_string(),
+            ),
+            (
+                "AWS_LOGIN_CACHE_DIRECTORY".into(),
+                dir.path().display().to_string(),
+            ),
+            ("AWS_ENDPOINT_URL_SIGNIN".into(), server.url.clone()),
+            ("AWS_EC2_METADATA_DISABLED".into(), "true".into()),
+        ]);
+        for _ in 0..2 {
+            let (message, _) = exchange(&req, CancellationToken::new()).await;
+            assert!(
+                matches!(
+                    message,
+                    Message::Assistant {
+                        stop_reason: StopReason::ToolUse,
+                        ..
+                    }
+                ),
+                "{message:?}"
+            );
+        }
+        let requests = server.requests();
+        assert_eq!(requests.len(), 3); // Refreshed cache is reused on the second turn.
+        for request in &requests[1..] {
+            assert!(
+                request
+                    .header("authorization")
+                    .unwrap()
+                    .starts_with("AWS4-HMAC-SHA256 Credential=LOGIN-ID/")
+            );
+            assert_eq!(
+                request.header("x-amz-security-token"),
+                Some("login-session")
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn sso_profile_credentials_sign_a_real_converse_stream_request() {
         let bytes = golden_stream();
         let server = MockServer::start(move |req, _| {
