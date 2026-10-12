@@ -216,6 +216,67 @@ fn sessions_are_created_once_per_key_and_listed() {
 }
 
 #[test]
+fn session_rename_notifies_other_clients_survives_restart_and_can_be_cleared() {
+    let fx = Fixture::new();
+    let provider = Scripted::echo("answer");
+    let mut e = fx.start(&provider);
+    let session = e.create(&fx.project, "named");
+    e.prompt(&session, "prompt", "preserved conversation")
+        .unwrap();
+    assert_eq!(e.settled("prompt"), RunOutcome::Completed);
+    let before = e.snapshot(&session).entries;
+    let observer = e.handle.connect("catalog-observer");
+    e.call(Call::RenameSession {
+        session: session.clone(),
+        title: "  Project α  ".into(),
+    })
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let event = observer
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .expect("catalog notification");
+        if matches!(
+            event,
+            ServerFrame::Event {
+                event: Event::SessionsChanged,
+                ..
+            }
+        ) {
+            break;
+        }
+    }
+    let listed = e.call(Call::ListSessions).unwrap();
+    assert!(
+        matches!(listed, Reply::Sessions { sessions } if sessions[0].title.as_deref() == Some("Project α"))
+    );
+    assert_eq!(e.snapshot(&session).entries, before);
+    e.handle.shutdown(Duration::from_secs(1));
+    drop(e);
+    let mut e = fx.start(&provider);
+    let listed = e.call(Call::ListSessions).unwrap();
+    assert!(
+        matches!(listed, Reply::Sessions { sessions } if sessions[0].title.as_deref() == Some("Project α"))
+    );
+    e.call(Call::RenameSession {
+        session: session.clone(),
+        title: " \n ".into(),
+    })
+    .unwrap();
+    assert!(
+        matches!(e.call(Call::ListSessions).unwrap(), Reply::Sessions { sessions } if sessions[0].title.is_none())
+    );
+    assert_eq!(e.snapshot(&session).entries, before);
+    assert!(
+        e.call(Call::RenameSession {
+            session: "missing".into(),
+            title: "no phantom session".into()
+        })
+        .is_err()
+    );
+}
+
+#[test]
 fn a_prompt_is_admitted_durably_streamed_settled_and_looked_up() {
     let fx = Fixture::new();
     let provider = Scripted::echo("hello there, friend").paced(Duration::from_millis(15));

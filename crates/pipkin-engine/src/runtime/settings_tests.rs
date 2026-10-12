@@ -19,6 +19,59 @@ fn write_settings(fx: &Fixture, json: &serde_json::Value) {
     std::fs::write(dir.join("settings.json"), json.to_string()).unwrap();
 }
 
+#[test]
+#[cfg(unix)]
+fn custom_shell_setting_reaches_real_tools_and_changes_between_turns() {
+    use std::os::unix::fs::PermissionsExt;
+    let fx = Fixture::new();
+    let shell = fx.dir.path().join("configured-shell");
+    std::fs::write(
+        &shell,
+        "#!/bin/sh\nprintf configured >> shell-effects\nexec /bin/sh \"$@\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o700)).unwrap();
+    write_settings(&fx, &json!({"shellPath":shell}));
+    let provider = Scripted::new(|_, n| {
+        if n % 2 == 0 {
+            R::Tools(
+                None,
+                vec![("bash".into(), json!({"command":"printf tool-output"}))],
+            )
+        } else {
+            R::Text("finished".into())
+        }
+    });
+    let mut e = fx.start(&provider);
+    let session = e.create(&fx.project, "custom-shell");
+    e.prompt(&session, "first", "run the configured shell")
+        .unwrap();
+    assert_eq!(e.settled("first"), RunOutcome::Completed);
+    let effects = fx.project.join("shell-effects");
+    assert_eq!(std::fs::read_to_string(&effects).unwrap(), "configured");
+    write_settings(&fx, &json!({}));
+    e.prompt(&session, "second", "use the default shell now")
+        .unwrap();
+    assert_eq!(e.settled("second"), RunOutcome::Completed);
+    assert_eq!(std::fs::read_to_string(effects).unwrap(), "configured");
+    let snapshot = e.snapshot(&session);
+    let results: Vec<_> = snapshot
+        .entries
+        .iter()
+        .filter_map(|entry| match &entry.kind {
+            EntryKind::Message {
+                message:
+                    m @ Message::ToolResult {
+                        is_error: false, ..
+                    },
+                ..
+            } => Some(m.text()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(results, ["tool-output", "tool-output"]);
+}
+
 fn write_models(fx: &Fixture, json: &serde_json::Value) {
     let dir = fx.dir.path().join("config");
     std::fs::create_dir_all(&dir).unwrap();

@@ -11,7 +11,37 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — durable queued summary placement
+## Current follow-up — history qualification and reachability audit
+
+Following **`ea6150f`**, added public-protocol coverage for session rename (other-client
+invalidation, Unicode/trim, restart, clear, unchanged history and nonexistent-session
+refusal), a real native desktop-backend workflow for compaction/history paging/update/
+restart, and real-tool coverage for live custom-shell settings. The desktop workflow is
+headless integration, not rendered-window acceptance.
+
+Pinned-source and overlay audit resolves six PA rows: P05-RENAME/API-key configuration
+→ NC; custom shell → NE; faux-only deferred polling/classic-only cache warming → NP;
+custom replacement-edit producer compatibility → OS under the existing extension exclusion.
+Unknown replacement-edited imports continue to refuse explicitly with source preserved.
+Ordinary history/omit/Stop/compaction remain required. See
+[history/reachability evidence](pipkin-rust-engine-evidence/history-reachability-audit.md).
+
+Required checks: **1468 passed, 0 failed, 53 ignored**; Clippy and formatting clean.
+Logs: `/tmp/pipkin-history-audit-final-{workspace,clippy,fmt}.log`. An initial test-target
+mistake and test-only retained engine handle are recorded in the evidence; an initial
+Clippy single-match suggestion was applied and Clippy/fmt rerun.
+
+Recomputed inventory: **504 rows, 488 non-OS; NC 408, NE 26, NP 32, PA 21, BL 0,
+LB 1, OS 16; 432 measured, 7 observed, 8 unverified, 57 not started; 0 qualified**.
+Native remains opt-in; this is measured progress and scope reconciliation, not cutover.
+
+Next implementation: **PCFG-11 / ENV-OFFLINE**. The pinned built-in path really restores
+and revalidates provider catalogs; native currently only rereads local configuration.
+The audit records required cache freshness/ETag, generation timestamps, auth gating,
+bounded retries, cancellation/stale-publication protection and offline presence semantics.
+Provider/auth audits, wider reliability/performance and installed/platform/release gates remain.
+
+## Prior follow-up — durable queued summary placement
 
 Following **`138d879`**, schema **8** (protocol **9**) adds durable built-in summary
 writes. Manual/background results queue while busy, place before selected inputs at

@@ -1342,6 +1342,119 @@ fn older_history_pages_in_and_stays_through_later_updates() {
     h2.stop();
 }
 
+#[test]
+fn history_across_a_real_compaction_pages_once_and_survives_updates_and_restart() {
+    let fx = Fixture::start(|req, _| {
+        if req.system == pipkin_engine::context::compaction::SUMMARIZATION_SYSTEM_PROMPT {
+            Reply::Text("Summary of the first four prompts".into())
+        } else {
+            Reply::Text("coding answer".into())
+        }
+    });
+    let config = fx.root.join("engine-config");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("settings.json"),
+        json!({"compaction":{"enabled":false,"keepRecentTokens":5}}).to_string(),
+    )
+    .unwrap();
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let conversation = h.state.current().unwrap().id;
+    for n in 0..4 {
+        h.send(&format!(
+            "original prompt {n} with enough words to summarize"
+        ));
+        h.until("seeded answer", |s| {
+            is_idle(s) && assistant_texts(s).len() == n + 1
+        });
+    }
+    let original = h.user_messages();
+    let engine = fx.engine();
+    let session = engine.shared().store.root_sessions().unwrap()[0].id.clone();
+    let connection = engine.connect("compaction-control");
+    let call = Call::Compact {
+        session,
+        instructions: None,
+    };
+    connection
+        .send(ClientFrame {
+            id: 1,
+            lane: call.lane(),
+            call,
+        })
+        .unwrap();
+    let deadline = Instant::now() + WAIT;
+    loop {
+        if let ServerFrame::Reply { id: 1, result } = connection
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .expect("compaction reply")
+        {
+            assert!(
+                matches!(result, Ok(pipkin_engine_protocol::Reply::Ok)),
+                "{result:?}"
+            );
+            break;
+        }
+    }
+    drop(connection);
+    drop(engine);
+    h.until("compaction boundary arrives", |s| s.current().is_some_and(|c| c.items.iter().any(|item| matches!(&item.kind, ItemKind::Notice { text, .. } if text.contains("Earlier messages were summarized")))));
+    h.stop();
+    let mut h = Harness::start(&fx, &db);
+    h.until("compacted live window opens", |s| {
+        s.selected == Some(conversation) && s.current().is_some_and(|c| c.opened && c.has_older)
+    });
+    assert!(h.user_messages().len() < original.len());
+    while h.state.current().unwrap().has_older {
+        let before = h.state.current().unwrap().items.len();
+        h.dispatch(Command::LoadOlder);
+        h.until("pre-compaction history arrives", |s| {
+            s.current()
+                .is_some_and(|c| c.items.len() > before || !c.has_older)
+        });
+    }
+    assert_eq!(h.user_messages(), original);
+    h.send("continue after compaction");
+    h.until("continued answer", |s| {
+        is_idle(s) && user_messages(s).len() == 5 && assistant_texts(s).len() == 5
+    });
+    let ids: Vec<_> = h
+        .state
+        .current()
+        .unwrap()
+        .items
+        .iter()
+        .map(|item| item.id)
+        .collect();
+    assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len());
+    assert_eq!(&h.user_messages()[..4], original.as_slice());
+    let requests = fx.requests();
+    assert!(
+        requests.last().unwrap().messages[0]
+            .text()
+            .contains("Summary of the first four prompts")
+    );
+    h.stop();
+    fx.restart_engine();
+    let mut h = Harness::start(&fx, &db);
+    h.until("restarted conversation opens", |s| {
+        s.selected == Some(conversation) && s.current().is_some_and(|c| c.opened)
+    });
+    while h.state.current().unwrap().has_older {
+        let before = h.state.current().unwrap().items.len();
+        h.dispatch(Command::LoadOlder);
+        h.until("restarted history arrives", |s| {
+            s.current()
+                .is_some_and(|c| c.items.len() > before || !c.has_older)
+        });
+    }
+    assert_eq!(h.user_messages().len(), 5);
+    assert_eq!(&h.user_messages()[..4], original.as_slice());
+    h.stop();
+}
+
 /// Needs the engine's built-in `write` tool (the tools worker); until then the tool call is
 /// answered "not available" and nothing changes on disk.
 #[test]
