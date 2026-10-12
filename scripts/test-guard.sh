@@ -51,6 +51,12 @@ reset; "$GUARD" pin 100 >/dev/null
 reset; "$GUARD" pin 100 >/dev/null; "$GUARD" key Return >/dev/null 2>&1
 [[ "$(sent)" == "-k Return" ]] && ok "sends a named key" || bad "named key (sent='$(sent)')"
 
+reset; "$GUARD" pin 100 >/dev/null; "$GUARD" key ctrl+. >/dev/null 2>&1
+[[ "$(sent)" == "-M ctrl -k period -m ctrl" ]] && ok "maps the Stop shortcut to the wtype keysym" || bad "period keysym (sent='$(sent)')"
+
+reset; "$GUARD" pin 100 >/dev/null; "$GUARD" key ctrl+, >/dev/null 2>&1
+[[ "$(sent)" == "-M ctrl -k comma -m ctrl" ]] && ok "maps the Settings shortcut to the wtype keysym" || bad "comma keysym (sent='$(sent)')"
+
 reset; "$GUARD" pin 100 >/dev/null; "$GUARD" text "next conversation" >/dev/null 2>&1
 [[ "$(sent)" == "-- next conversation" ]] && ok "types plain text" || bad "text (sent='$(sent)')"
 

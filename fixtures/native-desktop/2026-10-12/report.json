@@ -1,0 +1,239 @@
+{
+  "date": "2026-10-12",
+  "sourceRevision": "9915177cef845db2c89619ccd98a46bf80e8d56c",
+  "dirty": true,
+  "scope": "Extracted real native Arch package on existing Hyprland/Wayland host; local scripted provider, real engine and write tools; not a system pacman installation or cloud-provider test",
+  "baselineBinarySha256": "e976a8519458b295b0a20c42237b72fd1d55d579f1567a0ebe226c52b03d9c15",
+  "focusFixBinarySha256": "43b8ce450767018ae7b47e2bf3242e440a56b20403aa0e6188771bc1d938f769",
+  "finalBinarySha256": "97362a7b177a8f3aacd92b44b2f6e320a82a70e75faee64117684eb22c171221",
+  "sourceFiles": {
+    "crates/pipkin-ui/src/shell/workspace.rs": "84ff4d3516cd8835b4f8e20e1a40d6fd8012933b08918d8756583aee5e42ac53",
+    "crates/pipkin-ui/src/shell/center.rs": "b7e9dd3fbc8c188c4c525ec9b79f05c8c2b04469a10ed07164eb460f493d19e2",
+    "crates/pipkin-ui/src/shell/settings.rs": "1eb9e9ae48b39ffdcf6c8e3e8265a58a429b562d133357bf45cf4bcdfac62a09",
+    "scripts/guard.sh": "7e1129dd9960766f7e8b2b9921f02e1a4bac1fc30de7dcf91e7c08e48f87e2b4",
+    "scripts/test-guard.sh": "409c7d3f9498c6f440462f0a044cccb902ad4a6847771f75596d9520354a607a"
+  },
+  "failedBaseline": "Explore welcome into empty workspace leaves focus on unmounted composer; Ctrl+K/Ctrl+N do nothing. Regression initially reproduces failure.",
+  "guardRegression": {
+    "before": {
+      "passed": 33,
+      "failed": 2
+    },
+    "after": {
+      "passed": 35,
+      "failed": 0
+    },
+    "actualShortcutsObserved": [
+      "Ctrl+, opens Settings",
+      "Ctrl+. cancels provider stream"
+    ]
+  },
+  "observed": [
+    "Explore \u2192 palette \u2192 new real conversation \u2192 typing",
+    "Real write-tool card and Changes diff",
+    "Streamed partial response retained after Stop",
+    "Queued follow-up removed by Stop and never requested from provider",
+    "Saved draft and history return after SIGKILL",
+    "New coding turn works after Stop; stopped instructions excluded from next provider context",
+    "Same final package restores saved draft and exact durable table contents after SIGKILL",
+    "Normal Quit removes owned app and worker"
+  ],
+  "providerRequests": [
+    {
+      "prompt": "Create greeting.rs with the real write tool.",
+      "messagesSha256": "821395a72d9f790893189b538423e0fc737251905d117a99599083b898edca5a"
+    },
+    {
+      "prompt": "Create greeting.rs with the real write tool.",
+      "messagesSha256": "eef6fbc8aa2b5b1f5a49e9a16380c396f5e48dd33514ed029a43c884670b125d"
+    },
+    {
+      "prompt": "Slow stream for Stop check.",
+      "messagesSha256": "9d2085533653cc3d6e127395525c233483861da06e13a8ac5d5b92559df8f750"
+    },
+    {
+      "prompt": "Slow stream for final shortcut Stop check.",
+      "messagesSha256": "a5f06094db4a7896012416eceaacc94e0035c2aa7465f34a9bb30e3d11586765"
+    },
+    {
+      "prompt": "Create greeting.rs after Stop and recovery.",
+      "messagesSha256": "9fc3672190f917d4790d8c913e94c1b2018338af8738e8d9accd609a6a870658"
+    },
+    {
+      "prompt": "Create greeting.rs after Stop and recovery.",
+      "messagesSha256": "762fb214edbdd2025839dc7a3a0715e4ce25ecd4c1cced131ecc6fdb2c6f2743"
+    }
+  ],
+  "providerEventLogSha256": "398c26f4aa7c382eedc07c612b1d5b4cb7a8ce173667c0aff2fad1641eba15ac",
+  "toolCalls": [
+    {
+      "id": "visual-reused",
+      "state": "done"
+    },
+    {
+      "id": "pipkin_9845c0fc7dc4b7979351dedcff140d22",
+      "state": "done"
+    }
+  ],
+  "runs": [
+    {
+      "id": 1,
+      "state": "settled",
+      "outcome": {
+        "reason": "completed"
+      }
+    },
+    {
+      "id": 2,
+      "state": "settled",
+      "outcome": {
+        "reason": "aborted"
+      }
+    },
+    {
+      "id": 3,
+      "state": "settled",
+      "outcome": {
+        "reason": "aborted"
+      }
+    },
+    {
+      "id": 4,
+      "state": "settled",
+      "outcome": {
+        "reason": "completed"
+      }
+    }
+  ],
+  "firstCrash": {
+    "appPid": 3676403,
+    "workerPids": [
+      3676436
+    ],
+    "providerRequests": 3,
+    "fileSha256": "86e1b23d0d0a8132df9c5f30df28ddaeef167fcab958b327412f5549430d7736",
+    "ownedProcessesExited": true
+  },
+  "samePackageCrash": {
+    "appPid": 3701665,
+    "workerPids": [
+      3701694
+    ],
+    "ownedProcessesExited": true
+  },
+  "beforeCrash": {
+    "tables": {
+      "entries": {
+        "rows": 13,
+        "sha256": "3c510e9bacd17f67879d2d40b432481c17ddcb305779c963d4f0d214d53cb852"
+      },
+      "entry_chunks": {
+        "rows": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "requests": {
+        "rows": 5,
+        "sha256": "37a710569e6fdd051a3fbbbf0f26cfcb9969055fd48e82b4ebc7579e9bbeb229"
+      },
+      "runs": {
+        "rows": 4,
+        "sha256": "2419234e047ef10ebc6a25c4f59ad7ae24d32066600d59d6073fc599de9f1fb0"
+      },
+      "tool_calls": {
+        "rows": 2,
+        "sha256": "88b399903935dbd1dd8bcaf991cc666d417bd19772763d864846d3c6e734b02d"
+      },
+      "tool_outputs": {
+        "rows": 2,
+        "sha256": "42d8b120e7d071407eb44d51d7e18f4c66a782c46a5a40e53dded2a3870da472"
+      }
+    },
+    "draft": [
+      [
+        "Final artifact unsent draft survives abrupt shutdown."
+      ]
+    ],
+    "providerRequests": 6,
+    "fileSha256": "86e1b23d0d0a8132df9c5f30df28ddaeef167fcab958b327412f5549430d7736"
+  },
+  "afterCrash": {
+    "tables": {
+      "entries": {
+        "rows": 13,
+        "sha256": "3c510e9bacd17f67879d2d40b432481c17ddcb305779c963d4f0d214d53cb852"
+      },
+      "entry_chunks": {
+        "rows": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "requests": {
+        "rows": 5,
+        "sha256": "37a710569e6fdd051a3fbbbf0f26cfcb9969055fd48e82b4ebc7579e9bbeb229"
+      },
+      "runs": {
+        "rows": 4,
+        "sha256": "2419234e047ef10ebc6a25c4f59ad7ae24d32066600d59d6073fc599de9f1fb0"
+      },
+      "tool_calls": {
+        "rows": 2,
+        "sha256": "88b399903935dbd1dd8bcaf991cc666d417bd19772763d864846d3c6e734b02d"
+      },
+      "tool_outputs": {
+        "rows": 2,
+        "sha256": "42d8b120e7d071407eb44d51d7e18f4c66a782c46a5a40e53dded2a3870da472"
+      }
+    },
+    "draft": [
+      [
+        "Final artifact unsent draft survives abrupt shutdown."
+      ]
+    ],
+    "providerRequests": 6,
+    "fileSha256": "86e1b23d0d0a8132df9c5f30df28ddaeef167fcab958b327412f5549430d7736"
+  },
+  "cleanup": {
+    "normalQuitAppPid": 3705629,
+    "ownedAppAndWorkersExited": true,
+    "stoppedProviderPids": [
+      3654963
+    ]
+  },
+  "nodePiTrapsUsed": [],
+  "screenshots": {
+    "01-welcome.png": "c72a089db874c8bfb9afcf2ba93038745471242873c9b090af499cb4ec8f9f3b",
+    "02-conversation.png": "dc9f766882ca8af7b7ed86ce25ae6dc3d51a88597470fb441a95160d17981684",
+    "03-new-conversation.png": "2b0bbf6084f7f1f9586c2bdb5e1da0b7c65e66b6f5afef93d80dfefe5cea7c7d",
+    "04-palette-check.png": "85e544887fe216795e3db941730abcf5f5bbb57125174218a965e6db4c395f33",
+    "05-fixed-welcome.png": "d8f3d4ea29eb6a41b2eb83e9ef284ed3b970d9dbf1b5bc77651f44695371ca7a",
+    "06-fixed-palette.png": "121472becf44789db114396ca80fb4d2e2fa2e10e2fb1bd3e5f8fcc52ea9a749",
+    "07-fixed-conversation.png": "9a4646aa679f4d4285ebbbf80d3f928ff09cdb8e516ca836e63340dfdc16c8a9",
+    "08-coding.png": "41ab9e5344c73c7c020ee736e8f32ce8d42728f99f7e1fdcea4cc8715ab43e6a",
+    "09-streaming.png": "0eb534ed201de8e73398b88034dc4f2e1ec5089dfac337ef058da70257049348",
+    "10-queued.png": "a252f5130bf47fa45bf5f0149d9e2ea6083782fed390a8a53b4405c31b30317a",
+    "11-stopped-queue.png": "5006cf954aa670a680a21c9b278cf1b0505674e3e50b1efbc735090f07ac8da2",
+    "12-settings.png": "0235fa9af697c344abf92291464c51b8044a68bfb2ee7a63f8e94d5ad146beb0",
+    "13-saved-draft.png": "c63a2c0036d07ad25d9aff7e261a80719a222770861a7c84bae6a83e22160d4c",
+    "14-recovered.png": "5a29b1f7418fa5a906d52bc5246d659373187a9952c36763590f6803d8885116",
+    "15-final-working.png": "8270df221affece0dfd19b143573bc8b856482c141016e843861a74165f5b3ff",
+    "16-shortcut-stopped.png": "29d1376dd3724066de40313b8e6a43c2a218a5cbc399c04ac2543826ee034d1b",
+    "17-coding-after-stop.png": "547de62d1c4bc0c48ebc0506f21a2181c0bfc3ebb868a7ae1e451a754eed73d8",
+    "18-final-draft.png": "507254d071b70e09955c46c054b29e0f5c400300ae430f98239df7b9514a0f08",
+    "19-final-recovered.png": "967a02b001569f6ef6695e5e3615e60a9eb4a78324fd6f2f49442b830e871a9b"
+  },
+  "screenshotCaveat": "Images remain local: compositor opacity ghosts underlying user content into the exact-window crops. No compositor settings changed; hashes only are retained here.",
+  "checks": {
+    "workspacePassed": 1641,
+    "workspaceFailed": 0,
+    "workspaceIgnored": 56,
+    "clippy": "passed",
+    "format": "passed",
+    "archVerifier": "passed"
+  },
+  "limits": [
+    "No new live Claude/provider auth check",
+    "No sustained GUI soak",
+    "No IME, screen-reader, display-scale changes, suspend/resume, cold boot or display-presentation measurement",
+    "No system installation, clean-chroot or hosted CI",
+    "Native still opt-in; ledger rows not fully qualified"
+  ]
+}

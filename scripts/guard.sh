@@ -105,6 +105,8 @@ parse_chord() {   # prints "<mods...>|<key>" or fails
 
 send_chord() {
   local mods="${1%%|*}" key="${1##*|}" args=() m
+  # wtype takes XKB keysym names, not punctuation characters, for -k.
+  case "$key" in .) key=period ;; ,) key=comma ;; esac
   for m in $mods; do args+=(-M "$m"); done
   args+=(-k "$key")
   for m in $mods; do args+=(-m "$m"); done

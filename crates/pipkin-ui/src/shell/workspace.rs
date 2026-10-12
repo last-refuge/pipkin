@@ -277,12 +277,7 @@ impl Workspace {
             _subs: subs,
         };
         ws.on_model(window, cx);
-        let initial_focus = if ws.model.read(cx).entry == onboarding::EntrySurface::Welcome {
-            ws.root_focus.clone()
-        } else {
-            ws.composer.read(cx).focus_handle(cx)
-        };
-        window.focus(&initial_focus, cx);
+        ws.focus_composer(window, cx);
         ws
     }
 
@@ -300,7 +295,15 @@ impl Workspace {
     }
 
     pub(super) fn focus_composer(&self, window: &mut Window, cx: &mut App) {
-        let h = self.composer.read(cx).focus_handle(cx);
+        // The composer is absent on welcome and when no conversation is selected.
+        // Focusing an unmounted editor disconnects all workspace keyboard actions.
+        let h = if self.model.read(cx).entry == onboarding::EntrySurface::Workspace
+            && self.state(cx).current().is_some()
+        {
+            self.composer.read(cx).focus_handle(cx)
+        } else {
+            self.root_focus.clone()
+        };
         window.focus(&h, cx);
     }
 
@@ -339,12 +342,7 @@ impl Workspace {
         }
         if entry != self.last_entry {
             self.last_entry = entry;
-            let focus = if entry == onboarding::EntrySurface::Workspace {
-                self.composer.read(cx).focus_handle(cx)
-            } else {
-                self.root_focus.clone()
-            };
-            window.focus(&focus, cx);
+            self.focus_composer(window, cx);
         }
         let (prefs, current, title, run, change_sel) = {
             let s = self.state(cx);
@@ -361,6 +359,18 @@ impl Workspace {
             .state(cx)
             .current_project()
             .map(|p| PathBuf::from(&p.path));
+        // Real conversation creation is asynchronous. Keep the root usable while it is
+        // pending, then focus the newly mounted composer without stealing an overlay's focus.
+        if self.synced.0.is_none() && current.is_some() && self.root_focus.is_focused(window) {
+            self.focus_composer(window, cx);
+        }
+        if current.is_none()
+            && self.synced.0.is_some()
+            && (self.composer.read(cx).focus_handle(cx).is_focused(window)
+                || self.transcript.read(cx).focus_handle(cx).is_focused(window))
+        {
+            window.focus(&self.root_focus, cx);
+        }
         self.composer
             .update(cx, |e, cx| e.set_project_root(project_root, cx));
         let wanted = Theme::new(prefs.theme, prefs.text_size, prefs.reduced_motion);
@@ -949,7 +959,11 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let h = self.transcript.read(cx).focus_handle(cx);
+        let h = if self.state(cx).current().is_some() {
+            self.transcript.read(cx).focus_handle(cx)
+        } else {
+            self.root_focus.clone()
+        };
         window.focus(&h, cx);
     }
     fn on_prefs(&mut self, _: &OpenPreferences, window: &mut Window, cx: &mut Context<Self>) {
@@ -1265,6 +1279,135 @@ mod diagnostics_tests {
     use gpui::{TestAppContext, VisualTestContext};
 
     use super::*;
+
+    #[gpui::test]
+    fn empty_workspace_and_welcome_exploration_keep_keyboard_actions(cx: &mut TestAppContext) {
+        cx.update(crate::text::init);
+        cx.update(super::super::actions::bind_keys);
+        for (welcome, real) in [(false, false), (true, false), (false, true), (true, true)] {
+            let window = cx.add_window(|window, cx| {
+                let mut state = AppState::new(
+                    Bootstrap {
+                        projects: vec![Project {
+                            id: ProjectId(1),
+                            name: "test".into(),
+                            path: "/synthetic-project".into(),
+                        }],
+                        models: vec![],
+                        conversations: vec![],
+                        now: 0,
+                    },
+                    Prefs {
+                        selected_project: Some(ProjectId(1)),
+                        ..Prefs::default()
+                    },
+                );
+                if real {
+                    state.mode = Mode::Real;
+                    state.can_create = true;
+                }
+                let model = cx.new(|_| {
+                    let mut model = Model::new(state);
+                    if welcome {
+                        model.entry = onboarding::EntrySurface::Welcome;
+                    }
+                    model
+                });
+                Workspace::new(model, PathBuf::new(), window, cx)
+            });
+            let root = window.root(cx).unwrap();
+            let visual = VisualTestContext::from_window(window.into(), cx);
+            let visual = &mut { visual };
+            visual.run_until_parked();
+            if welcome {
+                root.update(visual, |workspace, cx| {
+                    workspace
+                        .model
+                        .update(cx, |model, cx| model.explore_workspace(cx));
+                });
+                visual.run_until_parked();
+            }
+            // Neither the composer nor the transcript is mounted in an empty workspace.
+            // Its own shortcuts and explicit focus shortcuts must all retain a live target.
+            for focus_key in [None, Some("ctrl-l"), Some("ctrl-j")] {
+                if let Some(key) = focus_key {
+                    visual.simulate_keystrokes(key);
+                    visual.run_until_parked();
+                }
+                visual.simulate_keystrokes("ctrl-k");
+                visual.run_until_parked();
+                assert_eq!(
+                    root.read_with(visual, |workspace, _| workspace.overlay),
+                    Overlay::Palette
+                );
+                visual.simulate_keystrokes("escape");
+                visual.run_until_parked();
+                assert_eq!(
+                    root.read_with(visual, |workspace, _| workspace.overlay),
+                    Overlay::None
+                );
+            }
+            visual.simulate_keystrokes("ctrl-n");
+            visual.run_until_parked();
+            if real {
+                assert!(root.read_with(visual, |workspace, cx| {
+                    workspace.state(cx).current().is_none()
+                }));
+                root.update(visual, |workspace, cx| {
+                    workspace.model.update(cx, |model, cx| {
+                        model.mutate(
+                            |state| {
+                                state.apply_catalog(Bootstrap {
+                                    projects: state.projects.clone(),
+                                    models: vec![],
+                                    conversations: vec![(
+                                        ConversationId(1),
+                                        ProjectId(1),
+                                        "created".into(),
+                                        1,
+                                    )],
+                                    now: 1,
+                                })
+                            },
+                            cx,
+                        );
+                    });
+                });
+                visual.run_until_parked();
+            }
+            assert!(root.read_with(visual, |workspace, cx| {
+                workspace.state(cx).current().is_some()
+            }));
+            visual.simulate_input("keyboard works");
+            visual.run_until_parked();
+            assert_eq!(
+                root.read_with(visual, |workspace, cx| workspace.composer.read(cx).text()),
+                "keyboard works"
+            );
+            root.update(visual, |workspace, cx| {
+                workspace.model.update(cx, |model, cx| {
+                    model.mutate(
+                        |state| {
+                            state.apply_catalog(Bootstrap {
+                                projects: state.projects.clone(),
+                                models: vec![],
+                                conversations: vec![],
+                                now: 2,
+                            })
+                        },
+                        cx,
+                    );
+                });
+            });
+            visual.run_until_parked();
+            visual.simulate_keystrokes("ctrl-k");
+            visual.run_until_parked();
+            assert_eq!(
+                root.read_with(visual, |workspace, _| workspace.overlay),
+                Overlay::Palette
+            );
+        }
+    }
 
     #[gpui::test]
     fn composer_recalls_only_the_selected_sessions_prompts_and_restores_the_draft(

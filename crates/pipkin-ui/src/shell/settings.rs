@@ -463,7 +463,7 @@ impl Workspace {
                                 div()
                                     .text_size(t.small_size())
                                     .text_color(c.text_muted)
-                                    .child("Shape your workspace and Pi sessions."),
+                                    .child("Shape your workspace and coding sessions."),
                             ),
                     )
                     .child(

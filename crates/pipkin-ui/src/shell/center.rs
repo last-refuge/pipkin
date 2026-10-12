@@ -101,13 +101,13 @@ impl Workspace {
                 Connection::Failed(_) | Connection::Incompatible(_) => (
                     "circle-alert",
                     c.danger,
-                    "The Pi engine is not available",
-                    " Sending is off. Run `pipkin --diagnose` in a terminal for details.",
+                    "The coding engine is not available",
+                    " Sending is off. Use Copy diagnostics in the command palette for support details.",
                 ),
                 Connection::Offline(_) => (
                     "triangle-alert",
                     c.warning,
-                    "Not connected to the Pi engine",
+                    "Not connected to the coding engine",
                     " Retrying. Your drafts are kept.",
                 ),
                 Connection::Reconnecting => (
@@ -646,7 +646,7 @@ impl Workspace {
                 "Working…",
                 activity
                     .as_deref()
-                    .unwrap_or("Pi is working. You can steer, queue a follow-up, or stop."),
+                    .unwrap_or("Pipkin is working. You can steer, queue a follow-up, or stop."),
                 vec![
                     Btn::new("stop-run")
                         .icon("square")
@@ -1081,11 +1081,11 @@ impl Workspace {
 
 const MODEL_SETUP_DETAIL: &str = "Connect a Claude or ChatGPT subscription in Pipkin to choose a model. Your existing conversations stay here.";
 const MODEL_UNAVAILABLE_DETAIL: &str = "No model is available. This engine does not offer in-app subscription sign-in; use an updated bundled engine, then refresh models.";
-const RECOVERY_DETAIL: &str = "Pipkin does not resend the prompt. Pi recovery may repeat a partially executed tool. Review tool output, project Changes and external effects before sending more work. If unresolved, Check status reconciles with Pi; copy metadata-only diagnostics for support. Detailed CLI diagnostics may contain sensitive logs.";
-const UNKNOWN_DETAIL: &str = "The app or connection stopped before acknowledgement. This does not prove the prompt or its tools never ran. Check status asks Pi what happened without resending; sending stays disabled until reconciled. Review project and external effects before repeating work.";
+const RECOVERY_DETAIL: &str = "Pipkin does not resend the prompt. Some engines may repeat a partially executed tool during recovery. Review tool output, project Changes and external effects before sending more work. If unresolved, Check status reconciles with the engine; copy metadata-only diagnostics for support. Detailed CLI diagnostics may contain sensitive logs.";
+const UNKNOWN_DETAIL: &str = "The app or connection stopped before acknowledgement. This does not prove the prompt or its tools never ran. Check status asks the engine what happened without resending; sending stays disabled until reconciled. Review project and external effects before repeating work.";
 
 fn stopping_detail(error: Option<&str>) -> String {
-    let waiting = "Pi has not confirmed that the run stopped; tools may still be running. If this takes longer than expected, Check status reads the engine state without resending the prompt.";
+    let waiting = "The engine has not confirmed that the run stopped; tools may still be running. If this takes longer than expected, Check status reads the engine state without resending the prompt.";
     match error {
         Some(error) => format!("{error} {waiting} Retry stop repeats only the stop request."),
         None => waiting.into(),

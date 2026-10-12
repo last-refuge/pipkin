@@ -11,7 +11,34 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — actual native Arch package
+## Current follow-up — packaged desktop focus and recovery
+
+2026-10-12, following **`9915177`**, protocol 12 / engine schema 10 / desktop schema 8
+unchanged. Actual Arch desktop testing exposed lost keyboard actions after Welcome → Explore
+in an empty workspace: focus pointed at an unmounted composer. Workspace focus now stays on
+the mounted root until a conversation exists, transfers after asynchronous creation, and
+recovers after removal without stealing overlay focus. A GPUI regression reproduces the
+failure and covers demo/real creation and typing. Guard punctuation now uses wtype keysym
+names; failing period/comma cases pass, and both shortcuts were exercised in the real window.
+Shared status/recovery/Settings copy no longer incorrectly identifies native operation as Pi.
+
+The final actual Arch package passes real desktop write-tool/diff, streaming, queued-input
+withdrawal on Stop, next coding turn, saved draft and partial-history recovery after SIGKILL.
+A second crash/reopen uses the exact same final binary: six durable tables remain byte-exact
+as ordered-row hashes, provider requests stay at six, draft/file survive, and owned workers
+exit. Quit also leaves no owned app/worker. The scripted local provider and Node/Pi traps
+remain explicit; no cloud reauthorization or system installation is claimed.
+
+See [desktop evidence](pipkin-rust-engine-evidence/packaged-desktop.md) and
+`fixtures/native-desktop/2026-10-12/`. The final archive verifier passes metadata, identity,
+notices and isolated import/coding/restart/archive replay. **1,641 workspace tests passed,
+0 failed, 56 ignored**, clean Clippy/formatting; **35 guard tests passed**. Ledger counts stay
+**444 measured, 9 observed, 1 unverified, 50 not started; 0 fully qualified**. Additional
+observations strengthen existing rows; broader desktop/sustained workloads, reference and
+release gates, license review and native-default/Pi retirement remain open. Owner plan and
+worktree changes are preserved. Raw screenshots stay local due to compositor translucency.
+
+## Prior follow-up — actual native Arch package
 
 2026-10-12, following **`c64e59b`**, protocol 12 / schema 10 unchanged. The Arch recipe
 now accepts `PIPKIN_ENGINE=native`, omits npm for that mode and stages the native package
