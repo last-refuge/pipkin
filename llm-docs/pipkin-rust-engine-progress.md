@@ -11,7 +11,41 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — Google executable credential helpers
+## Current follow-up — Google AWS federation
+
+2026-10-12, following **`d0e949b`**. Native Vertex ADC now supports environment or metadata
+AWS federation, including IMDSv2 session headers, cached region discovery and rotating roles.
+Twenty exact signed-proof vectors and thirteen executed SDK cases verify discovery, form
+encoding, signature canonicalization and source selection. Cancellation preserves the shared
+exchange; AWS credential environment changes isolate cached access tokens. See
+[AWS federation evidence](pipkin-rust-engine-evidence/google-aws.md).
+
+Five tests were added; the existing Vertex test now also completes two streams using an AWS
+proof. The focused Google suite passed **44 tests**. A real thirty-second metadata timeout
+settles and a subsequent request succeeds. The reference factory audit also corrected raw
+ADC selector handling, including malformed selectors and aliases within selected clients.
+
+The first workspace run failed in the launcher fixture: an identical stale terminal record
+could satisfy the second iteration's wait before its new process wrote, allowing recorder
+processes to race. Clearing prior terminal/editor records before each iteration fixes that
+synchronization; production launch behavior is unchanged. The focused launcher test passed.
+
+Final required checks: **1591 passed, 0 failed, 53 ignored**, clean Clippy and formatting.
+Logs: `/tmp/pipkin-google-aws-tests.log`, `/tmp/pipkin-google-aws-workspace.log` (initial failure),
+`/tmp/pipkin-google-aws-launcher.log`, `/tmp/pipkin-google-aws-workspace2.log`,
+`/tmp/pipkin-google-aws-clippy2.log`, `/tmp/pipkin-google-aws-fmt2.log`.
+Protocol 11 / schema 9 unchanged. Inventory remains **504 rows, 488 non-OS; NC 412,
+NE 38, NP 37, PA 0, BL 0, LB 1, OS 16; 444 measured, 7 observed, 1 unverified,
+52 not started; 0 fully qualified**.
+
+Next: certificate federation (real mutual TLS while preserving proxy/timeout configuration),
+broader credential retry/cache/configuration review, sustained workloads and release/CI/platform
+qualification. The certificate reference reads certificate_config.json, builds a leaf/trust
+chain subject and applies the identity to STS and subsequent Google HTTP requests. It cannot
+be completed with certificate parsing alone. Native remains opt-in; live cloud and release
+acceptance remain open. Owner plan/worktree changes remain untouched.
+
+## Previous follow-up — Google executable credential helpers
 
 2026-10-12, following **`d721b3a`**. Native ADC now executes explicitly enabled Google
 credential helpers, preserves the SDK's command/environment and output-cache contracts,

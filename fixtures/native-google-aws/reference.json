@@ -1,0 +1,963 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "version": "10.6.2",
+  "integrity": "sha512-e27Z6EThmVNNvtYASwQxose/G57rkRuaRbQyxM2bvYLLX/GqWZ5chWq2EBoUchJbCc57eC9ArzO5wMsEmWftCw==",
+  "hashes": {
+    "awsclient": "35477058671800c806001ab911460108c022f009b78de387fe674f48b011f65a",
+    "awsrequestsigner": "fd42568d12e7441dc422b39b2114a7d746948503f40a698c5dee0851f2488f38",
+    "defaultawssecuritycredentialssupplier": "789b0f0de4e8c89e3170484d589b82cbac7f79ac8e1ebff4624d7123af2860f4",
+    "baseexternalclient": "f1082f6d5c3a35ee95614bfb8a7f79c2782c4964652b75e46719586b308dcba9",
+    "externalclient": "f07a09b4cf62a5029afd0542627618f5b34d5ae9a66e6ff83c2444e66dcb13ed"
+  },
+  "timestamp": "2026-10-12T06:07:08.000Z",
+  "scope": "Executed Google AWS ADC client, original signer and synthetic recording transport; no live AWS/Google requests",
+  "cases": [
+    {
+      "name": "environment",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws1",
+          "region_url": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "AWS_REGION": "us-east-2",
+        "AWS_ACCESS_KEY_ID": "ENVKEY",
+        "AWS_SECRET_ACCESS_KEY": "env-secret"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D42d0545c1b779827eec98f28dd86ab194ac4da871dccbccf7c733c478f52e2a2%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D42d0545c1b779827eec98f28dd86ab194ac4da871dccbccf7c733c478f52e2a2%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        }
+      ],
+      "subjects": [
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D42d0545c1b779827eec98f28dd86ab194ac4da871dccbccf7c733c478f52e2a2%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D42d0545c1b779827eec98f28dd86ab194ac4da871dccbccf7c733c478f52e2a2%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D"
+      ],
+      "outcome": {
+        "tokens": [
+          "federated",
+          "federated"
+        ]
+      }
+    },
+    {
+      "name": "session",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws1",
+          "region_url": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "AWS_REGION": "us-east-2",
+        "AWS_ACCESS_KEY_ID": "ENVKEY",
+        "AWS_SECRET_ACCESS_KEY": "env-secret",
+        "AWS_SESSION_TOKEN": "env-session+/="
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D1c48632b8b5bedff6d10802ce8d89f785eb98e9e7ea80719ccc90205d9b8870e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22env-session%2B%2F%3D%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D1c48632b8b5bedff6d10802ce8d89f785eb98e9e7ea80719ccc90205d9b8870e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22env-session%2B%2F%3D%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        }
+      ],
+      "subjects": [
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D1c48632b8b5bedff6d10802ce8d89f785eb98e9e7ea80719ccc90205d9b8870e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22env-session%2B%2F%3D%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D1c48632b8b5bedff6d10802ce8d89f785eb98e9e7ea80719ccc90205d9b8870e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22env-session%2B%2F%3D%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D"
+      ],
+      "outcome": {
+        "tokens": [
+          "federated",
+          "federated"
+        ]
+      }
+    },
+    {
+      "name": "default-region",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws1",
+          "region_url": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "AWS_ACCESS_KEY_ID": "ENVKEY",
+        "AWS_SECRET_ACCESS_KEY": "env-secret",
+        "AWS_DEFAULT_REGION": "eu-west-1"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.eu-west-1.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Feu-west-1%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3De9a22ae6ca93ee46439967899ecf46de9e525fb1256843491e4480c278365c68%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.eu-west-1.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.eu-west-1.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Feu-west-1%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3De9a22ae6ca93ee46439967899ecf46de9e525fb1256843491e4480c278365c68%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.eu-west-1.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        }
+      ],
+      "subjects": [
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.eu-west-1.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Feu-west-1%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3De9a22ae6ca93ee46439967899ecf46de9e525fb1256843491e4480c278365c68%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.eu-west-1.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.eu-west-1.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Feu-west-1%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3De9a22ae6ca93ee46439967899ecf46de9e525fb1256843491e4480c278365c68%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.eu-west-1.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D"
+      ],
+      "outcome": {
+        "tokens": [
+          "federated",
+          "federated"
+        ]
+      }
+    },
+    {
+      "name": "metadata-v1",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws1",
+          "region_url": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {},
+      "requests": [
+        {
+          "method": "GET",
+          "url": "http://metadata.example/region",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role/role-1",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY1%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Dd1a2232cb337d1a484bd9bf7bc5a1c5734e1c6076a66590cfb0ac794c53f6649%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-1%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role/role-2",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY2%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Da1f4e60fac72f6c0837f9252b9c81d02810fdff3c40210113f57e6c721d29fa3%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-2%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        }
+      ],
+      "subjects": [
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY1%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Dd1a2232cb337d1a484bd9bf7bc5a1c5734e1c6076a66590cfb0ac794c53f6649%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-1%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY2%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Da1f4e60fac72f6c0837f9252b9c81d02810fdff3c40210113f57e6c721d29fa3%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-2%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D"
+      ],
+      "outcome": {
+        "tokens": [
+          "federated",
+          "federated"
+        ]
+      }
+    },
+    {
+      "name": "metadata-v2",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws1",
+          "region_url": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+          "imdsv2_session_token_url": "http://metadata.example/imds"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {},
+      "requests": [
+        {
+          "method": "PUT",
+          "url": "http://metadata.example/imds",
+          "metadataToken": null,
+          "ttl": "300",
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/region",
+          "metadataToken": "metadata-token-1",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "PUT",
+          "url": "http://metadata.example/imds",
+          "metadataToken": null,
+          "ttl": "300",
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": "metadata-token-2",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role/role-1",
+          "metadataToken": "metadata-token-2",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY1%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Dd1a2232cb337d1a484bd9bf7bc5a1c5734e1c6076a66590cfb0ac794c53f6649%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-1%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        },
+        {
+          "method": "PUT",
+          "url": "http://metadata.example/imds",
+          "metadataToken": null,
+          "ttl": "300",
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": "metadata-token-3",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role/role-2",
+          "metadataToken": "metadata-token-3",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY2%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Da1f4e60fac72f6c0837f9252b9c81d02810fdff3c40210113f57e6c721d29fa3%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-2%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        }
+      ],
+      "subjects": [
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY1%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Dd1a2232cb337d1a484bd9bf7bc5a1c5734e1c6076a66590cfb0ac794c53f6649%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-1%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY2%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Da1f4e60fac72f6c0837f9252b9c81d02810fdff3c40210113f57e6c721d29fa3%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-2%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D"
+      ],
+      "outcome": {
+        "tokens": [
+          "federated",
+          "federated"
+        ]
+      }
+    },
+    {
+      "name": "partial-environment",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws1",
+          "region_url": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+          "imdsv2_session_token_url": "http://metadata.example/imds"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "AWS_REGION": "us-east-2",
+        "AWS_ACCESS_KEY_ID": "ENVKEY"
+      },
+      "requests": [
+        {
+          "method": "PUT",
+          "url": "http://metadata.example/imds",
+          "metadataToken": null,
+          "ttl": "300",
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": "metadata-token-1",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role/role-1",
+          "metadataToken": "metadata-token-1",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY1%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D96d3469b62e48079202c572d67246f8a20daa31a617ddae899c705db6875c55d%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-1%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        },
+        {
+          "method": "PUT",
+          "url": "http://metadata.example/imds",
+          "metadataToken": null,
+          "ttl": "300",
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": "metadata-token-2",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role/role-2",
+          "metadataToken": "metadata-token-2",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY2%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D1749cbed5a3e4b9e871aa713aad3ddd4f9348df96d25420a8102931d2472505f%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-2%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        }
+      ],
+      "subjects": [
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY1%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D96d3469b62e48079202c572d67246f8a20daa31a617ddae899c705db6875c55d%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-1%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY2%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D1749cbed5a3e4b9e871aa713aad3ddd4f9348df96d25420a8102931d2472505f%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-2%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D"
+      ],
+      "outcome": {
+        "tokens": [
+          "federated",
+          "federated"
+        ]
+      }
+    },
+    {
+      "name": "env-region",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws1",
+          "region_url": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+          "imdsv2_session_token_url": "http://metadata.example/imds"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "AWS_REGION": "us-east-2",
+        "AWS_ACCESS_KEY_ID": "ENVKEY"
+      },
+      "requests": [
+        {
+          "method": "PUT",
+          "url": "http://metadata.example/imds",
+          "metadataToken": null,
+          "ttl": "300",
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": "metadata-token-1",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role/role-1",
+          "metadataToken": "metadata-token-1",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY1%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D96d3469b62e48079202c572d67246f8a20daa31a617ddae899c705db6875c55d%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-1%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        },
+        {
+          "method": "PUT",
+          "url": "http://metadata.example/imds",
+          "metadataToken": null,
+          "ttl": "300",
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": "metadata-token-2",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role/role-2",
+          "metadataToken": "metadata-token-2",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY2%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D1749cbed5a3e4b9e871aa713aad3ddd4f9348df96d25420a8102931d2472505f%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-2%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        }
+      ],
+      "subjects": [
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY1%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D96d3469b62e48079202c572d67246f8a20daa31a617ddae899c705db6875c55d%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-1%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY2%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3D1749cbed5a3e4b9e871aa713aad3ddd4f9348df96d25420a8102931d2472505f%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-2%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D"
+      ],
+      "outcome": {
+        "tokens": [
+          "federated",
+          "federated"
+        ]
+      }
+    },
+    {
+      "name": "env-credentials",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws1",
+          "region_url": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+          "imdsv2_session_token_url": "http://metadata.example/imds"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "AWS_ACCESS_KEY_ID": "ENVKEY",
+        "AWS_SECRET_ACCESS_KEY": "env-secret"
+      },
+      "requests": [
+        {
+          "method": "PUT",
+          "url": "http://metadata.example/imds",
+          "metadataToken": null,
+          "ttl": "300",
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/region",
+          "metadataToken": "metadata-token-1",
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D8e8a38a687e70c710318a2ac7db350cb04fe57fe55d1ab9b4bc6d3b472e9af6e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D8e8a38a687e70c710318a2ac7db350cb04fe57fe55d1ab9b4bc6d3b472e9af6e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        }
+      ],
+      "subjects": [
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D8e8a38a687e70c710318a2ac7db350cb04fe57fe55d1ab9b4bc6d3b472e9af6e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D8e8a38a687e70c710318a2ac7db350cb04fe57fe55d1ab9b4bc6d3b472e9af6e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D"
+      ],
+      "outcome": {
+        "tokens": [
+          "federated",
+          "federated"
+        ]
+      }
+    },
+    {
+      "name": "camel-options",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subjectTokenType": "urn:ietf:params:aws:token-type:aws4_request",
+        "tokenUrl": "https://sts.example/v1/token",
+        "quotaProjectId": "billing",
+        "credentialSource": {
+          "environmentId": "aws01",
+          "regionUrl": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regionalCredVerificationUrl": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+        }
+      },
+      "environment": {},
+      "requests": [
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "role-1",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "role-2",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        }
+      ],
+      "subjects": [
+        "role-1",
+        "role-2"
+      ],
+      "outcome": {
+        "tokens": [
+          "federated",
+          "federated"
+        ]
+      }
+    },
+    {
+      "name": "camel-fields",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws01",
+          "regionUrl": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regionalCredVerificationUrl": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {},
+      "requests": [
+        {
+          "method": "GET",
+          "url": "http://metadata.example/region",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role/role-1",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY1%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Dd1a2232cb337d1a484bd9bf7bc5a1c5734e1c6076a66590cfb0ac794c53f6649%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-1%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "GET",
+          "url": "http://metadata.example/role/role-2",
+          "metadataToken": null,
+          "ttl": null,
+          "body": null
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY2%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Da1f4e60fac72f6c0837f9252b9c81d02810fdff3c40210113f57e6c721d29fa3%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-2%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        }
+      ],
+      "subjects": [
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY1%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Dd1a2232cb337d1a484bd9bf7bc5a1c5734e1c6076a66590cfb0ac794c53f6649%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-1%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.ap-southeast-2.amazonaws.com%3FAction%3DGetCallerIdentity%26Version%3D2011-06-15%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DMETAKEY2%2F20261012%2Fap-southeast-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%3Bx-amz-security-token%2C%20Signature%3Da1f4e60fac72f6c0837f9252b9c81d02810fdff3c40210113f57e6c721d29fa3%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.ap-southeast-2.amazonaws.com%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-amz-security-token%22%2C%22value%22%3A%22meta-session-2%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D"
+      ],
+      "outcome": {
+        "tokens": [
+          "federated",
+          "federated"
+        ]
+      }
+    },
+    {
+      "name": "raw-query",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws1",
+          "region_url": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regional_cred_verification_url": "https://sts.{region}.amazonaws.com:8443/a%2Fb?Version=2011-06-15&Action=GetCallerIdentity&x=%2F&x=second"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "AWS_REGION": "us-east-2",
+        "AWS_ACCESS_KEY_ID": "ENVKEY",
+        "AWS_SECRET_ACCESS_KEY": "env-secret"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3A8443%2Fa%252Fb%3FVersion%3D2011-06-15%26Action%3DGetCallerIdentity%26x%3D%252F%26x%3Dsecond%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D9c7fbf5436a6c8d5697df366d4625e249099a8a6bb2f1f5260a3d3d0e94e078e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%3A8443%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        },
+        {
+          "method": "POST",
+          "url": "https://sts.example/v1/token",
+          "metadataToken": null,
+          "ttl": null,
+          "body": {
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+            "scope": "https://www.googleapis.com/auth/cloud-platform",
+            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "subject_token": "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3A8443%2Fa%252Fb%3FVersion%3D2011-06-15%26Action%3DGetCallerIdentity%26x%3D%252F%26x%3Dsecond%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D9c7fbf5436a6c8d5697df366d4625e249099a8a6bb2f1f5260a3d3d0e94e078e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%3A8443%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+            "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request"
+          }
+        }
+      ],
+      "subjects": [
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3A8443%2Fa%252Fb%3FVersion%3D2011-06-15%26Action%3DGetCallerIdentity%26x%3D%252F%26x%3Dsecond%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D9c7fbf5436a6c8d5697df366d4625e249099a8a6bb2f1f5260a3d3d0e94e078e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%3A8443%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D",
+        "%7B%22url%22%3A%22https%3A%2F%2Fsts.us-east-2.amazonaws.com%3A8443%2Fa%252Fb%3FVersion%3D2011-06-15%26Action%3DGetCallerIdentity%26x%3D%252F%26x%3Dsecond%22%2C%22method%22%3A%22POST%22%2C%22headers%22%3A%5B%7B%22key%22%3A%22authorization%22%2C%22value%22%3A%22AWS4-HMAC-SHA256%20Credential%3DENVKEY%2F20261012%2Fus-east-2%2Fsts%2Faws4_request%2C%20SignedHeaders%3Dhost%3Bx-amz-date%2C%20Signature%3D9c7fbf5436a6c8d5697df366d4625e249099a8a6bb2f1f5260a3d3d0e94e078e%22%7D%2C%7B%22key%22%3A%22host%22%2C%22value%22%3A%22sts.us-east-2.amazonaws.com%3A8443%22%7D%2C%7B%22key%22%3A%22x-amz-date%22%2C%22value%22%3A%2220261012T060708Z%22%7D%2C%7B%22key%22%3A%22x-goog-cloud-target-resource%22%2C%22value%22%3A%22%2F%2Fiam.googleapis.com%2Fprojects%2F123%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fpool%2Fproviders%2Fprovider%22%7D%5D%7D"
+      ],
+      "outcome": {
+        "tokens": [
+          "federated",
+          "federated"
+        ]
+      }
+    },
+    {
+      "name": "missing-region",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws1",
+          "url": "http://metadata.example/role",
+          "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "AWS_ACCESS_KEY_ID": "ENVKEY",
+        "AWS_SECRET_ACCESS_KEY": "env-secret"
+      },
+      "requests": [],
+      "subjects": [],
+      "outcome": {
+        "error": true,
+        "errorType": "RangeError"
+      }
+    },
+    {
+      "name": "unsupported-version",
+      "document": {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.example/v1/token",
+        "credential_source": {
+          "environment_id": "aws2",
+          "region_url": "http://metadata.example/region",
+          "url": "http://metadata.example/role",
+          "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+        },
+        "quota_project_id": "billing"
+      },
+      "environment": {
+        "AWS_REGION": "us-east-2",
+        "AWS_ACCESS_KEY_ID": "ENVKEY",
+        "AWS_SECRET_ACCESS_KEY": "env-secret"
+      },
+      "requests": [],
+      "subjects": [],
+      "outcome": {
+        "error": true,
+        "errorType": "Error"
+      }
+    }
+  ]
+}

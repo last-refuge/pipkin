@@ -27,6 +27,8 @@ struct State {
     cached: Option<Cached>,
     // Google external authorized-user clients retain rotated refresh tokens in memory.
     refresh_tokens: HashMap<String, String>,
+    // The Google AWS client discovers the region once per configured identity.
+    aws_regions: HashMap<String, String>,
 }
 type Token = (String, Option<Duration>);
 type Slot = Arc<tokio::sync::Mutex<State>>;

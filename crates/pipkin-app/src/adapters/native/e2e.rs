@@ -1593,6 +1593,14 @@ fn native_editor_and_terminal_flags_launch_from_a_real_tool_change() {
         .unwrap();
         assert_eq!(options.engine, EngineKind::Native);
         let config = LaunchConfig::from_env(options.editor, options.terminal);
+        // The previous iteration has identical standalone-terminal output. Clear it so
+        // this wait cannot finish before the new process has written its own record.
+        for name in ["terminal-record", "editor-record"] {
+            let path = fx.project.join(name);
+            if path.exists() {
+                std::fs::remove_file(path).unwrap();
+            }
+        }
         h.dispatch(Command::OpenTerminal);
         launch::run(&h.launches.pop().expect("terminal effect"), &config).unwrap();
         wait_record("terminal-record", &format!("{cwd}\n--configured\n"));

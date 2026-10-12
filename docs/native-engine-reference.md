@@ -26,6 +26,8 @@ engine and is available without a Pi installation or network access.
   Executable ADC helpers require `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1`; their
   configured command runs directly with Google's noninteractive environment. OIDC/SAML
   responses and helper-managed output caches are supported, with 5–120 second timeouts.
+  AWS federation ADC uses AWS environment credentials or the metadata endpoints configured
+  in that ADC file, including IMDSv2. This Google path does not read AWS CLI profiles.
 - The engine configuration directory holds `auth.json`, `models.json` and `settings.json`.
   The desktop's `--engine-config-dir` and `--engine-data-dir` select engine configuration
   and history; `--data-dir` selects desktop drafts/cache. Do not expose stored credentials.

@@ -2,14 +2,50 @@
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+#[path = "google_aws.rs"]
+mod aws;
 #[path = "google_executable.rs"]
 mod executable;
-pub(super) use executable::execution_context;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
 
 use super::{BUDGET, CLOUD_PLATFORM_SCOPE, LIMIT, State, Token, response, response_bytes};
-use crate::provider::http;
+use crate::provider::{ProviderRequest, http};
+
+pub(super) fn execution_context(
+    req: &ProviderRequest,
+    document: Option<&Value>,
+) -> (BTreeMap<String, String>, Duration) {
+    let mut doc = document;
+    while let Some(value) = doc.filter(|d| d["type"] == "impersonated_service_account") {
+        doc = value.get("source_credentials");
+    }
+    if doc.is_some_and(is_aws) {
+        return (aws::environment(req), BUDGET);
+    }
+    if doc.is_some_and(is_executable) {
+        executable::execution_context(req, document)
+    } else {
+        (BTreeMap::new(), BUDGET)
+    }
+}
+
+// ADC factory dispatch uses these original keys; aliases apply inside the selected client.
+fn selected(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(v) => *v,
+        Value::String(v) => !v.is_empty(),
+        Value::Number(v) => v.as_f64().is_some_and(|v| v != 0.0),
+        _ => true,
+    }
+}
+fn is_aws(doc: &Value) -> bool {
+    selected(&doc["credential_source"]["environment_id"])
+}
+fn is_executable(doc: &Value) -> bool {
+    selected(&doc["credential_source"]["executable"])
+}
 
 /// The SDK accepts original snake_case keys first, with camelCase aliases.
 pub(super) fn option<'a>(v: &'a Value, key: &str) -> &'a Value {
@@ -74,15 +110,16 @@ pub(super) fn validate(doc: &Value) -> Result<(), String> {
         }
     }
     let source = option(doc, "credential_source");
-    for (key, label) in [("environment_id", "AWS"), ("certificate", "certificate")] {
-        if !option(source, key).is_null() {
-            return Err(format!(
-                "Google external {label} credential sources are not yet implemented"
-            ));
-        }
+    if is_aws(doc) {
+        return aws::validate(source);
     }
-    if !option(source, "executable").is_null() {
-        return executable::validate(option(source, "executable"));
+    if is_executable(doc) {
+        return executable::validate(&doc["credential_source"]["executable"]);
+    }
+    if !option(source, "certificate").is_null() {
+        return Err(
+            "Google external certificate credential sources are not yet implemented".into(),
+        );
     }
     if string(source, "file").is_some() == string(source, "url").is_some() {
         return Err("Google credential_source needs exactly one file or URL".into());
@@ -234,7 +271,9 @@ pub(super) async fn exchange(
         return Ok(token);
     }
     let source = option(doc, "credential_source");
-    let subject = if !option(source, "executable").is_null() {
+    let subject = if is_aws(doc) {
+        aws::subject(http, doc, state, environment).await?
+    } else if is_executable(doc) {
         executable::subject(doc, environment).await?
     } else {
         subject(http, source).await?

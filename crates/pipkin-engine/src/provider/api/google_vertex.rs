@@ -343,7 +343,7 @@ mod tests {
 
     #[tokio::test]
     async fn external_account_credentials_authenticate_vertex_streams() {
-        for kind in ["file", "user", "executable"] {
+        for kind in ["file", "user", "executable", "aws"] {
             if kind == "executable" && !cfg!(unix) {
                 continue;
             }
@@ -382,6 +382,11 @@ mod tests {
                 document["credential_source"] =
                     json!({"executable":{"command":format!("/bin/sh \"{}\"", helper.display())}});
             }
+            if kind == "aws" {
+                document["subject_token_type"] =
+                    json!("urn:ietf:params:aws:token-type:aws4_request");
+                document["credential_source"] = json!({"environment_id":"aws1", "regional_cred_verification_url":"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"});
+            }
             let path = dir.path().join("adc.json");
             std::fs::write(&path, document.to_string()).unwrap();
             let mut req = request(vertex("gemini-2.5-pro", &format!("{}/vx", server.url)));
@@ -391,6 +396,13 @@ mod tests {
                 "GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES".into(),
                 "1".into(),
             );
+            if kind == "aws" {
+                req.env.insert("AWS_REGION".into(), "us-east-2".into());
+                req.env
+                    .insert("AWS_ACCESS_KEY_ID".into(), "VERTEXKEY".into());
+                req.env
+                    .insert("AWS_SECRET_ACCESS_KEY".into(), "vertex-secret".into());
+            }
             req.options
                 .insert(crate::provider::ISOLATED_ENV.into(), json!(true));
             req.options.insert("project".into(), json!("project"));
