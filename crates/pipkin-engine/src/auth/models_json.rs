@@ -782,6 +782,22 @@ pub fn compose(
     config: &ModelsConfig,
     warnings: &mut Vec<String>,
 ) -> Vec<Model> {
+    compose_with_radius(
+        builtin,
+        config,
+        warnings,
+        &BTreeMap::new(),
+        DEFAULT_RADIUS_GATEWAY,
+    )
+}
+
+pub(super) fn compose_with_radius(
+    builtin: Vec<Model>,
+    config: &ModelsConfig,
+    warnings: &mut Vec<String>,
+    radius: &BTreeMap<String, Vec<Model>>,
+    default_gateway: &str,
+) -> Vec<Model> {
     let mut order: Vec<String> = Vec::new();
     let mut by_provider: BTreeMap<String, Vec<Model>> = BTreeMap::new();
     for m in &builtin {
@@ -801,15 +817,29 @@ pub fn compose(
     }
     let mut out = Vec::new();
     for id in order {
-        let base = by_provider.remove(&id).unwrap_or_default();
-        let Some(pc) = config.provider(&id) else {
+        let mut base = by_provider.remove(&id).unwrap_or_default();
+        let pc = config.provider(&id);
+        let gateway = pc
+            .filter(|pc| pc.oauth_radius)
+            .and_then(ProviderConfig::radius_gateway);
+        if let Some(gateway) = gateway
+            .as_deref()
+            .or((id == "radius").then_some(default_gateway))
+        {
+            base = radius_baseline(&builtin, &id, gateway);
+        }
+        if let Some(overlay) = radius.get(&id) {
+            for model in overlay {
+                if let Some(at) = base.iter().position(|m| m.id == model.id) {
+                    base[at] = model.clone();
+                } else {
+                    base.push(model.clone());
+                }
+            }
+        }
+        let Some(pc) = pc else {
             out.extend(base);
             continue;
-        };
-        // An `oauth: radius` entry replaces the provider with a Radius gateway provider.
-        let base = match pc.radius_gateway().filter(|_| pc.oauth_radius) {
-            Some(gateway) => radius_baseline(&builtin, &id, &gateway),
-            None => base,
         };
         let composed = apply_models_json(&id, &base, pc).and_then(|m| apply_overrides(m, pc));
         match composed {

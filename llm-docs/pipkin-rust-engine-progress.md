@@ -11,7 +11,33 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — stored provider refresh and cancellation
+## Current follow-up — private Radius catalogs
+
+Following **`73979ae`**, default/custom Radius gateways support authenticated discovery and
+independent durable catalogs. Empty custom gateways can discover their first models. Local
+model overrides apply after gateway metadata; custom gateways do not inherit default models.
+Legacy credential catalogs survive token rotation and migrate offline; cached catalogs restore
+without credentials. Cancellation, supersession, malformed/oversized/stalled responses and
+failed persistence preserve the last usable models. Custom Radius providers use the reference
+Radius environment-key fallback. See [Radius evidence](pipkin-rust-engine-evidence/radius-catalog.md).
+
+Eight new auth/catalog tests include six executed pinned-reference helper cases. A ninth
+runtime test discovers/selects a model, executes a real write-tool turn through the local
+HTTP Radius adapter, restarts and resumes with no further catalog request. This is actual
+native execution against a local provider fixture, not a live-account or GUI qualification.
+
+Required checks: **1518 passed, 0 failed, 53 ignored**; Clippy and formatting clean.
+Logs: `/tmp/pipkin-radius-workspace.log`, `/tmp/pipkin-radius-clippy.log`,
+`/tmp/pipkin-radius-fmt.log`. Initial fixture/compile errors are recorded in the evidence.
+PRV-radius returns PA → NC. Inventory: **504 rows, 488 non-OS; NC 413, NE 37, NP 37,
+PA 0, BL 0, LB 1, OS 16; 438 measured, 7 observed, 6 unverified, 53 not started;
+0 fully qualified**. Native remains opt-in; unrelated owner changes are untouched.
+
+Next: fix Copilot login Retry-After date/non-finite handling, close the six remaining unverified
+runtime/desktop row claims, and audit partial measured rows for required gaps. Then complete
+sustained reliability/performance and installed/package/platform qualification before cutover.
+
+## Prior follow-up — stored provider refresh and cancellation
 
 Following **`1429251`**, five real local-HTTP/auth-store tests cover Copilot and default/custom
 Radius refresh: concurrent deduplication, token rotation, expiry, restart, failures and no

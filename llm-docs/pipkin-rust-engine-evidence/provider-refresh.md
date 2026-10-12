@@ -38,7 +38,10 @@ Initial targeted run: three passed, two failed. One failure reproduced the cance
 the other exposed a custom-gateway test fixture missing its required `pi-messages` API field.
 Both are corrected. No failed requirement was waived.
 
-## Confirmed remaining gaps
+## Gaps identified during this batch
+
+The Radius catalog gap below is subsequently implemented and tested in
+[radius-catalog.md](radius-catalog.md). Copilot login retry parsing remains open.
 
 Reference `packages/ai/src/providers/radius.ts` restores independent persisted model metadata,
 migrates legacy OAuth `gatewayConfig`, and refreshes authenticated `{gateway}/v1/config`.

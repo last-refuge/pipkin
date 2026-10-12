@@ -210,9 +210,7 @@ async fn radius_refresh_rotates_tokens_on_its_gateway_and_persists_expiry_scope(
             MockResponse::json(200,&json!({"access_token":"new-access","refresh_token":"rotated-refresh","expires_in":3600,"scope":"gateway offline_access"}))
         }).await;
         let f = Fixture::new(&[("PI_RADIUS_GATEWAY", &server.url)]);
-        if provider == "team" {
-            f.write_models(&json!({"providers":{"team":{"oauth":"radius","baseUrl":format!("{}/v1", server.url),"models":[{"id":"m","api":"pi-messages"}]}}}));
-        }
+        f.write_models(&json!({"providers":{provider:{"oauth":"radius","baseUrl":format!("{}/v1", server.url),"models":[{"id":"m","api":"pi-messages"}]}}}));
         f.write_auth(&json!({provider:{"type":"oauth","access":"old-access","refresh":"old-refresh","expires":1},"unrelated":{"type":"api_key","key":"preserved"}}));
         let auth = Arc::new(f.auth());
         let before = crate::util::now_ms();
@@ -272,6 +270,7 @@ async fn radius_refresh_failure_preserves_rotating_credentials_without_billing_f
         f.write_auth(
             &json!({"radius":{"type":"oauth","access":"old","refresh":"rotating","expires":1}}),
         );
+        f.write_models(&json!({"providers":{"radius":{"oauth":"radius","baseUrl":format!("{}/v1",server.url),"models":[{"id":"gateway-model","api":"pi-messages"}]}}}));
         let before = std::fs::read(f.auth_path()).unwrap();
         let auth = f.auth();
         let error = auth

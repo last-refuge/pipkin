@@ -803,3 +803,86 @@ fn the_request_timeout_follows_provider_timeout_then_http_idle_timeout() {
         ]
     );
 }
+
+#[test]
+fn radius_discovery_supports_a_real_tool_turn_and_cached_resume_without_catalog_network() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let messages = Arc::new(AtomicUsize::new(0));
+    let counted = messages.clone();
+    let server=rt.block_on(MockServer::start(move |req,_| {
+        assert_eq!(req.header("authorization"),Some("Bearer radius-test-key"));
+        if req.path=="/v1/config" {
+            return MockResponse::json(200,&json!({"baseUrl":format!("http://{}/v1",req.header("host").unwrap()),"models":[{"id":"discovered","name":"Discovered gateway model","reasoning":false,"input":["text"],"cost":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0},"contextWindow":200000,"maxTokens":4096}]}));
+        }
+        assert_eq!(req.path,"/v1/messages");
+        assert_eq!(req.json()["model"],"discovered");
+        let n=counted.fetch_add(1,Ordering::SeqCst);
+        let events = if n==0 {
+            vec![json!({"type":"toolcall_start","contentIndex":0,"id":"write-proof","toolName":"write"}),json!({"type":"toolcall_end","contentIndex":0,"toolCall":{"type":"toolCall","id":"write-proof","name":"write","arguments":{"path":"radius-proof.txt","content":"native gateway tool executed\n"}}}),json!({"type":"done","reason":"toolUse"})]
+        } else {
+            assert!(req.json()["context"]["messages"].as_array().unwrap().iter().any(|m|m["role"]=="toolResult" && m["toolCallId"]=="write-proof"));
+            vec![json!({"type":"text_start","contentIndex":0}),json!({"type":"text_end","contentIndex":0,"content":"Gateway coding turn completed"}),json!({"type":"done","reason":"stop"})]
+        };
+        MockResponse::sse(events.into_iter().map(|v|format!("data: {v}\n\n")).collect())
+    }));
+    let fx = Fixture::new();
+    let mut cfg = fx.config();
+    cfg.env = Env::isolated(
+        [
+            ("PI_RADIUS_GATEWAY".into(), server.url.clone()),
+            ("RADIUS_API_KEY".into(), "radius-test-key".into()),
+        ]
+        .into(),
+    );
+    let scripted = Scripted::echo("unused");
+    let mut e = fx.start_config(&scripted, cfg.clone());
+    e.call(Call::RefreshModels).unwrap();
+    assert!(
+        models(&mut e, None)
+            .models
+            .iter()
+            .any(|m| m.key == "radius/discovered" && m.available)
+    );
+    let session = e.create(&fx.project, "radius-session");
+    e.call(Call::SetModel {
+        session: session.clone(),
+        model: "radius/discovered".into(),
+    })
+    .unwrap();
+    e.prompt(&session, "write", "write a file using the discovered model")
+        .unwrap();
+    assert_eq!(e.settled("write"), RunOutcome::Completed);
+    assert_eq!(
+        std::fs::read_to_string(fx.project.join("radius-proof.txt")).unwrap(),
+        "native gateway tool executed\n"
+    );
+    e.handle.shutdown(Duration::from_secs(1));
+    drop(e);
+    cfg.env = Env::isolated(
+        [
+            ("PI_RADIUS_GATEWAY".into(), server.url.clone()),
+            ("RADIUS_API_KEY".into(), "radius-test-key".into()),
+            ("PI_OFFLINE".into(), "".into()),
+        ]
+        .into(),
+    );
+    let mut reopened = fx.start_config(&scripted, cfg);
+    reopened.call(Call::RefreshModels).unwrap();
+    reopened
+        .prompt(&session, "resume", "continue after restart")
+        .unwrap();
+    assert_eq!(reopened.settled("resume"), RunOutcome::Completed);
+    assert_eq!(messages.load(Ordering::SeqCst), 3);
+    assert_eq!(
+        server
+            .requests()
+            .iter()
+            .filter(|r| r.path == "/v1/config")
+            .count(),
+        1
+    );
+    assert!(scripted.requests().is_empty());
+    reopened.handle.shutdown(Duration::from_secs(1));
+}

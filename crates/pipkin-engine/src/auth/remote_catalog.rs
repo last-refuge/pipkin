@@ -1,5 +1,7 @@
 //! Persisted public catalog overlays. Reference: remote-catalog-provider.ts and models.ts.
-//! Network requests carry no provider credentials; models.json is applied after the overlay.
+//! Public requests carry no credentials; Radius uses its own authenticated gateway.
+//! models.json is applied after either overlay.
+pub(super) mod radius;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -429,7 +431,7 @@ impl Auth {
     pub(crate) fn cancel_model_refresh(&self) {
         self.inner.remote.cancel();
     }
-    /// Restore then refresh public metadata for configured built-ins. New calls supersede
+    /// Restore then refresh catalogs for configured built-ins and Radius gateways. New calls supersede
     /// older ones; cancellation never discards the last usable catalog.
     pub async fn refresh_models(&self, caller: &CancellationToken) {
         if caller.is_cancelled() {
@@ -439,6 +441,9 @@ impl Auth {
         let token = caller.clone();
         let Ok(Some((generation, cancel))) = tokio::task::spawn_blocking(move || {
             let started = inner.remote.begin(&token);
+            if let Some((generation, _)) = &started {
+                radius::migrate_legacy(&inner, *generation);
+            }
             inner.reload();
             started
         })
@@ -462,6 +467,18 @@ impl Auth {
                     .or_insert_with(|| model.clone());
             }
         }
+        let gateways =
+            radius::gateways(&self.models_config(), &self.inner.endpoints.radius_gateway);
+        for provider in gateways.keys() {
+            // Discovery must work before a custom gateway has any selectable model.
+            let model: Model = serde_json::from_value(serde_json::json!({
+                "id":"catalog-discovery", "provider":provider, "api":"pi-messages",
+            }))
+            .expect("Radius discovery model");
+            if self.availability(&model).is_ok() {
+                providers.insert(provider.clone(), model);
+            }
+        }
         let http = self
             .inner
             .http
@@ -471,13 +488,18 @@ impl Auth {
         stream::iter(providers).for_each_concurrent(8, |(provider,model)| {
             let cancel = cancel.clone();
             let http = http.clone();
+            let gateways = &gateways;
             async move {
                 let stored = lock(&self.inner.remote.state).stored.get(&provider).cloned();
                 let work = async {
                     // Auth resolution can refresh an expired token or evaluate a configured
-                    // key. The returned credentials never enter the public catalog request.
-                    self.resolve(&model,&http).await.map_err(|_| format!("Could not resolve credentials for {provider} while refreshing models."))?;
-                    fetch(&http,&self.inner.config.catalog_base_url,&provider,stored,self.inner.remote.generated_at,&cancel,Duration::from_secs(4)).await
+                    // key. Credentials go only to the private gateway, never the public catalog.
+                    let auth = self.resolve(&model,&http).await.map_err(|_| format!("Could not resolve credentials for {provider} while refreshing models."))?;
+                    if let Some(gateway) = gateways.get(&provider) {
+                        radius::fetch(&http, gateway, &provider, auth.credential.secret(), &cancel).await
+                    } else {
+                        fetch(&http,&self.inner.config.catalog_base_url,&provider,stored,self.inner.remote.generated_at,&cancel,Duration::from_secs(4)).await
+                    }
                 };
                 let update = tokio::select! { _ = cancel.cancelled() => return, update = work => update };
                 let inner = self.inner.clone();

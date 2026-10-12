@@ -316,10 +316,16 @@ impl Inner {
         let builtin = self
             .remote
             .apply(crate::provider::model::builtin_models(), &mut warnings);
-        let mut models = models_json::compose(builtin, &config, &mut warnings);
+        let radius = remote_catalog::radius::overlays(self, &config);
+        let mut models = models_json::compose_with_radius(
+            builtin,
+            &config,
+            &mut warnings,
+            &radius,
+            &self.endpoints.radius_gateway,
+        );
 
-        // Credential-dependent catalog: Copilot's account model list, Radius gateway catalogs
-        // restored from a stored credential.
+        // Copilot account credentials restrict the visible model list.
         match self.store.read("github-copilot") {
             Ok(Some(StoredCredential::OAuth(c))) => {
                 if let Some(ids) = oauth::copilot_available_models(&c) {
@@ -328,18 +334,6 @@ impl Inner {
             }
             Ok(_) => {}
             Err(e) => warnings.push(format!("Saved credentials could not be read: {e}")),
-        }
-        let radius_ids = std::iter::once("radius").chain(
-            config
-                .providers
-                .iter()
-                .filter(|(id, p)| p.oauth_radius && id.as_str() != "radius")
-                .map(|(id, _)| id.as_str()),
-        );
-        for id in radius_ids {
-            if let Ok(Some(StoredCredential::OAuth(c))) = self.store.read(id) {
-                merge_radius_gateway_models(&mut models, id, &c);
-            }
         }
 
         models.extend(self.config.extra_models.iter().cloned());
@@ -380,6 +374,11 @@ impl Inner {
         let provider = model.provider.as_str();
         let models = self.models_config();
         let pc = models.provider(provider);
+        let key_provider = if pc.is_some_and(|p| p.oauth_radius) {
+            "radius"
+        } else {
+            provider
+        };
         let env = &self.config.env;
         match self.store.read(provider).map_err(store_failed)? {
             Some(StoredCredential::OAuth(_)) => match self.flow(provider) {
@@ -398,7 +397,10 @@ impl Inner {
                     key: key.as_deref(),
                     env: Some(&cred_env),
                 };
-                key_auth_ok(provider, providers::resolve_key_auth(provider, &input, env))
+                key_auth_ok(
+                    provider,
+                    providers::resolve_key_auth(key_provider, &input, env),
+                )
             }
             None => match pc.and_then(|p| p.api_key.as_deref()) {
                 Some(raw) => {
@@ -410,7 +412,7 @@ impl Inner {
                 }
                 None => key_auth_ok(
                     provider,
-                    providers::resolve_key_auth(provider, &KeyInput::default(), env),
+                    providers::resolve_key_auth(key_provider, &KeyInput::default(), env),
                 ),
             },
         }
@@ -432,6 +434,11 @@ impl Inner {
         let provider = model.provider.as_str();
         let models = self.models_config();
         let pc = models.provider(provider);
+        let key_provider = if pc.is_some_and(|p| p.oauth_radius) {
+            "radius"
+        } else {
+            provider
+        };
         let env = &self.config.env;
         let base = match self.store.read(provider).map_err(store_failed)? {
             Some(StoredCredential::OAuth(stored)) => {
@@ -485,7 +492,7 @@ impl Inner {
                 };
                 key_base(
                     provider,
-                    providers::resolve_key_auth(provider, &input, env),
+                    providers::resolve_key_auth(key_provider, &input, env),
                     cred_env,
                 )?
             }
@@ -506,13 +513,13 @@ impl Inner {
                     };
                     key_base(
                         provider,
-                        providers::resolve_key_auth(provider, &input, env),
+                        providers::resolve_key_auth(key_provider, &input, env),
                         BTreeMap::new(),
                     )?
                 }
                 None => key_base(
                     provider,
-                    providers::resolve_key_auth(provider, &KeyInput::default(), env),
+                    providers::resolve_key_auth(key_provider, &KeyInput::default(), env),
                     BTreeMap::new(),
                 )?,
             },
@@ -615,7 +622,7 @@ impl Inner {
                 .map_err(store_failed)?;
             let result = match txn.get(&provider) {
                 Some(StoredCredential::OAuth(current)) if expires_soon(&current) => {
-                    let next =
+                    let mut next =
                         match tokio::time::timeout(timeout, flow.refresh(&ctx, &current)).await {
                             Err(_) => {
                                 return Err(AuthError::Failed(format!(
@@ -629,6 +636,13 @@ impl Inner {
                             }
                             Ok(Ok(next)) => next,
                         };
+                    // Keep legacy gateway metadata until independently cached. A coding
+                    // request may rotate tokens before an explicit catalog refresh runs.
+                    if let Some(legacy) = current.extra.get("gatewayConfig") {
+                        next.extra
+                            .entry("gatewayConfig")
+                            .or_insert_with(|| legacy.clone());
+                    }
                     txn.set(&provider, StoredCredential::OAuth(next.clone()));
                     txn.commit().map_err(|e| {
                         AuthError::Failed(format!(
@@ -703,54 +717,5 @@ fn key_base(
             cred_env,
         }),
         KeyAuth::NotConfigured => Err(not_configured(provider)),
-    }
-}
-
-/// Models from a Radius credential's legacy `gatewayConfig` (reference
-/// `providers/radius-config.ts` `getRadiusModels`), upserted by id.
-fn merge_radius_gateway_models(
-    models: &mut Vec<Model>,
-    provider: &str,
-    credential: &OAuthCredential,
-) {
-    let Some(config) = credential
-        .extra
-        .get("gatewayConfig")
-        .and_then(Value::as_object)
-    else {
-        return;
-    };
-    let (Some(base_url), Some(list)) = (
-        config.get("baseUrl").and_then(Value::as_str),
-        config.get("models").and_then(Value::as_array),
-    ) else {
-        return;
-    };
-    for m in list {
-        let Some(o) = m.as_object() else { continue };
-        let valid = o.get("id").is_some_and(Value::is_string)
-            && o.get("name").is_some_and(Value::is_string)
-            && o.get("reasoning").is_some_and(Value::is_boolean)
-            && o.get("input").is_some_and(Value::is_array)
-            && o.get("cost").is_some_and(Value::is_object)
-            && o.get("contextWindow").is_some_and(Value::is_number)
-            && o.get("maxTokens").is_some_and(Value::is_number);
-        if !valid {
-            continue;
-        }
-        let mut o = o.clone();
-        o.insert("api".into(), Value::String("pi-messages".into()));
-        o.insert("provider".into(), Value::String(provider.to_owned()));
-        o.insert("baseUrl".into(), Value::String(base_url.to_owned()));
-        let Ok(model) = serde_json::from_value::<Model>(Value::Object(o)) else {
-            continue;
-        };
-        match models
-            .iter()
-            .position(|x| x.provider == provider && x.id == model.id)
-        {
-            Some(i) => models[i] = model,
-            None => models.push(model),
-        }
     }
 }

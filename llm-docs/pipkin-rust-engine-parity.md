@@ -15,7 +15,11 @@ reference-derived output exists.
   `b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05` (archive
   `2be5f68d90695e71372c01ccbd08d5728b93691e07c45918846997c8949bcabb`), plus the Pipkin desktop
   at app base `75f5c35`. Frozen reference fixtures: `fixtures/pi-sessions/` (8 scenarios, RE-02).
-- **Current follow-up:** credential refresh and cancellation on top of `1429251`; see
+- **Current follow-up:** authenticated Radius catalogs on top of `73979ae`; see
+  [Radius catalog evidence](pipkin-rust-engine-evidence/radius-catalog.md). Private catalog
+  discovery, independent persistence, offline migration and a real native tool/restart turn
+  are implemented and tested; PRV-radius returns PA → NC.
+- **Prior follow-up:** credential refresh and cancellation on top of `1429251`; see
   [refresh evidence](pipkin-rust-engine-evidence/provider-refresh.md). Two refresh rows now have
   measured evidence; PRV-radius reopens for missing dynamic catalog behavior.
 - **Prior follow-up:** product prompt/help, provider identity and OAuth reachability on top of
@@ -72,7 +76,7 @@ Test citations are `<prefix>::<function>`; a prefix names one file:
 | Session lifecycle | `life::` `E/runtime/lifecycle/tests.rs` (attachments, retirement, disconnect, extension generations) |
 | Protocol | `frm::` `P/frame.rs`; `cnt::` `P/content.rs`; `dq::` `P/delivery.rs`; `delivery::` `E/delivery.rs` |
 | Providers | `err::` `E/provider/errors.rs`; `mdl::` `E/provider/model.rs`; `sse::` `E/provider/sse.rs`; `phttp::` `E/provider/http.rs`; `prx::` `E/provider/proxy.rs`; `com/<file>::` `E/provider/api/common/<file>.rs`; `anth::` anthropic_messages; `oaic::` openai_completions; `oair::` openai_responses; `oairs::` openai_responses_shared; `azr::` azure_openai_responses; `cdx::` `E/provider/api/openai_codex/tests.rs` (`cdx::golden::<name>` = goldens produced by running the reference `stream()`); `gga::` google_generative_ai; `gsh::` google_shared; `gvx::` google_vertex; `gau::` google_auth; `mis::` mistral_conversations; `brk::` bedrock_converse_stream; `bes::` bedrock_eventstream; `aws::` aws_auth; `pim::` pi_messages; `cf::` cloudflare (all under `E/provider/api/`) |
-| Auth | `arefresh::` `E/auth/refresh_tests.rs`; `auth::` `E/auth/tests.rs`; `astore::` `E/auth/store.rs`; `aprov::` `E/auth/providers.rs`; `mjson::` `E/auth/models_json.rs`; `cval::` `E/auth/config_value.rs`; `oauth::` `E/auth/oauth/tests.rs`; `pkce::`, `cb::` (callback), `dev::` (device), `gh::` (github_copilot), `cdx-oauth::` (openai_codex) in `E/auth/oauth/` |
+| Auth | `radiuscat::` `E/auth/remote_catalog/radius/tests.rs`; `arefresh::` `E/auth/refresh_tests.rs`; `auth::` `E/auth/tests.rs`; `astore::` `E/auth/store.rs`; `aprov::` `E/auth/providers.rs`; `mjson::` `E/auth/models_json.rs`; `cval::` `E/auth/config_value.rs`; `oauth::` `E/auth/oauth/tests.rs`; `pkce::`, `cb::` (callback), `dev::` (device), `gh::` (github_copilot), `cdx-oauth::` (openai_codex) in `E/auth/oauth/` |
 | Tools | `trd::` read, `twr::` write, `ted::` edit, `tbs::` bash, `tout::` output, `trun::` run, `tsch::` schema (all `E/tools/tests/<name>.rs`; `golden-edit.json` and `golden-validate.json` are captured from the reference) |
 | Context | `drv::` `E/context/derive/tests.rs`; `prm::` `E/context/prompt/tests.rs`; `sys::` `E/context/system.rs`; `res::` `E/context/resources/tests.rs`; `cmp::` `E/context/compaction/tests.rs`; `fm::` `E/context/frontmatter.rs` |
 | Constrained tools | `constr::` `E/provider/api/constrained_tests.rs` (pinned helper fixtures, Responses grammar streams/replay, strict declarations) |
@@ -114,6 +118,13 @@ Test citations are `<prefix>::<function>`; a prefix names one file:
 Owner: **Opus** = main implementation; **Codex** = reserved final integration.
 
 ## Current status summary (2026-10-11)
+
+Radius private catalog discovery and persistence now work for default/custom gateways,
+including offline legacy migration, token rotation, local overrides, cancellation and restart.
+A local gateway test completes a native write-tool turn and resumes after restart; six
+executed reference sanitizer/converter cases agree. Required checks: **1518 passed, 0 failed,
+53 ignored**, clean Clippy/formatting. PRV-radius returns PA → NC; full lifecycle/live/installed
+qualification remains open. See [Radius evidence](pipkin-rust-engine-evidence/radius-catalog.md).
 
 Native root/child removal is implemented with durable intent/recovery and desktop catch-up.
 The prompt now identifies Pipkin and contains compiled product help. Eight executed prompt
@@ -227,10 +238,10 @@ of all 504 capabilities.
 
 | Disposition (target) | Rows |
 | --- | --- |
-| `NC` native implementation of the same contract | 412 |
+| `NC` native implementation of the same contract | 413 |
 | `NE` native equivalent | 37 |
 | `NP` not present in the baseline (evidence in row) | 37 |
-| `PA` pending audit | 1 |
+| `PA` pending audit | 0 |
 | `BL` blocked | 0 |
 | `LB` legacy bridge only | 1 |
 | `RC` reserved for Codex — not implemented or qualified | 0 |
@@ -261,7 +272,7 @@ the row evidence for history; no package execution is claimed.
 | 1 Generation (P01) | 20 | 16 | 1 | 3 | 0 | 0 | 0 | 0 | 0 | 17 | 0 | 0 | 0 | 3 |
 | 2 Tools (P02) | 23 | 18 | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 18 | 0 | 0 | 0 | 5 |
 | 3 Wire adapters (P03) | 34 | 27 | 3 | 4 | 0 | 0 | 0 | 0 | 0 | 30 | 0 | 0 | 0 | 4 |
-| 4 Provider ids (P03) | 43 | 40 | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 42 | 0 | 0 | 0 | 1 |
+| 4 Provider ids (P03) | 43 | 41 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 42 | 0 | 0 | 0 | 1 |
 | 5 Provider config (P03/P19) | 14 | 11 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 12 | 0 | 0 | 0 | 2 |
 | 6 Credentials / OAuth (P04) | 59 | 49 | 9 | 1 | 0 | 0 | 0 | 0 | 0 | 58 | 0 | 0 | 0 | 1 |
 | 7 Service API / transport | 48 | 39 | 0 | 5 | 0 | 0 | 0 | 0 | 4 | 40 | 0 | 0 | 0 | 8 |
@@ -276,7 +287,7 @@ the row evidence for history; no package execution is claimed.
 | 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 53 | 1 | 0 | 1 | 5 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
 | 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 6 | 0 | 0 | 6 |
-| **Total** | 504 | 412 | 37 | 37 | 1 | 0 | 1 | 0 | 16 | 438 | 7 | 0 | 6 | 53 |
+| **Total** | 504 | 413 | 37 | 37 | 0 | 0 | 1 | 0 | 16 | 438 | 7 | 0 | 6 | 53 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
 whenever rows change. Release gates: native beta needs every mandatory row implemented; native
@@ -439,7 +450,7 @@ row has a provider-specific reference capture except `openai-codex`.
 | PRV-qwen-token-plan | data/qwen-token-plan.json | openai-completions (20) · `QWEN_TOKEN_PLAN_API_KEY` | adapter tests for its API kind(s) (§3); mdl::the_catalog_loads_every_provider | Opus · same | import | as above | — | NC | measured (API-kind level): oaic:: goldens; oaic::qwen_together_groq_and_cerebras_defaults; catalog: mdl::the_catalog_loads_every_provider + mdl::embedded_files_match_the_pinned_manifest; no provider-specific golden; no differential; no live request |
 | PRV-qwen-token-plan-individual | data/qwen-token-plan-individual.json | openai-completions (9) · `QWEN_TOKEN_PLAN_API_KEY` | adapter tests for its API kind(s) (§3); mdl::the_catalog_loads_every_provider | Opus · same | import | as above | — | NC | measured (API-kind level): oaic:: goldens; oaic::qwen_together_groq_and_cerebras_defaults; catalog: mdl::the_catalog_loads_every_provider + mdl::embedded_files_match_the_pinned_manifest; no provider-specific golden; no differential; no live request |
 | PRV-qwen-token-plan-cn | data/qwen-token-plan-cn.json | openai-completions (20) · `QWEN_TOKEN_PLAN_CN_API_KEY` | adapter tests for its API kind(s) (§3); mdl::the_catalog_loads_every_provider | Opus · same | import | as above | — | NC | measured (API-kind level): oaic:: goldens; oaic::qwen_together_groq_and_cerebras_defaults; catalog: mdl::the_catalog_loads_every_provider + mdl::embedded_files_match_the_pinned_manifest; no provider-specific golden; no differential; no live request |
-| PRV-radius | ai/providers/radius-config.ts:4,87; data/radius.json | pi-messages (28 baseline) · `RADIUS_API_KEY`; OAuth (OA-RADIUS); dynamic catalog from `{gateway}/v1/config`; `PI_RADIUS_GATEWAY` | pim::; oauth::radius_*; auth::radius_gateway_catalogs_restore_from_the_stored_credential; mjson::radius_providers_from_models_json | Opus · same + E/auth | import | as above | — | PA | measured (part): pim::golden_exchange, oauth::radius_browser_login_against_the_configured_gateway, oauth::radius_device_login_for_a_models_json_gateway, auth::radius_gateway_catalogs_restore_from_the_stored_credential, mjson::radius_providers_from_models_json; catalog: mdl::the_catalog_loads_every_provider; no differential; no live request; confirmed gap: authenticated gateway /v1/config refresh and durable private catalog are absent; token rotation drops legacy gatewayConfig. Required follow-up, not waived (provider-refresh.md) |
+| PRV-radius | ai/providers/radius-config.ts:4,87; data/radius.json | pi-messages (28 baseline) · `RADIUS_API_KEY`; OAuth (OA-RADIUS); dynamic catalog from `{gateway}/v1/config`; `PI_RADIUS_GATEWAY` | radiuscat::; rts::radius_discovery_supports_a_real_tool_turn_and_cached_resume_without_catalog_network; pim::; oauth::radius_* | Opus · same + E/auth | import | as above | — | NC | measured: authenticated default/custom catalog discovery, independent durable cache, legacy migration/rotation, offline/restart, local overrides, cancellation/supersession and bounded failures. Actual native client turn discovers/selects the model, writes a file through the built-in tool and resumes after restart without catalog network. Six executed pinned-reference config-helper cases; complete lifecycle differential and live account qualification remain open. See radius-catalog.md |
 | PRV-together | data/together.json | openai-completions (17) · `TOGETHER_API_KEY` | adapter tests for its API kind(s) (§3); mdl::the_catalog_loads_every_provider | Opus · same | import | as above | — | NC | measured (API-kind level): oaic:: goldens; oaic::qwen_together_groq_and_cerebras_defaults; catalog: mdl::the_catalog_loads_every_provider + mdl::embedded_files_match_the_pinned_manifest; no provider-specific golden; no differential; no live request |
 | PRV-typesafe | data/typesafe.json; ca/extensions/codemode/execute.ts:656 | Classifier-only provider (1) · `TYPESAFE_API_KEY` | source reachability audit; catalog hash check | Codex · E/provider | catalog metadata retained | No shipped durable classifier caller; see ADP-CLASSIFIERS | classifier | NP (shipped durable path) | not started (NP): provider exists in shared AI library/classic codemode, not the shipped durable coding path; chat selection excludes classifier metadata |
 | PRV-vercel-ai-gateway | data/vercel-ai-gateway.json | anthropic-messages (253), typesafe (4) · `AI_GATEWAY_API_KEY`; `vercelGatewayRouting` | adapter tests for its API kind(s) (§3); mdl::the_catalog_loads_every_provider | Opus · same | import | as above | chat | NC | measured (API-kind level): anth:: goldens; catalog: mdl::the_catalog_loads_every_provider + mdl::embedded_files_match_the_pinned_manifest; no provider-specific golden; no differential; no live request |
@@ -541,7 +552,7 @@ is separate. See [reachability audit](pipkin-rust-engine-evidence/identity-auth-
 | OA-META-REFRESH | meta.ts | "Refresh" re-mints key every 24 h; 401/403 → re-login | oauth::meta_device_flow_mints_a_key_and_a_dead_session_fails | Opus · same | imported entry | Same | meta | NC | measured (part): oauth::meta_device_flow_mints_a_key_and_a_dead_session_fails (dead session → re-login); the 24 h re-mint schedule is not separately tested; no differential |
 | OA-RADIUS-BROWSER | ai/auth/oauth/radius.ts | Discovery `{gateway}/v1/oauth`, PKCE loopback `127.0.0.1:1456` | oauth::radius_browser_login_against_the_configured_gateway | Opus · E/auth/oauth | import | Same | radius | NE | measured: oauth::radius_browser_login_against_the_configured_gateway; native service offers this login; D-07 resolved with desktop allowlist unchanged; no differential |
 | OA-RADIUS-DEVICE | radius.ts | Device flow `{gateway}/v1/oauth/device` | oauth::radius_device_login_for_a_models_json_gateway | Opus · same | import | Same | radius | NE | measured: oauth::radius_device_login_for_a_models_json_gateway; no differential |
-| OA-RADIUS-REFRESH | radius.ts | Token refresh; `expires = now + expires_in − 60 s` | arefresh::radius_refresh_* | Opus · same | imported entry | Same | radius | NC | measured: default/custom gateway token rotation, expiry skew, scope, concurrent deduplication, restart and failure preservation; no fallback billing. Separate dynamic catalog gap remains in PRV-radius. See provider-refresh.md; no executed reference differential |
+| OA-RADIUS-REFRESH | radius.ts | Token refresh; `expires = now + expires_in − 60 s` | arefresh::radius_refresh_* | Opus · same | imported entry | Same | radius | NC | measured: default/custom gateway token rotation, expiry skew, scope, concurrent deduplication, restart and failure preservation; no fallback billing. Independent dynamic catalog now covered by PRV-radius; legacy metadata survives rotation before catalog migration. See provider-refresh.md; no executed reference differential |
 | OA-XAI | ai/auth/oauth/xai.ts | Device flow at auth.x.ai | oauth::xai_device_flow_and_cancellation | Opus · E/auth/oauth | import | Same | xai | NE | measured: oauth::xai_device_flow_and_cancellation; native service offers this login; D-07 resolved with desktop allowlist unchanged; no differential |
 | OA-XAI-REFRESH | xai.ts | Refresh keeps old refresh token if none returned | auth::expiring_tokens_refresh_once_and_persist_atomically (xai mock) | Opus · same | imported entry | Same | xai | NC | measured (part): auth::expiring_tokens_refresh_once_and_persist_atomically and auth::a_failed_refresh_never_falls_back_to_another_credential run against the xai refresh mock; the existing test asserts that the saved refresh token remains old-refresh when none is returned; no differential |
 | OA-EXT | ca/core/provider-composer.ts:40-50,353-372 | Legacy extension OAuth adapter | n/a | n/a | n/a | n/a | n/a | NP (A-ext §5.4: classic extensions not loaded) | not started (NP) |
