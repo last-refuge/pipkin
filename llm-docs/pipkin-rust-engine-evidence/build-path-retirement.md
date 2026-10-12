@@ -19,7 +19,7 @@ their native execution traps detect accidental Node/npm/Pi use.
 Current user instructions describe the native default, isolated profile locations, supported
 subscription sign-in and historical rollback. Experimental platform, signing, legal review and
 manual accessibility/display gates remain separately labelled. No release has been published.
-Final installed artifact and hosted verification remain the next step.
+The final artifact and hosted results are tracked in the [completion audit](final-cutover-audit.md).
 
 ## Clean installed candidate
 
@@ -37,6 +37,7 @@ is the recorded runtime-retirement artifact. No owner install or account was cha
 Exact checksums, schema/protocol, logs and upgrade/rollback report are retained in
 [`fixtures/native-default/2026-10-12-final`](../../fixtures/native-default/2026-10-12-final).
 Linux [38265023304](https://github.com/last-refuge/pipkin/actions/runs/38265023304) and macOS
-[38265027473](https://github.com/last-refuge/pipkin/actions/runs/38265027473) are still running
-on this exact source commit. Final capability accounting and their outcomes remain open;
-this records actual installed evidence without claiming complete release qualification.
+[38265027473](https://github.com/last-refuge/pipkin/actions/runs/38265027473) both passed
+on this exact source commit. The subsequent recovery fix, final artifacts and hosted outcomes
+are recorded in the [completion audit](final-cutover-audit.md); this earlier package is retained
+as the actual upgrade/rollback baseline.

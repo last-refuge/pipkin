@@ -5,20 +5,46 @@ records decisions, identities, status, commands, evidence, blockers and the next
 It does not qualify anything by itself: a gate closes only with the execution evidence the plan
 requires. Failed runs are recorded here, not replaced by later successes.
 
+## Conversion complete — 2026-10-12
+
+Pipkin defaults to its built-in Rust engine. Pi runtime/client, Node/npm payload and obsolete
+build/launch paths are removed. Migration readers, backups, historical rollback and frozen
+reference evidence remain. Pi extension compatibility is explicitly out of scope.
+
+- **Required capability accounting:** 451 NC/NE rows (441 measured, 10 observed), plus 37 NP
+  baseline exclusions and 16 OS owner exclusions. No PA/BL/LB/RC remains.
+- **Required checks:** 1,446 passed, zero failed, nine ignored benchmarks; clean Clippy/fmt,
+  both locally and in hosted Linux qualification.
+- **Final hosted results:** Linux **38267642502** on `0c3a303` and macOS **38266459911** on
+  `4b42079` both completed successfully. The only code difference is fixture-only Git setup;
+  production sources/dependencies/build paths are identical.
+- **Installed release candidate:** clean source, real coding/tools, migration/restart,
+  upgrade/rollback, schema refusal and complete archive restoration pass without Pi/Node.
+- **Remote backup:** completed implementation and test fixes are pushed on
+  `origin/codex/native-engine-qualification`; this closing record is part of the final push.
+
+[Completion audit](pipkin-rust-engine-evidence/final-cutover-audit.md) records requirement-by-
+requirement evidence and limitations; final identities/logs are in
+`fixtures/native-default/2026-10-12-recovery-final/`. No additional conversion implementation
+or qualification is pending. Main is unchanged; no public release/tag is published. Broader
+1.0 signing/legal/manual-platform work remains separately labelled. Historical entries below
+retain their original intermediate failures and open work; they do not supersede this result.
+
 **Historical handoff state (2026-10-11, `native-engine` at `4fc4060`):** the main implementation has landed
 on `native-engine` and every wave-2 worker branch is merged. The native engine is an opt-in
 candidate (`--engine native`); Pi remains the default and only shipped engine. **Nothing is
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — final macOS passed; Linux fixture race corrected
+## Prior follow-up — final macOS passed; Linux fixture race corrected
 
 Final macOS **38266459911** on `4b42079` passed all checks and native app/ZIP packaging.
 Linux **38266456562** failed before packaging because detached Git maintenance from a fixture
 commit removed a temporary lock during a no-mutation snapshot assertion. Fixture setup now
 disables automatic maintenance/GC; production collector behavior and the full assertion stay
 unchanged. Required local checks pass again: **1,446 passed, zero failed, nine ignored**,
-clean Clippy and formatting. Replacement Linux qualification remains pending. The clean
+clean Clippy and formatting. The correction is pushed as **`0c3a303`**; replacement Linux
+qualification **38267642502** remains pending. The clean
 installed `4b42079` package and successful macOS result cover the unchanged production code.
 See [hosted evidence](pipkin-rust-engine-evidence/hosted-qualification.md).
 

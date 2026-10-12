@@ -1,11 +1,13 @@
 # Native engine parity ledger
 
 The parity ledger required by `llm-docs/pipkin-rust-engine-plan.md` §1 step 5 and §2. Every
-row is one baseline capability that the native engine must preserve (or a recorded reason it is
-not part of the baseline). **Nothing in this ledger is "passed".** A row only passes at
-qualification, with a differential assertion against the frozen reference plus native evidence.
-Rows cite the native tests that exercise them and say whether any comparison with
-reference-derived output exists.
+row is one baseline capability that the native engine must preserve, or a recorded reason it
+is outside the required baseline. **All 451 required NC/NE capabilities are accounted for by
+native measured or observed evidence for the supported conversion scope.** The 37 NP and
+16 OS exclusions are not claimed as implemented features. Reference comparisons are finite;
+row-specific limits and broader release/manual-platform gates remain explicit. See the
+[completion audit](pipkin-rust-engine-evidence/final-cutover-audit.md) for candidate identities,
+executed checks and qualification status.
 
 - **Reference baseline:** upstream pin `d2a311097cbcf669e699479587332ae3988a49d0` staged by
   `scripts/build-engine.sh` at historical `76ca778` with `packaging/pi-onboarding.patch` + `packaging/pi-onboarding/*.ts`
@@ -15,16 +17,19 @@ reference-derived output exists.
   `b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05` (archive
   `2be5f68d90695e71372c01ccbd08d5728b93691e07c45918846997c8949bcabb`), plus the Pipkin desktop
   at app base `75f5c35`. Frozen reference fixtures: `fixtures/pi-sessions/` (8 scenarios, RE-02).
-- **Current follow-up:** native is now the application default and the Pi runtime adapter/client
-  are removed from source, Cargo workspace, dependencies and lockfile. Migration readers,
-  source backups and frozen evidence remain. Required Rust checks: **1,439 passed, zero failed,
-  9 ignored benchmarks**; obsolete Pi runtime/client tests were retired with their code.
-  Native package migration/coding/restart/restore and plain default diagnostics pass with
-  Node/Pi traps unused. Source setup/package/release and CI entry points now use Rust only;
-  focused setup/install/rollback/macOS package policy checks pass. Corrected hosted Linux
-  `38262069375` and macOS `38262827277` runs passed. Final candidate qualification remains open.
-  [Build-path evidence](pipkin-rust-engine-evidence/build-path-retirement.md).
-  [Runtime evidence](pipkin-rust-engine-evidence/runtime-retirement.md).
+- **Current qualification (2026-10-12):** native is the default; Pi runtime/client and
+  Node/npm build/runtime paths are retired. Migration readers, source backups, historical
+  rollback and frozen reference evidence remain. Required checks: **1,446 passed, zero failed,
+  nine ignored benchmarks**, clean Clippy/fmt. Clean installed coding/migration/restart,
+  upgrade/rollback/schema refusal/archive restoration pass with Node/Pi traps unused.
+  Final macOS `38266459911` on production revision `4b42079` passed. Corrected Linux
+  `38267642502` on fixture-only follow-up `0c3a303` completed successfully, including all
+  test/policy/package/installed and evidence-retention steps. **Conversion complete.**
+  No production code differs between these candidates. Current counts: **449 measured, 10 observed, zero failed/unverified,
+  45 excluded/not started**; required rows are **441 measured + 10 observed**.
+  [Completion audit](pipkin-rust-engine-evidence/final-cutover-audit.md).
+  All subsequent “Prior follow-up” entries are historical and retain their original failures
+  and then-open work; they do not supersede this current qualification.
 - **Prior follow-up:** sustained compaction on the `ca8c89b` runtime passes 720 turns,
   232 automatic compactions and all 720 retained replies/effects/tool outputs. Peak worker
   memory is 39,312 KiB; sized synthetic usage exercises thresholds with model requests bounded
@@ -486,7 +491,7 @@ excluded (OS), so those gaps no longer block cutover; general engine qualificati
 504 inventory rows: **451 required NC/NE capabilities**, 37 capabilities absent from the
 baseline (NP), and 16 explicit owner scope exclusions (OS). All required capabilities have
 measured or observed evidence; exclusions are not counted as implemented features. Final
-candidate acceptance still requires the hosted checks in the
+candidate execution evidence and retained limitations are recorded in the
 [completion audit](pipkin-rust-engine-evidence/final-cutover-audit.md).
 
 Evidence includes executed Pi/native generation, context, queue and model-scope comparisons,
@@ -509,7 +514,8 @@ qualification. Historical status summaries above describe their recorded interme
 Codex follow-up: `ADP-ANTHROPIC-OAUTH` and 13 `CLS-*` rows moved from `RC` to `NC`;
 13 subscription rows and the adapter have test evidence, including imported Pi fixture
 continuation and Stop/reopen with live Claude; private production history remains unverified. A subsequent native release smoke test passed browser sign-in and a
-real Claude Opus 5.5 coding turn; see subscription evidence. No row is fully qualified.
+real Claude Opus 5.5 coding turn; see subscription evidence. Current conversion qualification
+is recorded in the completion audit; private production history is not claimed as test evidence.
 
 Earlier disposition changes since `e7cfc42`: `SVC-UI-STATE`, `SVC-UI-RESPOND`, `SVC-UI-CANCEL`,
 `UIQ-SELECT`..`UIQ-MULTICLIENT` (9) and `E2E-33` moved from `BL` / `BL / LB` to `NC`: the

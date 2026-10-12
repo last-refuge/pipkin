@@ -96,3 +96,21 @@ commands. The collector and full repository snapshot assertion are unchanged; no
 code changes. Local required checks pass: **1,446/0/9 ignored**, clean Clippy/fmt.
 A new Linux run must pass before completion. The
 successful final macOS run and clean local recovery package retain the same production code.
+
+## Final conversion qualification
+
+Corrected Linux [38267642502](https://github.com/last-refuge/pipkin/actions/runs/38267642502)
+on **`0c3a3034d073aa3c5755a0c0c4761516eb21e440` passed every step**: 1,446 workspace tests,
+zero failures, nine ignored benchmarks; Clippy/formatting; policy fixtures; actual native
+package and installed migration/coding/restart/archive restoration/durable replay. Node/npm/
+npx/Pi traps were unused. The earlier failed run remains recorded above.
+
+Final macOS **38266459911** also completed successfully. The only code delta from its
+`4b42079` revision to `0c3a303` is the `cfg(test)` Git setup correction. Production sources,
+Cargo dependencies, build scripts and workflows are unchanged. Both binaries were built
+from clean checkouts, with their distinct target/source stamps preserved.
+
+Job metadata, package logs, build identities and checksums are committed in
+[`fixtures/native-default/2026-10-12-recovery-final`](../../fixtures/native-default/2026-10-12-recovery-final).
+This closes hosted conversion qualification. No interactive macOS, publisher signing,
+notarization or release publication is inferred from automated CI.

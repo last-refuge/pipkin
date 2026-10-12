@@ -26,10 +26,18 @@
   "clippy": "passed",
   "format": "passed",
   "noPiNodeInvocations": true,
-  "hostedLinuxRun": 38266456562,
+  "hostedLinuxRun": 38267642502,
   "hostedMacOSRun": 38266459911,
-  "hostedStatusAtRecording": "macos_passed_linux_fixture_race_failed",
+  "hostedStatusAtRecording": "completed_success",
   "dependencyAudit": "engine and core have no transitive GPUI/UI/app/pi-client dependency; workspace has no pi-client",
   "hostedMacOSResult": "passed",
-  "hostedLinuxResult": "failed: fixture commit detached Git maintenance removed maintenance.lock during snapshot; production code unchanged by correction"
+  "hostedLinuxResult": "passed: full workspace/Clippy/fmt/policy fixtures, native package and installed migration/coding/restart/restore; no Node/npm/Pi invocation",
+  "priorHostedLinuxFailureRun": 38266456562,
+  "fixtureCorrectionRevision": "0c3a3034d073aa3c5755a0c0c4761516eb21e440",
+  "hostedLinuxWorkspaceTests": {
+    "passed": 1446,
+    "failed": 0,
+    "ignored": 9
+  },
+  "hostedProductionSourceMatchesLocalAndMacOS": true
 }

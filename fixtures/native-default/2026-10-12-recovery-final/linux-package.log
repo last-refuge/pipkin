@@ -1,0 +1,15 @@
+verified 48 reqwest files, pinned archive identity and explicit patch
+verified 47 regress files, pinned archive identity and explicit patch
+   Compiling reqwest v0.12.28 (/home/runner/work/pipkin/pipkin/vendor/reqwest-0.12.28)
+   Compiling pipkin-engine-protocol v0.0.1 (/home/runner/work/pipkin/pipkin/crates/pipkin-engine-protocol)
+   Compiling regress v0.12.0 (/home/runner/work/pipkin/pipkin/vendor/regress-0.12.0)
+   Compiling pipkin-core v0.0.1 (/home/runner/work/pipkin/pipkin/crates/pipkin-core)
+   Compiling pipkin-app v0.0.1 (/home/runner/work/pipkin/pipkin/crates/pipkin-app)
+   Compiling pipkin-ui v0.0.1 (/home/runner/work/pipkin/pipkin/crates/pipkin-ui)
+   Compiling pipkin-engine v0.0.1 (/home/runner/work/pipkin/pipkin/crates/pipkin-engine)
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 26s
+build info: 0.0.1 (0c3a3034d073aa3c5755a0c0c4761516eb21e440, dirty: false), native engine 0.0.1 protocol 12 schema 10
+license inventory: {'rust': 613, 'npm': 0}; review required: 32
+runtime inventory: 1 native artifacts, 0 foreign-format/architecture review flags
+built /home/runner/work/pipkin/pipkin/dist/native/pipkin-native-0.0.1-x86_64.tar.zst
+installed tree: 364082140 bytes; archive: 76786077 bytes

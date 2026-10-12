@@ -9,7 +9,7 @@ platforms and general 1.0 manual acceptance are separate from retiring the Pi de
 
 | Required outcome | Authoritative evidence | Current conclusion |
 | --- | --- | --- |
-| Preserve required behavior; account for every ledger capability | `pipkin-rust-engine-parity.md`: 504 rows; 412 NC + 39 NE, 37 baseline exclusions, 16 explicit owner scope exclusions. Current test citations checked against Rust sources; historical Pi tests labelled as such. | All 451 required NC/NE rows have native measured or observed evidence. Final qualification stamp waits for the updated candidate below. Finite tests are not a proof of every provider/environment combination. |
+| Preserve required behavior; account for every ledger capability | `pipkin-rust-engine-parity.md`: 504 rows; 412 NC + 39 NE, 37 baseline exclusions, 16 explicit owner scope exclusions. Current test citations checked against Rust sources; historical Pi tests labelled as such. | All 451 required NC/NE rows have native measured or observed evidence. Accepted for the supported conversion scope, with final candidate evidence below. Finite tests are not a proof of every provider/environment combination. |
 | Providers, Claude subscription and account/billing identity | `claude-subscription.md`, provider fixtures, federation/ADC/AWS/proxy/catalog evidence, real worker secret-redaction capture; live browser/copy-code login, reuse, forced refresh, coding, Stop and reopen previously recorded | Required paths implemented; no silent API-key fallback. Concurrent remove/login now exercises a real held credential commit and exact Busy behavior. Unused optional provider logins retain their stated mock-only limits. |
 | History/context, tools, configuration, usage and subagents | Executed generation/context/queue/model-scope/tool corpora, import fixtures, subagent accounting and recovery tests, compaction/resource evidence; current ledger citations | Required implementation retained. Added direct settings propagation/restart, compaction disabled/enabled and exact child-failure assertions close stale integration gaps. Source-derived assertions remain labelled; no claim of exhaustive live provider qualification. |
 | Durable admission, unknown outcomes, Stop and failures | Durable-delivery, crash-points, fault tests, native end-to-end workflows | Lost actual Stop frame is checked/retried without resending its prompt; failed desktop journal admits nothing and retains the draft until explicit successful resubmission. Existing crash/unsafe-tool recovery evidence retained. |
@@ -19,10 +19,10 @@ platforms and general 1.0 manual acceptance are separate from retiring the Pi de
 | No Pi/Node build or installed dependency | Rust-only setup/package/Arch/release/macOS scripts; CI traps; runtime/license inventory and installed package verifier | Obsolete launch/build/download scripts removed. Reference captures/patches/model snapshot/notices remain provenance only. Explicit rollback may reactivate a retained historical installation; current builds never provision it. |
 | Performance and integration advantages | `paired-performance.md`, `server-allocator.md`, `sustained-compaction.md`, package comparisons | Defined paired gates pass; measured readiness/RSS/package gains, actual 1,500-turn desktop memory budget and 720-turn/232-compaction workload pass. No additional soak required. Warm-cache/Linux boundaries and unmeasured display latency remain explicit. |
 | Supported installed desktop and live coding | `packaged-desktop.md`, `native-walkthrough.md`, Claude lifecycle evidence | Actual Arch/Omarchy Wayland coding/Changes/Stop/crash recovery/Quit and live Claude requests observed. Experimental Xwayland keyboard failure remains outside supported Wayland conversion acceptance. |
-| Identified package, migration/resume, upgrade/rollback, backups and diagnostics | Clean `cc8931c` archive and `fixtures/native-default/2026-10-12-final` | All installed workflow checks pass, dirty=false identity recorded. Because the subsequent offline fix changes production code, rebuild and recheck its final binary before completion. |
+| Identified package, migration/resume, upgrade/rollback, backups and diagnostics | Clean `4b42079` archive and `fixtures/native-default/2026-10-12-recovery-final` | Final installed workflow checks pass, dirty=false identity recorded, including actual upgrade/rollback against clean `cc8931c` and complete archive restoration. |
 | Required source checks | Full workspace after offline fix and seven targeted regressions: **1,446 passed, zero failed, nine ignored benchmarks**; clean all-target Clippy and formatting | Passed locally. Ignored benchmarks are not counted as fresh passes; their separately executed evidence is retained. |
-| Hosted qualification | Earlier corrected Linux `38262069375` and macOS `38262827277` passed. Native-default build-path runs `38265023304`/`38265027473` are in flight. | Inspect terminal outcomes and qualify the final recovery-fix candidate; do not infer success from workflow presence or restart live jobs. |
-| Remote backup | Existing `origin/codex/native-engine-qualification` branch; push every completed batch | Runtime and build-path changes backed up. Push this tested recovery fix immediately. Main/release tags unchanged. |
+| Hosted qualification | Native-default build-path runs `38265023304`/`38265027473` passed. Final macOS `38266459911` passed on `4b42079`; Linux `38266456562` exposed a fixture Git maintenance race. | Fixture-only correction `0c3a303` passes all local checks; corrected Linux run `38267642502` completed successfully, with all test/policy/package/installed and evidence-retention steps passed. Production code is unchanged from final macOS/local package evidence. |
+| Remote backup | Existing `origin/codex/native-engine-qualification` branch; push every completed batch | Runtime, build-path and recovery changes plus the tested fixture correction are pushed through `0c3a303`. Main/release tags unchanged. |
 
 ## Retained limitations
 
@@ -37,9 +37,15 @@ platforms and general 1.0 manual acceptance are separate from retiring the Pi de
   documented native improvements remain visible; no missing required implementation is
   excused by calling it an improvement.
 
-Completion remains unproven until the final binary and hosted checks above pass and their
-identities/outcomes are recorded. The production code delta after `cc8931c` is the offline
-read-only attachment fix plus native-engine display text; no new engine/schema changes.
+## Completion decision — 2026-10-12
+
+The native-default conversion is complete for the owner-approved supported scope. Every
+required outcome above has concrete evidence; no required implementation or conversion
+qualification remains open. Native is the default and current source/build/runtime paths no
+longer depend on Pi or Node. The retained limitations are broader release/platform work,
+not claimed passes. Final candidate identities/outcomes are retained below. The production
+code delta after `cc8931c` is the offline read-only attachment fix plus native-engine display
+text; no new engine/schema changes.
 
 ## Updated clean local candidate
 
@@ -51,6 +57,14 @@ and continued coding all pass. Node/npm/Pi traps remain unused. Exact identities
 Resolved Cargo metadata confirms no transitive GPUI/UI/app/Pi-client dependency in the engine
 or core and no Pi-client package anywhere in the resolved workspace.
 
-The `cc8931c` macOS native app/ZIP run passed. The updated candidate's hosted runs
-`38266456562` (Linux) and `38266459911` (macOS) remain queued/running at this recording.
-These are the remaining candidate checks; do not rebuild unchanged code while they run.
+Final macOS run `38266459911` on `4b42079` passed, including native tests and actual
+app/ZIP/signature/diagnostic verification. Its identity and job steps are retained alongside
+the local package evidence. Linux `38266456562` failed on fixture setup's detached Git
+maintenance removing a lock during the no-mutation assertion. `0c3a303` disables fixture
+automatic maintenance/GC without changing production code or weakening the assertion;
+all 1,446 workspace tests, Clippy and formatting pass again. Corrected Linux `38267642502`
+completed successfully with every step passed: full workspace/policy/package/installed checks
+and cache/evidence retention. Linux confirms 1,446 passed, zero failed and nine ignored. Its
+clean native archive SHA-256 is `522b05c893794775b178a7a781f15c51aa398e17f7a2596b441b35412b4f0b57`;
+Full binary and build identities are retained in `linux-build-info.json`. These results
+qualify the unchanged production code; subsequent documentation commits do not change it.

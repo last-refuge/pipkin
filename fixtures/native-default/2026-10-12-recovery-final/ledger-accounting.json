@@ -1,0 +1,24 @@
+{
+  "inventoryRows": 504,
+  "requiredRows": 451,
+  "dispositions": {
+    "NC": 412,
+    "NE": 39,
+    "NP": 37,
+    "OS": 16
+  },
+  "evidence": {
+    "measured": 449,
+    "not started": 45,
+    "observed": 10
+  },
+  "requiredEvidence": {
+    "measured": 441,
+    "observed": 10
+  },
+  "scope": "Evidence accounting only; execution scope and limitations remain in the ledger and final-cutover-audit.md",
+  "productionRevision": "4b42079e88474450f47409f11cae1ea227270fa3",
+  "fixtureCorrectionRevision": "0c3a3034d073aa3c5755a0c0c4761516eb21e440",
+  "productionSourceUnchangedAfterRecoveryCandidate": true,
+  "onlyCodeDifference": "workspace.rs cfg(test) fixture Git options: maintenance.auto=false and gc.auto=0"
+}

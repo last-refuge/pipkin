@@ -1,0 +1,38 @@
+{
+  "formatVersion": 1,
+  "kind": "native-engine-candidate",
+  "app": {
+    "version": "0.0.1",
+    "revision": "0c3a3034d073aa3c5755a0c0c4761516eb21e440",
+    "dirty": "false",
+    "binarySha256": "8368bdf279160ae657b78bd57f70e79e97df841181030d7bff6b73839f3abd0a"
+  },
+  "compatibility": {
+    "engine": "native",
+    "engineSelector": "--engine native",
+    "engineProtocol": 12,
+    "engineSchema": 10,
+    "desktopSchema": 8,
+    "nodeMinimum": null
+  },
+  "engine": {
+    "kind": "native",
+    "builtIntoBinary": true,
+    "version": "0.0.1",
+    "sourceRevision": "0c3a3034d073aa3c5755a0c0c4761516eb21e440",
+    "bundledNode": false,
+    "piEngine": false
+  },
+  "inputs": {
+    "cargoLockSha256": "43038f83ce7d571733b7db9baf4980089f6a3f4cf8e8ace6a5aec58fcf823d3f",
+    "rustToolchainSha256": "2ad6f15416572b4836585087f1d4abc53b8fa2dbd616f8dacfaa587ed6714228",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "python": "Python 3.12.3",
+    "node": null,
+    "npm": null,
+    "platform": "linux",
+    "architecture": "x86_64",
+    "customRustFlags": false
+  }
+}
