@@ -775,6 +775,7 @@ mod tests {
         assert!(definite_refusal(ErrorCode::Busy));
         assert!(!definite_refusal(ErrorCode::Internal));
         assert!(!definite_refusal(ErrorCode::ShuttingDown));
+        assert!(!definite_refusal(ErrorCode::Cancelled));
     }
 
     fn msg(id: u64, message: Message) -> Entry {

@@ -181,6 +181,17 @@ impl Client {
                 lock(&self.shared.pending).remove(&id);
                 // The reply may have raced the timeout; prefer it.
                 rx.try_recv().unwrap_or_else(|_| {
+                    // Best effort, without another blocking wait. Cancellation only stops
+                    // the RPC: an admitted prompt remains durable and must be looked up.
+                    let cancel_id = self.next_id.fetch_add(1, Ordering::SeqCst);
+                    let call = Call::CancelRequest { request: id };
+                    if let Some(sender) = lock(&self.sender).as_mut() {
+                        let _ = sender.send(ClientFrame {
+                            id: cancel_id,
+                            lane: call.lane(),
+                            call,
+                        });
+                    }
                     Err(CallError::Lost("the engine did not answer in time".into()))
                 })
             }
@@ -407,6 +418,9 @@ mod tests {
         let result = client.call(Call::ListSessions, Duration::from_millis(30));
         assert!(matches!(result, Err(CallError::Lost(_))));
         let frame = from_client.recv().unwrap();
+        let cancellation = from_client.recv().unwrap();
+        assert_eq!(cancellation.call, Call::CancelRequest { request: frame.id });
+        assert_eq!(cancellation.lane, pipkin_engine_protocol::Lane::Control);
         to_client
             .send(ServerFrame::Reply {
                 id: frame.id,

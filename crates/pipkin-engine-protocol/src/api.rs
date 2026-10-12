@@ -76,6 +76,8 @@ pub enum ErrorCode {
     Storage,
     /// The engine is shutting down.
     ShuttingDown,
+    /// The caller cancelled this request; committed work is not rolled back.
+    Cancelled,
     Internal,
 }
 
@@ -116,6 +118,11 @@ impl std::fmt::Debug for Secret {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "call", rename_all = "camelCase")]
 pub enum Call {
+    /// Cancel a queued/in-flight RPC on this connection, not an admitted coding run.
+    /// A cancellation reply does not establish whether a mutation already committed.
+    CancelRequest {
+        request: u64,
+    },
     Hello {
         protocol: u32,
         client: String,
@@ -315,7 +322,7 @@ impl Call {
     /// Calls that must not wait behind normal traffic.
     pub fn lane(&self) -> Lane {
         match self {
-            Call::Stop { .. } | Call::Shutdown => Lane::Control,
+            Call::Stop { .. } | Call::Shutdown | Call::CancelRequest { .. } => Lane::Control,
             _ => Lane::Normal,
         }
     }

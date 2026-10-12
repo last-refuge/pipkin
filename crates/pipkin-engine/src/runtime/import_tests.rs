@@ -746,3 +746,48 @@ fn plugin_profile_directory_is_explicit_or_comes_from_the_engine_environment() {
     assert!(server_dir(&Env::isolated(Default::default()), None).is_err());
     assert!(server_dir(&env, Some("relative".into())).is_err());
 }
+
+#[test]
+fn cancelled_imports_finish_cleanup_and_the_connection_remains_usable() {
+    use crate::runtime::cancel_tests::{replies, send, until};
+    let fx = Fixture::new();
+    let e = fx.start(&Scripted::echo("unused"));
+    // Block import work on its real serialization mutex, after it has left async dispatch.
+    let guard = super::IMPORTS.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = e.handle.connect("cancel-imports");
+    for id in 1..=17 {
+        send(
+            &conn,
+            id,
+            Call::ImportDiscover {
+                agent_dir: Some(fx.dir.path().join("absent-agent").display().to_string()),
+                server_dir: Some(fx.dir.path().join("absent-server").display().to_string()),
+            },
+        );
+    }
+    until(|| conn.tx.capacity() == 63);
+    for id in 1..=17 {
+        send(&conn, 100 + id, Call::CancelRequest { request: id });
+        let mut saw_ack = false;
+        while !saw_ack {
+            for (reply_id, result) in replies(&conn, 1) {
+                if reply_id == 100 + id {
+                    assert_eq!(result, Ok(Reply::Ok));
+                    saw_ack = true;
+                } else {
+                    assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
+                }
+            }
+        }
+    }
+    // Releasing the real import mutex permits cleanup and later normal calls.
+    drop(guard);
+    send(&conn, 200, Call::ListSessions);
+    loop {
+        let got = replies(&conn, 1);
+        if let Some(result) = got.get(&200) {
+            assert!(matches!(result, Ok(Reply::Sessions { .. })));
+            break;
+        }
+    }
+}

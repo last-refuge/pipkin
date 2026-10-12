@@ -18,7 +18,7 @@ pub use content::*;
 pub use view::*;
 
 /// Wire protocol version. Bump on any incompatible change to [`api`], [`content`] or [`view`].
-// Version 8 adds durable prompt waits and their settled result.
-pub const PROTOCOL_VERSION: u32 = 8;
+// Version 9 adds connection-scoped request cancellation.
+pub const PROTOCOL_VERSION: u32 = 9;
 
 pub mod delivery;

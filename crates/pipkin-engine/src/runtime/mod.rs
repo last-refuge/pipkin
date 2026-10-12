@@ -307,6 +307,8 @@ impl EngineHandle {
         let shared = self.shared.clone();
         let lifetime = tokio_util::sync::CancellationToken::new();
         let sender_lifetime = Arc::new(crate::host::ClientLifetime(lifetime.clone()));
+        let requests = Arc::new(crate::host::requests::Requests::default());
+        let pending_requests = requests.clone();
         if let Some(rt) = self
             .runtime
             .lock()
@@ -341,6 +343,8 @@ impl EngineHandle {
                         }, if !in_rx.is_closed() || !in_rx.is_empty() => match v { Some(v) => v, None => continue },
                         else => break,
                     };
+                    let request = pending_requests.guard(frame.id);
+                    let pending = pending_requests.clone();
                     let shared = shared.clone();
                     let out = out_tx.clone();
                     let lifetime = lifetime.clone();
@@ -356,22 +360,44 @@ impl EngineHandle {
                         let _permit = if _wait_permit.is_some() { drop(permit); None } else { Some(permit) };
                         let signing_in = matches!(&frame.call,
                             Call::AuthStart { .. } | Call::AuthReuse { .. } | Call::AuthAnswer { .. });
+                        // Only drop futures whose suspension points are cancellation-safe.
+                        // Blocking imports/refreshes must finish while retaining this slot;
+                        // otherwise repeated cancellations could spawn unbounded detached work.
+                        let interruptible = matches!(&frame.call,
+                            Call::Prompt { .. } | Call::Enqueue { .. } | Call::CancelQueued { .. }
+                            | Call::Stop { .. } | Call::WaitForPrompt { .. });
                         let result = tokio::select! {
                             biased;
+                            _ = request.cancel.cancelled(), if interruptible => {
+                                Err(ProtoError::new(ErrorCode::Cancelled, "the request was cancelled; committed work is unchanged"))
+                            }
                             _ = lifetime.cancelled(), if signing_in || waiting => {
                                 shared.auth.client_gone(client);
                                 Err(ProtoError::new(ErrorCode::ShuttingDown, "the client disconnected"))
                             }
                             result = async {
+                                if request.cancel.is_cancelled() {
+                                    return Err(ProtoError::new(ErrorCode::Cancelled, "the request was cancelled"));
+                                }
                                 if wait_full {
                                     return Err(ProtoError::new(ErrorCode::Busy, "Too many prompt waits on this connection"));
                                 }
                                 if !owns_engine && matches!(frame.call, Call::Shutdown) {
                                     return Err(ProtoError::new(ErrorCode::Invalid, "Only the server owner can shut down an external engine"));
                                 }
-                                dispatch(&shared, client, frame.call).await
+                                if let Call::CancelRequest { request } = frame.call {
+                                    pending.cancel(request);
+                                    return Ok(Reply::Ok);
+                                }
+                                let result = dispatch_with_cancel(&shared, client, frame.call, &request.cancel).await;
+                                if request.cancel.is_cancelled() {
+                                    Err(ProtoError::new(ErrorCode::Cancelled, "the request was cancelled; committed work is unchanged"))
+                                } else {
+                                    result
+                                }
                             } => result,
                         };
+                        drop(request);
                         out.reply(ServerFrame::Reply { id: frame.id, result }).await;
                     });
                 }
@@ -392,6 +418,7 @@ impl EngineHandle {
             rx: out_rx,
             client,
             lifetime: sender_lifetime,
+            requests,
         }
     }
 
@@ -473,7 +500,26 @@ fn not_found(what: &str) -> ProtoError {
 }
 
 async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply, ProtoError> {
+    dispatch_with_cancel(
+        shared,
+        client,
+        call,
+        &tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+}
+
+async fn dispatch_with_cancel(
+    shared: &Arc<Shared>,
+    client: u64,
+    call: Call,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Result<Reply, ProtoError> {
     match call {
+        Call::CancelRequest { .. } => Err(ProtoError::new(
+            ErrorCode::Invalid,
+            "Request cancellation requires a client connection",
+        )),
         Call::Hello { protocol, .. } => {
             if protocol != PROTOCOL_VERSION {
                 return Err(ProtoError::new(
@@ -492,6 +538,7 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
                     "sessionAttachments".into(),
                     "extensionProfiles".into(),
                     "waitForPrompt".into(),
+                    "cancelRequest".into(),
                     "subagents".into(),
                     "questions".into(),
                     "compaction".into(),
@@ -633,9 +680,8 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
             instructions,
         } => {
             let sess = shared.session(&session)?;
-            let cancel = tokio_util::sync::CancellationToken::new();
             match shared
-                .compact(&sess, None, instructions.as_deref(), &cancel)
+                .compact(&sess, None, instructions.as_deref(), cancel)
                 .await
             {
                 Ok(compaction::Compacted::Done(_)) => Ok(Reply::Ok),
@@ -960,3 +1006,6 @@ mod fault_tests;
 mod settings_tests;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod cancel_tests;

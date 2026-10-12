@@ -13,6 +13,9 @@ use pipkin_engine_protocol::{ClientFrame, ServerFrame};
 
 use crate::config::EngineConfig;
 
+#[path = "host_requests.rs"]
+pub(crate) mod requests;
+
 /// Dropping the last input handle wakes the engine even when reply backpressure is full.
 pub(crate) struct ClientLifetime(pub tokio_util::sync::CancellationToken);
 impl Drop for ClientLifetime {
@@ -28,18 +31,13 @@ pub struct Connection {
     pub(crate) rx: crate::delivery::Receiver,
     pub(crate) client: u64,
     pub(crate) lifetime: std::sync::Arc<ClientLifetime>,
+    pub(crate) requests: std::sync::Arc<requests::Requests>,
 }
 
 impl Connection {
     /// Queue a frame without blocking. Refuses when its lane is full or the engine is gone.
     pub fn send(&self, frame: ClientFrame) -> Result<(), String> {
-        if frame.call.lane() == pipkin_engine_protocol::Lane::Control {
-            &self.control
-        } else {
-            &self.tx
-        }
-        .try_send(frame)
-        .map_err(|_| "the engine is stopped or its input queue is full".to_owned())
+        self.requests.send(&self.tx, &self.control, frame)
     }
 
     pub fn recv_timeout(&self, timeout: Duration) -> Result<ServerFrame, mpsc::RecvTimeoutError> {
@@ -61,6 +59,7 @@ impl Connection {
                 tx: self.tx,
                 control: self.control,
                 _lifetime: self.lifetime,
+                requests: self.requests,
             },
             self.rx,
         )
@@ -70,6 +69,7 @@ impl Connection {
 /// The sending half of a [`Connection`].
 #[derive(Clone)]
 pub struct Sender {
+    requests: std::sync::Arc<requests::Requests>,
     _lifetime: std::sync::Arc<ClientLifetime>,
     tx: tokio::sync::mpsc::Sender<ClientFrame>,
     control: tokio::sync::mpsc::Sender<ClientFrame>,
@@ -77,13 +77,7 @@ pub struct Sender {
 
 impl Sender {
     pub fn send(&self, frame: ClientFrame) -> Result<(), String> {
-        if frame.call.lane() == pipkin_engine_protocol::Lane::Control {
-            &self.control
-        } else {
-            &self.tx
-        }
-        .try_send(frame)
-        .map_err(|_| "the engine is stopped or its input queue is full".to_owned())
+        self.requests.send(&self.tx, &self.control, frame)
     }
 }
 

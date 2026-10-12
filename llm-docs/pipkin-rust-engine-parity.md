@@ -106,7 +106,7 @@ Test citations are `<prefix>::<function>`; a prefix names one file:
 
 Owner: **Opus** = main implementation; **Codex** = reserved final integration.
 
-## Status summary (2026-10-11, durable input waits follow-up)
+## Status summary (2026-10-11, inactive-profile migration and request cancellation)
 
 The import-protection/durable-retry batch is committed as `63bd9ae`. This follow-up adds
 protocol **4**, schema **3**, atomic durable invalidations, acknowledged paged catch-up,
@@ -178,10 +178,10 @@ of all 503 capabilities.
 
 | Disposition (target) | Rows |
 | --- | --- |
-| `NC` native implementation of the same contract | 403 |
+| `NC` native implementation of the same contract | 404 |
 | `NE` native equivalent | 25 |
 | `NP` not present in the baseline (evidence in row) | 30 |
-| `PA` pending audit | 29 |
+| `PA` pending audit | 28 |
 | `BL` blocked | 0 |
 | `LB` legacy bridge only | 1 |
 | `RC` reserved for Codex — not implemented or qualified | 0 |
@@ -201,11 +201,11 @@ the row evidence for history; no package execution is claimed.
 
 | Evidence | Rows |
 | --- | --- |
-| measured | 427 |
+| measured | 428 |
 | observed | 7 |
 | failed | 0 |
 | unverified (code exists, no test) | 10 |
-| not started (implementation absent or excluded; see row evidence) | 59 |
+| not started (implementation absent or excluded; see row evidence) | 58 |
 
 | Section | Rows | NC | NE | NP | PA | BL | LB | RC | OS | measured | observed | failed | unverified | not started |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -215,7 +215,7 @@ the row evidence for history; no package execution is claimed.
 | 4 Provider ids (P03) | 43 | 41 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 42 | 0 | 0 | 0 | 1 |
 | 5 Provider config (P03/P19) | 14 | 10 | 1 | 2 | 1 | 0 | 0 | 0 | 0 | 11 | 0 | 0 | 0 | 3 |
 | 6 Credentials / OAuth (P04) | 59 | 48 | 1 | 1 | 9 | 0 | 0 | 0 | 0 | 56 | 0 | 0 | 2 | 1 |
-| 7 Service API / transport | 48 | 36 | 0 | 5 | 3 | 0 | 0 | 0 | 4 | 37 | 0 | 0 | 0 | 11 |
+| 7 Service API / transport | 48 | 37 | 0 | 5 | 2 | 0 | 0 | 0 | 4 | 38 | 0 | 0 | 0 | 10 |
 | 8 Durable / queue / Stop (P05–P08) | 43 | 39 | 0 | 2 | 2 | 0 | 0 | 0 | 0 | 39 | 0 | 0 | 2 | 2 |
 | 9 Subagents (P09/P10) | 17 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16 | 0 | 0 | 1 | 0 |
 | 10 Attachments / models / usage (P11) | 9 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 8 | 0 | 0 | 1 | 0 |
@@ -227,7 +227,7 @@ the row evidence for history; no package execution is claimed.
 | 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 53 | 1 | 0 | 1 | 5 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
 | 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 6 | 0 | 0 | 6 |
-| **Total** | 503 | 403 | 25 | 30 | 29 | 0 | 1 | 0 | 15 | 427 | 7 | 0 | 10 | 59 |
+| **Total** | 503 | 404 | 25 | 30 | 28 | 0 | 1 | 0 | 15 | 428 | 7 | 0 | 10 | 58 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
 whenever rows change. Release gates: native beta needs every mandatory row implemented; native
@@ -573,7 +573,7 @@ is the differential target; Chord replicated-state op streams are not reproduced
 | SVC-CLIENT-ONESHOT | ce/client.ts:21-86 | `pi client` one-shot prompt | n/a | n/a | n/a | n/a | n/a | NP (CLI, not used by Pipkin) | not started (NP) |
 | XPORT-HELLO | protocol/src/protocol.ts:5,29-73 | Handshake with version 8; mismatch → `hello_error{version}` | nt::an_incompatible_engine_is_said_plainly; nsup::the_in_process_engine_answers_hello; ndiag::diagnose_probe_with_the_native_engine_passes_with_a_bare_environment | Opus · `Call::Hello`, `PROTOCOL_VERSION`=6 | n/a | Mismatch refused, never guessed | — | NC | measured (part): nt::an_incompatible_engine_is_said_plainly (desktop reports `Incompatible`, fake engine), nsup::the_in_process_engine_answers_hello, ndiag::diagnose_probe_with_the_native_engine_passes_with_a_bare_environment; life::attachments_are_client_owned_and_retirement_closes_the_provider_affinity_id now directly checks the engine mismatch refusal; no differential |
 | XPORT-FRAME | protocol/src/framing.ts:6,28 | 4-byte length frames, 16 MiB max | frm::frames_round_trip_and_end_cleanly; frm::oversized_and_truncated_frames_are_refused; frm::garbage_is_a_decode_error_not_a_panic | Opus · P/frame.rs | n/a | Bounded frames refused, not truncated | — | NC | measured: frm::frames_round_trip_and_end_cleanly, frm::oversized_and_truncated_frames_are_refused, frm::garbage_is_a_decode_error_not_a_panic |
-| XPORT-CANCEL | protocol.ts:49-62 | `cancel{id}` cancels an in-flight request | n/a | Opus | n/a | Native has no generic request cancel; Stop/Auth cancel cover used cases — confirm desktop use | — | PA | not started (PA): no generic request cancel; Stop/AuthCancel/CancelQuestion cover the used cases |
+| XPORT-CANCEL | protocol.ts:49-62; server/src/server.ts:298-305; Pi adapter timeout paths | Cancel a queued/in-flight request on the same connection; committed work remains durable | cancel_tests::{cancellation_reaches_a_queued_prompt_even_with_every_normal_slot_occupied,request_cancellation_is_connection_scoped_and_never_aborts_an_admitted_run,cancelling_manual_compaction_stops_the_summary_and_preserves_context}; native client timeout test | Native protocol 9 CancelRequest, bounded per-connection registration, independent control lane; desktop timeouts send best-effort cancellation | No rollback; lost admission reconciles by request key | Same cancellation scope and durable-work boundary | — | NC | measured: queued/in-flight cancellation under normal-lane saturation, connection isolation, wait permit cleanup, compaction cancellation, import cleanup, unknown/completed ids, duplicate/full-queue refusal and late desktop replies. Started blocking jobs retain admission slots until completion. See request-cancellation.md; pinned source audit, no executed transport differential |
 | XPORT-ERRORS | chord/services/errors.ts; server/src/errors.ts | Error code taxonomy incl. `session_not_attached`, `service_stale_instance` | nt::refusals_are_definite_and_other_failures_are_unknown_outcomes; ncl::a_closed_link_fails_waiting_calls_as_lost_and_new_calls_as_not_sent | Opus · P/api.rs `ErrorCode` | n/a | Desktop error handling equivalent | — | NC | measured: nt::refusals_are_definite_and_other_failures_are_unknown_outcomes, ncl::a_closed_link_fails_waiting_calls_as_lost_and_new_calls_as_not_sent, ncl::a_timeout_is_lost_and_a_late_reply_is_dropped, ncl::a_send_failure_is_not_sent; no differential |
 | XPORT-STALE | A-svc §4.3 | Stale guards: serverConnectionId, attachmentId, worker token, instance generation, state sequence, auth attempt, requestId | ncl::sequencer_detects_gaps_and_new_epochs; nt::an_event_gap_rereads_the_catalog_the_open_session_and_runs_in_doubt; nmir::changes_already_in_the_snapshot_are_skipped_but_volatile_progress_applies | Opus · epoch/seq/revision (ADR 0002) | n/a | Desktop drops stale events | — | NC | measured: ncl::sequencer_detects_gaps_and_new_epochs, nt::an_event_gap_rereads_the_catalog_the_open_session_and_runs_in_doubt, nmir::changes_already_in_the_snapshot_are_skipped_but_volatile_progress_applies, core-sub::child_identity_generation_and_parent_are_guarded_and_draft_is_unchanged; no differential  rt::concurrent_and_private_publications_have_contiguous_per_client_sequences additionally tests concurrent publication and client-private events; commit/publication serialization and revision-checked snapshots address ordering hazards. |
 | XPORT-OUTBOX | plan §3 | Durable ordered outbox with acknowledged cursors, paged catch-up, bounded progress | st::outbox_invalidation_is_atomic_with_state_and_rolls_back_on_failure; st::outbox_is_bounded_paged_and_survives_reopen_with_explicit_reset; rt::catch_up_acknowledgments_are_monotone_and_connection_scoped; rt::slow_client_coalesces_without_blocking_stop_or_another_client; cp::sigkill_between_state_commit_and_publication_is_recovered_from_the_outbox; ne2e::durable_catch_up_recovers_a_missing_terminal_event_without_later_live_traffic | Codex · E/store/outbox.rs, E/delivery.rs, P/delivery.rs, App/adapters/native | n/a | Atomic invalidation replay + snapshots/Lookup preserve saved outcomes; expired cursors explicitly reset | Linux headless | NC | measured (part): durable session invalidations, 4096-record retention, 256-record pages, per-connection validated acknowledgments; engine and desktop-reader live queues cap 128 events / 2 MiB and coalesce overflow; separate reply/control capacity; atomicity/rollback, reopen, SIGKILL, missing terminal event and slow-client Stop tests pass. No exact replay of old progress/auth; native frontend core events now have 128-event / 8 MiB capacity accounting through batch application, with one oversized event alone; a bounded Stop worker bypasses presentation waits and guards submission/connection ordering (`ne2e::stop_crosses_desktop_byte_pressure_and_settlement_recovers_after_reconnect`, `ne2e::shutdown_releases_a_native_worker_waiting_for_desktop_bytes`, `App/event_queue.rs` and `App/adapters/native/control.rs` tests); lifecycle/catalog and normal request admission remain separate; the provider generation channel is replaced by bounded synchronous commit batches (`pg::synchronous_bursts_are_bounded_and_unicode_and_tiny_deltas_remain_lossless`, `pg::checkpoint_failure_cancels_the_producer_and_stops_further_progress`, `rt::stop_interrupts_a_provider_that_keeps_emitting_without_yielding`); full message and transient input-unit limits remain separate; external attachment is implemented (ADR 0008); event fan-out now shares one bounded encoded body, with independent sequence/envelope/pressure (`dq::subscribers_share_one_payload_but_keep_independent_envelopes_and_pressure`, `dq::shared_envelopes_preserve_escaping_extreme_ids_and_write_errors`, `dq::escaped_payload_size_is_bounded_and_oversize_does_not_retain_the_event`, `delivery::shared_transport_preserves_reply_barriers_and_client_local_sequences`). Shared typed/JSON payload overhead is not a total heap budget. See delivery/memory, [shared delivery](pipkin-rust-engine-evidence/shared-event-delivery.md) and [desktop pressure evidence](pipkin-rust-engine-evidence/desktop-pressure.md) |

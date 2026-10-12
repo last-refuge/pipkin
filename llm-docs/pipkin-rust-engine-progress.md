@@ -11,6 +11,23 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
+## Current follow-up — connection-scoped request cancellation
+
+The inactive-profile migration is committed as **`03b7e5e`**. The Pi timeout-path audit
+confirmed generic RPC cancellation is used by the desktop. Native protocol **9** now has
+`CancelRequest` on the control lane, with per-connection registration before enqueue,
+cancellation-safe prompt/queue/wait suspension points, cooperative compaction cancellation,
+and retained task capacity for started blocking jobs. Desktop timeouts send cancellation
+without changing unknown-outcome reconciliation. See [cancellation evidence](pipkin-rust-engine-evidence/request-cancellation.md).
+
+Required final checks: **1435 passed, 0 failed, 53 ignored**, Clippy and formatting clean.
+Logs: `/tmp/pipkin-request-cancel-final-{workspace,clippy,fmt}.log`. `XPORT-CANCEL` moves PA → NC
+with measured regression evidence; full transport differential remains unqualified.
+Current inventory: **503 rows; NC 404, NE 25, NP 30, PA 28, BL 0, LB 1, OS 15**;
+**428 measured, 7 observed, 10 unverified, 58 not started; 0 qualified**.
+Native remains opt-in. Remaining core history/settings/provider, Stop/compaction lifecycle,
+resource and installed/platform qualification work still precedes default cutover.
+
 ## Current follow-up — migrate histories with inactive Pi profiles
 
 Historical Pi extension selections no longer block conversation migration. Exact profile
