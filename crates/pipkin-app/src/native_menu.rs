@@ -157,7 +157,7 @@ pub fn install(cx: &mut App, model: Entity<Model>, data_dir: PathBuf) {
         show_main_window(cx);
         if let Some(window) = cx.windows().first().copied() {
             let _ = window.update(cx, |_, window, cx| {
-                let detail = format!("Version {}\nNative desktop conversations with Pi.\n© Pipkin contributors · MIT license", crate::install::VERSION);
+                let detail = format!("Version {}\nNative coding with the built-in Rust engine.\n© Pipkin contributors · MIT license", crate::install::VERSION);
                 let response = window.prompt(PromptLevel::Info, "About Pipkin", Some(&detail), &["OK"], cx);
                 cx.spawn(async move |_| { let _ = response.await; }).detach();
             });

@@ -1080,7 +1080,7 @@ impl Workspace {
                 div()
                     .text_size(t.small_size())
                     .text_color(c.text_faint)
-                    .child("Cost is Pi’s reported estimate, not a billing balance."),
+                    .child("Cost is the engine’s reported estimate, not a billing balance."),
             )
     }
 

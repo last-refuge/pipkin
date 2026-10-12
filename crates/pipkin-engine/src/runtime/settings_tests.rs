@@ -20,6 +20,55 @@ fn write_settings(fx: &Fixture, json: &serde_json::Value) {
 }
 
 #[test]
+fn provider_settings_and_cache_environment_reach_turns_and_survive_restart() {
+    use crate::provider::CacheRetention;
+    let fx = Fixture::new();
+    let provider = Scripted::echo("settings received");
+    let mut config = fx.config();
+    config
+        .env
+        .vars
+        .insert("PI_CACHE_RETENTION".into(), "long".into());
+    let mut e = fx.start_config(&provider, config.clone());
+    let session = e.create(&fx.project, "provider-settings");
+    for (index, (retries, delay, transport, budget)) in
+        [(3, 17, "sse", 400), (0, 91, "websocket", 800)]
+            .into_iter()
+            .enumerate()
+    {
+        write_settings(
+            &fx,
+            &json!({
+                "retry":{"provider":{"maxRetries":retries,"maxRetryDelayMs":delay}},
+                "transport":transport,"thinkingBudgets":{"high":budget}
+            }),
+        );
+        let key = format!("settings-{index}");
+        e.prompt(&session, &key, "use the current configuration")
+            .unwrap();
+        assert_eq!(e.settled(&key), RunOutcome::Completed);
+        let req = provider.requests().pop().unwrap();
+        assert_eq!(req.options["maxRetries"], json!(retries));
+        assert_eq!(req.options["maxRetryDelayMs"], json!(delay));
+        assert_eq!(req.options["transport"], json!(transport));
+        assert_eq!(req.options["thinkingBudgets"], json!({"high":budget}));
+        assert_eq!(req.cache_retention, CacheRetention::Long);
+    }
+    e.handle.shutdown(Duration::from_secs(2));
+    drop(e);
+    config.env.vars.remove("PI_CACHE_RETENTION");
+    let mut e = fx.start_config(&provider, config);
+    e.prompt(&session, "after-restart", "continue").unwrap();
+    assert_eq!(e.settled("after-restart"), RunOutcome::Completed);
+    let req = provider.requests().pop().unwrap();
+    assert_eq!(req.options["maxRetries"], json!(0));
+    assert_eq!(req.options["maxRetryDelayMs"], json!(91));
+    assert_eq!(req.options["transport"], json!("websocket"));
+    assert_eq!(req.options["thinkingBudgets"], json!({"high":800}));
+    assert_eq!(req.cache_retention, CacheRetention::Short);
+}
+
+#[test]
 fn websocket_connect_timeout_setting_reaches_requests_including_zero_and_live_edits() {
     let fx = Fixture::new();
     let provider = Scripted::echo("ok");
@@ -1253,4 +1302,75 @@ fn model_patterns_drive_initial_selection_live_listing_and_restart() {
             .iter()
             .any(|m| m.key == "local/.hidden")
     );
+}
+
+#[test]
+fn disabled_compaction_preserves_overflow_failure_and_live_enable_allows_recovery() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let fx = Fixture::new();
+    let errors = Arc::new(AtomicUsize::new(0));
+    let count = errors.clone();
+    let provider = Scripted::new(move |req, _| {
+        if is_summary(req) {
+            return R::Text("## Goal\nprior work summarized".into());
+        }
+        if req
+            .messages
+            .last()
+            .is_some_and(|m| m.text().starts_with("overflow"))
+            && count.fetch_add(1, Ordering::SeqCst) < 2
+        {
+            return R::Error("prompt is too long: 999999 tokens > 200000 maximum".into());
+        }
+        R::Text("ordinary answer".into())
+    });
+    write_settings(
+        &fx,
+        &json!({"retry":{"enabled":false},"compaction":{"enabled":false,"keepRecentTokens":5}}),
+    );
+    let mut e = fx.start(&provider);
+    let session = e.create(&fx.project, "compaction-disabled");
+    for i in 0..4 {
+        let key = format!("seed-{i}");
+        e.prompt(
+            &session,
+            &key,
+            "seed enough historical context for compaction",
+        )
+        .unwrap();
+        assert_eq!(e.settled(&key), RunOutcome::Completed);
+    }
+    e.prompt(&session, "disabled", "overflow while disabled")
+        .unwrap();
+    assert!(matches!(
+        e.settled("disabled"),
+        RunOutcome::ModelError { .. }
+    ));
+    assert_eq!(
+        provider
+            .requests()
+            .iter()
+            .filter(|req| is_summary(req))
+            .count(),
+        0
+    );
+    write_settings(
+        &fx,
+        &json!({"retry":{"enabled":false},"compaction":{"enabled":true,"keepRecentTokens":5}}),
+    );
+    e.prompt(&session, "enabled", "overflow after enabling")
+        .unwrap();
+    assert_eq!(e.settled("enabled"), RunOutcome::Completed);
+    assert_eq!(
+        provider
+            .requests()
+            .iter()
+            .filter(|req| is_summary(req))
+            .count(),
+        1
+    );
+    assert!(e.snapshot(&session).has_older);
 }

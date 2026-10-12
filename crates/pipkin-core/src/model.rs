@@ -447,7 +447,7 @@ impl Connection {
     pub fn banner(&self) -> Option<String> {
         match self {
             Connection::Ready => None,
-            Connection::Connecting => Some("Connecting to the Pi engine…".into()),
+            Connection::Connecting => Some("Connecting to the built-in engine…".into()),
             Connection::Reconnecting => Some("Connection lost. Reconnecting…".into()),
             Connection::Offline(why) => Some(format!("Offline: {why}")),
             Connection::Incompatible(why) => Some(format!("Incompatible engine: {why}")),

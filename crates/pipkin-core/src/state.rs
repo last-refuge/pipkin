@@ -2268,7 +2268,7 @@ impl AppState {
                         journal(c, id, JournalState::Rejected, &mut out);
                         mark_last_user(c, Delivery::Rejected, &mut out, id);
                         c.run = RunState::Failed {
-                            message: "Pi has no record of this prompt. Inspect tool output and project Changes before deciding whether to retry.".into(),
+                            message: "The engine has no record of this prompt. Inspect tool output and project Changes before deciding whether to retry.".into(),
                         };
                     }
                     out.notes.push(Note::Other);
@@ -2646,7 +2646,7 @@ impl AppState {
                 Self::goal_paused_outcome(id, goal)
             }
             _ => {
-                goal.paused = Some("Paused: Pi did not give a clear goal status.".into());
+                goal.paused = Some("Paused: the engine did not give a clear goal status.".into());
                 Self::goal_paused_outcome(id, goal)
             }
         };

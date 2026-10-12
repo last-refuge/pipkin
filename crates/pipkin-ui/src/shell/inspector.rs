@@ -570,7 +570,7 @@ fn changes_status(state: &ChangesState, has_changes: bool) -> Option<(&'static s
         ChangesState::Loading => Some(("Refreshing changes…", previous.into())),
         ChangesState::NotARepository => Some((
             "Not a Git repository",
-            "Workspace diffs require a Git repository. You can still work with Pi in this folder."
+            "Workspace diffs require a Git repository. You can still work with Pipkin in this folder."
                 .into(),
         )),
         ChangesState::Unscanned if has_changes => {

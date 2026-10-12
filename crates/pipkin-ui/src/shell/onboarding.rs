@@ -273,7 +273,7 @@ impl Workspace {
             }
             SetupStage::ConnectProvider | SetupStage::ProviderFailed => {
                 if !auth.available {
-                    body = body.child(div().text_color(c.warning).child("Subscription sign-in is not available in this Pi engine. An updated bundled engine is required."));
+                    body = body.child(div().text_color(c.warning).child("Subscription sign-in is not available from this engine. Reopen Pipkin or update the attached engine."));
                 } else {
                     for choice in provider_choices(&auth, managing) {
                         let provider = choice.provider;

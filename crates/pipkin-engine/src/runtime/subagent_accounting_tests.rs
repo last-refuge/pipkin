@@ -233,3 +233,48 @@ fn ancestor_usage_invalidation_failure_rolls_back_child_spend_and_recovers_once(
     assert_eq!(resumed.requests().len(), 2);
     e.handle.shutdown(Duration::from_secs(1));
 }
+
+#[test]
+fn failed_child_returns_its_exact_status_without_fabricating_an_answer() {
+    let fx = Fixture::new();
+    std::fs::create_dir_all(fx.dir.path().join("config")).unwrap();
+    std::fs::write(
+        fx.dir.path().join("config/settings.json"),
+        r#"{"retry":{"enabled":false}}"#,
+    )
+    .unwrap();
+    let provider = Scripted::new(|req, _| {
+        if child(req) {
+            return R::Error("child provider failure".into());
+        }
+        if req
+            .messages
+            .iter()
+            .any(|m| matches!(m, Message::ToolResult { .. }))
+        {
+            return R::Text("child did not answer".into());
+        }
+        R::Tools(None, vec![("subagent".into(), json!({"task":"will fail"}))])
+    });
+    let mut e = fx.start(&provider);
+    let session = e.create(&fx.project, "failed-child");
+    e.prompt(&session, "delegate", "ask a child").unwrap();
+    assert_eq!(e.settled("delegate"), RunOutcome::Completed);
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 3);
+    let result = requests
+        .last()
+        .unwrap()
+        .messages
+        .iter()
+        .find(|m| matches!(m, Message::ToolResult { .. }))
+        .unwrap();
+    assert_eq!(
+        result.text(),
+        "<harness>\n[error] Subagent 1 failed: unanswered (child provider failure)\n</harness>"
+    );
+    let Reply::Subagents(view) = e.call(Call::Subagents { session }).unwrap() else {
+        panic!("child view")
+    };
+    assert_eq!(view.children[0].status, "failed");
+}

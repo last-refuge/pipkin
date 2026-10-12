@@ -11,7 +11,23 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — clean installed candidate verified
+## Current follow-up — final audit found and fixed offline attachment
+
+After `13720a4`, the bounded ledger audit added seven direct assertions: runtime provider
+settings/cache environment across restart, compaction disabled/enabled, child failure output,
+concurrent credential removal/login, lost Stop, failed desktop journal, and offline cache rejoin.
+The latter exposed a real adapter gap: offline selection was lost and never-opened sessions
+received only Synced on reconnect. The adapter now retains the latest selection/generation and
+whether initial Opened is needed. Native recovery test passes without prompt replay. Stale Pi
+labels in connection/goal/usage/subagent/onboarding text now describe the built-in engine.
+
+Full required validation: **1,446 passed, zero failed, 9 ignored**, clean Clippy/fmt.
+[Completion audit](pipkin-rust-engine-evidence/final-cutover-audit.md) maps every goal requirement
+to evidence and explicitly leaves final updated artifact/hosted qualification open. Push this
+batch immediately; do not restart the live `cc8931c` jobs merely because they are slow. Final
+updated candidate needs its own recorded package/CI result. No schema/protocol changes.
+
+## Prior follow-up — clean installed candidate verified
 
 The native-only build-path batch is committed and pushed as **`cc8931c`**. A clean disposable
 checkout produces a native-default archive with **dirty: false**; installed coding, migration,

@@ -244,7 +244,8 @@ struct Worker {
     /// Identifies the current connection; frames from an earlier one are ignored.
     conn: u64,
     ever_connected: bool,
-    last_open: Option<(ConversationId, u64)>,
+    /// Latest selection and generation; true until its initial Opened was delivered.
+    last_open: Option<(ConversationId, u64, bool)>,
     /// Admitted prompts awaiting an outcome. Kept across reconnects and reconciled by asking.
     runs: HashMap<OperationId, Run>,
     /// Queue requests whose acknowledgment was lost.
@@ -360,7 +361,7 @@ impl Worker {
     }
 
     /// Nothing was sent, so every refusal here is definite.
-    fn refuse_offline(&self, request: BackendRequest) {
+    fn refuse_offline(&mut self, request: BackendRequest) {
         if let BackendRequest::Submit {
             conversation,
             generation,
@@ -374,13 +375,18 @@ impl Worker {
             BackendRequest::Open {
                 conversation,
                 generation,
-            } => self.emit(
-                conversation,
-                generation,
-                EventKind::OpenFailed {
-                    message: OFFLINE.into(),
-                },
-            ),
+            } => {
+                // Keep the latest read-only selection so an offline saved copy can attach
+                // when the engine returns. Mutations below are still definitely refused.
+                self.last_open = Some((conversation, generation, true));
+                self.emit(
+                    conversation,
+                    generation,
+                    EventKind::OpenFailed {
+                        message: OFFLINE.into(),
+                    },
+                );
+            }
             BackendRequest::Submit {
                 conversation,
                 generation,
@@ -602,8 +608,10 @@ impl Worker {
             other => log::warn!("could not read sign-in state: {other:?}"),
         }
         self.report(Connection::Ready);
-        if let Some((conversation, generation)) = self.last_open {
-            live.open(self, conversation, generation, false);
+        if let Some((conversation, generation, initial)) = self.last_open
+            && live.open(self, conversation, generation, initial)
+        {
+            self.last_open = Some((conversation, generation, false));
         }
         live.reconcile(self);
         self.serve(&mut live)
@@ -1399,8 +1407,8 @@ impl Live {
                 conversation,
                 generation,
             } => {
-                worker.last_open = Some((conversation, generation));
-                self.open(worker, conversation, generation, true);
+                let opened = self.open(worker, conversation, generation, true);
+                worker.last_open = Some((conversation, generation, !opened));
             }
             BackendRequest::OpenSubagent {
                 conversation,

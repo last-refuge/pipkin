@@ -791,3 +791,32 @@ async fn radius_gateway_catalogs_restore_from_the_stored_credential() {
         .contains("tok")
     );
 }
+
+#[tokio::test]
+async fn concurrent_removal_and_login_wait_for_the_credential_commit() {
+    let f = Fixture::new(&[]);
+    let auth = Arc::new(f.auth());
+    auth.set_api_key("openai-codex", "fixture-key".into())
+        .unwrap();
+    auth.start(9, "openai-codex").await.unwrap();
+    wait_for(&auth, 9, "login choice", |s| s.challenge.is_some()).await;
+    let transaction = auth.inner.store.begin().unwrap();
+    let worker_auth = auth.clone();
+    let removal = std::thread::spawn(move || worker_auth.remove("openai-codex"));
+    wait_for(&auth, 9, "removal entered its commit phase", |s| {
+        s.message == MSG_REMOVED
+    })
+    .await;
+    let error = auth.remove("openai-codex").unwrap_err();
+    assert_eq!(error.code, ErrorCode::Busy);
+    assert_eq!(error.message, MSG_REMOVING);
+    let error = auth.start(9, "openai-codex").await.unwrap_err();
+    assert_eq!(error.code, ErrorCode::Busy);
+    assert_eq!(error.message, MSG_REMOVING);
+    assert!(f.read_auth().get("openai-codex").is_some());
+    drop(transaction);
+    removal.join().unwrap().unwrap();
+    assert!(f.read_auth().get("openai-codex").is_none());
+    let attempt = auth.start(9, "openai-codex").await.unwrap();
+    auth.cancel(9, &attempt);
+}

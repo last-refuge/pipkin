@@ -46,6 +46,7 @@ struct Faults {
     refuse_lookups: AtomicUsize,
     drop_prompt_reply: AtomicBool,
     drop_prompt: AtomicBool,
+    drop_stop: AtomicBool,
     /// Let the next steer or follow-up reach the engine, then drop its reply and sever.
     drop_queue_reply: AtomicBool,
     /// Sever the link instead of delivering the next steer or follow-up.
@@ -78,6 +79,12 @@ impl FrameSender for FaultSender {
                 self.faults.fired.fetch_add(1, Ordering::SeqCst);
                 self.faults.swallow.lock().unwrap().insert(frame.id);
             }
+        }
+        if matches!(frame.call, Call::Stop { .. })
+            && self.faults.drop_stop.swap(false, Ordering::SeqCst)
+        {
+            self.faults.fired.fetch_add(1, Ordering::SeqCst);
+            return Ok(());
         }
         if matches!(frame.call, Call::Enqueue { .. }) {
             if self.faults.drop_queue.swap(false, Ordering::SeqCst) {
@@ -775,6 +782,111 @@ fn a_lost_prompt_is_proven_unsent_and_only_an_explicit_retry_sends_it() {
         is_idle(s) && assistant_texts(s) == ["finally".to_owned()]
     });
     assert_eq!(fx.requests().len(), 1);
+    h.stop();
+}
+
+#[test]
+fn lost_stop_can_be_checked_and_retried_without_resending_the_prompt() {
+    let fx = Fixture::start(|_, _| Reply::Hang);
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start_with(fx.native(Duration::from_millis(300)), &db);
+    h.open_new_conversation(&fx.project);
+    h.send("keep working until stopped");
+    h.until_asked(&fx, 1);
+    h.until("running", is_running);
+    fx.faults.drop_stop.store(true, Ordering::SeqCst);
+    h.dispatch(Command::Cancel);
+    h.until("stop delivery failed", |s| {
+        s.current().unwrap().stop_error.is_some()
+    });
+    assert!(matches!(
+        h.state.current().unwrap().run,
+        RunState::Stopping { .. }
+    ));
+    assert_eq!(fx.requests().len(), 1);
+    h.dispatch(Command::CheckStatus);
+    h.until("status confirms the run still needs stopping", |s| {
+        !s.current().unwrap().status_check_pending && s.availability().retry_stop
+    });
+    h.dispatch(Command::RetryStop);
+    h.until("explicit Stop settles", is_idle);
+    assert_eq!(fx.faults.fired.load(Ordering::SeqCst), 1);
+    assert_eq!(fx.requests().len(), 1);
+    assert_eq!(h.user_messages(), ["keep working until stopped"]);
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+#[test]
+fn failed_desktop_journal_never_sends_and_explicit_retry_runs_once_after_repair() {
+    let fx = Fixture::start(|_, _| Reply::Text("journal recovered".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.storage.set_write_failure(true);
+    h.send("must be durable first");
+    h.until("journal failure reaches the core", |s| {
+        s.current().unwrap().intent_error.is_some()
+    });
+    assert!(fx.requests().is_empty());
+    assert_eq!(open_requests(&db), 0);
+    h.storage.set_write_failure(false);
+    assert_eq!(
+        h.state.current().unwrap().draft.text,
+        "must be durable first"
+    );
+    h.dispatch(Command::Submit);
+    h.until("explicit retry completes", |s| {
+        is_idle(s) && assistant_texts(s) == ["journal recovered"]
+    });
+    assert_eq!(fx.requests().len(), 1);
+    assert_eq!(h.user_messages(), ["must be durable first"]);
+    h.stop();
+    assert_eq!(open_requests(&db), 0);
+}
+
+#[test]
+fn native_saved_history_is_readable_and_searchable_offline_then_rejoins_without_replay() {
+    let fx = Fixture::start(|_, _| Reply::Text("unique cached answer".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("remember this offline");
+    h.until("answer is cached", |s| {
+        is_idle(s) && assistant_texts(s) == ["unique cached answer"]
+    });
+    let id = h.state.current().unwrap().id;
+    h.stop();
+    fx.engine
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap()
+        .shutdown(Duration::from_secs(2));
+    let mut config = fx.native(Duration::from_secs(2));
+    config.retry_delay = Duration::from_secs(1);
+    let mut h = Harness::start_with(config, &db);
+    h.until("offline copy is readable", |s| {
+        s.current().is_some_and(|c| c.id == id && c.cached_only)
+            && assistant_texts(s) == ["unique cached answer"]
+    });
+    assert!(!h.state.availability().submit);
+    h.dispatch(Command::SetSearch("unique cached".into()));
+    assert_eq!(h.state.history_search.hits.len(), 1);
+    assert_eq!(fx.requests().len(), 1);
+    fx.restart_engine();
+    h.until("engine connects", |s| s.connection.is_ready());
+    h.until("native engine takes over the saved copy", |s| {
+        s.connection.is_ready()
+            && s.current()
+                .is_some_and(|c| c.id == id && c.opened && !c.cached_only)
+    });
+    assert_eq!(assistant_texts(&h.state), ["unique cached answer"]);
+    assert_eq!(
+        fx.requests().len(),
+        1,
+        "reconnect never resubmits the completed prompt"
+    );
     h.stop();
 }
 
