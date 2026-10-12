@@ -15,8 +15,8 @@ reference-derived output exists.
   `b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05` (archive
   `2be5f68d90695e71372c01ccbd08d5728b93691e07c45918846997c8949bcabb`), plus the Pipkin desktop
   at app base `75f5c35`. Frozen reference fixtures: `fixtures/pi-sessions/` (8 scenarios, RE-02).
-- **Current follow-up:** desktop byte pressure and Stop on top of `baf8eff` (2026-10-11),
-  protocol 6 / schema 4; see [desktop pressure evidence](pipkin-rust-engine-evidence/desktop-pressure.md).
+- **Current follow-up:** persistent native extension profiles on top of `9047b57` (2026-10-11),
+  protocol 7 / schema 5; see [profile evidence](pipkin-rust-engine-evidence/extension-profiles.md).
 - **Historical broad code reconciliation:** `e4c3a8c` (2026-10-11), including the Claude lifecycle
   checks; see [reconciliation](pipkin-rust-engine-evidence/parity-reconciliation.md). The following
   revision describes the broader historical audit; retained measurements keep their identities.
@@ -60,7 +60,7 @@ Test citations are `<prefix>::<function>`; a prefix names one file:
 | Context | `drv::` `E/context/derive/tests.rs`; `prm::` `E/context/prompt/tests.rs`; `sys::` `E/context/system.rs`; `res::` `E/context/resources/tests.rs`; `cmp::` `E/context/compaction/tests.rs`; `fm::` `E/context/frontmatter.rs` |
 | Constrained tools | `constr::` `E/provider/api/constrained_tests.rs` (pinned helper fixtures, Responses grammar streams/replay, strict declarations) |
 | Codex proxy TLS | `cdxtls::` `E/provider/api/openai_codex/tls_tests.rs` (real local TLS proxy/target handshakes) |
-| Extensions | `ext::` `E/extensions/tests.rs`; `extp::` `E/extensions/process/tests.rs`; `q::` `E/extensions/questions/tests.rs` |
+| Extensions | `profile::` `E/runtime/plugins/tests.rs`; `ext::` `E/extensions/tests.rs`; `extp::` `E/extensions/process/tests.rs`; `q::` `E/extensions/questions/tests.rs` |
 | Import | `imp::` `E/import/tests.rs`; `dlt::` `E/import/delta.rs` |
 | Desktop native backend | `ne2e::` `App/adapters/native/e2e.rs` (real core + NativeBackend + journal + in-process engine with a scripted provider; runs by default); `nt::` `.../native/tests.rs`; `nmap::` mapping; `ntr::` transcript; `nmir::` mirror; `nsup::` supervisor; `ncl::` client; `nimp::` import (all `App/adapters/native/`); `ew::` `crates/pipkin-app/tests/engine_worker.rs`; `ndiag::` `crates/pipkin-app/tests/native_diagnose.rs` |
 | Desktop (backend-independent) | `inst::` `App/install.rs`; `diag::` `App/diagnostics.rs`; `ctl::` `App/controller.rs`; `stor::` `App/storage.rs`; `core-own::` `crates/pipkin-core/tests/ownership.rs`; `ui-cmd::` `crates/pipkin-ui/src/shell/commands.rs`; `pit::` `App/adapters/pi/tests.rs` (the Pi adapter against the mock Pi server); `cache::` `App/cache.rs`; `launch::` `App/launch.rs`; `demo::` `App/adapters/demo.rs`; `core-sub::` `crates/pipkin-core/tests/subagents.rs`; `core-imp::` `Core/import.rs`; `ui-sub::` `crates/pipkin-ui/src/shell/subagents/tests.rs`; `ui-onb::` `crates/pipkin-ui/src/shell/onboarding.rs` |
@@ -95,7 +95,7 @@ Test citations are `<prefix>::<function>`; a prefix names one file:
 
 Owner: **Opus** = main implementation; **Codex** = reserved final integration.
 
-## Status summary (2026-10-11, bounded provider progress follow-up)
+## Status summary (2026-10-11, native extension profiles follow-up)
 
 The import-protection/durable-retry batch is committed as `63bd9ae`. This follow-up adds
 protocol **4**, schema **3**, atomic durable invalidations, acknowledged paged catch-up,
@@ -141,6 +141,12 @@ submission/connection ordering, and shutdown releases blocked producers. Headles
 pressure/reconnect/history/journal tests pass; lifecycle/catalog/request queues and total heap
 limits remain separate. Latest required checks: **1404 passed, 0 failed, 53 ignored**, clean
 Clippy/formatting; see [desktop pressure evidence](pipkin-rust-engine-evidence/desktop-pressure.md).
+Native extension defaults and per-session pins now persist across restart, explicit empty
+selections survive default changes, and active selections refuse conflicting replacements.
+Plugin-free imports pin empty in their import transaction. Thirteen profile-helper observations
+captured from the pinned Pi source match native results; native tests cover selection races,
+storage failures, retirement and stale questions. Latest required checks: **1417 passed,
+0 failed, 53 ignored**, clean Clippy/formatting. See [profile evidence](pipkin-rust-engine-evidence/extension-profiles.md).
 TypeScript facet execution remains blocked; Pi is still the default. No row is fully qualified.
 
 503 rows. **Rows passed: 0** (nothing passes before qualification). Comparisons
@@ -154,10 +160,10 @@ of all 503 capabilities.
 | Disposition (target) | Rows |
 | --- | --- |
 | `NC` native implementation of the same contract | 404 |
-| `NE` native equivalent | 25 |
+| `NE` native equivalent | 28 |
 | `NP` not present in the baseline (evidence in row) | 30 |
 | `PA` pending audit | 31 |
-| `BL` blocked (9 of these `BL / LB`: run on the legacy bridge today) | 12 |
+| `BL` blocked (6 of these `BL / LB`: run on the legacy bridge today) | 9 |
 | `LB` legacy bridge only | 1 |
 | `RC` reserved for Codex — not implemented or qualified | 0 |
 
@@ -169,16 +175,17 @@ real Claude Opus 5.5 coding turn; see subscription evidence. No row is fully qua
 Earlier disposition changes since `e7cfc42`: `SVC-UI-STATE`, `SVC-UI-RESPOND`, `SVC-UI-CANCEL`,
 `UIQ-SELECT`..`UIQ-MULTICLIENT` (9) and `E2E-33` moved from `BL` / `BL / LB` to `NC`: the
 native question host implements the UI-request contract and native extensions use it.
-TypeScript facet packages that ask those questions stay `BL / LB` (`EXT-FACET-*`, `EXT-PROFILE-*`,
-`EXT-CONFLICT`, `E2E-34/35`, `FLAG-PI-EXTENSION`).
+TypeScript facet packages that ask those questions stay `BL / LB` (`EXT-FACET-*`,
+`E2E-34/35`, `FLAG-PI-EXTENSION`). Native profile selection rows `EXT-PROFILE-*` and
+`EXT-CONFLICT` now target `NE`; this does not port the packages they select.
 
 | Evidence | Rows |
 | --- | --- |
-| measured | 423 |
+| measured | 426 |
 | observed | 7 |
 | failed | 0 |
 | unverified (code exists, no test) | 10 |
-| not started (implementation absent or excluded; see row evidence) | 63 |
+| not started (implementation absent or excluded; see row evidence) | 60 |
 
 | Section | Rows | NC | NE | NP | PA | BL | LB | RC | measured | observed | failed | unverified | not started |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -194,13 +201,13 @@ TypeScript facet packages that ask those questions stay `BL / LB` (`EXT-FACET-*`
 | 10 Attachments / models / usage (P11) | 9 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 8 | 0 | 0 | 1 | 0 |
 | 11 Prompt / resources (P12) | 23 | 16 | 0 | 4 | 3 | 0 | 0 | 0 | 18 | 0 | 0 | 1 | 4 |
 | 12 Context / compaction (P13) | 14 | 12 | 0 | 1 | 1 | 0 | 0 | 0 | 13 | 0 | 0 | 0 | 1 |
-| 13 Extensions / questions (P14/P15) | 24 | 10 | 2 | 5 | 1 | 6 | 0 | 0 | 12 | 0 | 0 | 0 | 12 |
+| 13 Extensions / questions (P14/P15) | 24 | 10 | 5 | 5 | 1 | 3 | 0 | 0 | 15 | 0 | 0 | 0 | 9 |
 | 14 Tool output (P16) | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 1 | 0 |
 | 15 Settings / env | 34 | 29 | 0 | 1 | 4 | 0 | 0 | 0 | 29 | 0 | 0 | 1 | 4 |
 | 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 3 | 1 | 0 | 53 | 1 | 0 | 1 | 5 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
 | 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 6 | 6 | 0 | 0 | 6 |
-| **Total** | 503 | 404 | 25 | 30 | 31 | 12 | 1 | 0 | 423 | 7 | 0 | 10 | 63 |
+| **Total** | 503 | 404 | 28 | 30 | 31 | 9 | 1 | 0 | 426 | 7 | 0 | 10 | 60 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
 whenever rows change. Release gates: native beta needs every mandatory row implemented; native
@@ -510,7 +517,7 @@ is the differential target; Chord replicated-state op streams are not reproduced
 | SVC-MGMT-REMOVE | svc/server.ts:103-108 | `remove(id)`: release attachments, stop worker, `rm -rf` session dir, remove plugin profile | none | Opus · (no native Call yet) | n/a | The desktop adapter never calls it (App/adapters/pi/mod.rs calls only create/attach); confirm no other reachable caller | — | PA | not started (PA): no native `RemoveSession` call; the desktop never removes sessions |
 | SVC-MGMT-ATTACH | svc/server.ts:109-112; session-router.ts:160-197 | `attach(id)` mints attachmentId, opens/spawns worker, sends attachment envelope | ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away; ne2e::a_prompt_streams_settles_and_reopens_with_the_same_history | Opus · `Call::OpenSession` (snapshot + window + per-client attachment) | n/a | Switching sessions yields equal visible state | — | NC | measured: ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away, ne2e::a_prompt_streams_settles_and_reopens_with_the_same_history; no differential  life::disconnect_grace_can_be_readopted_and_cloned_senders_hold_the_client covers shared ownership and reconnect grace. |
 | SVC-MGMT-DETACH | svc/server.ts:113-117 | `detach()` releases attachment; detaching never cancels runs | ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away | Codex · `Call::ReleaseSession`, E/runtime/lifecycle.rs | n/a | Background run continues | — | NC | measured: ne2e::switching_conversations_keeps_each_ones_run_and_settles_what_ended_while_away (background run continues); life::detach_keeps_the_active_run_and_follow_up_until_both_settle, life::attachments_are_client_owned_and_retirement_closes_the_provider_affinity_id, life::idle_release_is_retired_by_the_running_engine_without_manual_sweeps; explicit per-client attachment release now retires idle resources; no differential |
-| SVC-PLUGINS-PREPARE | svc/plugins.ts:4-12; ce/server.ts:453-469,573-602 | `prepareSession({sessionId, packagePaths})` builds/selects facet packages, persists selection, checks worker conflict | e2e::an_extension_in_the_engine_asks_three_questions_and_the_answers_reach_it | legacy (Pi) | plugin profile JSON preserved | see EXT-* | — | BL | not started (BL: TypeScript facet packages need Node; legacy bridge only) |
+| SVC-PLUGINS-PREPARE | svc/plugins.ts:4-12; ce/server.ts:453-469,573-602 | `prepareSession({sessionId, packagePaths})` builds/selects facet packages, persists selection, checks worker conflict | e2e::an_extension_in_the_engine_asks_three_questions_and_the_answers_reach_it | legacy (Pi) | plugin profile JSON preserved | see EXT-* | — | BL | not started (BL: TypeScript facet packages need Node; legacy bridge only); native PrepareExtensions validates/persists native selections with conflict checks (profile evidence), but does not build or execute TypeScript packages |
 | SVC-PLUGINS-RELOAD | svc/server.ts:88-94 | `reload()` rebuilds TUI artifacts | n/a | legacy (Pi) | n/a | see EXT-RELOAD | — | BL | not started (BL) |
 | SVC-SESSION-PLUGINS-RELOAD | svc/worker.ts:68-117 | `pi.session-plugins.reload()` hot-reloads session facets | n/a | legacy (Pi) | n/a | see EXT-RELOAD | — | BL | not started (BL; native extensions have no hot reload — docs/native-extensions.md) |
 | SVC-AUTH | svc/provider-auth.ts | `pi.provider-auth` state/start/reuse/answer/cancel/remove (detailed in ONB-* rows) | see ONB-*; auth::; oauth:: | Opus · `Call::Auth*`, E/auth | — | see ONB-* | anthropic, openai-codex | NC | measured: see ONB-* rows (auth:: and oauth:: suites); no differential; Claude is now implemented with local and live lifecycle evidence (CLS-*); manual-code mapping is covered by nmap::the_engine_manual_code_prompt_reaches_the_desktop_input |
@@ -702,9 +709,9 @@ presentations; there is no sandbox.
 | EXT-FACET-SERVICES | chord facet `provide`/`provideMany` | A session facet can provide new remote services (e.g. `pi.example-plugin.greeting`) | none | Opus · E/extensions | — | Same service results | per package | BL / LB | not started (BL / LB): native extensions cannot publish services to presentations (docs/native-extensions.md); the greeting port exposes `greet` as a plain method |
 | EXT-FACET-CONTROL | ce/plugin.ts:1-28 (AgentController, History) | Facets can prompt/steer/followUp/cancelQueued/abort/compact/lookup/waitForPrompt and page history | ext::the_call_host_drives_the_agent_through_protocol_calls | Opus · E/extensions | — | Same effects through native contract | per package | BL / LB | not started for TypeScript facets (BL / LB); native contract: ext::the_call_host_drives_the_agent_through_protocol_calls, extp::requests_reach_the_agent_and_errors_come_back_as_replies (measured, native only); gap: no `waitForPrompt` |
 | EXT-FACET-TUI | ce/plugins/package.ts:87-88 | TUI facet artifacts for terminal clients | n/a | n/a | n/a | n/a | n/a | NP (Pipkin never runs TUI facets; `docs/extensions.md`) | not started (NP) |
-| EXT-PROFILE-STICKY | ce/plugins/package.ts:21-34 | Omitting `-e` restores `plugin-packages-<serverId>.json`; explicit list persisted | none | Opus · E/extensions + App flags | server profile JSON read by importer | Same effective selection | — | BL / LB | not started (BL / LB): native selection is explicit per launch (`--engine-extension`), no native sticky profile; importer now detects server/session selections and refuses unsupported activation (IMP-PLUGIN-STATE) |
-| EXT-PROFILE-SESSION | package.ts:37-66; ce/server.ts:573-602 | Each session pins the selection it first opened with | none | Opus · E/extensions (kv) | per-session profile → kv | Same | — | BL / LB | not started (BL / LB) |
-| EXT-CONFLICT | session-worker-manager.ts:136-142 | Different selection for an active session → `Session <id> is active with a different plugin selection` | none | Opus · E/extensions | — | Same refusal | — | BL / LB | not started (BL / LB) |
+| EXT-PROFILE-STICKY | ce/plugins/package.ts:21-34 | Omitting `-e` restores `plugin-packages-<serverId>.json`; explicit list persisted | profile::defaults_are_sticky_sessions_are_pinned_and_empty_overrides_survive_restart; profile::native_profile_results_match_the_pinned_pi_profile_helper_trace | Native · E/extensions/profiles.rs + E/runtime/plugins.rs | Sticky default stored in engine meta; unsupported Pi selections still refuse import | Same effective selection | — | NE | measured (native equivalent): persisted ordered defaults restore on omitted flags; explicit empty clears; startup --engine-clear-extensions repairs bad defaults without changing pins; 13 executed Pi profile-helper observations agree with native results (profile evidence); package execution remains EXT-FACET-SESSION |
+| EXT-PROFILE-SESSION | package.ts:37-66; ce/server.ts:573-602 | Each session pins the selection it first opened with | profile::defaults_are_sticky_sessions_are_pinned_and_empty_overrides_survive_restart; profile::a_failed_first_pin_keeps_its_selection_and_refuses_work_until_explicit_reopen | Native · E/extensions/profiles.rs + E/runtime/plugins.rs | Native session kv pin; plugin-free imports pin empty atomically | Same | — | NE | measured (native equivalent): first acquisition pins ordered selection including empty; restart/default changes preserve pins; failed writes refuse work until explicit reopen; concurrent acquisition/preparation agrees; imp::plugin_free_import_pins_empty_instead_of_inheriting_native_extensions; no TypeScript package conversion |
+| EXT-CONFLICT | session-worker-manager.ts:136-142 | Different selection for an active session → `Session <id> is active with a different plugin selection` | profile::an_active_selection_conflicts_until_retirement_and_old_questions_cannot_answer_the_replacement; profile::simultaneous_first_acquisition_and_profile_replacement_never_disagree | Native · E/extensions/profiles.rs + E/runtime/plugins.rs | Keep immutable selection for each runtime lifetime | Same refusal | — | NE | measured (native equivalent): active identical selection accepted, different selection refused with reference text; replacement allowed after retirement; old question IDs cannot answer the next lifetime; native regression, no executed Pi worker-conflict differential |
 | EXT-RELOAD | svc/worker.ts:68-117 | `SessionPlugins.reload()` hot-reloads facets, disposes retired generation | none | — | — | Desktop never calls reload | — | PA | not started (PA): no hot reload natively |
 | EXT-NATIVE | plan §2; ADR 0006 | Native versioned extension contract (tools, sections, hooks, questions, session control) | ext:: (8 tests); extp:: (13 tests); q:: (13 tests); rt::extension_questions_are_published_answered_and_validated | Opus · E/extensions, docs/native-extensions.md | n/a | Capability addition; not parity evidence | — | NC | measured (capability, not parity): ext::the_runner_refuses_other_api_versions_and_duplicates_and_reports_panics, ext::shutdown_deactivates_and_aborts_extensions_and_withdraws_their_questions, extp::a_crash_is_reported_once_and_never_restarted, extp::stopping_kills_the_whole_process_group, extp::handshake_failures_stop_the_extension, extp::an_oversized_line_stops_the_extension, rt::extension_questions_are_published_answered_and_validated; no sandbox (docs/native-extensions.md)  Native retirement/generation isolation: life::reopening_waits_for_extension_teardown_and_rejects_stale_ui_and_calls, life::an_answer_from_a_retired_lifetime_cannot_answer_its_replacement; ext::a_panicking_deactivation_still_aborts_tasks_and_releases_questions. This does not qualify TypeScript facet compatibility. |
 | EXT-DURABLE-BUILTIN | D/harness/{define,registry}.ts | Durable Extension API used only by built-ins (CodingTools, pi-prompt, subagent) | covered by TOOL-*, PRM-*, SUB-* | Opus · E/tools, E/context, E/runtime | — | — | — | NE | measured: covered by the TOOL-*, PRM-* and SUB-* rows' tests (rt::the_system_prompt_carries_project_instructions_and_stays_byte_stable lists the built-in tools) |
@@ -881,7 +888,7 @@ desktop `pipkin.sqlite3`.
 | IMP-SUBMISSIONS | D/harness/submissions.ts | Submissions with request ids, statuses, reasons | imp::imports_a_rich_session_losslessly_with_the_same_effective_context; rti::reference_fixtures_import_open_and_continue_equivalently | → requests with same keys/outcomes; unconfirmed journal rows never become new prompts | Lookup equal for every key | NC | measured: imp::imports_a_rich_session_losslessly_with_the_same_effective_context, rti::reference_fixtures_import_open_and_continue_equivalently (differential vs reference fixture for the 8 scenarios); lookup equality per key not asserted for every reason |
 | IMP-TASKS | D/scheduler.ts | Task graph incl. in-flight tool/generation/compaction phases | imp::in_flight_work_blocks_the_session | quiesce; interrupted tools → interrupted results; unsupported → stays on Pi | No new work executed by import | NC | measured: imp::in_flight_work_blocks_the_session (in-flight work refused, nothing executed); `h-worker-killed-mid-tool` handled by rti::reference_fixtures_import_open_and_continue_equivalently |
 | IMP-CHILDREN | conversations owner_task | Subagent children and parent call mapping, enable state | imp::subagent_selection_follows_the_reference_rules; rti::reference_fixtures_import_open_and_continue_equivalently (f-subagent) | → subagent_tasks + sessions.parent/root | Same directory + continuation | NC | measured: imp::subagent_selection_follows_the_reference_rules, rti::reference_fixtures_import_open_and_continue_equivalently (`f-subagent`, differential vs reference fixture) |
-| IMP-PLUGIN-STATE | ce/plugins/package.ts | Server/session plugin profiles; facet state (none durable in baseline) | imp::plugin_profiles_block_sticky_and_pinned_selections_without_touching_the_source; ne2e::a_plugin_selection_added_after_the_import_offer_never_transfers_ownership | source profiles unchanged; inspected profiles/hashes → import manifest; nonempty selections stay Pi-owned | Not silently activated | NC | measured (protection/refusal): server defaults, pinned selections, explicit empty overrides, multiple server identities, malformed/unreadable/hash-mismatched profiles, copied-path and symlink aliases, and changed-since-discovery/copy checks. No imported session or ownership record is written on refusal. `serverDir` / PI_SERVER_DIR / ~/.pi/server selects the coordination directory; unknown location fails closed. Native facet execution remains BL (EXT-FACET-*) |
+| IMP-PLUGIN-STATE | ce/plugins/package.ts | Server/session plugin profiles; facet state (none durable in baseline) | imp::plugin_profiles_block_sticky_and_pinned_selections_without_touching_the_source; ne2e::a_plugin_selection_added_after_the_import_offer_never_transfers_ownership | source profiles unchanged; inspected profiles/hashes → import manifest; nonempty selections stay Pi-owned | Not silently activated | NC | measured (protection/refusal): server defaults, pinned selections, explicit empty overrides, multiple server identities, malformed/unreadable/hash-mismatched profiles, copied-path and symlink aliases, and changed-since-discovery/copy checks. No imported session or ownership record is written on refusal. `serverDir` / PI_SERVER_DIR / ~/.pi/server selects the coordination directory; unknown location fails closed. Native facet execution remains BL (EXT-FACET-*); plugin-free root imports now pin an empty native profile atomically, preventing activation from unrelated native defaults (imp::plugin_free_import_pins_empty_instead_of_inheriting_native_extensions) |
 | IMP-AUTH | auth.json | Credentials | rti::credentials_merge_including_claude_oauth_without_overwriting_or_changing_the_source; imp::credentials_and_config_are_listed_without_values; ne2e::pi_credentials_are_imported_only_after_their_own_confirmation | Explicit confirmed copy including Anthropic OAuth; no overwrite or source mutation | Same credentials; no sync | NC | measured: cited local tests; no executed differential; live subscription continuation remains unverified (CLS-MIGRATION-ACTIVATION) |
 | IMP-CONFIG | models.json, settings.json, AGENTS.md, skills | Config/resources | rti::configuration_is_copied_without_overwriting_native_files | explicit copy to config root | Same effective config | NC | measured: rti::configuration_is_copied_without_overwriting_native_files; no differential |
 | IMP-DESKTOP-IDS | App/storage.rs | Desktop conversation/item refs, drafts, goals, journal | nmap::imported_sessions_keep_the_desktop_ids_the_pi_adapter_gave_them; ne2e::pi_conversations_are_imported_on_confirmation_with_their_desktop_data | legacy→native id map; desktop rows untouched | Drafts/goals still attached | NC | measured: nmap::imported_sessions_keep_the_desktop_ids_the_pi_adapter_gave_them, ne2e::pi_conversations_are_imported_on_confirmation_with_their_desktop_data, ctl::a_native_import_copies_from_the_namespace_the_pi_engine_uses, stor::conversation_data_is_copied_into_another_namespace_once_and_never_moved; no differential |

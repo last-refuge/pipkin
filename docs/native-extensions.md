@@ -170,23 +170,63 @@ Error codes are the protocol's `ErrorCode` names: `invalid` (bad params or a reu
 
 An existing facet package has two options:
 
-1. **Port it** to the native contract, either as a Rust `Extension` or as a process extension in any language. The examples above show both. For facets that only use `UiRequestHost`, `AgentController` and `History`, the port is mechanical.
+1. **Port it** to the native contract, either as a Rust `Extension` or as a process extension in any language. The examples above show both. Ports must account for the missing reference features listed below, including `waitForPrompt`.
 2. **Keep running it on the legacy Pi engine** (`--engine pi` with `--pi-extension <package>`), unchanged.
 
 The native engine does **not** run arbitrary TypeScript facet packages. The parity row for TypeScript facet compatibility stays **blocked**: it is served only by the legacy Pi bridge.
 
-## Not done here
+## Configuration and persistent selections
 
-- **Runtime wiring.** The engine runtime still has to do the following:
-  - create a `QuestionHost` per session and publish its views as `SessionChange::UiChanged`;
-  - map `AnswerQuestion`, `CancelQuestion` and `DismissNotices` to it;
-  - put its view in `SessionSnapshot.ui`;
-  - build a `CallHost` over its dispatch;
-  - start the configured extensions with an `ExtensionRunner`;
-  - dispose the host when the session closes.
-- **Configuration.** Nothing yet decides how a person configures process extensions (a flag or a settings key).
-- **Missing reference features:**
-  - `AgentController.waitForPrompt` (waiting for a prompt's answer text);
-  - facet hot reload (`SessionPlugins.reload`);
-  - services that facets publish to presentations.
-- **No sandbox.** A process extension runs with the person's privileges, like the reference's facets do inside the Node worker.
+Launch an owned native engine with `--engine native --engine-extension builtin:questions`
+(or `builtin:greeting`, or an executable path). Repeat `--engine-extension` for an ordered
+selection. The engine persists this default in its data directory. Later launches without
+extension flags restore it. `--engine-clear-extensions` explicitly clears the default; it
+cannot be combined with `--engine-extension` or used with `--engine-attach`.
+
+Each root session pins its selection on first acquisition, including an empty selection.
+Changing or clearing the default affects only sessions without a pin. An imported plugin-free
+Pi session pins an empty selection atomically with its history, so unrelated native defaults
+cannot activate in it. Imports with unsupported Pi facet selections are still refused.
+Subagent sessions do not load extension profiles.
+
+Protocol 7 adds `PrepareExtensions` and the `extensionProfiles` capability. Preparation
+validates and persists selections without activating an extension. The call's optional
+`session` selects a root session; omitting it selects the engine default. Omitting
+`extensions` reads/restores the selection (and pins an unpinned session); an explicit empty
+array clears the default or pins an empty session selection. For example, call payloads are:
+
+```json
+{"call":"prepareExtensions","extensions":[{"builtin":"questions"}]}
+{"call":"prepareExtensions","session":"<session-id>","extensions":[]}
+```
+
+An active session accepts only its current ordered selection. A different selection returns
+`Session <id> is active with a different plugin selection`. Release its attachments and let
+its runtime retire before selecting a replacement. Reopening waits for the previous extension
+lifetime to shut down; old questions cannot answer new ones.
+
+Process selections use `{"process":{"id":"example","argv":["/path/to/program","arg"]}}`.
+Preparation resolves the executable to an absolute path, checks file/executable access and
+unique runtime IDs, and preserves argument boundaries. It does not run a handshake or build
+TypeScript packages. Invalid or future profile formats fail closed. Explicit replacement can
+repair an inactive session's bad profile; startup `--engine-clear-extensions` can repair a bad
+default without editing SQLite. A failed first session pin prevents work until explicit reopen
+successfully persists the originally chosen selection.
+
+Schema 5 marks the new persistent semantics and uses the store's existing backup/upgrade and
+newer-schema refusal rules. Older engines must not silently ignore session pins.
+
+Runtime wiring is implemented: session snapshots and changes carry the question host's view,
+answer/cancel/dismiss calls reach it, and opening/retiring sessions starts/stops their selected
+native extensions.
+
+## Missing reference features
+
+- `AgentController.waitForPrompt` (waiting for a prompt's answer text).
+- Facet hot reload (`SessionPlugins.reload`).
+- Services that facets publish to presentations.
+- Execution or conversion of existing TypeScript facet packages; profile persistence does
+  not provide that compatibility.
+
+A process extension runs with the person's privileges, like the reference's facets do inside
+the Node worker. It is not sandboxed.

@@ -11,6 +11,10 @@ across clients; see [shared delivery evidence](../pipkin-rust-engine-evidence/sh
 Protocol **5** adds typed positional system messages; schema **4** protects their durable bodies
 from older runtimes. See [context evidence](../pipkin-rust-engine-evidence/positional-system.md).
 
+Protocol **7** adds `PrepareExtensions`, `ExtensionProfile` and the `extensionProfiles`
+capability. Schema **5** prevents older engines from silently ignoring persistent native
+extension selections; see [profile evidence](../pipkin-rust-engine-evidence/extension-profiles.md).
+
 ## Context
 
 Reference wire stack (audit `service-api.md` §4.2–4.3): CBOR frames with a 4-byte big-endian

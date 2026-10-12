@@ -36,12 +36,14 @@ impl Shared {
         if let Some(entry) = sessions.live.get(id) {
             return Ok(entry.rt.clone());
         }
-        if self.store.session(id)?.is_none() {
-            return Err(ProtoError::new(
-                ErrorCode::NotFound,
-                format!("Session {id} does not exist"),
-            ));
-        }
+        let row = self.store.session(id)?.ok_or_else(|| {
+            ProtoError::new(ErrorCode::NotFound, format!("Session {id} does not exist"))
+        })?;
+        let (extension_profile, pinned) = if row.parent.is_none() {
+            crate::extensions::profiles::resolve(&self.store, id)?
+        } else {
+            (Vec::new(), true)
+        };
         let shared = self.me.clone();
         let session = id.to_owned();
         let predecessor = sessions.retiring.get(id).cloned();
@@ -67,8 +69,17 @@ impl Shared {
             )));
             let mut rt = SessionRt::new(id, questions);
             rt.predecessor = predecessor;
+            rt.extension_profile = extension_profile;
             rt
         });
+        if !pinned
+            && let Err(error) =
+                crate::extensions::profiles::set_session(&self.store, id, &rt.extension_profile)
+        {
+            rt.profile_pin_pending
+                .store(true, std::sync::atomic::Ordering::Release);
+            self.storage_failure(&rt, &error.message);
+        }
         sessions.live.insert(
             id.to_owned(),
             Managed {

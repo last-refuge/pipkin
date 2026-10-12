@@ -636,7 +636,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 6);
+        assert_eq!(crate::PROTOCOL_VERSION, 7);
         let release = Call::ReleaseSession {
             session: "s1".into(),
         };

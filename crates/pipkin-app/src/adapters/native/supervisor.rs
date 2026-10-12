@@ -29,6 +29,7 @@ const DATA_FLAG: &str = "--engine-data-dir";
 const CONFIG_FLAG: &str = "--engine-config-dir";
 /// Repeatable: a session extension (`builtin:<name>` or an executable path).
 pub const EXTENSION_FLAG: &str = "--engine-extension";
+pub const CLEAR_EXTENSIONS_FLAG: &str = "--engine-clear-extensions";
 
 /// What the worker was asked to serve.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,6 +37,7 @@ pub struct WorkerArgs {
     pub data_dir: PathBuf,
     pub config_dir: PathBuf,
     pub extensions: Vec<String>,
+    pub clear_extensions: bool,
 }
 
 /// Starts allowed within `RESTART_WINDOW` before giving up.
@@ -63,12 +65,20 @@ pub fn worker_args(args: &[String]) -> Option<Result<WorkerArgs, String>> {
     let mut data = None;
     let mut config = None;
     let mut extensions = Vec::new();
+    let mut clear_extensions = false;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let (flag, inline) = match arg.split_once('=') {
             Some((f, v)) => (f, Some(v.to_owned())),
             None => (arg.as_str(), None),
         };
+        if flag == CLEAR_EXTENSIONS_FLAG {
+            if inline.is_some() {
+                return Some(Err(format!("{flag} does not take a value")));
+            }
+            clear_extensions = true;
+            continue;
+        }
         if flag == EXTENSION_FLAG {
             match inline.or_else(|| it.next().cloned()) {
                 Some(v) if !v.is_empty() => extensions.push(v),
@@ -87,11 +97,17 @@ pub fn worker_args(args: &[String]) -> Option<Result<WorkerArgs, String>> {
             _ => return Some(Err(format!("{flag} needs a value"))),
         }
     }
+    if clear_extensions && !extensions.is_empty() {
+        return Some(Err(
+            "Cannot select extensions and clear the default together".into(),
+        ));
+    }
     Some(match (data, config) {
         (Some(data_dir), Some(config_dir)) => Ok(WorkerArgs {
             data_dir,
             config_dir,
             extensions,
+            clear_extensions,
         }),
         _ => Err(format!("{WORKER_FLAG} needs {DATA_FLAG} and {CONFIG_FLAG}")),
     })
@@ -141,7 +157,12 @@ pub fn server_args(args: &[String]) -> Option<Result<(WorkerArgs, PathBuf), Stri
 }
 
 pub fn run_server(args: WorkerArgs, endpoint: PathBuf) -> i32 {
-    match engine_config(&args.data_dir, &args.config_dir, &args.extensions) {
+    match engine_config(
+        &args.data_dir,
+        &args.config_dir,
+        &args.extensions,
+        args.clear_extensions,
+    ) {
         Ok(config) => pipkin_engine::endpoint::run(config, &endpoint),
         Err(error) => {
             eprintln!("pipkin engine: {error}");
@@ -152,7 +173,12 @@ pub fn run_server(args: WorkerArgs, endpoint: PathBuf) -> i32 {
 
 /// Serve the engine over stdin/stdout until the desktop closes the channel. Returns the exit code.
 pub fn run_worker(args: WorkerArgs) -> i32 {
-    match engine_config(&args.data_dir, &args.config_dir, &args.extensions) {
+    match engine_config(
+        &args.data_dir,
+        &args.config_dir,
+        &args.extensions,
+        args.clear_extensions,
+    ) {
         Ok(config) => pipkin_engine::host::run_stdio(config),
         Err(e) => {
             eprintln!("pipkin engine: {e}");
@@ -166,12 +192,17 @@ pub fn engine_config(
     data_dir: &Path,
     config_dir: &Path,
     extensions: &[String],
+    clear_extensions: bool,
 ) -> Result<EngineConfig, String> {
     let mut config = EngineConfig::new(data_dir, config_dir);
+    if clear_extensions && !extensions.is_empty() {
+        return Err("Cannot select extensions and clear the default together".into());
+    }
+    config.clear_extensions = clear_extensions;
     for spec in extensions {
         config
             .extensions
-            .push(pipkin_engine::config::ExtensionSpec::parse(spec)?);
+            .push(pipkin_engine::config::parse_extension(spec)?);
     }
     Ok(config)
 }
@@ -191,6 +222,7 @@ impl WorkerSpec {
         data_dir: &Path,
         config_dir: &Path,
         extensions: &[String],
+        clear_extensions: bool,
         log_path: &Path,
     ) -> Result<WorkerSpec, String> {
         let program = std::env::current_exe()
@@ -210,6 +242,7 @@ impl WorkerSpec {
                     .iter()
                     .flat_map(|e| [EXTENSION_FLAG.into(), OsString::from(e)]),
             )
+            .chain(clear_extensions.then(|| OsString::from(CLEAR_EXTENSIONS_FLAG)))
             .collect(),
             log_path: log_path.to_path_buf(),
         })
@@ -225,6 +258,7 @@ pub enum HostSpec {
         data_dir: PathBuf,
         config_dir: PathBuf,
         extensions: Vec<String>,
+        clear_extensions: bool,
     },
     /// Tests: a link to a fake engine the test drives.
     #[cfg(test)]
@@ -345,10 +379,15 @@ impl Supervisor {
                 data_dir,
                 config_dir,
                 extensions,
+                clear_extensions,
             } => {
-                let handle =
-                    pipkin_engine::host::start(engine_config(&data_dir, &config_dir, &extensions)?)
-                        .map_err(|e| format!("cannot start the engine: {e}"))?;
+                let handle = pipkin_engine::host::start(engine_config(
+                    &data_dir,
+                    &config_dir,
+                    &extensions,
+                    clear_extensions,
+                )?)
+                .map_err(|e| format!("cannot start the engine: {e}"))?;
                 let (sender, receiver) = handle.connect("pipkin-desktop").split();
                 self.inprocess = Some(handle);
                 Ok(Link {
@@ -527,6 +566,7 @@ mod tests {
                 data_dir: PathBuf::from("/d"),
                 config_dir: PathBuf::from("/c"),
                 extensions: vec![],
+                clear_extensions: false,
             }))
         );
         assert!(matches!(
@@ -550,6 +590,7 @@ mod tests {
             Path::new("/d"),
             Path::new("/c"),
             &extensions,
+            false,
             Path::new("/l"),
         )
         .unwrap();
@@ -565,7 +606,45 @@ mod tests {
                 data_dir: PathBuf::from("/d"),
                 config_dir: PathBuf::from("/c"),
                 extensions,
+                clear_extensions: false,
             }))
+        );
+    }
+
+    #[test]
+    fn clearing_extension_defaults_reaches_worker_configuration_without_attached_or_mixed_selection()
+     {
+        let spec = WorkerSpec::engine(Path::new("/d"), Path::new("/c"), &[], true, Path::new("/l"))
+            .unwrap();
+        let args: Vec<String> = spec
+            .args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let parsed = worker_args(&args).unwrap().unwrap();
+        assert!(parsed.clear_extensions);
+        assert!(parsed.extensions.is_empty());
+        assert!(
+            engine_config(
+                &parsed.data_dir,
+                &parsed.config_dir,
+                &parsed.extensions,
+                parsed.clear_extensions
+            )
+            .unwrap()
+            .clear_extensions
+        );
+        let mut mixed = args.clone();
+        mixed.extend([EXTENSION_FLAG.into(), "builtin:questions".into()]);
+        assert!(worker_args(&mixed).unwrap().is_err());
+        assert!(
+            engine_config(
+                Path::new("/d"),
+                Path::new("/c"),
+                &["builtin:questions".into()],
+                true
+            )
+            .is_err()
         );
     }
 
@@ -734,6 +813,7 @@ mod tests {
             data_dir: dir.path().join("engine"),
             config_dir: dir.path().join("engine-config"),
             extensions: vec![],
+            clear_extensions: false,
         });
         let link = supervisor.start().unwrap();
         assert!(supervisor.alive());

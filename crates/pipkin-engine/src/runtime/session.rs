@@ -35,6 +35,9 @@ pub struct Settled {
 
 pub struct SessionRt {
     pub id: String,
+    /// Selection pinned before this lifetime was acquired. Never changed while active.
+    pub(super) extension_profile: Vec<ExtensionSpec>,
+    pub(super) profile_pin_pending: std::sync::atomic::AtomicBool,
     /// Completion of the preceding lifetime's extension teardown, if any.
     pub(super) predecessor: Option<Arc<CancellationToken>>,
     /// Serializes this session's admission/stop/settlement sequences.
@@ -56,6 +59,8 @@ impl SessionRt {
     pub fn new(id: &str, questions: crate::extensions::questions::QuestionHost) -> SessionRt {
         SessionRt {
             questions,
+            extension_profile: Vec::new(),
+            profile_pin_pending: std::sync::atomic::AtomicBool::new(false),
             predecessor: None,
             extensions: tokio::sync::Mutex::new(None),
             compacting: std::sync::atomic::AtomicBool::new(false),
@@ -194,33 +199,31 @@ impl Shared {
                 Ok(value)
             }
             Err(e) => {
-                log::error!("session {id}: storage failure: {e}");
-                let first = sess
-                    .failed
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .replace(e.to_string())
-                    .is_none();
-                // Background work (a run's flush, tool result or settlement) has no caller to
-                // answer: say so once, so a client never waits on a run that cannot finish.
-                if first {
-                    self.publish(Event::Notice {
-                        message: format!(
-                            "Conversation {id} stopped after a storage error ({e}). What was \
-                             saved before it is kept; reopen the conversation to continue."
-                        ),
-                    });
-                }
-                if let Some(active) = sess
-                    .active
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .as_ref()
-                {
-                    active.cancel.cancel();
-                }
+                self.storage_failure(sess, &e.to_string());
                 Err(e.into())
             }
+        }
+    }
+
+    pub(super) fn storage_failure(&self, sess: &SessionRt, why: &str) {
+        let id = &sess.id;
+        log::error!("session {id}: storage failure: {why}");
+        let first = sess
+            .failed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .replace(why.to_owned())
+            .is_none();
+        if first {
+            self.publish(Event::Notice { message: format!("Conversation {id} stopped after a storage error ({why}). What was saved before it is kept; reopen the conversation to continue.") });
+        }
+        if let Some(active) = sess
+            .active
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            active.cancel.cancel();
         }
     }
 
@@ -575,6 +578,21 @@ impl Shared {
     /// durable, record interrupted (unconfirmed) tool effects, and resume the rest.
     pub fn recover_session(self: &Arc<Self>, session: &str) -> Result<(), ProtoError> {
         let sess = self.session(session)?;
+        if sess
+            .profile_pin_pending
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            if let Err(error) = crate::extensions::profiles::set_session(
+                &self.store,
+                session,
+                &sess.extension_profile,
+            ) {
+                self.storage_failure(&sess, &error.message);
+                return Err(error);
+            }
+            sess.profile_pin_pending
+                .store(false, std::sync::atomic::Ordering::Release);
+        }
         *sess.failed.lock().unwrap_or_else(|e| e.into_inner()) = None;
         if sess.active_run().is_some() {
             return Ok(());

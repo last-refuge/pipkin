@@ -1720,3 +1720,29 @@ fn a_symlinked_session_keeps_its_plugin_selection() {
     plugin_profile(&agent, "one", Some(&alias), json!(["/plugins/questions"]));
     assert_plugin_blocked(&agent, &store);
 }
+
+#[test]
+fn plugin_free_import_pins_empty_instead_of_inheriting_native_extensions() {
+    let agent = Agent::new();
+    drop(rich_session(&agent));
+    let store = Store::memory().unwrap();
+    crate::extensions::profiles::set_default(
+        &store,
+        &[pipkin_engine_protocol::ExtensionSpec::Builtin(
+            "questions".into(),
+        )],
+    )
+    .unwrap();
+    import(&agent, &store, ROOT).unwrap();
+    assert!(
+        crate::extensions::profiles::pin(&store, ROOT)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        crate::extensions::profiles::default(&store).unwrap(),
+        vec![pipkin_engine_protocol::ExtensionSpec::Builtin(
+            "questions".into()
+        )]
+    );
+}

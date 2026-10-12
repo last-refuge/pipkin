@@ -7,6 +7,7 @@ mod glue;
 mod import;
 mod lifecycle;
 pub mod models;
+mod plugins;
 mod run;
 mod session;
 mod subagents;
@@ -193,6 +194,12 @@ impl EngineHandle {
         tools: Vec<Arc<dyn Tool>>,
     ) -> Result<EngineHandle, String> {
         let store = Store::open(&config.data_dir).map_err(|e| e.to_string())?;
+        crate::extensions::profiles::initialize(
+            &store,
+            &config.extensions,
+            config.clear_extensions,
+        )
+        .map_err(|e| e.to_string())?;
         let epoch = store.next_epoch().map_err(|e| e.to_string())?;
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(4)
@@ -459,6 +466,7 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
                 capabilities: vec![
                     "durableInvalidations".into(),
                     "sessionAttachments".into(),
+                    "extensionProfiles".into(),
                     "subagents".into(),
                     "questions".into(),
                     "compaction".into(),
@@ -485,6 +493,10 @@ async fn dispatch(shared: &Arc<Shared>, client: u64, call: Call) -> Result<Reply
             cursor.0 = through;
             Ok(Reply::Ok)
         }
+        Call::PrepareExtensions {
+            session,
+            extensions,
+        } => shared.prepare_extensions(session, extensions),
         Call::ListSessions => Ok(Reply::Sessions {
             sessions: shared.summaries()?,
         }),
@@ -863,9 +875,6 @@ impl Shared {
 impl Shared {
     /// Start configured extensions once per active session lifetime.
     async fn ensure_extensions(self: &Arc<Self>, session: &str) {
-        if self.config.extensions.is_empty() {
-            return;
-        }
         let Ok(sess) = self.session(session) else {
             return;
         };
@@ -887,7 +896,7 @@ impl Shared {
             dispatch,
         ));
         let mut runner = crate::extensions::ExtensionRunner::new(host);
-        for spec in &self.config.extensions {
+        for spec in &sess.extension_profile {
             let extension: Arc<dyn crate::extensions::Extension> = match spec {
                 crate::config::ExtensionSpec::Builtin(name) if name == "questions" => {
                     Arc::new(crate::extensions::examples::QuestionsExample)

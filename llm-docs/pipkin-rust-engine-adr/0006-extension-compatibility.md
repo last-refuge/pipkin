@@ -75,6 +75,24 @@ critical-path work").
    questions, custom remote services, session control and reload, and must measure what a
    Node bridge would cost if the owner chooses to keep one.
 
+## Native profile implementation (2026-10-11)
+
+Protocol 7 / schema 5 implements sticky engine defaults, first-acquisition session pins,
+explicit empty selections and active-selection conflicts for native extension ports.
+`PrepareExtensions` validates executable identities/unique IDs and persists without activation;
+`--engine-clear-extensions` repairs or clears the default without changing existing pins.
+Session acquisition and profile selection share a registry lock. Failed first-pin writes keep
+the session closed until explicit reopen persists the same selection. Imported plugin-free
+roots pin empty in the import transaction. Unsupported Pi facet selections remain refused.
+
+Thirteen observations captured by executing the pinned Pi profile helpers agree with native
+protocol results. Native tests additionally cover conflicts, retirement, stale questions,
+concurrent preparation/acquisition, storage faults and schema upgrade. See
+[profile evidence](../pipkin-rust-engine-evidence/extension-profiles.md).
+This implements the selection mechanism for native ports; TypeScript execution, custom remote
+services, hot reload and `waitForPrompt` remain separate blockers. The tool/section/hook contract
+in decision 1 remains a proposal, not a claim about the current native extension API.
+
 ## Consequences
 
 - Extension compatibility remains a release blocker for native default and Pi retirement

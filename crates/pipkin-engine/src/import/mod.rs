@@ -662,6 +662,11 @@ fn write_plan(
             for (key, value) in &s.kv {
                 Store::kv_set(tx, &s.id, key, value)?;
             }
+            // Import currently admits only plugin-free Pi selections. Pin that explicit
+            // empty selection so an unrelated native server default cannot activate code.
+            if s.parent.is_none() {
+                crate::extensions::profiles::write_session(tx, &s.id, &[])?;
+            }
             for (bucket, key, value) in &s.usage {
                 tx.execute(
                     "INSERT INTO usage(session, bucket, key, value) VALUES (?1, ?2, ?3, ?4)",

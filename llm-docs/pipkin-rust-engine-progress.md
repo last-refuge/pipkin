@@ -11,7 +11,29 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — desktop byte pressure and Stop
+## Current follow-up — persistent native extension profiles
+
+Desktop byte pressure/Stop is committed as **`9047b57`**. Protocol **7** / schema **5** now
+persists native defaults and per-session selections, preserves empty pins, rejects conflicting
+active selections, and supports explicit default clearing at startup. Plugin-free Pi imports
+pin empty atomically rather than inheriting unrelated native defaults. First-pin storage faults
+keep work refused until explicit reopen persists the original selection.
+
+Thirteen observations from the executed pinned Pi profile helpers match native protocol results;
+additional native tests cover selection races, retirement/stale questions, invalid profiles,
+process identities/argv, storage faults and schema backup/upgrade. See
+[profile evidence](pipkin-rust-engine-evidence/extension-profiles.md). Required checks:
+**1417 passed, 0 failed, 53 ignored**, Clippy/formatting clean; logs
+`/tmp/pipkin-profiles-{workspace,clippy,fmt}-final.log`. Earlier failed checks are recorded in
+that evidence file. No native-window or live-provider check was performed in this batch.
+
+Ledger: **503 rows; NC 404, NE 28, NP 30, PA 31, BL 9, LB 1; 426 measured, 7 observed,
+10 unverified, 60 not started, 0 currently failed, 0 qualified**. Profile mechanisms are native
+equivalents; existing TypeScript package execution stays blocked. Next: extension wait/control,
+remote services and reload, remaining provider/history gaps and full release qualification.
+Native remains opt-in, and Pi remains the default.
+
+## Previous follow-up — desktop byte pressure and Stop
 
 Bounded provider progress is committed as **`baf8eff`**. Native desktop events now use
 128-event / 8 MiB owned-payload admission, charged until the controller applies each batch.

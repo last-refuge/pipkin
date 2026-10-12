@@ -18,7 +18,7 @@ pub use content::*;
 pub use view::*;
 
 /// Wire protocol version. Bump on any incompatible change to [`api`], [`content`] or [`view`].
-// Version 6 makes OpenSession an attachment with explicit ReleaseSession/disconnect cleanup.
-pub const PROTOCOL_VERSION: u32 = 6;
+// Version 7 adds typed native extension profile preparation and selection.
+pub const PROTOCOL_VERSION: u32 = 7;
 
 pub mod delivery;

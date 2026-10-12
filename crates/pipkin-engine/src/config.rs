@@ -66,43 +66,43 @@ pub struct EngineConfig {
     pub max_active_generations: usize,
     /// Upper bound on concurrently running tool processes.
     pub max_tool_processes: usize,
-    /// Session extensions started for every root session when it is first opened.
+    /// Explicit nonempty native extension default. Empty restores the saved engine default;
+    /// PrepareExtensions can explicitly clear it. Root sessions pin their first selection.
     pub extensions: Vec<ExtensionSpec>,
+    /// Explicitly clear the sticky default at startup (mutually exclusive with extensions).
+    pub clear_extensions: bool,
 }
 
-/// A configured session extension.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ExtensionSpec {
-    /// A native extension compiled into the engine (`questions`, `greeting`).
-    Builtin(String),
-    /// An out-of-process extension: argv (no shell), JSON lines over stdio.
-    Process { id: String, argv: Vec<String> },
-}
+pub use pipkin_engine_protocol::ExtensionSpec;
 
-impl ExtensionSpec {
-    /// Parse `builtin:<name>` or a path to an executable (its file stem is the id).
-    pub fn parse(raw: &str) -> Result<ExtensionSpec, String> {
-        if let Some(name) = raw.strip_prefix("builtin:") {
-            return match name {
-                "questions" | "greeting" => Ok(ExtensionSpec::Builtin(name.to_owned())),
-                other => Err(format!(
-                    "unknown built-in extension {other:?} (questions, greeting)"
-                )),
-            };
-        }
-        let path = PathBuf::from(raw);
-        if !path.is_file() {
-            return Err(format!("extension {raw} is not a file"));
-        }
-        let id = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| raw.to_owned());
-        Ok(ExtensionSpec::Process {
-            id,
-            argv: vec![path.display().to_string()],
-        })
+/// Parse `builtin:<name>` or a path to an executable (its file stem is the id).
+pub fn parse_extension(raw: &str) -> Result<ExtensionSpec, String> {
+    if let Some(name) = raw.strip_prefix("builtin:") {
+        return match name {
+            "questions" | "greeting" => Ok(ExtensionSpec::Builtin(name.to_owned())),
+            other => Err(format!(
+                "unknown built-in extension {other:?} (questions, greeting)"
+            )),
+        };
     }
+    let path = PathBuf::from(raw);
+    if !path.is_file() {
+        return Err(format!("extension {raw} is not a file"));
+    }
+    let id = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| raw.to_owned());
+    let path =
+        std::fs::canonicalize(&path).map_err(|e| format!("cannot resolve extension {raw}: {e}"))?;
+    Ok(ExtensionSpec::Process {
+        id,
+        argv: vec![
+            path.to_str()
+                .ok_or_else(|| "extension path is not UTF-8".to_owned())?
+                .to_owned(),
+        ],
+    })
 }
 
 impl EngineConfig {
@@ -116,6 +116,7 @@ impl EngineConfig {
             max_active_generations: 8,
             max_tool_processes: 16,
             extensions: vec![],
+            clear_extensions: false,
         }
     }
 

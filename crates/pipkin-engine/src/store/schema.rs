@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -188,7 +188,8 @@ END;
 "#;
 
 // Version 4 introduces positional system message bodies; older runtimes must refuse them.
-const MIGRATIONS: &[&str] = &[V1, V2, V3, ""];
+// Version 5 pins extension selections in kv/meta; older engines would ignore these choices.
+const MIGRATIONS: &[&str] = &[V1, V2, V3, "", ""];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

@@ -63,6 +63,7 @@ pub struct Options {
     /// `--engine native`: session extensions (`--engine-extension`, repeatable): an executable
     /// speaking the process extension protocol, or `builtin:<name>`.
     pub engine_extensions: Vec<String>,
+    pub engine_clear_extensions: bool,
 }
 
 /// The engine behind real mode.
@@ -106,6 +107,7 @@ impl Default for Options {
             engine_host: HostKind::Child,
             engine_attach: None,
             engine_extensions: vec![],
+            engine_clear_extensions: false,
         }
     }
 }
@@ -178,6 +180,9 @@ impl Options {
                         }
                     }
                 }
+                "--engine-clear-extensions" => {
+                    options.engine_clear_extensions = true;
+                }
                 "--engine-extension" => {
                     let raw = value("--engine-extension")?;
                     let spec = if raw.starts_with("builtin:") {
@@ -188,7 +193,7 @@ impl Options {
                             .display()
                             .to_string()
                     };
-                    pipkin_engine::config::ExtensionSpec::parse(&spec)
+                    pipkin_engine::config::parse_extension(&spec)
                         .map_err(|e| format!("--engine-extension: {e}"))?;
                     options.engine_extensions.push(spec);
                 }
@@ -249,15 +254,25 @@ impl Options {
                 );
             }
         }
-        if !options.engine_extensions.is_empty() && options.engine != EngineKind::Native {
-            return Err("--engine-extension applies to --engine native".into());
+        if options.engine_clear_extensions && !options.engine_extensions.is_empty() {
+            return Err("Cannot select extensions and clear the default together".into());
+        }
+        if (options.engine_clear_extensions || !options.engine_extensions.is_empty())
+            && options.engine != EngineKind::Native
+        {
+            return Err(
+                "--engine-extension and --engine-clear-extensions apply to --engine native".into(),
+            );
         }
         if options.engine_attach.is_some() {
             if options.engine != EngineKind::Native {
                 return Err("--engine-attach applies to --engine native".into());
             }
-            if engine_host.is_some() || !options.engine_extensions.is_empty() {
-                return Err("an attached engine owns its configuration; omit --engine-host and --engine-extension".into());
+            if engine_host.is_some()
+                || !options.engine_extensions.is_empty()
+                || options.engine_clear_extensions
+            {
+                return Err("an attached engine owns its configuration; omit --engine-host, --engine-extension and --engine-clear-extensions".into());
             }
         }
         if let Some(host) = engine_host {
@@ -834,6 +849,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                         &dirs.data,
                         &dirs.config,
                         &options.engine_extensions,
+                        options.engine_clear_extensions,
                         &log_path,
                     ) {
                         Ok(spec) => HostSpec::Child(spec),
@@ -846,6 +862,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                         data_dir: dirs.data.clone(),
                         config_dir: dirs.config.clone(),
                         extensions: options.engine_extensions.clone(),
+                        clear_extensions: options.engine_clear_extensions,
                     },
                 }
             };
@@ -1635,6 +1652,32 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(ext.engine_extensions, vec!["builtin:questions".to_owned()]);
+        assert!(
+            parse(&["--engine", "native", "--engine-clear-extensions"])
+                .unwrap()
+                .engine_clear_extensions
+        );
+        assert!(parse(&["--engine-clear-extensions"]).is_err());
+        assert!(
+            parse(&[
+                "--engine",
+                "native",
+                "--engine-clear-extensions",
+                "--engine-extension",
+                "builtin:questions"
+            ])
+            .is_err()
+        );
+        assert!(
+            parse(&[
+                "--engine",
+                "native",
+                "--engine-attach",
+                "/tmp/owned-elsewhere",
+                "--engine-clear-extensions"
+            ])
+            .is_err()
+        );
         assert!(parse(&["--engine-extension", "builtin:questions"]).is_err());
         assert!(parse(&["--engine", "native", "--engine-extension", "builtin:nope"]).is_err());
         assert!(parse(&["--engine", "native", "--engine-extension", "/no/such/file"]).is_err());

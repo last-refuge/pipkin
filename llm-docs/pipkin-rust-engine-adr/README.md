@@ -8,18 +8,19 @@ Reference revision for every `<pi-staged>` citation: `d2a311097cbcf669e699479587
 with both Pipkin overlays applied exactly as `scripts/build-engine.sh` stages a clean release.
 Native status was reconciled at `e4c3a8c`, then updated for schema 2/protocol 3 import protection
 and durable retries, then schema 3/protocol 4 durable delivery and memory reclamation
-then schema 4/protocol 5 positional system context on 2026-10-11
+then schema 4/protocol 5 positional system context, protocol 6 session attachments,
+and schema 5/protocol 7 native extension profiles on 2026-10-11
 (see the corresponding evidence records); historical
 measurements retain their original identities in the evidence records.
 
 | ADR | Decision | Status |
 | --- | --- | --- |
 | [0001](0001-execution-topology.md) | Owned worker child of the same executable; in-process host for tests and benchmarks | Accepted; host, desktop supervisor and worker entry implemented |
-| [0002](0002-protocol-and-transport.md) | Length-prefixed JSON frames over inherited pipes; epoch/seq events, snapshots on gaps, control lane | Accepted; bounded live delivery, atomic invalidation outbox and acknowledged catch-up implemented; explicit local attach implemented (ADR 0008); serialize-once fan-out open |
+| [0002](0002-protocol-and-transport.md) | Length-prefixed JSON frames over inherited pipes; epoch/seq events, snapshots on gaps, control lane | Accepted; bounded live delivery, atomic invalidation outbox and acknowledged catch-up implemented; explicit local attach implemented (ADR 0008); serialize-once fan-out and desktop byte admission implemented |
 | [0003](0003-durable-store-and-recovery.md) | One SQLite store per data root, explicit schema, short transactions, state-driven run loop, fail closed, `synchronous=FULL` | Accepted; implemented; injected storage faults and actual worker SIGKILL tested |
 | [0004](0004-stop-and-queue-semantics.md) | Reference queue boundaries; Stop retires inputs with a `retired` flag instead of omit-edit entries | Accepted; differential context test pending |
 | [0005](0005-tool-replay-and-subagent-recovery.md) | Unsafe-by-default replay; subagent is the replay-safe registration with an atomic child mapping | Accepted; tools and recorded-contract check implemented; build provenance proposed |
-| [0006](0006-extension-compatibility.md) | Native extension trait + process protocol; TypeScript facets need Node, so the legacy bridge stays and the row stays blocked | Proposed; native hosts/example ports exist; TypeScript parity remains blocked |
+| [0006](0006-extension-compatibility.md) | Native extension trait + process protocol; TypeScript facets need Node, so the legacy bridge stays and the row stays blocked | Proposed; native hosts/example ports and durable profile selection implemented; TypeScript parity remains blocked |
 | [0007](0007-credential-ownership-and-migration.md) | Own config root; `auth.json`-compatible private file until a qualified secret store; explicit import; Claude subscription integration | Accepted; auth implemented; Claude live lifecycle checks passed, full qualification pending |
 
 | [0008](0008-external-attachment.md) | Explicit owner-authenticated local endpoint; independently owned foreground server, attached desktops disconnect only | Implemented; local Linux socket/desktop/process evidence, full qualification pending |

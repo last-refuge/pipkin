@@ -104,6 +104,44 @@ mod tests {
     }
 
     #[test]
+    fn extension_profile_frames_distinguish_restore_from_explicit_empty_selection() {
+        for (value, expected) in [
+            (
+                serde_json::json!({"call":"prepareExtensions", "session":"s"}),
+                None,
+            ),
+            (
+                serde_json::json!({"call":"prepareExtensions", "session":"s", "extensions":[]}),
+                Some(vec![]),
+            ),
+            (
+                serde_json::json!({"call":"prepareExtensions", "session":"s", "extensions":[{"builtin":"questions"},{"process":{"id":"custom","argv":["/path with spaces/extension","literal argument"]}}]}),
+                Some(vec![
+                    crate::ExtensionSpec::Builtin("questions".into()),
+                    crate::ExtensionSpec::Process {
+                        id: "custom".into(),
+                        argv: vec![
+                            "/path with spaces/extension".into(),
+                            "literal argument".into(),
+                        ],
+                    },
+                ]),
+            ),
+        ] {
+            let mut bytes = Vec::new();
+            write(&mut bytes, &serde_json::json!({"id":1,"call":value})).unwrap();
+            let decoded: ClientFrame = read(&mut bytes.as_slice()).unwrap();
+            assert_eq!(
+                decoded.call,
+                Call::PrepareExtensions {
+                    session: Some("s".into()),
+                    extensions: expected
+                }
+            );
+        }
+    }
+
+    #[test]
     fn oversized_and_truncated_frames_are_refused() {
         let mut buf = ((MAX_FRAME_BYTES + 1) as u32).to_be_bytes().to_vec();
         buf.extend_from_slice(b"{}");

@@ -13,6 +13,18 @@ use serde::{Deserialize, Serialize};
 use crate::content::ImageInput;
 use crate::view::*;
 
+/// A native session extension. Existing TypeScript facet packages require a separate port.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub enum ExtensionSpec {
+    Builtin(String),
+    /// Direct argv, without a shell. The host normalizes argv[0] to an absolute executable.
+    Process {
+        id: String,
+        argv: Vec<String>,
+    },
+}
+
 /// Which lane a frame travels in. Control frames (Stop, Shutdown) are handled ahead of queued
 /// normal calls so a slow presentation or a busy session cannot delay cancellation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,6 +128,12 @@ pub enum Call {
     },
     AckEvents {
         through: u64,
+    },
+    /// Read/pin or explicitly replace the native extension selection. None session targets
+    /// the engine default; omitted extensions restore the saved selection. [] is explicit.
+    PrepareExtensions {
+        session: Option<SessionId>,
+        extensions: Option<Vec<ExtensionSpec>>,
     },
     ListSessions,
     /// Idempotent under `request`: the same key returns the same session.
@@ -349,6 +367,10 @@ pub struct ToolOutputView {
 pub enum Reply {
     Welcome(Welcome),
     Events(EventPage),
+    ExtensionProfile {
+        session: Option<SessionId>,
+        extensions: Vec<ExtensionSpec>,
+    },
     Sessions {
         sessions: Vec<SessionSummary>,
     },

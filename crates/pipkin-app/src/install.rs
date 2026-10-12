@@ -551,6 +551,7 @@ pub fn diagnose_native(cli_data_dir: Option<&Path>, probe: bool) -> (String, boo
             &root.join("engine"),
             &root.join("engine-config"),
             &[],
+            false,
             &root.join("engine.log"),
         )
         .and_then(|spec| probe_native(&spec, &root, Duration::from_secs(30)));

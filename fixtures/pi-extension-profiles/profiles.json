@@ -1,0 +1,35 @@
+{
+  "referenceRevision": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "sourceSha256": "ea626c8a56aa2bf81b2b67646e60a9f1f0467633e4f8cf9836ba948dd2b0702f",
+  "nodeVersion": "v26.8.1",
+  "scope": "Original Pi profile helper calls; package paths mapped to native builtin labels. Does not execute facet packages or server/worker conflict and reload workflows.",
+  "observations": {
+    "server_absent": [],
+    "server_explicit": [
+      "questions",
+      "greeting"
+    ],
+    "server_restored": [
+      "questions",
+      "greeting"
+    ],
+    "session_pinned": [
+      "questions"
+    ],
+    "session_empty": [],
+    "server_changed": [
+      "greeting"
+    ],
+    "session_after_default_change": [
+      "questions"
+    ],
+    "empty_after_default_change": [],
+    "server_cleared": [],
+    "server_after_clear": [],
+    "session_after_server_clear": [
+      "questions"
+    ],
+    "duplicate_rejected": true,
+    "future_profile_rejected": true
+  }
+}

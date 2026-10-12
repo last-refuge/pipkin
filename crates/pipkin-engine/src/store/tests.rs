@@ -738,7 +738,7 @@ fn a_v3_database_is_backed_up_before_positional_system_bodies_are_written() {
         .unwrap();
     }
     let s = Store::open(dir.path()).unwrap();
-    assert_eq!(s.read(schema::version).unwrap(), 4);
+    assert_eq!(s.read(schema::version).unwrap(), SCHEMA_VERSION);
     let backup = Connection::open_with_flags(
         dir.path().join("engine.sqlite.v3.bak"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -771,4 +771,49 @@ fn closing_a_store_releases_ownership_even_when_a_child_retains_its_descriptor()
     );
     drop(reopened);
     Store::open(dir.path()).unwrap();
+}
+
+#[test]
+fn a_v4_database_is_backed_up_before_pinned_extension_profiles_are_written() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let s = Store::open(dir.path()).unwrap();
+        session(&s, "existing");
+        s.tx(|tx| {
+            Store::kv_set(tx, "existing", "opaque-state", "retained bytes")?;
+            tx.execute_batch("PRAGMA user_version = 4")?;
+            Ok(())
+        })
+        .unwrap();
+    }
+    let s = Store::open(dir.path()).unwrap();
+    assert_eq!(s.read(schema::version).unwrap(), SCHEMA_VERSION);
+    assert_eq!(
+        s.kv_get("existing", "opaque-state").unwrap().as_deref(),
+        Some("retained bytes")
+    );
+    crate::extensions::profiles::pin(&s, "existing").unwrap();
+    let backup = Connection::open_with_flags(
+        dir.path().join("engine.sqlite.v4.bak"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    assert_eq!(schema::version(&backup).unwrap(), 4);
+    assert_eq!(
+        backup
+            .query_row("SELECT value FROM kv WHERE key = 'opaque-state'", [], |r| r
+                .get::<_, String>(0))
+            .unwrap(),
+        "retained bytes"
+    );
+    assert_eq!(
+        backup
+            .query_row(
+                "SELECT COUNT(*) FROM kv WHERE key = ?1",
+                [crate::extensions::profiles::KEY],
+                |r| r.get::<_, u64>(0)
+            )
+            .unwrap(),
+        0
+    );
 }

@@ -17,6 +17,7 @@
 
 pub mod examples;
 pub mod process;
+pub(crate) mod profiles;
 pub mod questions;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
