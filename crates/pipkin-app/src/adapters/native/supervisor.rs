@@ -12,7 +12,7 @@ use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -97,6 +97,59 @@ pub fn worker_args(args: &[String]) -> Option<Result<WorkerArgs, String>> {
     })
 }
 
+/// Foreground external server, before GPUI starts. Existing worker configuration flags
+/// name its data/config roots and extensions; the endpoint is always explicit.
+pub fn server_args(args: &[String]) -> Option<Result<(WorkerArgs, PathBuf), String>> {
+    if !args
+        .iter()
+        .any(|a| a == "--engine-server" || a.starts_with("--engine-server="))
+    {
+        return None;
+    }
+    let mut endpoint = None;
+    let mut worker = vec![WORKER_FLAG.to_owned()];
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        if arg == WORKER_FLAG {
+            return Some(Err(
+                "--engine-server cannot be combined with --engine-worker".into(),
+            ));
+        }
+        if arg == "--engine-server" || arg.starts_with("--engine-server=") {
+            if endpoint.is_some() {
+                return Some(Err("--engine-server may only be specified once".into()));
+            }
+            let value = arg
+                .split_once('=')
+                .map(|(_, v)| v.to_owned())
+                .or_else(|| it.next().cloned());
+            match value {
+                Some(v) if !v.is_empty() && !v.starts_with("--") => {
+                    endpoint = Some(PathBuf::from(v))
+                }
+                _ => return Some(Err("--engine-server needs an endpoint directory".into())),
+            }
+        } else {
+            worker.push(arg.clone());
+        }
+    }
+    Some(
+        worker_args(&worker)
+            .expect("worker flag provided")
+            .map(|args| (args, endpoint.expect("endpoint parsed"))),
+    )
+}
+
+pub fn run_server(args: WorkerArgs, endpoint: PathBuf) -> i32 {
+    match engine_config(&args.data_dir, &args.config_dir, &args.extensions) {
+        Ok(config) => pipkin_engine::endpoint::run(config, &endpoint),
+        Err(error) => {
+            eprintln!("pipkin engine: {error}");
+            2
+        }
+    }
+}
+
 /// Serve the engine over stdin/stdout until the desktop closes the channel. Returns the exit code.
 pub fn run_worker(args: WorkerArgs) -> i32 {
     match engine_config(&args.data_dir, &args.config_dir, &args.extensions) {
@@ -165,6 +218,8 @@ impl WorkerSpec {
 
 #[derive(Clone)]
 pub enum HostSpec {
+    /// Attach to an independently owned local engine; never launch or stop its process.
+    External(PathBuf),
     Child(WorkerSpec),
     InProcess {
         data_dir: PathBuf,
@@ -188,7 +243,7 @@ impl FrameSender for PipeSender {
     }
 }
 
-fn pipe_sender(stdin: ChildStdin) -> PipeSender {
+fn pipe_sender(stdin: impl std::io::Write + Send + 'static) -> PipeSender {
     let (tx, rx) = mpsc::sync_channel::<ClientFrame>(64);
     thread::Builder::new()
         .name("native-engine-writer".into())
@@ -216,11 +271,21 @@ impl FrameReceiver for PipeReceiver {
     }
 }
 
+#[cfg(unix)]
+struct SocketReceiver(BufReader<std::os::unix::net::UnixStream>);
+#[cfg(unix)]
+impl FrameReceiver for SocketReceiver {
+    fn recv(&mut self) -> Result<ServerFrame, String> {
+        frame::read(&mut self.0).map_err(|e| format!("the external engine connection ended: {e}"))
+    }
+}
+
 /// Starts, restarts (within a cap) and stops the engine.
 pub struct Supervisor {
     spec: HostSpec,
     child: Option<Child>,
     inprocess: Option<pipkin_engine::host::EngineHandle>,
+    external: Option<Box<dyn FnOnce() + Send>>,
     starts: Vec<Instant>,
     grace: Duration,
 }
@@ -231,6 +296,7 @@ impl Supervisor {
             spec,
             child: None,
             inprocess: None,
+            external: None,
             starts: Vec::new(),
             grace: STOP_GRACE,
         }
@@ -246,7 +312,7 @@ impl Supervisor {
     pub fn alive(&mut self) -> bool {
         match &mut self.child {
             Some(child) => matches!(child.try_wait(), Ok(None)),
-            None => self.inprocess.is_some(),
+            None => self.inprocess.is_some() || self.external.is_some(),
         }
     }
 
@@ -259,6 +325,9 @@ impl Supervisor {
     /// Start the engine (stopping a dead or previous one first) and connect to it.
     pub fn start(&mut self) -> Result<Link, String> {
         self.stop();
+        if let HostSpec::External(directory) = self.spec.clone() {
+            return self.attach(&directory);
+        }
         self.starts.retain(|t| t.elapsed() < RESTART_WINDOW);
         if self.starts.len() >= MAX_STARTS {
             return Err(format!(
@@ -270,6 +339,7 @@ impl Supervisor {
         }
         self.starts.push(Instant::now());
         match self.spec.clone() {
+            HostSpec::External(_) => unreachable!("handled before process restart limiting"),
             HostSpec::Child(spec) => self.spawn(&spec),
             HostSpec::InProcess {
                 data_dir,
@@ -288,6 +358,32 @@ impl Supervisor {
             }
             #[cfg(test)]
             HostSpec::Fake(make) => make(),
+        }
+    }
+
+    pub fn owns_engine(&self) -> bool {
+        !matches!(self.spec, HostSpec::External(_))
+    }
+
+    fn attach(&mut self, directory: &Path) -> Result<Link, String> {
+        #[cfg(unix)]
+        {
+            let stream = pipkin_engine::endpoint::connect(directory)
+                .map_err(|e| format!("cannot attach to {}: {e}", directory.display()))?;
+            let control = stream.try_clone().map_err(|e| e.to_string())?;
+            let writer = stream.try_clone().map_err(|e| e.to_string())?;
+            self.external = Some(Box::new(move || {
+                let _ = control.shutdown(std::net::Shutdown::Both);
+            }));
+            Ok(Link {
+                sender: Box::new(pipe_sender(writer)),
+                receiver: Box::new(SocketReceiver(BufReader::new(stream))),
+            })
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = directory;
+            Err("external socket attachment is supported on Unix hosts only".into())
         }
     }
 
@@ -330,6 +426,9 @@ impl Supervisor {
     /// closes its connection; this then waits up to the grace period for the worker to exit and
     /// kills it only if it has not. Idempotent.
     pub fn stop(&mut self) {
+        if let Some(disconnect) = self.external.take() {
+            disconnect();
+        }
         if let Some(mut child) = self.child.take() {
             let deadline = Instant::now() + self.grace;
             loop {
@@ -379,6 +478,39 @@ mod tests {
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn external_server_arguments_require_explicit_endpoint_and_engine_directories() {
+        let good = server_args(&args(&[
+            "--engine-server",
+            "/endpoint",
+            "--engine-data-dir",
+            "/data",
+            "--engine-config-dir",
+            "/config",
+        ]))
+        .unwrap()
+        .unwrap();
+        assert_eq!(good.1, PathBuf::from("/endpoint"));
+        assert_eq!(good.0.data_dir, PathBuf::from("/data"));
+        assert!(server_args(&args(&["--engine-server"])).unwrap().is_err());
+        assert!(
+            server_args(&args(&["--engine-server", "--engine-data-dir", "/data"]))
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            server_args(&args(&["--engine-server", "/endpoint", "--engine-worker"]))
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            server_args(&args(&["--engine-server", "/endpoint"]))
+                .unwrap()
+                .is_err()
+        );
+        assert!(server_args(&args(&["--engine", "native"])).is_none());
     }
 
     #[test]

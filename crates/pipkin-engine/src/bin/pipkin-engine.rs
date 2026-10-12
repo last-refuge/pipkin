@@ -1,6 +1,6 @@
 //! Headless engine host: serves the engine protocol over stdin/stdout frames.
 //!
-//! `pipkin-engine --data-dir <dir> --config-dir <dir> [--default-model provider/id]`
+//! `pipkin-engine --data-dir <dir> --config-dir <dir> [--default-model provider/id] [--listen <private-dir>]`
 //!
 //! The desktop normally runs the same code as a private worker mode of its own executable
 //! (`pipkin --engine-worker`); this binary exists for headless qualification and tests and
@@ -13,12 +13,26 @@ fn main() {
     let mut data: Option<PathBuf> = None;
     let mut config: Option<PathBuf> = None;
     let mut model: Option<String> = None;
+    let mut listen: Option<PathBuf> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--data-dir" => data = args.next().map(PathBuf::from),
             "--config-dir" => config = args.next().map(PathBuf::from),
             "--default-model" => model = args.next(),
+            "--listen" => {
+                let Some(path) = args
+                    .next()
+                    .filter(|v| !v.is_empty() && !v.starts_with("--"))
+                else {
+                    eprintln!("pipkin-engine: --listen needs a private endpoint directory");
+                    std::process::exit(2);
+                };
+                if listen.replace(PathBuf::from(path)).is_some() {
+                    eprintln!("pipkin-engine: --listen may only be specified once");
+                    std::process::exit(2);
+                }
+            }
             "--version" => {
                 println!(
                     "pipkin-engine {} (protocol {}, schema {})",
@@ -36,13 +50,16 @@ fn main() {
     }
     let (Some(data), Some(config)) = (data, config) else {
         eprintln!(
-            "usage: pipkin-engine --data-dir <dir> --config-dir <dir> [--default-model p/id]"
+            "usage: pipkin-engine --data-dir <dir> --config-dir <dir> [--default-model p/id] [--listen <private-dir>]"
         );
         std::process::exit(2);
     };
     let mut cfg = pipkin_engine::config::EngineConfig::new(data, config);
     cfg.default_model = model;
-    std::process::exit(pipkin_engine::host::run_stdio(cfg));
+    std::process::exit(match listen {
+        Some(directory) => pipkin_engine::endpoint::run(cfg, &directory),
+        None => pipkin_engine::host::run_stdio(cfg),
+    });
 }
 
 fn env_logger_init() {

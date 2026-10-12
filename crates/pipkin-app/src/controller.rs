@@ -58,6 +58,8 @@ pub struct Options {
     pub engine: EngineKind,
     /// `--engine native`: where the built-in engine runs (`--engine-host`).
     pub engine_host: HostKind,
+    /// Explicit local endpoint of a separately owned native engine.
+    pub engine_attach: Option<PathBuf>,
     /// `--engine native`: session extensions (`--engine-extension`, repeatable): an executable
     /// speaking the process extension protocol, or `builtin:<name>`.
     pub engine_extensions: Vec<String>,
@@ -102,6 +104,7 @@ impl Default for Options {
             terminal: None,
             engine: EngineKind::Pi,
             engine_host: HostKind::Child,
+            engine_attach: None,
             engine_extensions: vec![],
         }
     }
@@ -189,6 +192,10 @@ impl Options {
                         .map_err(|e| format!("--engine-extension: {e}"))?;
                     options.engine_extensions.push(spec);
                 }
+                "--engine-attach" => {
+                    let path = absolute(value("--engine-attach")?)?;
+                    options.engine_attach = Some(path.canonicalize().unwrap_or(path));
+                }
                 "--engine-host" => {
                     engine_host = Some(match value("--engine-host")?.as_str() {
                         "child" => HostKind::Child,
@@ -244,6 +251,14 @@ impl Options {
         }
         if !options.engine_extensions.is_empty() && options.engine != EngineKind::Native {
             return Err("--engine-extension applies to --engine native".into());
+        }
+        if options.engine_attach.is_some() {
+            if options.engine != EngineKind::Native {
+                return Err("--engine-attach applies to --engine native".into());
+            }
+            if engine_host.is_some() || !options.engine_extensions.is_empty() {
+                return Err("an attached engine owns its configuration; omit --engine-host and --engine-extension".into());
+            }
         }
         if let Some(host) = engine_host {
             if options.engine != EngineKind::Native {
@@ -302,6 +317,19 @@ fn profile_dir(options: &Options) -> PathBuf {
 fn namespace(options: &Options) -> String {
     match options.mode {
         Mode::Demo => DEMO_NAMESPACE.to_owned(),
+        Mode::Real if options.engine == EngineKind::Native && options.engine_attach.is_some() => {
+            format!(
+                "native-attach:{:x}",
+                stable_id(
+                    &options
+                        .engine_attach
+                        .as_ref()
+                        .unwrap()
+                        .display()
+                        .to_string()
+                )
+            )
+        }
         Mode::Real if options.engine == EngineKind::Native => format!(
             "native:{:x}",
             stable_id(
@@ -791,28 +819,38 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
             let log_path = crate::adapters::native::engine_log_path(&platform::data_dir(
                 options.data_dir.as_deref(),
             ));
-            let host = match options.engine_host {
-                HostKind::Child => match WorkerSpec::engine(
-                    &dirs.data,
-                    &dirs.config,
-                    &options.engine_extensions,
-                    &log_path,
-                ) {
-                    Ok(spec) => HostSpec::Child(spec),
-                    Err(error) => {
-                        eprintln!("pipkin: {error}");
-                        std::process::exit(2);
-                    }
-                },
-                HostKind::InProcess => HostSpec::InProcess {
-                    data_dir: dirs.data.clone(),
-                    config_dir: dirs.config.clone(),
-                    extensions: options.engine_extensions.clone(),
-                },
+            let host = if let Some(endpoint) = &options.engine_attach {
+                HostSpec::External(endpoint.clone())
+            } else {
+                match options.engine_host {
+                    HostKind::Child => match WorkerSpec::engine(
+                        &dirs.data,
+                        &dirs.config,
+                        &options.engine_extensions,
+                        &log_path,
+                    ) {
+                        Ok(spec) => HostSpec::Child(spec),
+                        Err(error) => {
+                            eprintln!("pipkin: {error}");
+                            std::process::exit(2);
+                        }
+                    },
+                    HostKind::InProcess => HostSpec::InProcess {
+                        data_dir: dirs.data.clone(),
+                        config_dir: dirs.config.clone(),
+                        extensions: options.engine_extensions.clone(),
+                    },
+                }
             };
+            let location = options
+                .engine_attach
+                .as_ref()
+                .unwrap_or(&dirs.data)
+                .display()
+                .to_string();
             let native = Arc::new(NativeBackend::new(
                 event_tx,
-                NativeConfig::new(host, dirs.data.display().to_string()),
+                NativeConfig::new(host, location),
             ));
             native_backend = Some(native.clone());
             native
@@ -1439,6 +1477,44 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(first.server_dir.join("default-server-id")).unwrap(),
             first.server_id
+        );
+    }
+
+    #[test]
+    fn external_native_attachment_has_its_own_namespace_and_rejects_owned_host_options() {
+        let attached = parse(&["--engine", "native", "--engine-attach", "/endpoint-a"]).unwrap();
+        assert_eq!(
+            attached.engine_attach.as_deref(),
+            Some(Path::new("/endpoint-a"))
+        );
+        let other = parse(&["--engine", "native", "--engine-attach", "/endpoint-b"]).unwrap();
+        assert_ne!(namespace(&attached), namespace(&other));
+        assert_ne!(
+            namespace(&attached),
+            namespace(&parse(&["--engine", "native"]).unwrap())
+        );
+        assert!(parse(&["--engine-attach", "/endpoint"]).is_err());
+        assert!(
+            parse(&[
+                "--engine",
+                "native",
+                "--engine-attach",
+                "/endpoint",
+                "--engine-host",
+                "child"
+            ])
+            .is_err()
+        );
+        assert!(
+            parse(&[
+                "--engine",
+                "native",
+                "--engine-attach",
+                "/endpoint",
+                "--engine-extension",
+                "builtin:questions"
+            ])
+            .is_err()
         );
     }
 

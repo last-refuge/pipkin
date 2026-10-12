@@ -79,6 +79,24 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 /// Holds the OS lock on the data root for as long as the store is open.
 struct DirLock {
     _file: std::fs::File,
+    #[cfg(unix)]
+    owner_pid: u32,
+}
+
+#[cfg(unix)]
+impl Drop for DirLock {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd;
+        if self.owner_pid == std::process::id() {
+            // A concurrent fork can retain this open-file description until exec even with
+            // CLOEXEC. Release ownership explicitly after SQLite closes, rather than waiting
+            // for every inherited descriptor. A fork child must not unlock its parent's store.
+            // SAFETY: _file is still a live, owned descriptor during Drop.
+            unsafe {
+                libc::flock(self._file.as_raw_fd(), libc::LOCK_UN);
+            }
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -97,7 +115,10 @@ fn lock_dir(dir: &Path) -> Result<DirLock> {
     if rc != 0 {
         return Err(StoreError::Locked(dir.to_path_buf()));
     }
-    Ok(DirLock { _file: file })
+    Ok(DirLock {
+        _file: file,
+        owner_pid: std::process::id(),
+    })
 }
 
 #[cfg(not(unix))]

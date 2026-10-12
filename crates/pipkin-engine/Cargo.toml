@@ -12,7 +12,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 log = "0.4"
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "process", "io-util", "macros", "fs", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "process", "io-util", "macros", "fs", "net", "signal"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json", "http2"] }

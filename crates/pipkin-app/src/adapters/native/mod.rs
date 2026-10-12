@@ -586,7 +586,9 @@ impl Worker {
             for message in batch {
                 match message {
                     Msg::Shutdown => {
-                        let _ = live.client.call(Call::Shutdown, SHUTDOWN_CALL);
+                        if self.supervisor.owns_engine() {
+                            let _ = live.client.call(Call::Shutdown, SHUTDOWN_CALL);
+                        }
                         live.client.close();
                         self.supervisor.stop();
                         live.client.join_reader(SHUTDOWN_CALL);

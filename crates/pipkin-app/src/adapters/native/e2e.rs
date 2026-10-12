@@ -2315,3 +2315,62 @@ fn durable_catch_up_recovers_a_missing_terminal_event_without_later_live_traffic
     h.stop();
     assert_eq!(open_requests(&db), 0);
 }
+
+#[cfg(unix)]
+#[test]
+fn external_desktops_share_runs_and_reconnect_without_owning_the_server() {
+    let fx = Fixture::start(|_, n| {
+        if n == 0 {
+            Reply::Hang
+        } else {
+            Reply::Text("continued".into())
+        }
+    });
+    let endpoint = fx.root.join("attach");
+    let server = pipkin_engine::endpoint::Server::start(fx.engine(), &endpoint).unwrap();
+    let config = || {
+        let mut c = NativeConfig::new(
+            HostSpec::External(endpoint.clone()),
+            endpoint.display().to_string(),
+        );
+        c.retry_delay = Duration::from_millis(50);
+        c
+    };
+    let mut a = Harness::start_with(config(), &fx.root.join("a.sqlite3"));
+    a.open_new_conversation(&fx.project);
+    let conversation = a.state.selected.unwrap();
+    a.send("started by A");
+    a.until_asked(&fx, 1);
+    a.until("A running", is_running);
+    let mut b = Harness::start_with(config(), &fx.root.join("b.sqlite3"));
+    b.until("shared conversation in B", |s| {
+        s.conversation(conversation).is_some()
+    });
+    b.dispatch(Command::SelectConversation(conversation));
+    b.until("B observes A's run", is_running);
+    a.stop();
+    assert!(b.state.availability().cancel);
+    b.dispatch(Command::Cancel);
+    b.until("B stops the shared run", is_idle);
+    b.send("continue after A quit");
+    b.until("B receives answer", |s| {
+        is_idle(s) && assistant_texts(s).contains(&"continued".into())
+    });
+    drop(server);
+    fx.restart_engine();
+    let _server = pipkin_engine::endpoint::Server::start(fx.engine(), &endpoint).unwrap();
+    b.until("B reconnects to the owner's restarted server", |s| {
+        s.connection == Connection::Ready && s.current().is_some_and(|c| c.opened)
+    });
+    b.send("after restart");
+    b.until_asked(&fx, 3);
+    b.until("post-restart turn settles", is_idle);
+    assert_eq!(
+        b.user_messages(),
+        ["started by A", "continue after A quit", "after restart"]
+    );
+    b.stop();
+    let probe = crate::install::diagnose_native_attachment(&endpoint, true);
+    assert!(!probe.1, "{}", probe.0);
+    assert!(probe.0.contains("Ownership: external"));
+}

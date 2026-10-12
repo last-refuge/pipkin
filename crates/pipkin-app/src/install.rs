@@ -586,6 +586,65 @@ pub fn diagnose_native(cli_data_dir: Option<&Path>, probe: bool) -> (String, boo
     (text, bad)
 }
 
+/// Diagnose the selected external endpoint. The optional probe performs only Hello and
+/// ListSessions, reports a count, and disconnects; it never spawns or stops an engine.
+pub fn diagnose_native_attachment(endpoint: &Path, probe: bool) -> (String, bool) {
+    use crate::adapters::native::client::Client;
+    use crate::adapters::native::supervisor::{HostSpec, Supervisor};
+    use pipkin_engine_protocol::{Call, PROTOCOL_VERSION, Reply};
+    let mut text = format!(
+        "{}\nExternal endpoint: {}\nOwnership: external (disconnect only)\n",
+        native_version_line(crate::storage::SCHEMA_VERSION),
+        endpoint.display()
+    );
+    if !probe {
+        text.push_str("Probe: not requested\n");
+        return (text, false);
+    }
+    let mut supervisor = Supervisor::new(HostSpec::External(endpoint.to_path_buf()));
+    let result = (|| -> Result<String, String> {
+        let link = supervisor.start()?;
+        let client = Client::start(link, |_| {});
+        let result = (|| {
+            let welcome = client
+                .call(
+                    Call::Hello {
+                        protocol: PROTOCOL_VERSION,
+                        client: "pipkin-diagnose".into(),
+                    },
+                    Duration::from_secs(5),
+                )
+                .map_err(|e| e.to_string())?;
+            if !matches!(welcome, Reply::Welcome(_)) {
+                return Err("unexpected Hello reply".into());
+            }
+            match client
+                .call(Call::ListSessions, Duration::from_secs(5))
+                .map_err(|e| e.to_string())?
+            {
+                Reply::Sessions { sessions } => {
+                    Ok(format!("connected; {} sessions", sessions.len()))
+                }
+                _ => Err("unexpected session-list reply".into()),
+            }
+        })();
+        client.close();
+        supervisor.stop();
+        client.join_reader(Duration::from_secs(2));
+        result
+    })();
+    match result {
+        Ok(detail) => {
+            text.push_str(&format!("Probe: OK ({detail})\n"));
+            (text, false)
+        }
+        Err(error) => {
+            text.push_str(&format!("Probe: FAILED ({error})\n"));
+            (text, true)
+        }
+    }
+}
+
 /// A new private directory under the temp directory; never an existing one.
 fn scratch_dir(prefix: &str) -> Result<PathBuf, String> {
     let nanos = std::time::SystemTime::now()

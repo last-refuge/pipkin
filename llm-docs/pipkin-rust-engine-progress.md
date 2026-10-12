@@ -11,7 +11,27 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — native session attachments and retirement
+## Current follow-up — external native attachment
+
+Implemented on top of **`e738037`**, protocol **6** / schema **4**. A separately owned
+foreground native server exposes an explicit private Unix endpoint. Both sides verify the
+OS user; clients cannot shut down the server. Bounded handshake/client capacity, shared
+runs/questions, disconnect, reconnect and stale-socket recovery are covered. The desktop
+supports `--engine-attach` and endpoint-specific state; `--engine-server` runs without GPUI.
+See [attachment evidence](pipkin-rust-engine-evidence/external-attachment.md) and
+[user commands](../docs/native-attachment.md).
+
+Required checks: **1385 passed, 0 failed, 53 ignored**, Clippy and formatting clean.
+Logs: `/tmp/pipkin-attach-final-{workspace,clippy,fmt}.log`. The first full run exposed
+store lock retention through inherited descriptors; a failing deterministic regression
+reproduced it, and explicit owner unlock fixes both store and endpoint lifetimes. Failed
+runs remain recorded in the attachment evidence. Counts: **503 rows; NC 404, NE 25,
+NP 30, PA 31, BL 12, LB 1; 423 measured, 7 observed, 0 currently failed, 10 unverified,
+63 not started; 0 qualified**. Pi-specific attachment flags have explicit native equivalents,
+not literal translations. Linux scripted/process evidence does not qualify live GUI, macOS,
+other OS users, transport differentials or performance. Native remains opt-in.
+
+## Previous follow-up — native session attachments and retirement
 
 Implemented on top of **`c3134df`**, protocol **6** / schema **4**. OpenSession now holds
 client attachment demand; ReleaseSession and disconnect release it without cancelling work.
@@ -320,7 +340,7 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
    support is now implemented with focused differential/runtime evidence. TypeScript execution
    and remaining unsupported-history conversion (replacement edits/forks) remain open.
 2. **Transport and compatibility:** durable invalidation replay and bounded engine/reader delivery
-   now have passing recovery/pressure evidence. External attach, serialize-once fan-out and
+   now have passing recovery/pressure evidence. External Unix attachment is implemented; serialize-once fan-out and
    frontend/provider-internal queue budgeting remain. TypeScript facets, sticky profiles,
    remote services and reload still depend on Pi.
 3. **Performance:** E2E-37's headless 100 MiB budget now passes on Linux/glibc; an indefinitely flat
@@ -341,7 +361,7 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
    commit/snapshot ordering, and the headless memory-budget fix; see delivery/memory evidence.
    Remaining transport and broader memory qualification boundaries are listed above.
 3. Usage counters and positional prompt updates are implemented and tested. Constrained/grammar
-   tool support is implemented with passing targeted/workspace checks. HTTPS proxy/WSS support and cached grammar continuation are now implemented with local TLS tests. Next: Codex conversation lifecycle cleanup, remaining shared-client proxy gaps and external attachment. Resolve facet ports/profile lifecycle while
+   tool support is implemented with passing targeted/workspace checks. HTTPS proxy/WSS support and cached grammar continuation are now implemented with local TLS tests. Session lifecycle cleanup and external Unix attachment are now implemented. Next: remaining shared-client proxy gaps, serialize-once delivery and facet ports/profile lifecycle while
    keeping Pi as the continuity path.
 4. Add the specific missing assertions in the reconciliation report; build the full native/Pi
    differential harness. Existing disk-full, child recovery and `all` delivery tests do not

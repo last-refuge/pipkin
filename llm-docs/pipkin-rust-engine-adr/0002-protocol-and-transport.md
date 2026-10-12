@@ -4,8 +4,8 @@
 `CatchUp`, `AckEvents`, `EventPage` and `ResyncRequired`; schema **3** records ordered session
 invalidations in the same transaction as the state change. Engine and desktop-reader presentation
 queues are bounded. See [delivery and memory evidence](../pipkin-rust-engine-evidence/durable-delivery-memory.md).
-Protocol 3's import-profile protection is retained. External attachment and serialize-once
-multi-subscriber fan-out remain separate work.
+Protocol 3's import-profile protection is retained. Protocol 6 adds session attachments;
+ADR 0008 adds the explicit local endpoint. Serialize-once fan-out remains open.
 
 Protocol **5** adds typed positional system messages; schema **4** protects their durable bodies
 from older runtimes. See [context evidence](../pipkin-rust-engine-evidence/positional-system.md).
@@ -32,9 +32,9 @@ The desktop core already routes every backend event through `(conversation, gene
    touching message types. Max frame `MAX_FRAME_BYTES` = 32 MiB; a larger or truncated frame is
    a refusal, never a truncation (`limits.rs`; tests `frames_round_trip_and_end_cleanly`,
    `oversized_and_truncated_frames_are_refused`, `garbage_is_a_decode_error_not_a_panic`).
-2. **Transport:** the worker's inherited stdin/stdout (ADR 0001). No public socket, no TCP
-   listener, no server discovery. Platform-neutral pipes keep Windows engine work decoupled
-   from Unix sockets.
+2. **Transport:** the default worker's inherited stdin/stdout (ADR 0001), plus explicit
+   same-user Unix attachment (ADR 0008). No TCP listener or server discovery.
+   Platform-neutral private pipes keep Windows engine work decoupled from Unix sockets.
 3. **Shape:** `ClientFrame {id, lane, call}` → exactly one `ServerFrame::Reply {id, result}`;
    asynchronous `ServerFrame::Event {epoch, seq, event}` (`api.rs`). Typed `Call`/`Reply`/
    `SessionChange` variants replace generic Chord service calls and replicated-state ops;
@@ -47,7 +47,7 @@ The desktop core already routes every backend event through `(conversation, gene
    acknowledged or published (ADR 0003), so a resync never loses an outcome.
 5. **Control lane:** `Call::Stop` and `Call::Shutdown` are `Lane::Control` and are handled
    ahead of queued normal calls (`Call::lane`).
-6. **Versioning:** `PROTOCOL_VERSION = 5`; `Hello` with any other version is refused
+6. **Versioning:** `PROTOCOL_VERSION = 6`; `Hello` with any other version is refused
    (`ErrorCode::Incompatible`); the reply `Welcome` carries engine version/revision, schema,
    epoch and capabilities. No guessing across versions.
 7. **Errors:** a closed taxonomy (`Incompatible, NotFound, Conflict, Invalid, TooLarge, Busy,
@@ -77,7 +77,7 @@ The desktop core already routes every backend event through `(conversation, gene
     The adapter polls catch-up every second (one page per pass), so a missing final event
     with no subsequent live traffic is still recovered. Paged history and the selected child
     survive resync. Session commit/publication is serialized; snapshots verify their revision.
-11. **Still open:** an opt-in owner-authenticated external endpoint (P19), serialize-once
+11. **Still open:** full external-attachment qualification, serialize-once
     fan-out, and end-to-end frontend presentation budgeting. The shared GPUI/core event bus
     and provider-internal stream channels are outside this transport change; this ADR does
     not claim every queue in the application is now bounded.

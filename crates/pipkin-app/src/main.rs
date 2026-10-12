@@ -18,6 +18,17 @@ fn main() {
     // The private engine worker: serve the engine over stdin/stdout and exit, before anything
     // else (no options parsing, no storage, no GPUI) runs in this process.
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(server) = adapters::native::supervisor::server_args(&raw) {
+        match server {
+            Ok((args, endpoint)) => {
+                std::process::exit(adapters::native::supervisor::run_server(args, endpoint))
+            }
+            Err(message) => {
+                eprintln!("pipkin: {message}");
+                std::process::exit(2);
+            }
+        }
+    }
     if let Some(worker) = adapters::native::supervisor::worker_args(&raw) {
         match worker {
             Ok(args) => std::process::exit(adapters::native::supervisor::run_worker(args)),
@@ -32,7 +43,7 @@ fn main() {
         Err(message) => {
             eprintln!("pipkin: {message}");
             eprintln!(
-                "usage: pipkin [--version] [--diagnose [--probe]] [--pi-dir <path>] [--pi-server-id <uuid>] [--data-dir <path>]\n       pipkin --engine native [--engine-host child|inprocess] [--data-dir <path>] [--version | --diagnose [--probe]]\n       pipkin --demo <scenario> [--data-dir <path>] [--speed <factor>]"
+                "usage: pipkin [--version] [--diagnose [--probe]] [--pi-dir <path>] [--pi-server-id <uuid>] [--data-dir <path>]\n       pipkin --engine native [--engine-host child|inprocess | --engine-attach <endpoint-dir>] [--data-dir <path>] [--version | --diagnose [--probe]]\n       pipkin --engine-server <endpoint-dir> --engine-data-dir <path> --engine-config-dir <path>\n       pipkin --demo <scenario> [--data-dir <path>] [--speed <factor>]"
             );
             std::process::exit(2);
         }
@@ -57,7 +68,10 @@ fn main() {
         controller::Action::Diagnose { probe }
             if options.engine == controller::EngineKind::Native =>
         {
-            let (text, bad) = install::diagnose_native(options.data_dir.as_deref(), probe);
+            let (text, bad) = match &options.engine_attach {
+                Some(endpoint) => install::diagnose_native_attachment(endpoint, probe),
+                None => install::diagnose_native(options.data_dir.as_deref(), probe),
+            };
             print!("{text}");
             std::process::exit(if bad { 1 } else { 0 });
         }

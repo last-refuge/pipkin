@@ -29,6 +29,9 @@ than assuming the defaults.
 
 ### Native engine (development)
 
+For an independently owned native server shared by multiple desktops, see
+[Native engine attachment](native-attachment.md).
+
 `--engine native` runs Pipkin's built-in engine instead of Pi. Its sessions live in `<data dir>/engine/`
 (`engine.sqlite` and artifacts) and its configuration and credentials in `~/.config/pipkin/engine/`
 (`auth.json` is `0600`; with `--data-dir`/`PIPKIN_DATA` both move under that directory). It never reads Pi's

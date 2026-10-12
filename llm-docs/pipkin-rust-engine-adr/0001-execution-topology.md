@@ -46,9 +46,10 @@ render thread, and the same engine API for an in-process host.
    the scheduler.
 5. **Not a sandbox.** Tools run with the user's permissions, as in the reference
    (`docs/platforms.md` "Isolation"). No isolation claim is made.
-6. External attachment and multi-client (P19, `--pi-dir`/`--pi-server-id`) are **not** served
-   by the pipe; they stay on the Pi adapter until an opt-in owner-authenticated endpoint or
-   shim is designed and tested (plan §3 "Contract and transport"). The P19 rows stay open.
+6. External attachment now uses an explicit same-user Unix endpoint (ADR 0008), with a
+   separately owned foreground server and the same engine contract. The default host stays
+   on private pipes. Socket/drop/restart behavior is measured on Linux; full differential,
+   installed/live acceptance and other-platform qualification remain open.
 
 ## Consequences
 
@@ -63,8 +64,8 @@ render thread, and the same engine API for an in-process host.
   `ce/session-worker-manager.ts:151-173`) has no native analogue; engine restart resumes from
   durable state instead (ADR 0003). This is recorded in the parity ledger (row SVC-PROC-*).
 - Headless warm readiness and idle RSS have measured results in `performance.md`; GUI-ready,
-  cold-start and full display-presentation gates remain unverified. The long-session RSS soak
-  still fails (E2E-37).
+  cold-start and full display-presentation gates remain unverified. The original headless RSS soak now passes
+  (delivery/memory and positional-system evidence); indefinite/desktop soaks remain unqualified.
 
 ## References
 

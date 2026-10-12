@@ -264,7 +264,16 @@ impl EngineHandle {
     }
 
     /// A new client connection.
-    pub fn connect(&self, _name: &str) -> Connection {
+    pub fn connect(&self, name: &str) -> Connection {
+        self.connect_with_ownership(name, true)
+    }
+
+    /// An authenticated external host connection cannot request engine shutdown.
+    pub fn connect_external(&self, name: &str) -> Connection {
+        self.connect_with_ownership(name, false)
+    }
+
+    fn connect_with_ownership(&self, _name: &str, owns_engine: bool) -> Connection {
         let client = self.next_client.fetch_add(1, Ordering::SeqCst);
         let (in_tx, mut in_rx) = mpsc::channel::<ClientFrame>(64);
         let (control, mut controls) = mpsc::channel::<ClientFrame>(8);
@@ -323,7 +332,12 @@ impl EngineHandle {
                                 shared.auth.client_gone(client);
                                 Err(ProtoError::new(ErrorCode::ShuttingDown, "the client disconnected"))
                             }
-                            result = dispatch(&shared, client, frame.call) => result,
+                            result = async {
+                                if !owns_engine && matches!(frame.call, Call::Shutdown) {
+                                    return Err(ProtoError::new(ErrorCode::Invalid, "Only the server owner can shut down an external engine"));
+                                }
+                                dispatch(&shared, client, frame.call).await
+                            } => result,
                         };
                         out.reply(ServerFrame::Reply { id: frame.id, result }).await;
                     });

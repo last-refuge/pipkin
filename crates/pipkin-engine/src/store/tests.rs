@@ -753,3 +753,22 @@ fn a_v3_database_is_backed_up_before_positional_system_bodies_are_written() {
     );
     assert!(s.session("old").unwrap().is_some());
 }
+
+#[cfg(unix)]
+#[test]
+fn closing_a_store_releases_ownership_even_when_a_child_retains_its_descriptor() {
+    let dir = tempfile::tempdir().unwrap();
+    let original = Store::open(dir.path()).unwrap();
+    // dup and fork retain the same open-file description used by flock. Keep that
+    // descriptor alive to reproduce the interval between another thread's fork and exec.
+    let inherited = original._lock.as_ref().unwrap()._file.try_clone().unwrap();
+    drop(original);
+    let reopened = Store::open(dir.path()).unwrap();
+    drop(inherited);
+    assert!(
+        matches!(Store::open(dir.path()), Err(StoreError::Locked(_))),
+        "dropping the old child descriptor must not unlock the new store"
+    );
+    drop(reopened);
+    Store::open(dir.path()).unwrap();
+}
