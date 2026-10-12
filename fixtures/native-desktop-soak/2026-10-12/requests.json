@@ -1,0 +1,9002 @@
+[
+  {
+    "turn": 0,
+    "toolReply": false,
+    "bytes": 9424
+  },
+  {
+    "turn": 0,
+    "toolReply": true,
+    "bytes": 9967
+  },
+  {
+    "turn": 1,
+    "toolReply": false,
+    "bytes": 9424
+  },
+  {
+    "turn": 2,
+    "toolReply": false,
+    "bytes": 9424
+  },
+  {
+    "turn": 3,
+    "toolReply": false,
+    "bytes": 9424
+  },
+  {
+    "turn": 4,
+    "toolReply": false,
+    "bytes": 78590
+  },
+  {
+    "turn": 5,
+    "toolReply": false,
+    "bytes": 18096
+  },
+  {
+    "turn": 5,
+    "toolReply": true,
+    "bytes": 18639
+  },
+  {
+    "turn": 6,
+    "toolReply": false,
+    "bytes": 18096
+  },
+  {
+    "turn": 7,
+    "toolReply": false,
+    "bytes": 18096
+  },
+  {
+    "turn": 8,
+    "toolReply": false,
+    "bytes": 87262
+  },
+  {
+    "turn": 9,
+    "toolReply": false,
+    "bytes": 27311
+  },
+  {
+    "turn": 10,
+    "toolReply": false,
+    "bytes": 26769
+  },
+  {
+    "turn": 10,
+    "toolReply": true,
+    "bytes": 27315
+  },
+  {
+    "turn": 11,
+    "toolReply": false,
+    "bytes": 26769
+  },
+  {
+    "turn": 12,
+    "toolReply": false,
+    "bytes": 95935
+  },
+  {
+    "turn": 13,
+    "toolReply": false,
+    "bytes": 35984
+  },
+  {
+    "turn": 14,
+    "toolReply": false,
+    "bytes": 35988
+  },
+  {
+    "turn": 15,
+    "toolReply": false,
+    "bytes": 35442
+  },
+  {
+    "turn": 15,
+    "toolReply": true,
+    "bytes": 35988
+  },
+  {
+    "turn": 16,
+    "toolReply": false,
+    "bytes": 104608
+  },
+  {
+    "turn": 17,
+    "toolReply": false,
+    "bytes": 44657
+  },
+  {
+    "turn": 18,
+    "toolReply": false,
+    "bytes": 44661
+  },
+  {
+    "turn": 19,
+    "toolReply": false,
+    "bytes": 44661
+  },
+  {
+    "turn": 20,
+    "toolReply": false,
+    "bytes": 113281
+  },
+  {
+    "turn": 20,
+    "toolReply": true,
+    "bytes": 113827
+  },
+  {
+    "turn": 21,
+    "toolReply": false,
+    "bytes": 53330
+  },
+  {
+    "turn": 22,
+    "toolReply": false,
+    "bytes": 53334
+  },
+  {
+    "turn": 23,
+    "toolReply": false,
+    "bytes": 53334
+  },
+  {
+    "turn": 24,
+    "toolReply": false,
+    "bytes": 122500
+  },
+  {
+    "turn": 25,
+    "toolReply": false,
+    "bytes": 62003
+  },
+  {
+    "turn": 25,
+    "toolReply": true,
+    "bytes": 62549
+  },
+  {
+    "turn": 26,
+    "toolReply": false,
+    "bytes": 62007
+  },
+  {
+    "turn": 27,
+    "toolReply": false,
+    "bytes": 62007
+  },
+  {
+    "turn": 28,
+    "toolReply": false,
+    "bytes": 131173
+  },
+  {
+    "turn": 29,
+    "toolReply": false,
+    "bytes": 131173
+  },
+  {
+    "turn": 30,
+    "toolReply": false,
+    "bytes": 70680
+  },
+  {
+    "turn": 30,
+    "toolReply": true,
+    "bytes": 71226
+  },
+  {
+    "turn": 31,
+    "toolReply": false,
+    "bytes": 70680
+  },
+  {
+    "turn": 32,
+    "toolReply": false,
+    "bytes": 139846
+  },
+  {
+    "turn": 33,
+    "toolReply": false,
+    "bytes": 139846
+  },
+  {
+    "turn": 34,
+    "toolReply": false,
+    "bytes": 79899
+  },
+  {
+    "turn": 35,
+    "toolReply": false,
+    "bytes": 79353
+  },
+  {
+    "turn": 35,
+    "toolReply": true,
+    "bytes": 79899
+  },
+  {
+    "turn": 36,
+    "toolReply": false,
+    "bytes": 148519
+  },
+  {
+    "turn": 37,
+    "toolReply": false,
+    "bytes": 148519
+  },
+  {
+    "turn": 38,
+    "toolReply": false,
+    "bytes": 88572
+  },
+  {
+    "turn": 39,
+    "toolReply": false,
+    "bytes": 88572
+  },
+  {
+    "turn": 40,
+    "toolReply": false,
+    "bytes": 157192
+  },
+  {
+    "turn": 40,
+    "toolReply": true,
+    "bytes": 157738
+  },
+  {
+    "turn": 41,
+    "toolReply": false,
+    "bytes": 157192
+  },
+  {
+    "turn": 42,
+    "toolReply": false,
+    "bytes": 97245
+  },
+  {
+    "turn": 43,
+    "toolReply": false,
+    "bytes": 97245
+  },
+  {
+    "turn": 44,
+    "toolReply": false,
+    "bytes": 166411
+  },
+  {
+    "turn": 45,
+    "toolReply": false,
+    "bytes": 165865
+  },
+  {
+    "turn": 45,
+    "toolReply": true,
+    "bytes": 166411
+  },
+  {
+    "turn": 46,
+    "toolReply": false,
+    "bytes": 105918
+  },
+  {
+    "turn": 47,
+    "toolReply": false,
+    "bytes": 105918
+  },
+  {
+    "turn": 48,
+    "toolReply": false,
+    "bytes": 175084
+  },
+  {
+    "turn": 49,
+    "toolReply": false,
+    "bytes": 175084
+  },
+  {
+    "turn": 50,
+    "toolReply": false,
+    "bytes": 114591
+  },
+  {
+    "turn": 50,
+    "toolReply": true,
+    "bytes": 115137
+  },
+  {
+    "turn": 51,
+    "toolReply": false,
+    "bytes": 114591
+  },
+  {
+    "turn": 52,
+    "toolReply": false,
+    "bytes": 183757
+  },
+  {
+    "turn": 53,
+    "toolReply": false,
+    "bytes": 183757
+  },
+  {
+    "turn": 54,
+    "toolReply": false,
+    "bytes": 183761
+  },
+  {
+    "turn": 55,
+    "toolReply": false,
+    "bytes": 123264
+  },
+  {
+    "turn": 55,
+    "toolReply": true,
+    "bytes": 123810
+  },
+  {
+    "turn": 56,
+    "toolReply": false,
+    "bytes": 192430
+  },
+  {
+    "turn": 57,
+    "toolReply": false,
+    "bytes": 192430
+  },
+  {
+    "turn": 58,
+    "toolReply": false,
+    "bytes": 192434
+  },
+  {
+    "turn": 59,
+    "toolReply": false,
+    "bytes": 132483
+  },
+  {
+    "turn": 60,
+    "toolReply": false,
+    "bytes": 201103
+  },
+  {
+    "turn": 60,
+    "toolReply": true,
+    "bytes": 201649
+  },
+  {
+    "turn": 61,
+    "toolReply": false,
+    "bytes": 201103
+  },
+  {
+    "turn": 62,
+    "toolReply": false,
+    "bytes": 201107
+  },
+  {
+    "turn": 63,
+    "toolReply": false,
+    "bytes": 141156
+  },
+  {
+    "turn": 64,
+    "toolReply": false,
+    "bytes": 210322
+  },
+  {
+    "turn": 65,
+    "toolReply": false,
+    "bytes": 209776
+  },
+  {
+    "turn": 65,
+    "toolReply": true,
+    "bytes": 210322
+  },
+  {
+    "turn": 66,
+    "toolReply": false,
+    "bytes": 209780
+  },
+  {
+    "turn": 67,
+    "toolReply": false,
+    "bytes": 149829
+  },
+  {
+    "turn": 68,
+    "toolReply": false,
+    "bytes": 218995
+  },
+  {
+    "turn": 69,
+    "toolReply": false,
+    "bytes": 218995
+  },
+  {
+    "turn": 70,
+    "toolReply": false,
+    "bytes": 218453
+  },
+  {
+    "turn": 70,
+    "toolReply": true,
+    "bytes": 218999
+  },
+  {
+    "turn": 71,
+    "toolReply": false,
+    "bytes": 158502
+  },
+  {
+    "turn": 72,
+    "toolReply": false,
+    "bytes": 227668
+  },
+  {
+    "turn": 73,
+    "toolReply": false,
+    "bytes": 227668
+  },
+  {
+    "turn": 74,
+    "toolReply": false,
+    "bytes": 227672
+  },
+  {
+    "turn": 75,
+    "toolReply": false,
+    "bytes": 167175
+  },
+  {
+    "turn": 75,
+    "toolReply": true,
+    "bytes": 167721
+  },
+  {
+    "turn": 76,
+    "toolReply": false,
+    "bytes": 236341
+  },
+  {
+    "turn": 77,
+    "toolReply": false,
+    "bytes": 236341
+  },
+  {
+    "turn": 78,
+    "toolReply": false,
+    "bytes": 236345
+  },
+  {
+    "turn": 79,
+    "toolReply": false,
+    "bytes": 236345
+  },
+  {
+    "turn": 80,
+    "toolReply": false,
+    "bytes": 245014
+  },
+  {
+    "turn": 80,
+    "toolReply": true,
+    "bytes": 245560
+  },
+  {
+    "turn": 81,
+    "toolReply": false,
+    "bytes": 245014
+  },
+  {
+    "turn": 82,
+    "toolReply": false,
+    "bytes": 245018
+  },
+  {
+    "turn": 83,
+    "toolReply": false,
+    "bytes": 245018
+  },
+  {
+    "turn": 84,
+    "toolReply": false,
+    "bytes": 254233
+  },
+  {
+    "turn": 85,
+    "toolReply": false,
+    "bytes": 253687
+  },
+  {
+    "turn": 85,
+    "toolReply": true,
+    "bytes": 254233
+  },
+  {
+    "turn": 86,
+    "toolReply": false,
+    "bytes": 253691
+  },
+  {
+    "turn": 87,
+    "toolReply": false,
+    "bytes": 253691
+  },
+  {
+    "turn": 88,
+    "toolReply": false,
+    "bytes": 262906
+  },
+  {
+    "turn": 89,
+    "toolReply": false,
+    "bytes": 262906
+  },
+  {
+    "turn": 90,
+    "toolReply": false,
+    "bytes": 262364
+  },
+  {
+    "turn": 90,
+    "toolReply": true,
+    "bytes": 262910
+  },
+  {
+    "turn": 91,
+    "toolReply": false,
+    "bytes": 262364
+  },
+  {
+    "turn": 92,
+    "toolReply": false,
+    "bytes": 271579
+  },
+  {
+    "turn": 93,
+    "toolReply": false,
+    "bytes": 271579
+  },
+  {
+    "turn": 94,
+    "toolReply": false,
+    "bytes": 271583
+  },
+  {
+    "turn": 95,
+    "toolReply": false,
+    "bytes": 271037
+  },
+  {
+    "turn": 95,
+    "toolReply": true,
+    "bytes": 271583
+  },
+  {
+    "turn": 96,
+    "toolReply": false,
+    "bytes": 280252
+  },
+  {
+    "turn": 97,
+    "toolReply": false,
+    "bytes": 280252
+  },
+  {
+    "turn": 98,
+    "toolReply": false,
+    "bytes": 280256
+  },
+  {
+    "turn": 99,
+    "toolReply": false,
+    "bytes": 280256
+  },
+  {
+    "turn": 100,
+    "toolReply": false,
+    "bytes": 288926
+  },
+  {
+    "turn": 100,
+    "toolReply": true,
+    "bytes": 289475
+  },
+  {
+    "turn": 101,
+    "toolReply": false,
+    "bytes": 288926
+  },
+  {
+    "turn": 102,
+    "toolReply": false,
+    "bytes": 288930
+  },
+  {
+    "turn": 103,
+    "toolReply": false,
+    "bytes": 288930
+  },
+  {
+    "turn": 104,
+    "toolReply": false,
+    "bytes": 358100
+  },
+  {
+    "turn": 105,
+    "toolReply": false,
+    "bytes": 297600
+  },
+  {
+    "turn": 105,
+    "toolReply": true,
+    "bytes": 298149
+  },
+  {
+    "turn": 106,
+    "toolReply": false,
+    "bytes": 297604
+  },
+  {
+    "turn": 107,
+    "toolReply": false,
+    "bytes": 297604
+  },
+  {
+    "turn": 108,
+    "toolReply": false,
+    "bytes": 366774
+  },
+  {
+    "turn": 109,
+    "toolReply": false,
+    "bytes": 306823
+  },
+  {
+    "turn": 110,
+    "toolReply": false,
+    "bytes": 306278
+  },
+  {
+    "turn": 110,
+    "toolReply": true,
+    "bytes": 306827
+  },
+  {
+    "turn": 111,
+    "toolReply": false,
+    "bytes": 306278
+  },
+  {
+    "turn": 112,
+    "toolReply": false,
+    "bytes": 375448
+  },
+  {
+    "turn": 113,
+    "toolReply": false,
+    "bytes": 315497
+  },
+  {
+    "turn": 114,
+    "toolReply": false,
+    "bytes": 315501
+  },
+  {
+    "turn": 115,
+    "toolReply": false,
+    "bytes": 314952
+  },
+  {
+    "turn": 115,
+    "toolReply": true,
+    "bytes": 315501
+  },
+  {
+    "turn": 116,
+    "toolReply": false,
+    "bytes": 384122
+  },
+  {
+    "turn": 117,
+    "toolReply": false,
+    "bytes": 324171
+  },
+  {
+    "turn": 118,
+    "toolReply": false,
+    "bytes": 324175
+  },
+  {
+    "turn": 119,
+    "toolReply": false,
+    "bytes": 324175
+  },
+  {
+    "turn": 120,
+    "toolReply": false,
+    "bytes": 392796
+  },
+  {
+    "turn": 120,
+    "toolReply": true,
+    "bytes": 393345
+  },
+  {
+    "turn": 121,
+    "toolReply": false,
+    "bytes": 332845
+  },
+  {
+    "turn": 122,
+    "toolReply": false,
+    "bytes": 332849
+  },
+  {
+    "turn": 123,
+    "toolReply": false,
+    "bytes": 332849
+  },
+  {
+    "turn": 124,
+    "toolReply": false,
+    "bytes": 402019
+  },
+  {
+    "turn": 125,
+    "toolReply": false,
+    "bytes": 341519
+  },
+  {
+    "turn": 125,
+    "toolReply": true,
+    "bytes": 342068
+  },
+  {
+    "turn": 126,
+    "toolReply": false,
+    "bytes": 341523
+  },
+  {
+    "turn": 127,
+    "toolReply": false,
+    "bytes": 341523
+  },
+  {
+    "turn": 128,
+    "toolReply": false,
+    "bytes": 410693
+  },
+  {
+    "turn": 129,
+    "toolReply": false,
+    "bytes": 410693
+  },
+  {
+    "turn": 130,
+    "toolReply": false,
+    "bytes": 350197
+  },
+  {
+    "turn": 130,
+    "toolReply": true,
+    "bytes": 350746
+  },
+  {
+    "turn": 131,
+    "toolReply": false,
+    "bytes": 350197
+  },
+  {
+    "turn": 132,
+    "toolReply": false,
+    "bytes": 419367
+  },
+  {
+    "turn": 133,
+    "toolReply": false,
+    "bytes": 419367
+  },
+  {
+    "turn": 134,
+    "toolReply": false,
+    "bytes": 359420
+  },
+  {
+    "turn": 135,
+    "toolReply": false,
+    "bytes": 358871
+  },
+  {
+    "turn": 135,
+    "toolReply": true,
+    "bytes": 359420
+  },
+  {
+    "turn": 136,
+    "toolReply": false,
+    "bytes": 428041
+  },
+  {
+    "turn": 137,
+    "toolReply": false,
+    "bytes": 428041
+  },
+  {
+    "turn": 138,
+    "toolReply": false,
+    "bytes": 368094
+  },
+  {
+    "turn": 139,
+    "toolReply": false,
+    "bytes": 368094
+  },
+  {
+    "turn": 140,
+    "toolReply": false,
+    "bytes": 436715
+  },
+  {
+    "turn": 140,
+    "toolReply": true,
+    "bytes": 437264
+  },
+  {
+    "turn": 141,
+    "toolReply": false,
+    "bytes": 436715
+  },
+  {
+    "turn": 142,
+    "toolReply": false,
+    "bytes": 376768
+  },
+  {
+    "turn": 143,
+    "toolReply": false,
+    "bytes": 376768
+  },
+  {
+    "turn": 144,
+    "toolReply": false,
+    "bytes": 445938
+  },
+  {
+    "turn": 145,
+    "toolReply": false,
+    "bytes": 445389
+  },
+  {
+    "turn": 145,
+    "toolReply": true,
+    "bytes": 445938
+  },
+  {
+    "turn": 146,
+    "toolReply": false,
+    "bytes": 385442
+  },
+  {
+    "turn": 147,
+    "toolReply": false,
+    "bytes": 385442
+  },
+  {
+    "turn": 148,
+    "toolReply": false,
+    "bytes": 454612
+  },
+  {
+    "turn": 149,
+    "toolReply": false,
+    "bytes": 454612
+  },
+  {
+    "turn": 150,
+    "toolReply": false,
+    "bytes": 394116
+  },
+  {
+    "turn": 150,
+    "toolReply": true,
+    "bytes": 394665
+  },
+  {
+    "turn": 151,
+    "toolReply": false,
+    "bytes": 394116
+  },
+  {
+    "turn": 152,
+    "toolReply": false,
+    "bytes": 463286
+  },
+  {
+    "turn": 153,
+    "toolReply": false,
+    "bytes": 463286
+  },
+  {
+    "turn": 154,
+    "toolReply": false,
+    "bytes": 463290
+  },
+  {
+    "turn": 155,
+    "toolReply": false,
+    "bytes": 402790
+  },
+  {
+    "turn": 155,
+    "toolReply": true,
+    "bytes": 403339
+  },
+  {
+    "turn": 156,
+    "toolReply": false,
+    "bytes": 471960
+  },
+  {
+    "turn": 157,
+    "toolReply": false,
+    "bytes": 471960
+  },
+  {
+    "turn": 158,
+    "toolReply": false,
+    "bytes": 471964
+  },
+  {
+    "turn": 159,
+    "toolReply": false,
+    "bytes": 412013
+  },
+  {
+    "turn": 160,
+    "toolReply": false,
+    "bytes": 480634
+  },
+  {
+    "turn": 160,
+    "toolReply": true,
+    "bytes": 481183
+  },
+  {
+    "turn": 161,
+    "toolReply": false,
+    "bytes": 480634
+  },
+  {
+    "turn": 162,
+    "toolReply": false,
+    "bytes": 480638
+  },
+  {
+    "turn": 163,
+    "toolReply": false,
+    "bytes": 420687
+  },
+  {
+    "turn": 164,
+    "toolReply": false,
+    "bytes": 489857
+  },
+  {
+    "turn": 165,
+    "toolReply": false,
+    "bytes": 489308
+  },
+  {
+    "turn": 165,
+    "toolReply": true,
+    "bytes": 489857
+  },
+  {
+    "turn": 166,
+    "toolReply": false,
+    "bytes": 489312
+  },
+  {
+    "turn": 167,
+    "toolReply": false,
+    "bytes": 429361
+  },
+  {
+    "turn": 168,
+    "toolReply": false,
+    "bytes": 498531
+  },
+  {
+    "turn": 169,
+    "toolReply": false,
+    "bytes": 498531
+  },
+  {
+    "turn": 170,
+    "toolReply": false,
+    "bytes": 497986
+  },
+  {
+    "turn": 170,
+    "toolReply": true,
+    "bytes": 498535
+  },
+  {
+    "turn": 171,
+    "toolReply": false,
+    "bytes": 438035
+  },
+  {
+    "turn": 172,
+    "toolReply": false,
+    "bytes": 507205
+  },
+  {
+    "turn": 173,
+    "toolReply": false,
+    "bytes": 507205
+  },
+  {
+    "turn": 174,
+    "toolReply": false,
+    "bytes": 507209
+  },
+  {
+    "turn": 175,
+    "toolReply": false,
+    "bytes": 446709
+  },
+  {
+    "turn": 175,
+    "toolReply": true,
+    "bytes": 447258
+  },
+  {
+    "turn": 176,
+    "toolReply": false,
+    "bytes": 515879
+  },
+  {
+    "turn": 177,
+    "toolReply": false,
+    "bytes": 515879
+  },
+  {
+    "turn": 178,
+    "toolReply": false,
+    "bytes": 515883
+  },
+  {
+    "turn": 179,
+    "toolReply": false,
+    "bytes": 515883
+  },
+  {
+    "turn": 180,
+    "toolReply": false,
+    "bytes": 524553
+  },
+  {
+    "turn": 180,
+    "toolReply": true,
+    "bytes": 525102
+  },
+  {
+    "turn": 181,
+    "toolReply": false,
+    "bytes": 524553
+  },
+  {
+    "turn": 182,
+    "toolReply": false,
+    "bytes": 524557
+  },
+  {
+    "turn": 183,
+    "toolReply": false,
+    "bytes": 524557
+  },
+  {
+    "turn": 184,
+    "toolReply": false,
+    "bytes": 533776
+  },
+  {
+    "turn": 185,
+    "toolReply": false,
+    "bytes": 533227
+  },
+  {
+    "turn": 185,
+    "toolReply": true,
+    "bytes": 533776
+  },
+  {
+    "turn": 186,
+    "toolReply": false,
+    "bytes": 533231
+  },
+  {
+    "turn": 187,
+    "toolReply": false,
+    "bytes": 533231
+  },
+  {
+    "turn": 188,
+    "toolReply": false,
+    "bytes": 542450
+  },
+  {
+    "turn": 189,
+    "toolReply": false,
+    "bytes": 542450
+  },
+  {
+    "turn": 190,
+    "toolReply": false,
+    "bytes": 541905
+  },
+  {
+    "turn": 190,
+    "toolReply": true,
+    "bytes": 542454
+  },
+  {
+    "turn": 191,
+    "toolReply": false,
+    "bytes": 541905
+  },
+  {
+    "turn": 192,
+    "toolReply": false,
+    "bytes": 551124
+  },
+  {
+    "turn": 193,
+    "toolReply": false,
+    "bytes": 551124
+  },
+  {
+    "turn": 194,
+    "toolReply": false,
+    "bytes": 551128
+  },
+  {
+    "turn": 195,
+    "toolReply": false,
+    "bytes": 550579
+  },
+  {
+    "turn": 195,
+    "toolReply": true,
+    "bytes": 551128
+  },
+  {
+    "turn": 196,
+    "toolReply": false,
+    "bytes": 559798
+  },
+  {
+    "turn": 197,
+    "toolReply": false,
+    "bytes": 559798
+  },
+  {
+    "turn": 198,
+    "toolReply": false,
+    "bytes": 559802
+  },
+  {
+    "turn": 199,
+    "toolReply": false,
+    "bytes": 559802
+  },
+  {
+    "turn": 200,
+    "toolReply": false,
+    "bytes": 568472
+  },
+  {
+    "turn": 200,
+    "toolReply": true,
+    "bytes": 569021
+  },
+  {
+    "turn": 201,
+    "toolReply": false,
+    "bytes": 568472
+  },
+  {
+    "turn": 202,
+    "toolReply": false,
+    "bytes": 568476
+  },
+  {
+    "turn": 203,
+    "toolReply": false,
+    "bytes": 568476
+  },
+  {
+    "turn": 204,
+    "toolReply": false,
+    "bytes": 637646
+  },
+  {
+    "turn": 205,
+    "toolReply": false,
+    "bytes": 577146
+  },
+  {
+    "turn": 205,
+    "toolReply": true,
+    "bytes": 577695
+  },
+  {
+    "turn": 206,
+    "toolReply": false,
+    "bytes": 577150
+  },
+  {
+    "turn": 207,
+    "toolReply": false,
+    "bytes": 577150
+  },
+  {
+    "turn": 208,
+    "toolReply": false,
+    "bytes": 646320
+  },
+  {
+    "turn": 209,
+    "toolReply": false,
+    "bytes": 586369
+  },
+  {
+    "turn": 210,
+    "toolReply": false,
+    "bytes": 585824
+  },
+  {
+    "turn": 210,
+    "toolReply": true,
+    "bytes": 586373
+  },
+  {
+    "turn": 211,
+    "toolReply": false,
+    "bytes": 585824
+  },
+  {
+    "turn": 212,
+    "toolReply": false,
+    "bytes": 654994
+  },
+  {
+    "turn": 213,
+    "toolReply": false,
+    "bytes": 595043
+  },
+  {
+    "turn": 214,
+    "toolReply": false,
+    "bytes": 595047
+  },
+  {
+    "turn": 215,
+    "toolReply": false,
+    "bytes": 594498
+  },
+  {
+    "turn": 215,
+    "toolReply": true,
+    "bytes": 595047
+  },
+  {
+    "turn": 216,
+    "toolReply": false,
+    "bytes": 663668
+  },
+  {
+    "turn": 217,
+    "toolReply": false,
+    "bytes": 603717
+  },
+  {
+    "turn": 218,
+    "toolReply": false,
+    "bytes": 603721
+  },
+  {
+    "turn": 219,
+    "toolReply": false,
+    "bytes": 603721
+  },
+  {
+    "turn": 220,
+    "toolReply": false,
+    "bytes": 672342
+  },
+  {
+    "turn": 220,
+    "toolReply": true,
+    "bytes": 672891
+  },
+  {
+    "turn": 221,
+    "toolReply": false,
+    "bytes": 612391
+  },
+  {
+    "turn": 222,
+    "toolReply": false,
+    "bytes": 612395
+  },
+  {
+    "turn": 223,
+    "toolReply": false,
+    "bytes": 612395
+  },
+  {
+    "turn": 224,
+    "toolReply": false,
+    "bytes": 681565
+  },
+  {
+    "turn": 225,
+    "toolReply": false,
+    "bytes": 621065
+  },
+  {
+    "turn": 225,
+    "toolReply": true,
+    "bytes": 621614
+  },
+  {
+    "turn": 226,
+    "toolReply": false,
+    "bytes": 621069
+  },
+  {
+    "turn": 227,
+    "toolReply": false,
+    "bytes": 621069
+  },
+  {
+    "turn": 228,
+    "toolReply": false,
+    "bytes": 690239
+  },
+  {
+    "turn": 229,
+    "toolReply": false,
+    "bytes": 690239
+  },
+  {
+    "turn": 230,
+    "toolReply": false,
+    "bytes": 629743
+  },
+  {
+    "turn": 230,
+    "toolReply": true,
+    "bytes": 630292
+  },
+  {
+    "turn": 231,
+    "toolReply": false,
+    "bytes": 629743
+  },
+  {
+    "turn": 232,
+    "toolReply": false,
+    "bytes": 698913
+  },
+  {
+    "turn": 233,
+    "toolReply": false,
+    "bytes": 698913
+  },
+  {
+    "turn": 234,
+    "toolReply": false,
+    "bytes": 638966
+  },
+  {
+    "turn": 235,
+    "toolReply": false,
+    "bytes": 638417
+  },
+  {
+    "turn": 235,
+    "toolReply": true,
+    "bytes": 638966
+  },
+  {
+    "turn": 236,
+    "toolReply": false,
+    "bytes": 707587
+  },
+  {
+    "turn": 237,
+    "toolReply": false,
+    "bytes": 707587
+  },
+  {
+    "turn": 238,
+    "toolReply": false,
+    "bytes": 647640
+  },
+  {
+    "turn": 239,
+    "toolReply": false,
+    "bytes": 647640
+  },
+  {
+    "turn": 240,
+    "toolReply": false,
+    "bytes": 716261
+  },
+  {
+    "turn": 240,
+    "toolReply": true,
+    "bytes": 716810
+  },
+  {
+    "turn": 241,
+    "toolReply": false,
+    "bytes": 716261
+  },
+  {
+    "turn": 242,
+    "toolReply": false,
+    "bytes": 656314
+  },
+  {
+    "turn": 243,
+    "toolReply": false,
+    "bytes": 656314
+  },
+  {
+    "turn": 244,
+    "toolReply": false,
+    "bytes": 725484
+  },
+  {
+    "turn": 245,
+    "toolReply": false,
+    "bytes": 724935
+  },
+  {
+    "turn": 245,
+    "toolReply": true,
+    "bytes": 725484
+  },
+  {
+    "turn": 246,
+    "toolReply": false,
+    "bytes": 664988
+  },
+  {
+    "turn": 247,
+    "toolReply": false,
+    "bytes": 664988
+  },
+  {
+    "turn": 248,
+    "toolReply": false,
+    "bytes": 734158
+  },
+  {
+    "turn": 249,
+    "toolReply": false,
+    "bytes": 734158
+  },
+  {
+    "turn": 250,
+    "toolReply": false,
+    "bytes": 673662
+  },
+  {
+    "turn": 250,
+    "toolReply": true,
+    "bytes": 674211
+  },
+  {
+    "turn": 251,
+    "toolReply": false,
+    "bytes": 673662
+  },
+  {
+    "turn": 252,
+    "toolReply": false,
+    "bytes": 742832
+  },
+  {
+    "turn": 253,
+    "toolReply": false,
+    "bytes": 742832
+  },
+  {
+    "turn": 254,
+    "toolReply": false,
+    "bytes": 742836
+  },
+  {
+    "turn": 255,
+    "toolReply": false,
+    "bytes": 682336
+  },
+  {
+    "turn": 255,
+    "toolReply": true,
+    "bytes": 682885
+  },
+  {
+    "turn": 256,
+    "toolReply": false,
+    "bytes": 751506
+  },
+  {
+    "turn": 257,
+    "toolReply": false,
+    "bytes": 751506
+  },
+  {
+    "turn": 258,
+    "toolReply": false,
+    "bytes": 751510
+  },
+  {
+    "turn": 259,
+    "toolReply": false,
+    "bytes": 691559
+  },
+  {
+    "turn": 260,
+    "toolReply": false,
+    "bytes": 760180
+  },
+  {
+    "turn": 260,
+    "toolReply": true,
+    "bytes": 760729
+  },
+  {
+    "turn": 261,
+    "toolReply": false,
+    "bytes": 760180
+  },
+  {
+    "turn": 262,
+    "toolReply": false,
+    "bytes": 760184
+  },
+  {
+    "turn": 263,
+    "toolReply": false,
+    "bytes": 700233
+  },
+  {
+    "turn": 264,
+    "toolReply": false,
+    "bytes": 769403
+  },
+  {
+    "turn": 265,
+    "toolReply": false,
+    "bytes": 768854
+  },
+  {
+    "turn": 265,
+    "toolReply": true,
+    "bytes": 769403
+  },
+  {
+    "turn": 266,
+    "toolReply": false,
+    "bytes": 768858
+  },
+  {
+    "turn": 267,
+    "toolReply": false,
+    "bytes": 708907
+  },
+  {
+    "turn": 268,
+    "toolReply": false,
+    "bytes": 778077
+  },
+  {
+    "turn": 269,
+    "toolReply": false,
+    "bytes": 778077
+  },
+  {
+    "turn": 270,
+    "toolReply": false,
+    "bytes": 777532
+  },
+  {
+    "turn": 270,
+    "toolReply": true,
+    "bytes": 778081
+  },
+  {
+    "turn": 271,
+    "toolReply": false,
+    "bytes": 717581
+  },
+  {
+    "turn": 272,
+    "toolReply": false,
+    "bytes": 786751
+  },
+  {
+    "turn": 273,
+    "toolReply": false,
+    "bytes": 786751
+  },
+  {
+    "turn": 274,
+    "toolReply": false,
+    "bytes": 786755
+  },
+  {
+    "turn": 275,
+    "toolReply": false,
+    "bytes": 726255
+  },
+  {
+    "turn": 275,
+    "toolReply": true,
+    "bytes": 726804
+  },
+  {
+    "turn": 276,
+    "toolReply": false,
+    "bytes": 795425
+  },
+  {
+    "turn": 277,
+    "toolReply": false,
+    "bytes": 795425
+  },
+  {
+    "turn": 278,
+    "toolReply": false,
+    "bytes": 795429
+  },
+  {
+    "turn": 279,
+    "toolReply": false,
+    "bytes": 795429
+  },
+  {
+    "turn": 280,
+    "toolReply": false,
+    "bytes": 804099
+  },
+  {
+    "turn": 280,
+    "toolReply": true,
+    "bytes": 804648
+  },
+  {
+    "turn": 281,
+    "toolReply": false,
+    "bytes": 804099
+  },
+  {
+    "turn": 282,
+    "toolReply": false,
+    "bytes": 804103
+  },
+  {
+    "turn": 283,
+    "toolReply": false,
+    "bytes": 804103
+  },
+  {
+    "turn": 284,
+    "toolReply": false,
+    "bytes": 813322
+  },
+  {
+    "turn": 285,
+    "toolReply": false,
+    "bytes": 812773
+  },
+  {
+    "turn": 285,
+    "toolReply": true,
+    "bytes": 813322
+  },
+  {
+    "turn": 286,
+    "toolReply": false,
+    "bytes": 812777
+  },
+  {
+    "turn": 287,
+    "toolReply": false,
+    "bytes": 812777
+  },
+  {
+    "turn": 288,
+    "toolReply": false,
+    "bytes": 821996
+  },
+  {
+    "turn": 289,
+    "toolReply": false,
+    "bytes": 821996
+  },
+  {
+    "turn": 290,
+    "toolReply": false,
+    "bytes": 821451
+  },
+  {
+    "turn": 290,
+    "toolReply": true,
+    "bytes": 822000
+  },
+  {
+    "turn": 291,
+    "toolReply": false,
+    "bytes": 821451
+  },
+  {
+    "turn": 292,
+    "toolReply": false,
+    "bytes": 830670
+  },
+  {
+    "turn": 293,
+    "toolReply": false,
+    "bytes": 830670
+  },
+  {
+    "turn": 294,
+    "toolReply": false,
+    "bytes": 830674
+  },
+  {
+    "turn": 295,
+    "toolReply": false,
+    "bytes": 830125
+  },
+  {
+    "turn": 295,
+    "toolReply": true,
+    "bytes": 830674
+  },
+  {
+    "turn": 296,
+    "toolReply": false,
+    "bytes": 839344
+  },
+  {
+    "turn": 297,
+    "toolReply": false,
+    "bytes": 839344
+  },
+  {
+    "turn": 298,
+    "toolReply": false,
+    "bytes": 839348
+  },
+  {
+    "turn": 299,
+    "toolReply": false,
+    "bytes": 839348
+  },
+  {
+    "turn": 300,
+    "toolReply": false,
+    "bytes": 848018
+  },
+  {
+    "turn": 300,
+    "toolReply": true,
+    "bytes": 848567
+  },
+  {
+    "turn": 301,
+    "toolReply": false,
+    "bytes": 848018
+  },
+  {
+    "turn": 302,
+    "toolReply": false,
+    "bytes": 848022
+  },
+  {
+    "turn": 303,
+    "toolReply": false,
+    "bytes": 848022
+  },
+  {
+    "turn": 304,
+    "toolReply": false,
+    "bytes": 917192
+  },
+  {
+    "turn": 305,
+    "toolReply": false,
+    "bytes": 856692
+  },
+  {
+    "turn": 305,
+    "toolReply": true,
+    "bytes": 857241
+  },
+  {
+    "turn": 306,
+    "toolReply": false,
+    "bytes": 856696
+  },
+  {
+    "turn": 307,
+    "toolReply": false,
+    "bytes": 856696
+  },
+  {
+    "turn": 308,
+    "toolReply": false,
+    "bytes": 925866
+  },
+  {
+    "turn": 309,
+    "toolReply": false,
+    "bytes": 865915
+  },
+  {
+    "turn": 310,
+    "toolReply": false,
+    "bytes": 865370
+  },
+  {
+    "turn": 310,
+    "toolReply": true,
+    "bytes": 865919
+  },
+  {
+    "turn": 311,
+    "toolReply": false,
+    "bytes": 865370
+  },
+  {
+    "turn": 312,
+    "toolReply": false,
+    "bytes": 934540
+  },
+  {
+    "turn": 313,
+    "toolReply": false,
+    "bytes": 874589
+  },
+  {
+    "turn": 314,
+    "toolReply": false,
+    "bytes": 874593
+  },
+  {
+    "turn": 315,
+    "toolReply": false,
+    "bytes": 874044
+  },
+  {
+    "turn": 315,
+    "toolReply": true,
+    "bytes": 874593
+  },
+  {
+    "turn": 316,
+    "toolReply": false,
+    "bytes": 943214
+  },
+  {
+    "turn": 317,
+    "toolReply": false,
+    "bytes": 883263
+  },
+  {
+    "turn": 318,
+    "toolReply": false,
+    "bytes": 883267
+  },
+  {
+    "turn": 319,
+    "toolReply": false,
+    "bytes": 883267
+  },
+  {
+    "turn": 320,
+    "toolReply": false,
+    "bytes": 951888
+  },
+  {
+    "turn": 320,
+    "toolReply": true,
+    "bytes": 952437
+  },
+  {
+    "turn": 321,
+    "toolReply": false,
+    "bytes": 891937
+  },
+  {
+    "turn": 322,
+    "toolReply": false,
+    "bytes": 891941
+  },
+  {
+    "turn": 323,
+    "toolReply": false,
+    "bytes": 891941
+  },
+  {
+    "turn": 324,
+    "toolReply": false,
+    "bytes": 961111
+  },
+  {
+    "turn": 325,
+    "toolReply": false,
+    "bytes": 900611
+  },
+  {
+    "turn": 325,
+    "toolReply": true,
+    "bytes": 901160
+  },
+  {
+    "turn": 326,
+    "toolReply": false,
+    "bytes": 900615
+  },
+  {
+    "turn": 327,
+    "toolReply": false,
+    "bytes": 900615
+  },
+  {
+    "turn": 328,
+    "toolReply": false,
+    "bytes": 969785
+  },
+  {
+    "turn": 329,
+    "toolReply": false,
+    "bytes": 969785
+  },
+  {
+    "turn": 330,
+    "toolReply": false,
+    "bytes": 909289
+  },
+  {
+    "turn": 330,
+    "toolReply": true,
+    "bytes": 909838
+  },
+  {
+    "turn": 331,
+    "toolReply": false,
+    "bytes": 909289
+  },
+  {
+    "turn": 332,
+    "toolReply": false,
+    "bytes": 978459
+  },
+  {
+    "turn": 333,
+    "toolReply": false,
+    "bytes": 978459
+  },
+  {
+    "turn": 334,
+    "toolReply": false,
+    "bytes": 918512
+  },
+  {
+    "turn": 335,
+    "toolReply": false,
+    "bytes": 917963
+  },
+  {
+    "turn": 335,
+    "toolReply": true,
+    "bytes": 918512
+  },
+  {
+    "turn": 336,
+    "toolReply": false,
+    "bytes": 987133
+  },
+  {
+    "turn": 337,
+    "toolReply": false,
+    "bytes": 987133
+  },
+  {
+    "turn": 338,
+    "toolReply": false,
+    "bytes": 927186
+  },
+  {
+    "turn": 339,
+    "toolReply": false,
+    "bytes": 927186
+  },
+  {
+    "turn": 340,
+    "toolReply": false,
+    "bytes": 995807
+  },
+  {
+    "turn": 340,
+    "toolReply": true,
+    "bytes": 996356
+  },
+  {
+    "turn": 341,
+    "toolReply": false,
+    "bytes": 995807
+  },
+  {
+    "turn": 342,
+    "toolReply": false,
+    "bytes": 935860
+  },
+  {
+    "turn": 343,
+    "toolReply": false,
+    "bytes": 935860
+  },
+  {
+    "turn": 344,
+    "toolReply": false,
+    "bytes": 1005030
+  },
+  {
+    "turn": 345,
+    "toolReply": false,
+    "bytes": 1004481
+  },
+  {
+    "turn": 345,
+    "toolReply": true,
+    "bytes": 1005030
+  },
+  {
+    "turn": 346,
+    "toolReply": false,
+    "bytes": 944534
+  },
+  {
+    "turn": 347,
+    "toolReply": false,
+    "bytes": 944534
+  },
+  {
+    "turn": 348,
+    "toolReply": false,
+    "bytes": 1013704
+  },
+  {
+    "turn": 349,
+    "toolReply": false,
+    "bytes": 1013704
+  },
+  {
+    "turn": 350,
+    "toolReply": false,
+    "bytes": 953208
+  },
+  {
+    "turn": 350,
+    "toolReply": true,
+    "bytes": 953757
+  },
+  {
+    "turn": 351,
+    "toolReply": false,
+    "bytes": 953208
+  },
+  {
+    "turn": 352,
+    "toolReply": false,
+    "bytes": 1022378
+  },
+  {
+    "turn": 353,
+    "toolReply": false,
+    "bytes": 1022378
+  },
+  {
+    "turn": 354,
+    "toolReply": false,
+    "bytes": 1022382
+  },
+  {
+    "turn": 355,
+    "toolReply": false,
+    "bytes": 961882
+  },
+  {
+    "turn": 355,
+    "toolReply": true,
+    "bytes": 962431
+  },
+  {
+    "turn": 356,
+    "toolReply": false,
+    "bytes": 1031052
+  },
+  {
+    "turn": 357,
+    "toolReply": false,
+    "bytes": 1031052
+  },
+  {
+    "turn": 358,
+    "toolReply": false,
+    "bytes": 1031056
+  },
+  {
+    "turn": 359,
+    "toolReply": false,
+    "bytes": 971105
+  },
+  {
+    "turn": 360,
+    "toolReply": false,
+    "bytes": 1039726
+  },
+  {
+    "turn": 360,
+    "toolReply": true,
+    "bytes": 1040275
+  },
+  {
+    "turn": 361,
+    "toolReply": false,
+    "bytes": 1039726
+  },
+  {
+    "turn": 362,
+    "toolReply": false,
+    "bytes": 1039730
+  },
+  {
+    "turn": 363,
+    "toolReply": false,
+    "bytes": 979779
+  },
+  {
+    "turn": 364,
+    "toolReply": false,
+    "bytes": 1048949
+  },
+  {
+    "turn": 365,
+    "toolReply": false,
+    "bytes": 1048400
+  },
+  {
+    "turn": 365,
+    "toolReply": true,
+    "bytes": 1048949
+  },
+  {
+    "turn": 366,
+    "toolReply": false,
+    "bytes": 1048404
+  },
+  {
+    "turn": 367,
+    "toolReply": false,
+    "bytes": 988453
+  },
+  {
+    "turn": 368,
+    "toolReply": false,
+    "bytes": 1057623
+  },
+  {
+    "turn": 369,
+    "toolReply": false,
+    "bytes": 1057623
+  },
+  {
+    "turn": 370,
+    "toolReply": false,
+    "bytes": 1057078
+  },
+  {
+    "turn": 370,
+    "toolReply": true,
+    "bytes": 1057627
+  },
+  {
+    "turn": 371,
+    "toolReply": false,
+    "bytes": 997127
+  },
+  {
+    "turn": 372,
+    "toolReply": false,
+    "bytes": 1066297
+  },
+  {
+    "turn": 373,
+    "toolReply": false,
+    "bytes": 1066297
+  },
+  {
+    "turn": 374,
+    "toolReply": false,
+    "bytes": 1066301
+  },
+  {
+    "turn": 375,
+    "toolReply": false,
+    "bytes": 1005801
+  },
+  {
+    "turn": 375,
+    "toolReply": true,
+    "bytes": 1006350
+  },
+  {
+    "turn": 376,
+    "toolReply": false,
+    "bytes": 1074971
+  },
+  {
+    "turn": 377,
+    "toolReply": false,
+    "bytes": 1074971
+  },
+  {
+    "turn": 378,
+    "toolReply": false,
+    "bytes": 1074975
+  },
+  {
+    "turn": 379,
+    "toolReply": false,
+    "bytes": 1074975
+  },
+  {
+    "turn": 380,
+    "toolReply": false,
+    "bytes": 1083645
+  },
+  {
+    "turn": 380,
+    "toolReply": true,
+    "bytes": 1084194
+  },
+  {
+    "turn": 381,
+    "toolReply": false,
+    "bytes": 1083645
+  },
+  {
+    "turn": 382,
+    "toolReply": false,
+    "bytes": 1083649
+  },
+  {
+    "turn": 383,
+    "toolReply": false,
+    "bytes": 1083649
+  },
+  {
+    "turn": 384,
+    "toolReply": false,
+    "bytes": 1092868
+  },
+  {
+    "turn": 385,
+    "toolReply": false,
+    "bytes": 1092319
+  },
+  {
+    "turn": 385,
+    "toolReply": true,
+    "bytes": 1092868
+  },
+  {
+    "turn": 386,
+    "toolReply": false,
+    "bytes": 1092323
+  },
+  {
+    "turn": 387,
+    "toolReply": false,
+    "bytes": 1092323
+  },
+  {
+    "turn": 388,
+    "toolReply": false,
+    "bytes": 1101542
+  },
+  {
+    "turn": 389,
+    "toolReply": false,
+    "bytes": 1101542
+  },
+  {
+    "turn": 390,
+    "toolReply": false,
+    "bytes": 1100997
+  },
+  {
+    "turn": 390,
+    "toolReply": true,
+    "bytes": 1101546
+  },
+  {
+    "turn": 391,
+    "toolReply": false,
+    "bytes": 1100997
+  },
+  {
+    "turn": 392,
+    "toolReply": false,
+    "bytes": 1110216
+  },
+  {
+    "turn": 393,
+    "toolReply": false,
+    "bytes": 1110216
+  },
+  {
+    "turn": 394,
+    "toolReply": false,
+    "bytes": 1110220
+  },
+  {
+    "turn": 395,
+    "toolReply": false,
+    "bytes": 1109671
+  },
+  {
+    "turn": 395,
+    "toolReply": true,
+    "bytes": 1110220
+  },
+  {
+    "turn": 396,
+    "toolReply": false,
+    "bytes": 1118890
+  },
+  {
+    "turn": 397,
+    "toolReply": false,
+    "bytes": 1118890
+  },
+  {
+    "turn": 398,
+    "toolReply": false,
+    "bytes": 1118894
+  },
+  {
+    "turn": 399,
+    "toolReply": false,
+    "bytes": 1118894
+  },
+  {
+    "turn": 400,
+    "toolReply": false,
+    "bytes": 1127564
+  },
+  {
+    "turn": 400,
+    "toolReply": true,
+    "bytes": 1128113
+  },
+  {
+    "turn": 401,
+    "toolReply": false,
+    "bytes": 1127564
+  },
+  {
+    "turn": 402,
+    "toolReply": false,
+    "bytes": 1127568
+  },
+  {
+    "turn": 403,
+    "toolReply": false,
+    "bytes": 1127568
+  },
+  {
+    "turn": 404,
+    "toolReply": false,
+    "bytes": 1196738
+  },
+  {
+    "turn": 405,
+    "toolReply": false,
+    "bytes": 1136238
+  },
+  {
+    "turn": 405,
+    "toolReply": true,
+    "bytes": 1136787
+  },
+  {
+    "turn": 406,
+    "toolReply": false,
+    "bytes": 1136242
+  },
+  {
+    "turn": 407,
+    "toolReply": false,
+    "bytes": 1136242
+  },
+  {
+    "turn": 408,
+    "toolReply": false,
+    "bytes": 1205412
+  },
+  {
+    "turn": 409,
+    "toolReply": false,
+    "bytes": 1145461
+  },
+  {
+    "turn": 410,
+    "toolReply": false,
+    "bytes": 1144916
+  },
+  {
+    "turn": 410,
+    "toolReply": true,
+    "bytes": 1145465
+  },
+  {
+    "turn": 411,
+    "toolReply": false,
+    "bytes": 1144916
+  },
+  {
+    "turn": 412,
+    "toolReply": false,
+    "bytes": 1214086
+  },
+  {
+    "turn": 413,
+    "toolReply": false,
+    "bytes": 1154135
+  },
+  {
+    "turn": 414,
+    "toolReply": false,
+    "bytes": 1154139
+  },
+  {
+    "turn": 415,
+    "toolReply": false,
+    "bytes": 1153590
+  },
+  {
+    "turn": 415,
+    "toolReply": true,
+    "bytes": 1154139
+  },
+  {
+    "turn": 416,
+    "toolReply": false,
+    "bytes": 1222760
+  },
+  {
+    "turn": 417,
+    "toolReply": false,
+    "bytes": 1162809
+  },
+  {
+    "turn": 418,
+    "toolReply": false,
+    "bytes": 1162813
+  },
+  {
+    "turn": 419,
+    "toolReply": false,
+    "bytes": 1162813
+  },
+  {
+    "turn": 420,
+    "toolReply": false,
+    "bytes": 1231434
+  },
+  {
+    "turn": 420,
+    "toolReply": true,
+    "bytes": 1231983
+  },
+  {
+    "turn": 421,
+    "toolReply": false,
+    "bytes": 1171483
+  },
+  {
+    "turn": 422,
+    "toolReply": false,
+    "bytes": 1171487
+  },
+  {
+    "turn": 423,
+    "toolReply": false,
+    "bytes": 1171487
+  },
+  {
+    "turn": 424,
+    "toolReply": false,
+    "bytes": 1240657
+  },
+  {
+    "turn": 425,
+    "toolReply": false,
+    "bytes": 1180157
+  },
+  {
+    "turn": 425,
+    "toolReply": true,
+    "bytes": 1180706
+  },
+  {
+    "turn": 426,
+    "toolReply": false,
+    "bytes": 1180161
+  },
+  {
+    "turn": 427,
+    "toolReply": false,
+    "bytes": 1180161
+  },
+  {
+    "turn": 428,
+    "toolReply": false,
+    "bytes": 1249331
+  },
+  {
+    "turn": 429,
+    "toolReply": false,
+    "bytes": 1249331
+  },
+  {
+    "turn": 430,
+    "toolReply": false,
+    "bytes": 1188835
+  },
+  {
+    "turn": 430,
+    "toolReply": true,
+    "bytes": 1189384
+  },
+  {
+    "turn": 431,
+    "toolReply": false,
+    "bytes": 1188835
+  },
+  {
+    "turn": 432,
+    "toolReply": false,
+    "bytes": 1258005
+  },
+  {
+    "turn": 433,
+    "toolReply": false,
+    "bytes": 1258005
+  },
+  {
+    "turn": 434,
+    "toolReply": false,
+    "bytes": 1198058
+  },
+  {
+    "turn": 435,
+    "toolReply": false,
+    "bytes": 1197509
+  },
+  {
+    "turn": 435,
+    "toolReply": true,
+    "bytes": 1198058
+  },
+  {
+    "turn": 436,
+    "toolReply": false,
+    "bytes": 1266679
+  },
+  {
+    "turn": 437,
+    "toolReply": false,
+    "bytes": 1266679
+  },
+  {
+    "turn": 438,
+    "toolReply": false,
+    "bytes": 1206732
+  },
+  {
+    "turn": 439,
+    "toolReply": false,
+    "bytes": 1206732
+  },
+  {
+    "turn": 440,
+    "toolReply": false,
+    "bytes": 1275353
+  },
+  {
+    "turn": 440,
+    "toolReply": true,
+    "bytes": 1275902
+  },
+  {
+    "turn": 441,
+    "toolReply": false,
+    "bytes": 1275353
+  },
+  {
+    "turn": 442,
+    "toolReply": false,
+    "bytes": 1215406
+  },
+  {
+    "turn": 443,
+    "toolReply": false,
+    "bytes": 1215406
+  },
+  {
+    "turn": 444,
+    "toolReply": false,
+    "bytes": 1284576
+  },
+  {
+    "turn": 445,
+    "toolReply": false,
+    "bytes": 1284027
+  },
+  {
+    "turn": 445,
+    "toolReply": true,
+    "bytes": 1284576
+  },
+  {
+    "turn": 446,
+    "toolReply": false,
+    "bytes": 1224080
+  },
+  {
+    "turn": 447,
+    "toolReply": false,
+    "bytes": 1224080
+  },
+  {
+    "turn": 448,
+    "toolReply": false,
+    "bytes": 1293250
+  },
+  {
+    "turn": 449,
+    "toolReply": false,
+    "bytes": 1293250
+  },
+  {
+    "turn": 450,
+    "toolReply": false,
+    "bytes": 1232754
+  },
+  {
+    "turn": 450,
+    "toolReply": true,
+    "bytes": 1233303
+  },
+  {
+    "turn": 451,
+    "toolReply": false,
+    "bytes": 1232754
+  },
+  {
+    "turn": 452,
+    "toolReply": false,
+    "bytes": 1301924
+  },
+  {
+    "turn": 453,
+    "toolReply": false,
+    "bytes": 1301924
+  },
+  {
+    "turn": 454,
+    "toolReply": false,
+    "bytes": 1301928
+  },
+  {
+    "turn": 455,
+    "toolReply": false,
+    "bytes": 1241428
+  },
+  {
+    "turn": 455,
+    "toolReply": true,
+    "bytes": 1241977
+  },
+  {
+    "turn": 456,
+    "toolReply": false,
+    "bytes": 1310598
+  },
+  {
+    "turn": 457,
+    "toolReply": false,
+    "bytes": 1310598
+  },
+  {
+    "turn": 458,
+    "toolReply": false,
+    "bytes": 1310602
+  },
+  {
+    "turn": 459,
+    "toolReply": false,
+    "bytes": 1250651
+  },
+  {
+    "turn": 460,
+    "toolReply": false,
+    "bytes": 1319272
+  },
+  {
+    "turn": 460,
+    "toolReply": true,
+    "bytes": 1319821
+  },
+  {
+    "turn": 461,
+    "toolReply": false,
+    "bytes": 1319272
+  },
+  {
+    "turn": 462,
+    "toolReply": false,
+    "bytes": 1319276
+  },
+  {
+    "turn": 463,
+    "toolReply": false,
+    "bytes": 1259325
+  },
+  {
+    "turn": 464,
+    "toolReply": false,
+    "bytes": 1328495
+  },
+  {
+    "turn": 465,
+    "toolReply": false,
+    "bytes": 1327946
+  },
+  {
+    "turn": 465,
+    "toolReply": true,
+    "bytes": 1328495
+  },
+  {
+    "turn": 466,
+    "toolReply": false,
+    "bytes": 1327950
+  },
+  {
+    "turn": 467,
+    "toolReply": false,
+    "bytes": 1267999
+  },
+  {
+    "turn": 468,
+    "toolReply": false,
+    "bytes": 1337169
+  },
+  {
+    "turn": 469,
+    "toolReply": false,
+    "bytes": 1337169
+  },
+  {
+    "turn": 470,
+    "toolReply": false,
+    "bytes": 1336624
+  },
+  {
+    "turn": 470,
+    "toolReply": true,
+    "bytes": 1337173
+  },
+  {
+    "turn": 471,
+    "toolReply": false,
+    "bytes": 1276673
+  },
+  {
+    "turn": 472,
+    "toolReply": false,
+    "bytes": 1345843
+  },
+  {
+    "turn": 473,
+    "toolReply": false,
+    "bytes": 1345843
+  },
+  {
+    "turn": 474,
+    "toolReply": false,
+    "bytes": 1345847
+  },
+  {
+    "turn": 475,
+    "toolReply": false,
+    "bytes": 1285347
+  },
+  {
+    "turn": 475,
+    "toolReply": true,
+    "bytes": 1285896
+  },
+  {
+    "turn": 476,
+    "toolReply": false,
+    "bytes": 1354517
+  },
+  {
+    "turn": 477,
+    "toolReply": false,
+    "bytes": 1354517
+  },
+  {
+    "turn": 478,
+    "toolReply": false,
+    "bytes": 1354521
+  },
+  {
+    "turn": 479,
+    "toolReply": false,
+    "bytes": 1354521
+  },
+  {
+    "turn": 480,
+    "toolReply": false,
+    "bytes": 1363191
+  },
+  {
+    "turn": 480,
+    "toolReply": true,
+    "bytes": 1363740
+  },
+  {
+    "turn": 481,
+    "toolReply": false,
+    "bytes": 1363191
+  },
+  {
+    "turn": 482,
+    "toolReply": false,
+    "bytes": 1363195
+  },
+  {
+    "turn": 483,
+    "toolReply": false,
+    "bytes": 1363195
+  },
+  {
+    "turn": 484,
+    "toolReply": false,
+    "bytes": 1372414
+  },
+  {
+    "turn": 485,
+    "toolReply": false,
+    "bytes": 1371865
+  },
+  {
+    "turn": 485,
+    "toolReply": true,
+    "bytes": 1372414
+  },
+  {
+    "turn": 486,
+    "toolReply": false,
+    "bytes": 1371869
+  },
+  {
+    "turn": 487,
+    "toolReply": false,
+    "bytes": 1371869
+  },
+  {
+    "turn": 488,
+    "toolReply": false,
+    "bytes": 1381088
+  },
+  {
+    "turn": 489,
+    "toolReply": false,
+    "bytes": 1381088
+  },
+  {
+    "turn": 490,
+    "toolReply": false,
+    "bytes": 1380543
+  },
+  {
+    "turn": 490,
+    "toolReply": true,
+    "bytes": 1381092
+  },
+  {
+    "turn": 491,
+    "toolReply": false,
+    "bytes": 1380543
+  },
+  {
+    "turn": 492,
+    "toolReply": false,
+    "bytes": 1389762
+  },
+  {
+    "turn": 493,
+    "toolReply": false,
+    "bytes": 1389762
+  },
+  {
+    "turn": 494,
+    "toolReply": false,
+    "bytes": 1389766
+  },
+  {
+    "turn": 495,
+    "toolReply": false,
+    "bytes": 1389217
+  },
+  {
+    "turn": 495,
+    "toolReply": true,
+    "bytes": 1389766
+  },
+  {
+    "turn": 496,
+    "toolReply": false,
+    "bytes": 1398436
+  },
+  {
+    "turn": 497,
+    "toolReply": false,
+    "bytes": 1398436
+  },
+  {
+    "turn": 498,
+    "toolReply": false,
+    "bytes": 1398440
+  },
+  {
+    "turn": 499,
+    "toolReply": false,
+    "bytes": 1398440
+  },
+  {
+    "turn": 500,
+    "toolReply": false,
+    "bytes": 1407110
+  },
+  {
+    "turn": 500,
+    "toolReply": true,
+    "bytes": 1407659
+  },
+  {
+    "turn": 501,
+    "toolReply": false,
+    "bytes": 1407110
+  },
+  {
+    "turn": 502,
+    "toolReply": false,
+    "bytes": 1407114
+  },
+  {
+    "turn": 503,
+    "toolReply": false,
+    "bytes": 1407114
+  },
+  {
+    "turn": 504,
+    "toolReply": false,
+    "bytes": 1476284
+  },
+  {
+    "turn": 505,
+    "toolReply": false,
+    "bytes": 1415784
+  },
+  {
+    "turn": 505,
+    "toolReply": true,
+    "bytes": 1416333
+  },
+  {
+    "turn": 506,
+    "toolReply": false,
+    "bytes": 1415788
+  },
+  {
+    "turn": 507,
+    "toolReply": false,
+    "bytes": 1415788
+  },
+  {
+    "turn": 508,
+    "toolReply": false,
+    "bytes": 1484958
+  },
+  {
+    "turn": 509,
+    "toolReply": false,
+    "bytes": 1425007
+  },
+  {
+    "turn": 510,
+    "toolReply": false,
+    "bytes": 1424462
+  },
+  {
+    "turn": 510,
+    "toolReply": true,
+    "bytes": 1425011
+  },
+  {
+    "turn": 511,
+    "toolReply": false,
+    "bytes": 1424462
+  },
+  {
+    "turn": 512,
+    "toolReply": false,
+    "bytes": 1493632
+  },
+  {
+    "turn": 513,
+    "toolReply": false,
+    "bytes": 1433681
+  },
+  {
+    "turn": 514,
+    "toolReply": false,
+    "bytes": 1433685
+  },
+  {
+    "turn": 515,
+    "toolReply": false,
+    "bytes": 1433136
+  },
+  {
+    "turn": 515,
+    "toolReply": true,
+    "bytes": 1433685
+  },
+  {
+    "turn": 516,
+    "toolReply": false,
+    "bytes": 1502306
+  },
+  {
+    "turn": 517,
+    "toolReply": false,
+    "bytes": 1442355
+  },
+  {
+    "turn": 518,
+    "toolReply": false,
+    "bytes": 1442359
+  },
+  {
+    "turn": 519,
+    "toolReply": false,
+    "bytes": 1442359
+  },
+  {
+    "turn": 520,
+    "toolReply": false,
+    "bytes": 1510980
+  },
+  {
+    "turn": 520,
+    "toolReply": true,
+    "bytes": 1511529
+  },
+  {
+    "turn": 521,
+    "toolReply": false,
+    "bytes": 1451029
+  },
+  {
+    "turn": 522,
+    "toolReply": false,
+    "bytes": 1451033
+  },
+  {
+    "turn": 523,
+    "toolReply": false,
+    "bytes": 1451033
+  },
+  {
+    "turn": 524,
+    "toolReply": false,
+    "bytes": 1520203
+  },
+  {
+    "turn": 525,
+    "toolReply": false,
+    "bytes": 1459703
+  },
+  {
+    "turn": 525,
+    "toolReply": true,
+    "bytes": 1460252
+  },
+  {
+    "turn": 526,
+    "toolReply": false,
+    "bytes": 1459707
+  },
+  {
+    "turn": 527,
+    "toolReply": false,
+    "bytes": 1459707
+  },
+  {
+    "turn": 528,
+    "toolReply": false,
+    "bytes": 1528877
+  },
+  {
+    "turn": 529,
+    "toolReply": false,
+    "bytes": 1528877
+  },
+  {
+    "turn": 530,
+    "toolReply": false,
+    "bytes": 1468381
+  },
+  {
+    "turn": 530,
+    "toolReply": true,
+    "bytes": 1468930
+  },
+  {
+    "turn": 531,
+    "toolReply": false,
+    "bytes": 1468381
+  },
+  {
+    "turn": 532,
+    "toolReply": false,
+    "bytes": 1537551
+  },
+  {
+    "turn": 533,
+    "toolReply": false,
+    "bytes": 1537551
+  },
+  {
+    "turn": 534,
+    "toolReply": false,
+    "bytes": 1477604
+  },
+  {
+    "turn": 535,
+    "toolReply": false,
+    "bytes": 1477055
+  },
+  {
+    "turn": 535,
+    "toolReply": true,
+    "bytes": 1477604
+  },
+  {
+    "turn": 536,
+    "toolReply": false,
+    "bytes": 1546225
+  },
+  {
+    "turn": 537,
+    "toolReply": false,
+    "bytes": 1546225
+  },
+  {
+    "turn": 538,
+    "toolReply": false,
+    "bytes": 1486278
+  },
+  {
+    "turn": 539,
+    "toolReply": false,
+    "bytes": 1486278
+  },
+  {
+    "turn": 540,
+    "toolReply": false,
+    "bytes": 1554899
+  },
+  {
+    "turn": 540,
+    "toolReply": true,
+    "bytes": 1555448
+  },
+  {
+    "turn": 541,
+    "toolReply": false,
+    "bytes": 1554899
+  },
+  {
+    "turn": 542,
+    "toolReply": false,
+    "bytes": 1494952
+  },
+  {
+    "turn": 543,
+    "toolReply": false,
+    "bytes": 1494952
+  },
+  {
+    "turn": 544,
+    "toolReply": false,
+    "bytes": 1564122
+  },
+  {
+    "turn": 545,
+    "toolReply": false,
+    "bytes": 1563573
+  },
+  {
+    "turn": 545,
+    "toolReply": true,
+    "bytes": 1564122
+  },
+  {
+    "turn": 546,
+    "toolReply": false,
+    "bytes": 1503626
+  },
+  {
+    "turn": 547,
+    "toolReply": false,
+    "bytes": 1503626
+  },
+  {
+    "turn": 548,
+    "toolReply": false,
+    "bytes": 1572796
+  },
+  {
+    "turn": 549,
+    "toolReply": false,
+    "bytes": 1572796
+  },
+  {
+    "turn": 550,
+    "toolReply": false,
+    "bytes": 1512300
+  },
+  {
+    "turn": 550,
+    "toolReply": true,
+    "bytes": 1512849
+  },
+  {
+    "turn": 551,
+    "toolReply": false,
+    "bytes": 1512300
+  },
+  {
+    "turn": 552,
+    "toolReply": false,
+    "bytes": 1581470
+  },
+  {
+    "turn": 553,
+    "toolReply": false,
+    "bytes": 1581470
+  },
+  {
+    "turn": 554,
+    "toolReply": false,
+    "bytes": 1581474
+  },
+  {
+    "turn": 555,
+    "toolReply": false,
+    "bytes": 1520974
+  },
+  {
+    "turn": 555,
+    "toolReply": true,
+    "bytes": 1521523
+  },
+  {
+    "turn": 556,
+    "toolReply": false,
+    "bytes": 1590144
+  },
+  {
+    "turn": 557,
+    "toolReply": false,
+    "bytes": 1590144
+  },
+  {
+    "turn": 558,
+    "toolReply": false,
+    "bytes": 1590148
+  },
+  {
+    "turn": 559,
+    "toolReply": false,
+    "bytes": 1530197
+  },
+  {
+    "turn": 560,
+    "toolReply": false,
+    "bytes": 1598818
+  },
+  {
+    "turn": 560,
+    "toolReply": true,
+    "bytes": 1599367
+  },
+  {
+    "turn": 561,
+    "toolReply": false,
+    "bytes": 1598818
+  },
+  {
+    "turn": 562,
+    "toolReply": false,
+    "bytes": 1598822
+  },
+  {
+    "turn": 563,
+    "toolReply": false,
+    "bytes": 1538871
+  },
+  {
+    "turn": 564,
+    "toolReply": false,
+    "bytes": 1608041
+  },
+  {
+    "turn": 565,
+    "toolReply": false,
+    "bytes": 1607492
+  },
+  {
+    "turn": 565,
+    "toolReply": true,
+    "bytes": 1608041
+  },
+  {
+    "turn": 566,
+    "toolReply": false,
+    "bytes": 1607496
+  },
+  {
+    "turn": 567,
+    "toolReply": false,
+    "bytes": 1547545
+  },
+  {
+    "turn": 568,
+    "toolReply": false,
+    "bytes": 1616715
+  },
+  {
+    "turn": 569,
+    "toolReply": false,
+    "bytes": 1616715
+  },
+  {
+    "turn": 570,
+    "toolReply": false,
+    "bytes": 1616170
+  },
+  {
+    "turn": 570,
+    "toolReply": true,
+    "bytes": 1616719
+  },
+  {
+    "turn": 571,
+    "toolReply": false,
+    "bytes": 1556219
+  },
+  {
+    "turn": 572,
+    "toolReply": false,
+    "bytes": 1625389
+  },
+  {
+    "turn": 573,
+    "toolReply": false,
+    "bytes": 1625389
+  },
+  {
+    "turn": 574,
+    "toolReply": false,
+    "bytes": 1625393
+  },
+  {
+    "turn": 575,
+    "toolReply": false,
+    "bytes": 1564893
+  },
+  {
+    "turn": 575,
+    "toolReply": true,
+    "bytes": 1565442
+  },
+  {
+    "turn": 576,
+    "toolReply": false,
+    "bytes": 1634063
+  },
+  {
+    "turn": 577,
+    "toolReply": false,
+    "bytes": 1634063
+  },
+  {
+    "turn": 578,
+    "toolReply": false,
+    "bytes": 1634067
+  },
+  {
+    "turn": 579,
+    "toolReply": false,
+    "bytes": 1634067
+  },
+  {
+    "turn": 580,
+    "toolReply": false,
+    "bytes": 1642737
+  },
+  {
+    "turn": 580,
+    "toolReply": true,
+    "bytes": 1643286
+  },
+  {
+    "turn": 581,
+    "toolReply": false,
+    "bytes": 1642737
+  },
+  {
+    "turn": 582,
+    "toolReply": false,
+    "bytes": 1642741
+  },
+  {
+    "turn": 583,
+    "toolReply": false,
+    "bytes": 1642741
+  },
+  {
+    "turn": 584,
+    "toolReply": false,
+    "bytes": 1651960
+  },
+  {
+    "turn": 585,
+    "toolReply": false,
+    "bytes": 1651411
+  },
+  {
+    "turn": 585,
+    "toolReply": true,
+    "bytes": 1651960
+  },
+  {
+    "turn": 586,
+    "toolReply": false,
+    "bytes": 1651415
+  },
+  {
+    "turn": 587,
+    "toolReply": false,
+    "bytes": 1651415
+  },
+  {
+    "turn": 588,
+    "toolReply": false,
+    "bytes": 1660634
+  },
+  {
+    "turn": 589,
+    "toolReply": false,
+    "bytes": 1660634
+  },
+  {
+    "turn": 590,
+    "toolReply": false,
+    "bytes": 1660089
+  },
+  {
+    "turn": 590,
+    "toolReply": true,
+    "bytes": 1660638
+  },
+  {
+    "turn": 591,
+    "toolReply": false,
+    "bytes": 1660089
+  },
+  {
+    "turn": 592,
+    "toolReply": false,
+    "bytes": 1669308
+  },
+  {
+    "turn": 593,
+    "toolReply": false,
+    "bytes": 1669308
+  },
+  {
+    "turn": 594,
+    "toolReply": false,
+    "bytes": 1669312
+  },
+  {
+    "turn": 595,
+    "toolReply": false,
+    "bytes": 1668763
+  },
+  {
+    "turn": 595,
+    "toolReply": true,
+    "bytes": 1669312
+  },
+  {
+    "turn": 596,
+    "toolReply": false,
+    "bytes": 1677982
+  },
+  {
+    "turn": 597,
+    "toolReply": false,
+    "bytes": 1677982
+  },
+  {
+    "turn": 598,
+    "toolReply": false,
+    "bytes": 1677986
+  },
+  {
+    "turn": 599,
+    "toolReply": false,
+    "bytes": 1677986
+  },
+  {
+    "turn": 600,
+    "toolReply": false,
+    "bytes": 1686656
+  },
+  {
+    "turn": 600,
+    "toolReply": true,
+    "bytes": 1687205
+  },
+  {
+    "turn": 601,
+    "toolReply": false,
+    "bytes": 1686656
+  },
+  {
+    "turn": 602,
+    "toolReply": false,
+    "bytes": 1686660
+  },
+  {
+    "turn": 603,
+    "toolReply": false,
+    "bytes": 1686660
+  },
+  {
+    "turn": 604,
+    "toolReply": false,
+    "bytes": 1755830
+  },
+  {
+    "turn": 605,
+    "toolReply": false,
+    "bytes": 1695330
+  },
+  {
+    "turn": 605,
+    "toolReply": true,
+    "bytes": 1695879
+  },
+  {
+    "turn": 606,
+    "toolReply": false,
+    "bytes": 1695334
+  },
+  {
+    "turn": 607,
+    "toolReply": false,
+    "bytes": 1695334
+  },
+  {
+    "turn": 608,
+    "toolReply": false,
+    "bytes": 1764504
+  },
+  {
+    "turn": 609,
+    "toolReply": false,
+    "bytes": 1704553
+  },
+  {
+    "turn": 610,
+    "toolReply": false,
+    "bytes": 1704008
+  },
+  {
+    "turn": 610,
+    "toolReply": true,
+    "bytes": 1704557
+  },
+  {
+    "turn": 611,
+    "toolReply": false,
+    "bytes": 1704008
+  },
+  {
+    "turn": 612,
+    "toolReply": false,
+    "bytes": 1773178
+  },
+  {
+    "turn": 613,
+    "toolReply": false,
+    "bytes": 1713227
+  },
+  {
+    "turn": 614,
+    "toolReply": false,
+    "bytes": 1713231
+  },
+  {
+    "turn": 615,
+    "toolReply": false,
+    "bytes": 1712682
+  },
+  {
+    "turn": 615,
+    "toolReply": true,
+    "bytes": 1713231
+  },
+  {
+    "turn": 616,
+    "toolReply": false,
+    "bytes": 1781852
+  },
+  {
+    "turn": 617,
+    "toolReply": false,
+    "bytes": 1721901
+  },
+  {
+    "turn": 618,
+    "toolReply": false,
+    "bytes": 1721905
+  },
+  {
+    "turn": 619,
+    "toolReply": false,
+    "bytes": 1721905
+  },
+  {
+    "turn": 620,
+    "toolReply": false,
+    "bytes": 1790526
+  },
+  {
+    "turn": 620,
+    "toolReply": true,
+    "bytes": 1791075
+  },
+  {
+    "turn": 621,
+    "toolReply": false,
+    "bytes": 1730575
+  },
+  {
+    "turn": 622,
+    "toolReply": false,
+    "bytes": 1730579
+  },
+  {
+    "turn": 623,
+    "toolReply": false,
+    "bytes": 1730579
+  },
+  {
+    "turn": 624,
+    "toolReply": false,
+    "bytes": 1799749
+  },
+  {
+    "turn": 625,
+    "toolReply": false,
+    "bytes": 1739249
+  },
+  {
+    "turn": 625,
+    "toolReply": true,
+    "bytes": 1739798
+  },
+  {
+    "turn": 626,
+    "toolReply": false,
+    "bytes": 1739253
+  },
+  {
+    "turn": 627,
+    "toolReply": false,
+    "bytes": 1739253
+  },
+  {
+    "turn": 628,
+    "toolReply": false,
+    "bytes": 1808423
+  },
+  {
+    "turn": 629,
+    "toolReply": false,
+    "bytes": 1808423
+  },
+  {
+    "turn": 630,
+    "toolReply": false,
+    "bytes": 1747927
+  },
+  {
+    "turn": 630,
+    "toolReply": true,
+    "bytes": 1748476
+  },
+  {
+    "turn": 631,
+    "toolReply": false,
+    "bytes": 1747927
+  },
+  {
+    "turn": 632,
+    "toolReply": false,
+    "bytes": 1817097
+  },
+  {
+    "turn": 633,
+    "toolReply": false,
+    "bytes": 1817097
+  },
+  {
+    "turn": 634,
+    "toolReply": false,
+    "bytes": 1757150
+  },
+  {
+    "turn": 635,
+    "toolReply": false,
+    "bytes": 1756601
+  },
+  {
+    "turn": 635,
+    "toolReply": true,
+    "bytes": 1757150
+  },
+  {
+    "turn": 636,
+    "toolReply": false,
+    "bytes": 1825771
+  },
+  {
+    "turn": 637,
+    "toolReply": false,
+    "bytes": 1825771
+  },
+  {
+    "turn": 638,
+    "toolReply": false,
+    "bytes": 1765824
+  },
+  {
+    "turn": 639,
+    "toolReply": false,
+    "bytes": 1765824
+  },
+  {
+    "turn": 640,
+    "toolReply": false,
+    "bytes": 1834445
+  },
+  {
+    "turn": 640,
+    "toolReply": true,
+    "bytes": 1834994
+  },
+  {
+    "turn": 641,
+    "toolReply": false,
+    "bytes": 1834445
+  },
+  {
+    "turn": 642,
+    "toolReply": false,
+    "bytes": 1774498
+  },
+  {
+    "turn": 643,
+    "toolReply": false,
+    "bytes": 1774498
+  },
+  {
+    "turn": 644,
+    "toolReply": false,
+    "bytes": 1843668
+  },
+  {
+    "turn": 645,
+    "toolReply": false,
+    "bytes": 1843119
+  },
+  {
+    "turn": 645,
+    "toolReply": true,
+    "bytes": 1843668
+  },
+  {
+    "turn": 646,
+    "toolReply": false,
+    "bytes": 1783172
+  },
+  {
+    "turn": 647,
+    "toolReply": false,
+    "bytes": 1783172
+  },
+  {
+    "turn": 648,
+    "toolReply": false,
+    "bytes": 1852342
+  },
+  {
+    "turn": 649,
+    "toolReply": false,
+    "bytes": 1852342
+  },
+  {
+    "turn": 650,
+    "toolReply": false,
+    "bytes": 1791846
+  },
+  {
+    "turn": 650,
+    "toolReply": true,
+    "bytes": 1792395
+  },
+  {
+    "turn": 651,
+    "toolReply": false,
+    "bytes": 1791846
+  },
+  {
+    "turn": 652,
+    "toolReply": false,
+    "bytes": 1861016
+  },
+  {
+    "turn": 653,
+    "toolReply": false,
+    "bytes": 1861016
+  },
+  {
+    "turn": 654,
+    "toolReply": false,
+    "bytes": 1861020
+  },
+  {
+    "turn": 655,
+    "toolReply": false,
+    "bytes": 1800520
+  },
+  {
+    "turn": 655,
+    "toolReply": true,
+    "bytes": 1801069
+  },
+  {
+    "turn": 656,
+    "toolReply": false,
+    "bytes": 1869690
+  },
+  {
+    "turn": 657,
+    "toolReply": false,
+    "bytes": 1869690
+  },
+  {
+    "turn": 658,
+    "toolReply": false,
+    "bytes": 1869694
+  },
+  {
+    "turn": 659,
+    "toolReply": false,
+    "bytes": 1809743
+  },
+  {
+    "turn": 660,
+    "toolReply": false,
+    "bytes": 1878364
+  },
+  {
+    "turn": 660,
+    "toolReply": true,
+    "bytes": 1878913
+  },
+  {
+    "turn": 661,
+    "toolReply": false,
+    "bytes": 1878364
+  },
+  {
+    "turn": 662,
+    "toolReply": false,
+    "bytes": 1878368
+  },
+  {
+    "turn": 663,
+    "toolReply": false,
+    "bytes": 1818417
+  },
+  {
+    "turn": 664,
+    "toolReply": false,
+    "bytes": 1887587
+  },
+  {
+    "turn": 665,
+    "toolReply": false,
+    "bytes": 1887038
+  },
+  {
+    "turn": 665,
+    "toolReply": true,
+    "bytes": 1887587
+  },
+  {
+    "turn": 666,
+    "toolReply": false,
+    "bytes": 1887042
+  },
+  {
+    "turn": 667,
+    "toolReply": false,
+    "bytes": 1827091
+  },
+  {
+    "turn": 668,
+    "toolReply": false,
+    "bytes": 1896261
+  },
+  {
+    "turn": 669,
+    "toolReply": false,
+    "bytes": 1896261
+  },
+  {
+    "turn": 670,
+    "toolReply": false,
+    "bytes": 1895716
+  },
+  {
+    "turn": 670,
+    "toolReply": true,
+    "bytes": 1896265
+  },
+  {
+    "turn": 671,
+    "toolReply": false,
+    "bytes": 1835765
+  },
+  {
+    "turn": 672,
+    "toolReply": false,
+    "bytes": 1904935
+  },
+  {
+    "turn": 673,
+    "toolReply": false,
+    "bytes": 1904935
+  },
+  {
+    "turn": 674,
+    "toolReply": false,
+    "bytes": 1904939
+  },
+  {
+    "turn": 675,
+    "toolReply": false,
+    "bytes": 1844439
+  },
+  {
+    "turn": 675,
+    "toolReply": true,
+    "bytes": 1844988
+  },
+  {
+    "turn": 676,
+    "toolReply": false,
+    "bytes": 1913609
+  },
+  {
+    "turn": 677,
+    "toolReply": false,
+    "bytes": 1913609
+  },
+  {
+    "turn": 678,
+    "toolReply": false,
+    "bytes": 1913613
+  },
+  {
+    "turn": 679,
+    "toolReply": false,
+    "bytes": 1913613
+  },
+  {
+    "turn": 680,
+    "toolReply": false,
+    "bytes": 1922283
+  },
+  {
+    "turn": 680,
+    "toolReply": true,
+    "bytes": 1922832
+  },
+  {
+    "turn": 681,
+    "toolReply": false,
+    "bytes": 1922283
+  },
+  {
+    "turn": 682,
+    "toolReply": false,
+    "bytes": 1922287
+  },
+  {
+    "turn": 683,
+    "toolReply": false,
+    "bytes": 1922287
+  },
+  {
+    "turn": 684,
+    "toolReply": false,
+    "bytes": 1931506
+  },
+  {
+    "turn": 685,
+    "toolReply": false,
+    "bytes": 1930957
+  },
+  {
+    "turn": 685,
+    "toolReply": true,
+    "bytes": 1931506
+  },
+  {
+    "turn": 686,
+    "toolReply": false,
+    "bytes": 1930961
+  },
+  {
+    "turn": 687,
+    "toolReply": false,
+    "bytes": 1930961
+  },
+  {
+    "turn": 688,
+    "toolReply": false,
+    "bytes": 1940180
+  },
+  {
+    "turn": 689,
+    "toolReply": false,
+    "bytes": 1940180
+  },
+  {
+    "turn": 690,
+    "toolReply": false,
+    "bytes": 1939635
+  },
+  {
+    "turn": 690,
+    "toolReply": true,
+    "bytes": 1940184
+  },
+  {
+    "turn": 691,
+    "toolReply": false,
+    "bytes": 1939635
+  },
+  {
+    "turn": 692,
+    "toolReply": false,
+    "bytes": 1948854
+  },
+  {
+    "turn": 693,
+    "toolReply": false,
+    "bytes": 1948854
+  },
+  {
+    "turn": 694,
+    "toolReply": false,
+    "bytes": 1948858
+  },
+  {
+    "turn": 695,
+    "toolReply": false,
+    "bytes": 1948309
+  },
+  {
+    "turn": 695,
+    "toolReply": true,
+    "bytes": 1948858
+  },
+  {
+    "turn": 696,
+    "toolReply": false,
+    "bytes": 1957528
+  },
+  {
+    "turn": 697,
+    "toolReply": false,
+    "bytes": 1957528
+  },
+  {
+    "turn": 698,
+    "toolReply": false,
+    "bytes": 1957532
+  },
+  {
+    "turn": 699,
+    "toolReply": false,
+    "bytes": 1957532
+  },
+  {
+    "turn": 700,
+    "toolReply": false,
+    "bytes": 1966202
+  },
+  {
+    "turn": 700,
+    "toolReply": true,
+    "bytes": 1966751
+  },
+  {
+    "turn": 701,
+    "toolReply": false,
+    "bytes": 1966202
+  },
+  {
+    "turn": 702,
+    "toolReply": false,
+    "bytes": 1966206
+  },
+  {
+    "turn": 703,
+    "toolReply": false,
+    "bytes": 1966206
+  },
+  {
+    "turn": 704,
+    "toolReply": false,
+    "bytes": 2035376
+  },
+  {
+    "turn": 705,
+    "toolReply": false,
+    "bytes": 1974876
+  },
+  {
+    "turn": 705,
+    "toolReply": true,
+    "bytes": 1975425
+  },
+  {
+    "turn": 706,
+    "toolReply": false,
+    "bytes": 1974880
+  },
+  {
+    "turn": 707,
+    "toolReply": false,
+    "bytes": 1974880
+  },
+  {
+    "turn": 708,
+    "toolReply": false,
+    "bytes": 2044050
+  },
+  {
+    "turn": 709,
+    "toolReply": false,
+    "bytes": 1984099
+  },
+  {
+    "turn": 710,
+    "toolReply": false,
+    "bytes": 1983554
+  },
+  {
+    "turn": 710,
+    "toolReply": true,
+    "bytes": 1984103
+  },
+  {
+    "turn": 711,
+    "toolReply": false,
+    "bytes": 1983554
+  },
+  {
+    "turn": 712,
+    "toolReply": false,
+    "bytes": 2052724
+  },
+  {
+    "turn": 713,
+    "toolReply": false,
+    "bytes": 1992773
+  },
+  {
+    "turn": 714,
+    "toolReply": false,
+    "bytes": 1992777
+  },
+  {
+    "turn": 715,
+    "toolReply": false,
+    "bytes": 1992228
+  },
+  {
+    "turn": 715,
+    "toolReply": true,
+    "bytes": 1992777
+  },
+  {
+    "turn": 716,
+    "toolReply": false,
+    "bytes": 2061398
+  },
+  {
+    "turn": 717,
+    "toolReply": false,
+    "bytes": 2001447
+  },
+  {
+    "turn": 718,
+    "toolReply": false,
+    "bytes": 2001451
+  },
+  {
+    "turn": 719,
+    "toolReply": false,
+    "bytes": 2001451
+  },
+  {
+    "turn": 720,
+    "toolReply": false,
+    "bytes": 2070072
+  },
+  {
+    "turn": 720,
+    "toolReply": true,
+    "bytes": 2070621
+  },
+  {
+    "turn": 721,
+    "toolReply": false,
+    "bytes": 2010121
+  },
+  {
+    "turn": 722,
+    "toolReply": false,
+    "bytes": 2010125
+  },
+  {
+    "turn": 723,
+    "toolReply": false,
+    "bytes": 2010125
+  },
+  {
+    "turn": 724,
+    "toolReply": false,
+    "bytes": 2079295
+  },
+  {
+    "turn": 725,
+    "toolReply": false,
+    "bytes": 2018795
+  },
+  {
+    "turn": 725,
+    "toolReply": true,
+    "bytes": 2019344
+  },
+  {
+    "turn": 726,
+    "toolReply": false,
+    "bytes": 2018799
+  },
+  {
+    "turn": 727,
+    "toolReply": false,
+    "bytes": 2018799
+  },
+  {
+    "turn": 728,
+    "toolReply": false,
+    "bytes": 2087969
+  },
+  {
+    "turn": 729,
+    "toolReply": false,
+    "bytes": 2087969
+  },
+  {
+    "turn": 730,
+    "toolReply": false,
+    "bytes": 2027473
+  },
+  {
+    "turn": 730,
+    "toolReply": true,
+    "bytes": 2028022
+  },
+  {
+    "turn": 731,
+    "toolReply": false,
+    "bytes": 2027473
+  },
+  {
+    "turn": 732,
+    "toolReply": false,
+    "bytes": 2096643
+  },
+  {
+    "turn": 733,
+    "toolReply": false,
+    "bytes": 2096643
+  },
+  {
+    "turn": 734,
+    "toolReply": false,
+    "bytes": 2036696
+  },
+  {
+    "turn": 735,
+    "toolReply": false,
+    "bytes": 2036147
+  },
+  {
+    "turn": 735,
+    "toolReply": true,
+    "bytes": 2036696
+  },
+  {
+    "turn": 736,
+    "toolReply": false,
+    "bytes": 2105317
+  },
+  {
+    "turn": 737,
+    "toolReply": false,
+    "bytes": 2105317
+  },
+  {
+    "turn": 738,
+    "toolReply": false,
+    "bytes": 2045370
+  },
+  {
+    "turn": 739,
+    "toolReply": false,
+    "bytes": 2045370
+  },
+  {
+    "turn": 740,
+    "toolReply": false,
+    "bytes": 2113991
+  },
+  {
+    "turn": 740,
+    "toolReply": true,
+    "bytes": 2114540
+  },
+  {
+    "turn": 741,
+    "toolReply": false,
+    "bytes": 2113991
+  },
+  {
+    "turn": 742,
+    "toolReply": false,
+    "bytes": 2054044
+  },
+  {
+    "turn": 743,
+    "toolReply": false,
+    "bytes": 2054044
+  },
+  {
+    "turn": 744,
+    "toolReply": false,
+    "bytes": 2123214
+  },
+  {
+    "turn": 745,
+    "toolReply": false,
+    "bytes": 2122665
+  },
+  {
+    "turn": 745,
+    "toolReply": true,
+    "bytes": 2123214
+  },
+  {
+    "turn": 746,
+    "toolReply": false,
+    "bytes": 2062718
+  },
+  {
+    "turn": 747,
+    "toolReply": false,
+    "bytes": 2062718
+  },
+  {
+    "turn": 748,
+    "toolReply": false,
+    "bytes": 2131888
+  },
+  {
+    "turn": 749,
+    "toolReply": false,
+    "bytes": 2131888
+  },
+  {
+    "turn": 750,
+    "toolReply": false,
+    "bytes": 2071392
+  },
+  {
+    "turn": 750,
+    "toolReply": true,
+    "bytes": 2071941
+  },
+  {
+    "turn": 751,
+    "toolReply": false,
+    "bytes": 2071392
+  },
+  {
+    "turn": 752,
+    "toolReply": false,
+    "bytes": 2140562
+  },
+  {
+    "turn": 753,
+    "toolReply": false,
+    "bytes": 2140562
+  },
+  {
+    "turn": 754,
+    "toolReply": false,
+    "bytes": 2140566
+  },
+  {
+    "turn": 755,
+    "toolReply": false,
+    "bytes": 2080066
+  },
+  {
+    "turn": 755,
+    "toolReply": true,
+    "bytes": 2080615
+  },
+  {
+    "turn": 756,
+    "toolReply": false,
+    "bytes": 2149236
+  },
+  {
+    "turn": 757,
+    "toolReply": false,
+    "bytes": 2149236
+  },
+  {
+    "turn": 758,
+    "toolReply": false,
+    "bytes": 2149240
+  },
+  {
+    "turn": 759,
+    "toolReply": false,
+    "bytes": 2089289
+  },
+  {
+    "turn": 760,
+    "toolReply": false,
+    "bytes": 2157910
+  },
+  {
+    "turn": 760,
+    "toolReply": true,
+    "bytes": 2158459
+  },
+  {
+    "turn": 761,
+    "toolReply": false,
+    "bytes": 2157910
+  },
+  {
+    "turn": 762,
+    "toolReply": false,
+    "bytes": 2157914
+  },
+  {
+    "turn": 763,
+    "toolReply": false,
+    "bytes": 2097963
+  },
+  {
+    "turn": 764,
+    "toolReply": false,
+    "bytes": 2167133
+  },
+  {
+    "turn": 765,
+    "toolReply": false,
+    "bytes": 2166584
+  },
+  {
+    "turn": 765,
+    "toolReply": true,
+    "bytes": 2167133
+  },
+  {
+    "turn": 766,
+    "toolReply": false,
+    "bytes": 2166588
+  },
+  {
+    "turn": 767,
+    "toolReply": false,
+    "bytes": 2106637
+  },
+  {
+    "turn": 768,
+    "toolReply": false,
+    "bytes": 2175807
+  },
+  {
+    "turn": 769,
+    "toolReply": false,
+    "bytes": 2175807
+  },
+  {
+    "turn": 770,
+    "toolReply": false,
+    "bytes": 2175262
+  },
+  {
+    "turn": 770,
+    "toolReply": true,
+    "bytes": 2175811
+  },
+  {
+    "turn": 771,
+    "toolReply": false,
+    "bytes": 2115311
+  },
+  {
+    "turn": 772,
+    "toolReply": false,
+    "bytes": 2184481
+  },
+  {
+    "turn": 773,
+    "toolReply": false,
+    "bytes": 2184481
+  },
+  {
+    "turn": 774,
+    "toolReply": false,
+    "bytes": 2184485
+  },
+  {
+    "turn": 775,
+    "toolReply": false,
+    "bytes": 2123985
+  },
+  {
+    "turn": 775,
+    "toolReply": true,
+    "bytes": 2124534
+  },
+  {
+    "turn": 776,
+    "toolReply": false,
+    "bytes": 2193155
+  },
+  {
+    "turn": 777,
+    "toolReply": false,
+    "bytes": 2193155
+  },
+  {
+    "turn": 778,
+    "toolReply": false,
+    "bytes": 2193159
+  },
+  {
+    "turn": 779,
+    "toolReply": false,
+    "bytes": 2193159
+  },
+  {
+    "turn": 780,
+    "toolReply": false,
+    "bytes": 2201829
+  },
+  {
+    "turn": 780,
+    "toolReply": true,
+    "bytes": 2202378
+  },
+  {
+    "turn": 781,
+    "toolReply": false,
+    "bytes": 2201829
+  },
+  {
+    "turn": 782,
+    "toolReply": false,
+    "bytes": 2201833
+  },
+  {
+    "turn": 783,
+    "toolReply": false,
+    "bytes": 2201833
+  },
+  {
+    "turn": 784,
+    "toolReply": false,
+    "bytes": 2211052
+  },
+  {
+    "turn": 785,
+    "toolReply": false,
+    "bytes": 2210503
+  },
+  {
+    "turn": 785,
+    "toolReply": true,
+    "bytes": 2211052
+  },
+  {
+    "turn": 786,
+    "toolReply": false,
+    "bytes": 2210507
+  },
+  {
+    "turn": 787,
+    "toolReply": false,
+    "bytes": 2210507
+  },
+  {
+    "turn": 788,
+    "toolReply": false,
+    "bytes": 2219726
+  },
+  {
+    "turn": 789,
+    "toolReply": false,
+    "bytes": 2219726
+  },
+  {
+    "turn": 790,
+    "toolReply": false,
+    "bytes": 2219181
+  },
+  {
+    "turn": 790,
+    "toolReply": true,
+    "bytes": 2219730
+  },
+  {
+    "turn": 791,
+    "toolReply": false,
+    "bytes": 2219181
+  },
+  {
+    "turn": 792,
+    "toolReply": false,
+    "bytes": 2228400
+  },
+  {
+    "turn": 793,
+    "toolReply": false,
+    "bytes": 2228400
+  },
+  {
+    "turn": 794,
+    "toolReply": false,
+    "bytes": 2228404
+  },
+  {
+    "turn": 795,
+    "toolReply": false,
+    "bytes": 2227855
+  },
+  {
+    "turn": 795,
+    "toolReply": true,
+    "bytes": 2228404
+  },
+  {
+    "turn": 796,
+    "toolReply": false,
+    "bytes": 2237074
+  },
+  {
+    "turn": 797,
+    "toolReply": false,
+    "bytes": 2237074
+  },
+  {
+    "turn": 798,
+    "toolReply": false,
+    "bytes": 2237078
+  },
+  {
+    "turn": 799,
+    "toolReply": false,
+    "bytes": 2237078
+  },
+  {
+    "turn": 800,
+    "toolReply": false,
+    "bytes": 2245748
+  },
+  {
+    "turn": 800,
+    "toolReply": true,
+    "bytes": 2246297
+  },
+  {
+    "turn": 801,
+    "toolReply": false,
+    "bytes": 2245748
+  },
+  {
+    "turn": 802,
+    "toolReply": false,
+    "bytes": 2245752
+  },
+  {
+    "turn": 803,
+    "toolReply": false,
+    "bytes": 2245752
+  },
+  {
+    "turn": 804,
+    "toolReply": false,
+    "bytes": 2314922
+  },
+  {
+    "turn": 805,
+    "toolReply": false,
+    "bytes": 2254422
+  },
+  {
+    "turn": 805,
+    "toolReply": true,
+    "bytes": 2254971
+  },
+  {
+    "turn": 806,
+    "toolReply": false,
+    "bytes": 2254426
+  },
+  {
+    "turn": 807,
+    "toolReply": false,
+    "bytes": 2254426
+  },
+  {
+    "turn": 808,
+    "toolReply": false,
+    "bytes": 2323596
+  },
+  {
+    "turn": 809,
+    "toolReply": false,
+    "bytes": 2263645
+  },
+  {
+    "turn": 810,
+    "toolReply": false,
+    "bytes": 2263100
+  },
+  {
+    "turn": 810,
+    "toolReply": true,
+    "bytes": 2263649
+  },
+  {
+    "turn": 811,
+    "toolReply": false,
+    "bytes": 2263100
+  },
+  {
+    "turn": 812,
+    "toolReply": false,
+    "bytes": 2332270
+  },
+  {
+    "turn": 813,
+    "toolReply": false,
+    "bytes": 2272319
+  },
+  {
+    "turn": 814,
+    "toolReply": false,
+    "bytes": 2272323
+  },
+  {
+    "turn": 815,
+    "toolReply": false,
+    "bytes": 2271774
+  },
+  {
+    "turn": 815,
+    "toolReply": true,
+    "bytes": 2272323
+  },
+  {
+    "turn": 816,
+    "toolReply": false,
+    "bytes": 2340944
+  },
+  {
+    "turn": 817,
+    "toolReply": false,
+    "bytes": 2280993
+  },
+  {
+    "turn": 818,
+    "toolReply": false,
+    "bytes": 2280997
+  },
+  {
+    "turn": 819,
+    "toolReply": false,
+    "bytes": 2280997
+  },
+  {
+    "turn": 820,
+    "toolReply": false,
+    "bytes": 2349618
+  },
+  {
+    "turn": 820,
+    "toolReply": true,
+    "bytes": 2350167
+  },
+  {
+    "turn": 821,
+    "toolReply": false,
+    "bytes": 2289667
+  },
+  {
+    "turn": 822,
+    "toolReply": false,
+    "bytes": 2289671
+  },
+  {
+    "turn": 823,
+    "toolReply": false,
+    "bytes": 2289671
+  },
+  {
+    "turn": 824,
+    "toolReply": false,
+    "bytes": 2358841
+  },
+  {
+    "turn": 825,
+    "toolReply": false,
+    "bytes": 2298341
+  },
+  {
+    "turn": 825,
+    "toolReply": true,
+    "bytes": 2298890
+  },
+  {
+    "turn": 826,
+    "toolReply": false,
+    "bytes": 2298345
+  },
+  {
+    "turn": 827,
+    "toolReply": false,
+    "bytes": 2298345
+  },
+  {
+    "turn": 828,
+    "toolReply": false,
+    "bytes": 2367515
+  },
+  {
+    "turn": 829,
+    "toolReply": false,
+    "bytes": 2367515
+  },
+  {
+    "turn": 830,
+    "toolReply": false,
+    "bytes": 2307019
+  },
+  {
+    "turn": 830,
+    "toolReply": true,
+    "bytes": 2307568
+  },
+  {
+    "turn": 831,
+    "toolReply": false,
+    "bytes": 2307019
+  },
+  {
+    "turn": 832,
+    "toolReply": false,
+    "bytes": 2376189
+  },
+  {
+    "turn": 833,
+    "toolReply": false,
+    "bytes": 2376189
+  },
+  {
+    "turn": 834,
+    "toolReply": false,
+    "bytes": 2316242
+  },
+  {
+    "turn": 835,
+    "toolReply": false,
+    "bytes": 2315693
+  },
+  {
+    "turn": 835,
+    "toolReply": true,
+    "bytes": 2316242
+  },
+  {
+    "turn": 836,
+    "toolReply": false,
+    "bytes": 2384863
+  },
+  {
+    "turn": 837,
+    "toolReply": false,
+    "bytes": 2384863
+  },
+  {
+    "turn": 838,
+    "toolReply": false,
+    "bytes": 2324916
+  },
+  {
+    "turn": 839,
+    "toolReply": false,
+    "bytes": 2324916
+  },
+  {
+    "turn": 840,
+    "toolReply": false,
+    "bytes": 2393537
+  },
+  {
+    "turn": 840,
+    "toolReply": true,
+    "bytes": 2394086
+  },
+  {
+    "turn": 841,
+    "toolReply": false,
+    "bytes": 2393537
+  },
+  {
+    "turn": 842,
+    "toolReply": false,
+    "bytes": 2333590
+  },
+  {
+    "turn": 843,
+    "toolReply": false,
+    "bytes": 2333590
+  },
+  {
+    "turn": 844,
+    "toolReply": false,
+    "bytes": 2402760
+  },
+  {
+    "turn": 845,
+    "toolReply": false,
+    "bytes": 2402211
+  },
+  {
+    "turn": 845,
+    "toolReply": true,
+    "bytes": 2402760
+  },
+  {
+    "turn": 846,
+    "toolReply": false,
+    "bytes": 2342264
+  },
+  {
+    "turn": 847,
+    "toolReply": false,
+    "bytes": 2342264
+  },
+  {
+    "turn": 848,
+    "toolReply": false,
+    "bytes": 2411434
+  },
+  {
+    "turn": 849,
+    "toolReply": false,
+    "bytes": 2411434
+  },
+  {
+    "turn": 850,
+    "toolReply": false,
+    "bytes": 2350938
+  },
+  {
+    "turn": 850,
+    "toolReply": true,
+    "bytes": 2351487
+  },
+  {
+    "turn": 851,
+    "toolReply": false,
+    "bytes": 2350938
+  },
+  {
+    "turn": 852,
+    "toolReply": false,
+    "bytes": 2420108
+  },
+  {
+    "turn": 853,
+    "toolReply": false,
+    "bytes": 2420108
+  },
+  {
+    "turn": 854,
+    "toolReply": false,
+    "bytes": 2420112
+  },
+  {
+    "turn": 855,
+    "toolReply": false,
+    "bytes": 2359612
+  },
+  {
+    "turn": 855,
+    "toolReply": true,
+    "bytes": 2360161
+  },
+  {
+    "turn": 856,
+    "toolReply": false,
+    "bytes": 2428782
+  },
+  {
+    "turn": 857,
+    "toolReply": false,
+    "bytes": 2428782
+  },
+  {
+    "turn": 858,
+    "toolReply": false,
+    "bytes": 2428786
+  },
+  {
+    "turn": 859,
+    "toolReply": false,
+    "bytes": 2368835
+  },
+  {
+    "turn": 860,
+    "toolReply": false,
+    "bytes": 2437456
+  },
+  {
+    "turn": 860,
+    "toolReply": true,
+    "bytes": 2438005
+  },
+  {
+    "turn": 861,
+    "toolReply": false,
+    "bytes": 2437456
+  },
+  {
+    "turn": 862,
+    "toolReply": false,
+    "bytes": 2437460
+  },
+  {
+    "turn": 863,
+    "toolReply": false,
+    "bytes": 2377509
+  },
+  {
+    "turn": 864,
+    "toolReply": false,
+    "bytes": 2446679
+  },
+  {
+    "turn": 865,
+    "toolReply": false,
+    "bytes": 2446130
+  },
+  {
+    "turn": 865,
+    "toolReply": true,
+    "bytes": 2446679
+  },
+  {
+    "turn": 866,
+    "toolReply": false,
+    "bytes": 2446134
+  },
+  {
+    "turn": 867,
+    "toolReply": false,
+    "bytes": 2386183
+  },
+  {
+    "turn": 868,
+    "toolReply": false,
+    "bytes": 2455353
+  },
+  {
+    "turn": 869,
+    "toolReply": false,
+    "bytes": 2455353
+  },
+  {
+    "turn": 870,
+    "toolReply": false,
+    "bytes": 2454808
+  },
+  {
+    "turn": 870,
+    "toolReply": true,
+    "bytes": 2455357
+  },
+  {
+    "turn": 871,
+    "toolReply": false,
+    "bytes": 2394857
+  },
+  {
+    "turn": 872,
+    "toolReply": false,
+    "bytes": 2464027
+  },
+  {
+    "turn": 873,
+    "toolReply": false,
+    "bytes": 2464027
+  },
+  {
+    "turn": 874,
+    "toolReply": false,
+    "bytes": 2464031
+  },
+  {
+    "turn": 875,
+    "toolReply": false,
+    "bytes": 2403531
+  },
+  {
+    "turn": 875,
+    "toolReply": true,
+    "bytes": 2404080
+  },
+  {
+    "turn": 876,
+    "toolReply": false,
+    "bytes": 2472701
+  },
+  {
+    "turn": 877,
+    "toolReply": false,
+    "bytes": 2472701
+  },
+  {
+    "turn": 878,
+    "toolReply": false,
+    "bytes": 2472705
+  },
+  {
+    "turn": 879,
+    "toolReply": false,
+    "bytes": 2472705
+  },
+  {
+    "turn": 880,
+    "toolReply": false,
+    "bytes": 2481375
+  },
+  {
+    "turn": 880,
+    "toolReply": true,
+    "bytes": 2481924
+  },
+  {
+    "turn": 881,
+    "toolReply": false,
+    "bytes": 2481375
+  },
+  {
+    "turn": 882,
+    "toolReply": false,
+    "bytes": 2481379
+  },
+  {
+    "turn": 883,
+    "toolReply": false,
+    "bytes": 2481379
+  },
+  {
+    "turn": 884,
+    "toolReply": false,
+    "bytes": 2490598
+  },
+  {
+    "turn": 885,
+    "toolReply": false,
+    "bytes": 2490049
+  },
+  {
+    "turn": 885,
+    "toolReply": true,
+    "bytes": 2490598
+  },
+  {
+    "turn": 886,
+    "toolReply": false,
+    "bytes": 2490053
+  },
+  {
+    "turn": 887,
+    "toolReply": false,
+    "bytes": 2490053
+  },
+  {
+    "turn": 888,
+    "toolReply": false,
+    "bytes": 2499272
+  },
+  {
+    "turn": 889,
+    "toolReply": false,
+    "bytes": 2499272
+  },
+  {
+    "turn": 890,
+    "toolReply": false,
+    "bytes": 2498727
+  },
+  {
+    "turn": 890,
+    "toolReply": true,
+    "bytes": 2499276
+  },
+  {
+    "turn": 891,
+    "toolReply": false,
+    "bytes": 2498727
+  },
+  {
+    "turn": 892,
+    "toolReply": false,
+    "bytes": 2507946
+  },
+  {
+    "turn": 893,
+    "toolReply": false,
+    "bytes": 2507946
+  },
+  {
+    "turn": 894,
+    "toolReply": false,
+    "bytes": 2507950
+  },
+  {
+    "turn": 895,
+    "toolReply": false,
+    "bytes": 2507401
+  },
+  {
+    "turn": 895,
+    "toolReply": true,
+    "bytes": 2507950
+  },
+  {
+    "turn": 896,
+    "toolReply": false,
+    "bytes": 2516620
+  },
+  {
+    "turn": 897,
+    "toolReply": false,
+    "bytes": 2516620
+  },
+  {
+    "turn": 898,
+    "toolReply": false,
+    "bytes": 2516624
+  },
+  {
+    "turn": 899,
+    "toolReply": false,
+    "bytes": 2516624
+  },
+  {
+    "turn": 900,
+    "toolReply": false,
+    "bytes": 2525294
+  },
+  {
+    "turn": 900,
+    "toolReply": true,
+    "bytes": 2525843
+  },
+  {
+    "turn": 901,
+    "toolReply": false,
+    "bytes": 2525294
+  },
+  {
+    "turn": 902,
+    "toolReply": false,
+    "bytes": 2525298
+  },
+  {
+    "turn": 903,
+    "toolReply": false,
+    "bytes": 2525298
+  },
+  {
+    "turn": 904,
+    "toolReply": false,
+    "bytes": 2594468
+  },
+  {
+    "turn": 905,
+    "toolReply": false,
+    "bytes": 2533968
+  },
+  {
+    "turn": 905,
+    "toolReply": true,
+    "bytes": 2534517
+  },
+  {
+    "turn": 906,
+    "toolReply": false,
+    "bytes": 2533972
+  },
+  {
+    "turn": 907,
+    "toolReply": false,
+    "bytes": 2533972
+  },
+  {
+    "turn": 908,
+    "toolReply": false,
+    "bytes": 2603142
+  },
+  {
+    "turn": 909,
+    "toolReply": false,
+    "bytes": 2543191
+  },
+  {
+    "turn": 910,
+    "toolReply": false,
+    "bytes": 2542646
+  },
+  {
+    "turn": 910,
+    "toolReply": true,
+    "bytes": 2543195
+  },
+  {
+    "turn": 911,
+    "toolReply": false,
+    "bytes": 2542646
+  },
+  {
+    "turn": 912,
+    "toolReply": false,
+    "bytes": 2611816
+  },
+  {
+    "turn": 913,
+    "toolReply": false,
+    "bytes": 2551865
+  },
+  {
+    "turn": 914,
+    "toolReply": false,
+    "bytes": 2551869
+  },
+  {
+    "turn": 915,
+    "toolReply": false,
+    "bytes": 2551320
+  },
+  {
+    "turn": 915,
+    "toolReply": true,
+    "bytes": 2551869
+  },
+  {
+    "turn": 916,
+    "toolReply": false,
+    "bytes": 2620490
+  },
+  {
+    "turn": 917,
+    "toolReply": false,
+    "bytes": 2560539
+  },
+  {
+    "turn": 918,
+    "toolReply": false,
+    "bytes": 2560543
+  },
+  {
+    "turn": 919,
+    "toolReply": false,
+    "bytes": 2560543
+  },
+  {
+    "turn": 920,
+    "toolReply": false,
+    "bytes": 2629164
+  },
+  {
+    "turn": 920,
+    "toolReply": true,
+    "bytes": 2629713
+  },
+  {
+    "turn": 921,
+    "toolReply": false,
+    "bytes": 2569213
+  },
+  {
+    "turn": 922,
+    "toolReply": false,
+    "bytes": 2569217
+  },
+  {
+    "turn": 923,
+    "toolReply": false,
+    "bytes": 2569217
+  },
+  {
+    "turn": 924,
+    "toolReply": false,
+    "bytes": 2638387
+  },
+  {
+    "turn": 925,
+    "toolReply": false,
+    "bytes": 2577887
+  },
+  {
+    "turn": 925,
+    "toolReply": true,
+    "bytes": 2578436
+  },
+  {
+    "turn": 926,
+    "toolReply": false,
+    "bytes": 2577891
+  },
+  {
+    "turn": 927,
+    "toolReply": false,
+    "bytes": 2577891
+  },
+  {
+    "turn": 928,
+    "toolReply": false,
+    "bytes": 2647061
+  },
+  {
+    "turn": 929,
+    "toolReply": false,
+    "bytes": 2647061
+  },
+  {
+    "turn": 930,
+    "toolReply": false,
+    "bytes": 2586565
+  },
+  {
+    "turn": 930,
+    "toolReply": true,
+    "bytes": 2587114
+  },
+  {
+    "turn": 931,
+    "toolReply": false,
+    "bytes": 2586565
+  },
+  {
+    "turn": 932,
+    "toolReply": false,
+    "bytes": 2655735
+  },
+  {
+    "turn": 933,
+    "toolReply": false,
+    "bytes": 2655735
+  },
+  {
+    "turn": 934,
+    "toolReply": false,
+    "bytes": 2595788
+  },
+  {
+    "turn": 935,
+    "toolReply": false,
+    "bytes": 2595239
+  },
+  {
+    "turn": 935,
+    "toolReply": true,
+    "bytes": 2595788
+  },
+  {
+    "turn": 936,
+    "toolReply": false,
+    "bytes": 2664409
+  },
+  {
+    "turn": 937,
+    "toolReply": false,
+    "bytes": 2664409
+  },
+  {
+    "turn": 938,
+    "toolReply": false,
+    "bytes": 2604462
+  },
+  {
+    "turn": 939,
+    "toolReply": false,
+    "bytes": 2604462
+  },
+  {
+    "turn": 940,
+    "toolReply": false,
+    "bytes": 2673083
+  },
+  {
+    "turn": 940,
+    "toolReply": true,
+    "bytes": 2673632
+  },
+  {
+    "turn": 941,
+    "toolReply": false,
+    "bytes": 2673083
+  },
+  {
+    "turn": 942,
+    "toolReply": false,
+    "bytes": 2613136
+  },
+  {
+    "turn": 943,
+    "toolReply": false,
+    "bytes": 2613136
+  },
+  {
+    "turn": 944,
+    "toolReply": false,
+    "bytes": 2682306
+  },
+  {
+    "turn": 945,
+    "toolReply": false,
+    "bytes": 2681757
+  },
+  {
+    "turn": 945,
+    "toolReply": true,
+    "bytes": 2682306
+  },
+  {
+    "turn": 946,
+    "toolReply": false,
+    "bytes": 2621810
+  },
+  {
+    "turn": 947,
+    "toolReply": false,
+    "bytes": 2621810
+  },
+  {
+    "turn": 948,
+    "toolReply": false,
+    "bytes": 2690980
+  },
+  {
+    "turn": 949,
+    "toolReply": false,
+    "bytes": 2690980
+  },
+  {
+    "turn": 950,
+    "toolReply": false,
+    "bytes": 2630484
+  },
+  {
+    "turn": 950,
+    "toolReply": true,
+    "bytes": 2631033
+  },
+  {
+    "turn": 951,
+    "toolReply": false,
+    "bytes": 2630484
+  },
+  {
+    "turn": 952,
+    "toolReply": false,
+    "bytes": 2699654
+  },
+  {
+    "turn": 953,
+    "toolReply": false,
+    "bytes": 2699654
+  },
+  {
+    "turn": 954,
+    "toolReply": false,
+    "bytes": 2699658
+  },
+  {
+    "turn": 955,
+    "toolReply": false,
+    "bytes": 2639158
+  },
+  {
+    "turn": 955,
+    "toolReply": true,
+    "bytes": 2639707
+  },
+  {
+    "turn": 956,
+    "toolReply": false,
+    "bytes": 2708328
+  },
+  {
+    "turn": 957,
+    "toolReply": false,
+    "bytes": 2708328
+  },
+  {
+    "turn": 958,
+    "toolReply": false,
+    "bytes": 2708332
+  },
+  {
+    "turn": 959,
+    "toolReply": false,
+    "bytes": 2648381
+  },
+  {
+    "turn": 960,
+    "toolReply": false,
+    "bytes": 2717002
+  },
+  {
+    "turn": 960,
+    "toolReply": true,
+    "bytes": 2717551
+  },
+  {
+    "turn": 961,
+    "toolReply": false,
+    "bytes": 2717002
+  },
+  {
+    "turn": 962,
+    "toolReply": false,
+    "bytes": 2717006
+  },
+  {
+    "turn": 963,
+    "toolReply": false,
+    "bytes": 2657055
+  },
+  {
+    "turn": 964,
+    "toolReply": false,
+    "bytes": 2726225
+  },
+  {
+    "turn": 965,
+    "toolReply": false,
+    "bytes": 2725676
+  },
+  {
+    "turn": 965,
+    "toolReply": true,
+    "bytes": 2726225
+  },
+  {
+    "turn": 966,
+    "toolReply": false,
+    "bytes": 2725680
+  },
+  {
+    "turn": 967,
+    "toolReply": false,
+    "bytes": 2665729
+  },
+  {
+    "turn": 968,
+    "toolReply": false,
+    "bytes": 2734899
+  },
+  {
+    "turn": 969,
+    "toolReply": false,
+    "bytes": 2734899
+  },
+  {
+    "turn": 970,
+    "toolReply": false,
+    "bytes": 2734354
+  },
+  {
+    "turn": 970,
+    "toolReply": true,
+    "bytes": 2734903
+  },
+  {
+    "turn": 971,
+    "toolReply": false,
+    "bytes": 2674403
+  },
+  {
+    "turn": 972,
+    "toolReply": false,
+    "bytes": 2743573
+  },
+  {
+    "turn": 973,
+    "toolReply": false,
+    "bytes": 2743573
+  },
+  {
+    "turn": 974,
+    "toolReply": false,
+    "bytes": 2743577
+  },
+  {
+    "turn": 975,
+    "toolReply": false,
+    "bytes": 2683077
+  },
+  {
+    "turn": 975,
+    "toolReply": true,
+    "bytes": 2683626
+  },
+  {
+    "turn": 976,
+    "toolReply": false,
+    "bytes": 2752247
+  },
+  {
+    "turn": 977,
+    "toolReply": false,
+    "bytes": 2752247
+  },
+  {
+    "turn": 978,
+    "toolReply": false,
+    "bytes": 2752251
+  },
+  {
+    "turn": 979,
+    "toolReply": false,
+    "bytes": 2752251
+  },
+  {
+    "turn": 980,
+    "toolReply": false,
+    "bytes": 2760921
+  },
+  {
+    "turn": 980,
+    "toolReply": true,
+    "bytes": 2761470
+  },
+  {
+    "turn": 981,
+    "toolReply": false,
+    "bytes": 2760921
+  },
+  {
+    "turn": 982,
+    "toolReply": false,
+    "bytes": 2760925
+  },
+  {
+    "turn": 983,
+    "toolReply": false,
+    "bytes": 2760925
+  },
+  {
+    "turn": 984,
+    "toolReply": false,
+    "bytes": 2770144
+  },
+  {
+    "turn": 985,
+    "toolReply": false,
+    "bytes": 2769595
+  },
+  {
+    "turn": 985,
+    "toolReply": true,
+    "bytes": 2770144
+  },
+  {
+    "turn": 986,
+    "toolReply": false,
+    "bytes": 2769599
+  },
+  {
+    "turn": 987,
+    "toolReply": false,
+    "bytes": 2769599
+  },
+  {
+    "turn": 988,
+    "toolReply": false,
+    "bytes": 2778818
+  },
+  {
+    "turn": 989,
+    "toolReply": false,
+    "bytes": 2778818
+  },
+  {
+    "turn": 990,
+    "toolReply": false,
+    "bytes": 2778273
+  },
+  {
+    "turn": 990,
+    "toolReply": true,
+    "bytes": 2778822
+  },
+  {
+    "turn": 991,
+    "toolReply": false,
+    "bytes": 2778273
+  },
+  {
+    "turn": 992,
+    "toolReply": false,
+    "bytes": 2787492
+  },
+  {
+    "turn": 993,
+    "toolReply": false,
+    "bytes": 2787492
+  },
+  {
+    "turn": 994,
+    "toolReply": false,
+    "bytes": 2787496
+  },
+  {
+    "turn": 995,
+    "toolReply": false,
+    "bytes": 2786947
+  },
+  {
+    "turn": 995,
+    "toolReply": true,
+    "bytes": 2787496
+  },
+  {
+    "turn": 996,
+    "toolReply": false,
+    "bytes": 2796166
+  },
+  {
+    "turn": 997,
+    "toolReply": false,
+    "bytes": 2796166
+  },
+  {
+    "turn": 998,
+    "toolReply": false,
+    "bytes": 2796170
+  },
+  {
+    "turn": 999,
+    "toolReply": false,
+    "bytes": 2796170
+  },
+  {
+    "turn": 1000,
+    "toolReply": false,
+    "bytes": 2804841
+  },
+  {
+    "turn": 1000,
+    "toolReply": true,
+    "bytes": 2805393
+  },
+  {
+    "turn": 1001,
+    "toolReply": false,
+    "bytes": 2804841
+  },
+  {
+    "turn": 1002,
+    "toolReply": false,
+    "bytes": 2804845
+  },
+  {
+    "turn": 1003,
+    "toolReply": false,
+    "bytes": 2804845
+  },
+  {
+    "turn": 1004,
+    "toolReply": false,
+    "bytes": 2874019
+  },
+  {
+    "turn": 1005,
+    "toolReply": false,
+    "bytes": 2813516
+  },
+  {
+    "turn": 1005,
+    "toolReply": true,
+    "bytes": 2814068
+  },
+  {
+    "turn": 1006,
+    "toolReply": false,
+    "bytes": 2813520
+  },
+  {
+    "turn": 1007,
+    "toolReply": false,
+    "bytes": 2813520
+  },
+  {
+    "turn": 1008,
+    "toolReply": false,
+    "bytes": 2882694
+  },
+  {
+    "turn": 1009,
+    "toolReply": false,
+    "bytes": 2822743
+  },
+  {
+    "turn": 1010,
+    "toolReply": false,
+    "bytes": 2822195
+  },
+  {
+    "turn": 1010,
+    "toolReply": true,
+    "bytes": 2822747
+  },
+  {
+    "turn": 1011,
+    "toolReply": false,
+    "bytes": 2822195
+  },
+  {
+    "turn": 1012,
+    "toolReply": false,
+    "bytes": 2891369
+  },
+  {
+    "turn": 1013,
+    "toolReply": false,
+    "bytes": 2831418
+  },
+  {
+    "turn": 1014,
+    "toolReply": false,
+    "bytes": 2831422
+  },
+  {
+    "turn": 1015,
+    "toolReply": false,
+    "bytes": 2830870
+  },
+  {
+    "turn": 1015,
+    "toolReply": true,
+    "bytes": 2831422
+  },
+  {
+    "turn": 1016,
+    "toolReply": false,
+    "bytes": 2900044
+  },
+  {
+    "turn": 1017,
+    "toolReply": false,
+    "bytes": 2840093
+  },
+  {
+    "turn": 1018,
+    "toolReply": false,
+    "bytes": 2840097
+  },
+  {
+    "turn": 1019,
+    "toolReply": false,
+    "bytes": 2840097
+  },
+  {
+    "turn": 1020,
+    "toolReply": false,
+    "bytes": 2908719
+  },
+  {
+    "turn": 1020,
+    "toolReply": true,
+    "bytes": 2909271
+  },
+  {
+    "turn": 1021,
+    "toolReply": false,
+    "bytes": 2848768
+  },
+  {
+    "turn": 1022,
+    "toolReply": false,
+    "bytes": 2848772
+  },
+  {
+    "turn": 1023,
+    "toolReply": false,
+    "bytes": 2848772
+  },
+  {
+    "turn": 1024,
+    "toolReply": false,
+    "bytes": 2917946
+  },
+  {
+    "turn": 1025,
+    "toolReply": false,
+    "bytes": 2857443
+  },
+  {
+    "turn": 1025,
+    "toolReply": true,
+    "bytes": 2857995
+  },
+  {
+    "turn": 1026,
+    "toolReply": false,
+    "bytes": 2857447
+  },
+  {
+    "turn": 1027,
+    "toolReply": false,
+    "bytes": 2857447
+  },
+  {
+    "turn": 1028,
+    "toolReply": false,
+    "bytes": 2926621
+  },
+  {
+    "turn": 1029,
+    "toolReply": false,
+    "bytes": 2926621
+  },
+  {
+    "turn": 1030,
+    "toolReply": false,
+    "bytes": 2866122
+  },
+  {
+    "turn": 1030,
+    "toolReply": true,
+    "bytes": 2866674
+  },
+  {
+    "turn": 1031,
+    "toolReply": false,
+    "bytes": 2866122
+  },
+  {
+    "turn": 1032,
+    "toolReply": false,
+    "bytes": 2935296
+  },
+  {
+    "turn": 1033,
+    "toolReply": false,
+    "bytes": 2935296
+  },
+  {
+    "turn": 1034,
+    "toolReply": false,
+    "bytes": 2875349
+  },
+  {
+    "turn": 1035,
+    "toolReply": false,
+    "bytes": 2874797
+  },
+  {
+    "turn": 1035,
+    "toolReply": true,
+    "bytes": 2875349
+  },
+  {
+    "turn": 1036,
+    "toolReply": false,
+    "bytes": 2943971
+  },
+  {
+    "turn": 1037,
+    "toolReply": false,
+    "bytes": 2943971
+  },
+  {
+    "turn": 1038,
+    "toolReply": false,
+    "bytes": 2884024
+  },
+  {
+    "turn": 1039,
+    "toolReply": false,
+    "bytes": 2884024
+  },
+  {
+    "turn": 1040,
+    "toolReply": false,
+    "bytes": 2952646
+  },
+  {
+    "turn": 1040,
+    "toolReply": true,
+    "bytes": 2953198
+  },
+  {
+    "turn": 1041,
+    "toolReply": false,
+    "bytes": 2952646
+  },
+  {
+    "turn": 1042,
+    "toolReply": false,
+    "bytes": 2892699
+  },
+  {
+    "turn": 1043,
+    "toolReply": false,
+    "bytes": 2892699
+  },
+  {
+    "turn": 1044,
+    "toolReply": false,
+    "bytes": 2961873
+  },
+  {
+    "turn": 1045,
+    "toolReply": false,
+    "bytes": 2961321
+  },
+  {
+    "turn": 1045,
+    "toolReply": true,
+    "bytes": 2961873
+  },
+  {
+    "turn": 1046,
+    "toolReply": false,
+    "bytes": 2901374
+  },
+  {
+    "turn": 1047,
+    "toolReply": false,
+    "bytes": 2901374
+  },
+  {
+    "turn": 1048,
+    "toolReply": false,
+    "bytes": 2970548
+  },
+  {
+    "turn": 1049,
+    "toolReply": false,
+    "bytes": 2970548
+  },
+  {
+    "turn": 1050,
+    "toolReply": false,
+    "bytes": 2910049
+  },
+  {
+    "turn": 1050,
+    "toolReply": true,
+    "bytes": 2910601
+  },
+  {
+    "turn": 1051,
+    "toolReply": false,
+    "bytes": 2910049
+  },
+  {
+    "turn": 1052,
+    "toolReply": false,
+    "bytes": 2979223
+  },
+  {
+    "turn": 1053,
+    "toolReply": false,
+    "bytes": 2979223
+  },
+  {
+    "turn": 1054,
+    "toolReply": false,
+    "bytes": 2979227
+  },
+  {
+    "turn": 1055,
+    "toolReply": false,
+    "bytes": 2918724
+  },
+  {
+    "turn": 1055,
+    "toolReply": true,
+    "bytes": 2919276
+  },
+  {
+    "turn": 1056,
+    "toolReply": false,
+    "bytes": 2987898
+  },
+  {
+    "turn": 1057,
+    "toolReply": false,
+    "bytes": 2987898
+  },
+  {
+    "turn": 1058,
+    "toolReply": false,
+    "bytes": 2987902
+  },
+  {
+    "turn": 1059,
+    "toolReply": false,
+    "bytes": 2927951
+  },
+  {
+    "turn": 1060,
+    "toolReply": false,
+    "bytes": 2996573
+  },
+  {
+    "turn": 1060,
+    "toolReply": true,
+    "bytes": 2997125
+  },
+  {
+    "turn": 1061,
+    "toolReply": false,
+    "bytes": 2996573
+  },
+  {
+    "turn": 1062,
+    "toolReply": false,
+    "bytes": 2996577
+  },
+  {
+    "turn": 1063,
+    "toolReply": false,
+    "bytes": 2936626
+  },
+  {
+    "turn": 1064,
+    "toolReply": false,
+    "bytes": 3005800
+  },
+  {
+    "turn": 1065,
+    "toolReply": false,
+    "bytes": 3005248
+  },
+  {
+    "turn": 1065,
+    "toolReply": true,
+    "bytes": 3005800
+  },
+  {
+    "turn": 1066,
+    "toolReply": false,
+    "bytes": 3005252
+  },
+  {
+    "turn": 1067,
+    "toolReply": false,
+    "bytes": 2945301
+  },
+  {
+    "turn": 1068,
+    "toolReply": false,
+    "bytes": 3014475
+  },
+  {
+    "turn": 1069,
+    "toolReply": false,
+    "bytes": 3014475
+  },
+  {
+    "turn": 1070,
+    "toolReply": false,
+    "bytes": 3013927
+  },
+  {
+    "turn": 1070,
+    "toolReply": true,
+    "bytes": 3014479
+  },
+  {
+    "turn": 1071,
+    "toolReply": false,
+    "bytes": 2953976
+  },
+  {
+    "turn": 1072,
+    "toolReply": false,
+    "bytes": 3023150
+  },
+  {
+    "turn": 1073,
+    "toolReply": false,
+    "bytes": 3023150
+  },
+  {
+    "turn": 1074,
+    "toolReply": false,
+    "bytes": 3023154
+  },
+  {
+    "turn": 1075,
+    "toolReply": false,
+    "bytes": 2962651
+  },
+  {
+    "turn": 1075,
+    "toolReply": true,
+    "bytes": 2963203
+  },
+  {
+    "turn": 1076,
+    "toolReply": false,
+    "bytes": 3031825
+  },
+  {
+    "turn": 1077,
+    "toolReply": false,
+    "bytes": 3031825
+  },
+  {
+    "turn": 1078,
+    "toolReply": false,
+    "bytes": 3031829
+  },
+  {
+    "turn": 1079,
+    "toolReply": false,
+    "bytes": 3031829
+  },
+  {
+    "turn": 1080,
+    "toolReply": false,
+    "bytes": 3040500
+  },
+  {
+    "turn": 1080,
+    "toolReply": true,
+    "bytes": 3041052
+  },
+  {
+    "turn": 1081,
+    "toolReply": false,
+    "bytes": 3040500
+  },
+  {
+    "turn": 1082,
+    "toolReply": false,
+    "bytes": 3040504
+  },
+  {
+    "turn": 1083,
+    "toolReply": false,
+    "bytes": 3040504
+  },
+  {
+    "turn": 1084,
+    "toolReply": false,
+    "bytes": 3049727
+  },
+  {
+    "turn": 1085,
+    "toolReply": false,
+    "bytes": 3049175
+  },
+  {
+    "turn": 1085,
+    "toolReply": true,
+    "bytes": 3049727
+  },
+  {
+    "turn": 1086,
+    "toolReply": false,
+    "bytes": 3049179
+  },
+  {
+    "turn": 1087,
+    "toolReply": false,
+    "bytes": 3049179
+  },
+  {
+    "turn": 1088,
+    "toolReply": false,
+    "bytes": 3058402
+  },
+  {
+    "turn": 1089,
+    "toolReply": false,
+    "bytes": 3058402
+  },
+  {
+    "turn": 1090,
+    "toolReply": false,
+    "bytes": 3057854
+  },
+  {
+    "turn": 1090,
+    "toolReply": true,
+    "bytes": 3058406
+  },
+  {
+    "turn": 1091,
+    "toolReply": false,
+    "bytes": 3057854
+  },
+  {
+    "turn": 1092,
+    "toolReply": false,
+    "bytes": 3067077
+  },
+  {
+    "turn": 1093,
+    "toolReply": false,
+    "bytes": 3067077
+  },
+  {
+    "turn": 1094,
+    "toolReply": false,
+    "bytes": 3067081
+  },
+  {
+    "turn": 1095,
+    "toolReply": false,
+    "bytes": 3066529
+  },
+  {
+    "turn": 1095,
+    "toolReply": true,
+    "bytes": 3067081
+  },
+  {
+    "turn": 1096,
+    "toolReply": false,
+    "bytes": 3075752
+  },
+  {
+    "turn": 1097,
+    "toolReply": false,
+    "bytes": 3075752
+  },
+  {
+    "turn": 1098,
+    "toolReply": false,
+    "bytes": 3075756
+  },
+  {
+    "turn": 1099,
+    "toolReply": false,
+    "bytes": 3075756
+  },
+  {
+    "turn": 1100,
+    "toolReply": false,
+    "bytes": 3084427
+  },
+  {
+    "turn": 1100,
+    "toolReply": true,
+    "bytes": 3084979
+  },
+  {
+    "turn": 1101,
+    "toolReply": false,
+    "bytes": 3084427
+  },
+  {
+    "turn": 1102,
+    "toolReply": false,
+    "bytes": 3084431
+  },
+  {
+    "turn": 1103,
+    "toolReply": false,
+    "bytes": 3084431
+  },
+  {
+    "turn": 1104,
+    "toolReply": false,
+    "bytes": 3153605
+  },
+  {
+    "turn": 1105,
+    "toolReply": false,
+    "bytes": 3093102
+  },
+  {
+    "turn": 1105,
+    "toolReply": true,
+    "bytes": 3093654
+  },
+  {
+    "turn": 1106,
+    "toolReply": false,
+    "bytes": 3093106
+  },
+  {
+    "turn": 1107,
+    "toolReply": false,
+    "bytes": 3093106
+  },
+  {
+    "turn": 1108,
+    "toolReply": false,
+    "bytes": 3162280
+  },
+  {
+    "turn": 1109,
+    "toolReply": false,
+    "bytes": 3102329
+  },
+  {
+    "turn": 1110,
+    "toolReply": false,
+    "bytes": 3101781
+  },
+  {
+    "turn": 1110,
+    "toolReply": true,
+    "bytes": 3102333
+  },
+  {
+    "turn": 1111,
+    "toolReply": false,
+    "bytes": 3101781
+  },
+  {
+    "turn": 1112,
+    "toolReply": false,
+    "bytes": 3170955
+  },
+  {
+    "turn": 1113,
+    "toolReply": false,
+    "bytes": 3111004
+  },
+  {
+    "turn": 1114,
+    "toolReply": false,
+    "bytes": 3111008
+  },
+  {
+    "turn": 1115,
+    "toolReply": false,
+    "bytes": 3110456
+  },
+  {
+    "turn": 1115,
+    "toolReply": true,
+    "bytes": 3111008
+  },
+  {
+    "turn": 1116,
+    "toolReply": false,
+    "bytes": 3179630
+  },
+  {
+    "turn": 1117,
+    "toolReply": false,
+    "bytes": 3119679
+  },
+  {
+    "turn": 1118,
+    "toolReply": false,
+    "bytes": 3119683
+  },
+  {
+    "turn": 1119,
+    "toolReply": false,
+    "bytes": 3119683
+  },
+  {
+    "turn": 1120,
+    "toolReply": false,
+    "bytes": 3188305
+  },
+  {
+    "turn": 1120,
+    "toolReply": true,
+    "bytes": 3188857
+  },
+  {
+    "turn": 1121,
+    "toolReply": false,
+    "bytes": 3128354
+  },
+  {
+    "turn": 1122,
+    "toolReply": false,
+    "bytes": 3128358
+  },
+  {
+    "turn": 1123,
+    "toolReply": false,
+    "bytes": 3128358
+  },
+  {
+    "turn": 1124,
+    "toolReply": false,
+    "bytes": 3197532
+  },
+  {
+    "turn": 1125,
+    "toolReply": false,
+    "bytes": 3137029
+  },
+  {
+    "turn": 1125,
+    "toolReply": true,
+    "bytes": 3137581
+  },
+  {
+    "turn": 1126,
+    "toolReply": false,
+    "bytes": 3137033
+  },
+  {
+    "turn": 1127,
+    "toolReply": false,
+    "bytes": 3137033
+  },
+  {
+    "turn": 1128,
+    "toolReply": false,
+    "bytes": 3206207
+  },
+  {
+    "turn": 1129,
+    "toolReply": false,
+    "bytes": 3206207
+  },
+  {
+    "turn": 1130,
+    "toolReply": false,
+    "bytes": 3145708
+  },
+  {
+    "turn": 1130,
+    "toolReply": true,
+    "bytes": 3146260
+  },
+  {
+    "turn": 1131,
+    "toolReply": false,
+    "bytes": 3145708
+  },
+  {
+    "turn": 1132,
+    "toolReply": false,
+    "bytes": 3214882
+  },
+  {
+    "turn": 1133,
+    "toolReply": false,
+    "bytes": 3214882
+  },
+  {
+    "turn": 1134,
+    "toolReply": false,
+    "bytes": 3154935
+  },
+  {
+    "turn": 1135,
+    "toolReply": false,
+    "bytes": 3154383
+  },
+  {
+    "turn": 1135,
+    "toolReply": true,
+    "bytes": 3154935
+  },
+  {
+    "turn": 1136,
+    "toolReply": false,
+    "bytes": 3223557
+  },
+  {
+    "turn": 1137,
+    "toolReply": false,
+    "bytes": 3223557
+  },
+  {
+    "turn": 1138,
+    "toolReply": false,
+    "bytes": 3163610
+  },
+  {
+    "turn": 1139,
+    "toolReply": false,
+    "bytes": 3163610
+  },
+  {
+    "turn": 1140,
+    "toolReply": false,
+    "bytes": 3232232
+  },
+  {
+    "turn": 1140,
+    "toolReply": true,
+    "bytes": 3232784
+  },
+  {
+    "turn": 1141,
+    "toolReply": false,
+    "bytes": 3232232
+  },
+  {
+    "turn": 1142,
+    "toolReply": false,
+    "bytes": 3172285
+  },
+  {
+    "turn": 1143,
+    "toolReply": false,
+    "bytes": 3172285
+  },
+  {
+    "turn": 1144,
+    "toolReply": false,
+    "bytes": 3241459
+  },
+  {
+    "turn": 1145,
+    "toolReply": false,
+    "bytes": 3240907
+  },
+  {
+    "turn": 1145,
+    "toolReply": true,
+    "bytes": 3241459
+  },
+  {
+    "turn": 1146,
+    "toolReply": false,
+    "bytes": 3180960
+  },
+  {
+    "turn": 1147,
+    "toolReply": false,
+    "bytes": 3180960
+  },
+  {
+    "turn": 1148,
+    "toolReply": false,
+    "bytes": 3250134
+  },
+  {
+    "turn": 1149,
+    "toolReply": false,
+    "bytes": 3250134
+  },
+  {
+    "turn": 1150,
+    "toolReply": false,
+    "bytes": 3189635
+  },
+  {
+    "turn": 1150,
+    "toolReply": true,
+    "bytes": 3190187
+  },
+  {
+    "turn": 1151,
+    "toolReply": false,
+    "bytes": 3189635
+  },
+  {
+    "turn": 1152,
+    "toolReply": false,
+    "bytes": 3258809
+  },
+  {
+    "turn": 1153,
+    "toolReply": false,
+    "bytes": 3258809
+  },
+  {
+    "turn": 1154,
+    "toolReply": false,
+    "bytes": 3258813
+  },
+  {
+    "turn": 1155,
+    "toolReply": false,
+    "bytes": 3198310
+  },
+  {
+    "turn": 1155,
+    "toolReply": true,
+    "bytes": 3198862
+  },
+  {
+    "turn": 1156,
+    "toolReply": false,
+    "bytes": 3267484
+  },
+  {
+    "turn": 1157,
+    "toolReply": false,
+    "bytes": 3267484
+  },
+  {
+    "turn": 1158,
+    "toolReply": false,
+    "bytes": 3267488
+  },
+  {
+    "turn": 1159,
+    "toolReply": false,
+    "bytes": 3207537
+  },
+  {
+    "turn": 1160,
+    "toolReply": false,
+    "bytes": 3276159
+  },
+  {
+    "turn": 1160,
+    "toolReply": true,
+    "bytes": 3276711
+  },
+  {
+    "turn": 1161,
+    "toolReply": false,
+    "bytes": 3276159
+  },
+  {
+    "turn": 1162,
+    "toolReply": false,
+    "bytes": 3276163
+  },
+  {
+    "turn": 1163,
+    "toolReply": false,
+    "bytes": 3216212
+  },
+  {
+    "turn": 1164,
+    "toolReply": false,
+    "bytes": 3285386
+  },
+  {
+    "turn": 1165,
+    "toolReply": false,
+    "bytes": 3284834
+  },
+  {
+    "turn": 1165,
+    "toolReply": true,
+    "bytes": 3285386
+  },
+  {
+    "turn": 1166,
+    "toolReply": false,
+    "bytes": 3284838
+  },
+  {
+    "turn": 1167,
+    "toolReply": false,
+    "bytes": 3224887
+  },
+  {
+    "turn": 1168,
+    "toolReply": false,
+    "bytes": 3294061
+  },
+  {
+    "turn": 1169,
+    "toolReply": false,
+    "bytes": 3294061
+  },
+  {
+    "turn": 1170,
+    "toolReply": false,
+    "bytes": 3293513
+  },
+  {
+    "turn": 1170,
+    "toolReply": true,
+    "bytes": 3294065
+  },
+  {
+    "turn": 1171,
+    "toolReply": false,
+    "bytes": 3233562
+  },
+  {
+    "turn": 1172,
+    "toolReply": false,
+    "bytes": 3302736
+  },
+  {
+    "turn": 1173,
+    "toolReply": false,
+    "bytes": 3302736
+  },
+  {
+    "turn": 1174,
+    "toolReply": false,
+    "bytes": 3302740
+  },
+  {
+    "turn": 1175,
+    "toolReply": false,
+    "bytes": 3242237
+  },
+  {
+    "turn": 1175,
+    "toolReply": true,
+    "bytes": 3242789
+  },
+  {
+    "turn": 1176,
+    "toolReply": false,
+    "bytes": 3311411
+  },
+  {
+    "turn": 1177,
+    "toolReply": false,
+    "bytes": 3311411
+  },
+  {
+    "turn": 1178,
+    "toolReply": false,
+    "bytes": 3311415
+  },
+  {
+    "turn": 1179,
+    "toolReply": false,
+    "bytes": 3311415
+  },
+  {
+    "turn": 1180,
+    "toolReply": false,
+    "bytes": 3320086
+  },
+  {
+    "turn": 1180,
+    "toolReply": true,
+    "bytes": 3320638
+  },
+  {
+    "turn": 1181,
+    "toolReply": false,
+    "bytes": 3320086
+  },
+  {
+    "turn": 1182,
+    "toolReply": false,
+    "bytes": 3320090
+  },
+  {
+    "turn": 1183,
+    "toolReply": false,
+    "bytes": 3320090
+  },
+  {
+    "turn": 1184,
+    "toolReply": false,
+    "bytes": 3329313
+  },
+  {
+    "turn": 1185,
+    "toolReply": false,
+    "bytes": 3328761
+  },
+  {
+    "turn": 1185,
+    "toolReply": true,
+    "bytes": 3329313
+  },
+  {
+    "turn": 1186,
+    "toolReply": false,
+    "bytes": 3328765
+  },
+  {
+    "turn": 1187,
+    "toolReply": false,
+    "bytes": 3328765
+  },
+  {
+    "turn": 1188,
+    "toolReply": false,
+    "bytes": 3337988
+  },
+  {
+    "turn": 1189,
+    "toolReply": false,
+    "bytes": 3337988
+  },
+  {
+    "turn": 1190,
+    "toolReply": false,
+    "bytes": 3337440
+  },
+  {
+    "turn": 1190,
+    "toolReply": true,
+    "bytes": 3337992
+  },
+  {
+    "turn": 1191,
+    "toolReply": false,
+    "bytes": 3337440
+  },
+  {
+    "turn": 1192,
+    "toolReply": false,
+    "bytes": 3346663
+  },
+  {
+    "turn": 1193,
+    "toolReply": false,
+    "bytes": 3346663
+  },
+  {
+    "turn": 1194,
+    "toolReply": false,
+    "bytes": 3346667
+  },
+  {
+    "turn": 1195,
+    "toolReply": false,
+    "bytes": 3346115
+  },
+  {
+    "turn": 1195,
+    "toolReply": true,
+    "bytes": 3346667
+  },
+  {
+    "turn": 1196,
+    "toolReply": false,
+    "bytes": 3355338
+  },
+  {
+    "turn": 1197,
+    "toolReply": false,
+    "bytes": 3355338
+  },
+  {
+    "turn": 1198,
+    "toolReply": false,
+    "bytes": 3355342
+  },
+  {
+    "turn": 1199,
+    "toolReply": false,
+    "bytes": 3355342
+  },
+  {
+    "turn": 1200,
+    "toolReply": false,
+    "bytes": 3364013
+  },
+  {
+    "turn": 1200,
+    "toolReply": true,
+    "bytes": 3364565
+  },
+  {
+    "turn": 1201,
+    "toolReply": false,
+    "bytes": 3364013
+  },
+  {
+    "turn": 1202,
+    "toolReply": false,
+    "bytes": 3364017
+  },
+  {
+    "turn": 1203,
+    "toolReply": false,
+    "bytes": 3364017
+  },
+  {
+    "turn": 1204,
+    "toolReply": false,
+    "bytes": 3433191
+  },
+  {
+    "turn": 1205,
+    "toolReply": false,
+    "bytes": 3372688
+  },
+  {
+    "turn": 1205,
+    "toolReply": true,
+    "bytes": 3373240
+  },
+  {
+    "turn": 1206,
+    "toolReply": false,
+    "bytes": 3372692
+  },
+  {
+    "turn": 1207,
+    "toolReply": false,
+    "bytes": 3372692
+  },
+  {
+    "turn": 1208,
+    "toolReply": false,
+    "bytes": 3441866
+  },
+  {
+    "turn": 1209,
+    "toolReply": false,
+    "bytes": 3381915
+  },
+  {
+    "turn": 1210,
+    "toolReply": false,
+    "bytes": 3381367
+  },
+  {
+    "turn": 1210,
+    "toolReply": true,
+    "bytes": 3381919
+  },
+  {
+    "turn": 1211,
+    "toolReply": false,
+    "bytes": 3381367
+  },
+  {
+    "turn": 1212,
+    "toolReply": false,
+    "bytes": 3450541
+  },
+  {
+    "turn": 1213,
+    "toolReply": false,
+    "bytes": 3390590
+  },
+  {
+    "turn": 1214,
+    "toolReply": false,
+    "bytes": 3390594
+  },
+  {
+    "turn": 1215,
+    "toolReply": false,
+    "bytes": 3390042
+  },
+  {
+    "turn": 1215,
+    "toolReply": true,
+    "bytes": 3390594
+  },
+  {
+    "turn": 1216,
+    "toolReply": false,
+    "bytes": 3459216
+  },
+  {
+    "turn": 1217,
+    "toolReply": false,
+    "bytes": 3399265
+  },
+  {
+    "turn": 1218,
+    "toolReply": false,
+    "bytes": 3399269
+  },
+  {
+    "turn": 1219,
+    "toolReply": false,
+    "bytes": 3399269
+  },
+  {
+    "turn": 1220,
+    "toolReply": false,
+    "bytes": 3467891
+  },
+  {
+    "turn": 1220,
+    "toolReply": true,
+    "bytes": 3468443
+  },
+  {
+    "turn": 1221,
+    "toolReply": false,
+    "bytes": 3407940
+  },
+  {
+    "turn": 1222,
+    "toolReply": false,
+    "bytes": 3407944
+  },
+  {
+    "turn": 1223,
+    "toolReply": false,
+    "bytes": 3407944
+  },
+  {
+    "turn": 1224,
+    "toolReply": false,
+    "bytes": 3477118
+  },
+  {
+    "turn": 1225,
+    "toolReply": false,
+    "bytes": 3416615
+  },
+  {
+    "turn": 1225,
+    "toolReply": true,
+    "bytes": 3417167
+  },
+  {
+    "turn": 1226,
+    "toolReply": false,
+    "bytes": 3416619
+  },
+  {
+    "turn": 1227,
+    "toolReply": false,
+    "bytes": 3416619
+  },
+  {
+    "turn": 1228,
+    "toolReply": false,
+    "bytes": 3485793
+  },
+  {
+    "turn": 1229,
+    "toolReply": false,
+    "bytes": 3485793
+  },
+  {
+    "turn": 1230,
+    "toolReply": false,
+    "bytes": 3425294
+  },
+  {
+    "turn": 1230,
+    "toolReply": true,
+    "bytes": 3425846
+  },
+  {
+    "turn": 1231,
+    "toolReply": false,
+    "bytes": 3425294
+  },
+  {
+    "turn": 1232,
+    "toolReply": false,
+    "bytes": 3494468
+  },
+  {
+    "turn": 1233,
+    "toolReply": false,
+    "bytes": 3494468
+  },
+  {
+    "turn": 1234,
+    "toolReply": false,
+    "bytes": 3434521
+  },
+  {
+    "turn": 1235,
+    "toolReply": false,
+    "bytes": 3433969
+  },
+  {
+    "turn": 1235,
+    "toolReply": true,
+    "bytes": 3434521
+  },
+  {
+    "turn": 1236,
+    "toolReply": false,
+    "bytes": 3503143
+  },
+  {
+    "turn": 1237,
+    "toolReply": false,
+    "bytes": 3503143
+  },
+  {
+    "turn": 1238,
+    "toolReply": false,
+    "bytes": 3443196
+  },
+  {
+    "turn": 1239,
+    "toolReply": false,
+    "bytes": 3443196
+  },
+  {
+    "turn": 1240,
+    "toolReply": false,
+    "bytes": 3511818
+  },
+  {
+    "turn": 1240,
+    "toolReply": true,
+    "bytes": 3512370
+  },
+  {
+    "turn": 1241,
+    "toolReply": false,
+    "bytes": 3511818
+  },
+  {
+    "turn": 1242,
+    "toolReply": false,
+    "bytes": 3451871
+  },
+  {
+    "turn": 1243,
+    "toolReply": false,
+    "bytes": 3451871
+  },
+  {
+    "turn": 1244,
+    "toolReply": false,
+    "bytes": 3521045
+  },
+  {
+    "turn": 1245,
+    "toolReply": false,
+    "bytes": 3520493
+  },
+  {
+    "turn": 1245,
+    "toolReply": true,
+    "bytes": 3521045
+  },
+  {
+    "turn": 1246,
+    "toolReply": false,
+    "bytes": 3460546
+  },
+  {
+    "turn": 1247,
+    "toolReply": false,
+    "bytes": 3460546
+  },
+  {
+    "turn": 1248,
+    "toolReply": false,
+    "bytes": 3529720
+  },
+  {
+    "turn": 1249,
+    "toolReply": false,
+    "bytes": 3529720
+  },
+  {
+    "turn": 1250,
+    "toolReply": false,
+    "bytes": 3469221
+  },
+  {
+    "turn": 1250,
+    "toolReply": true,
+    "bytes": 3469773
+  },
+  {
+    "turn": 1251,
+    "toolReply": false,
+    "bytes": 3469221
+  },
+  {
+    "turn": 1252,
+    "toolReply": false,
+    "bytes": 3538395
+  },
+  {
+    "turn": 1253,
+    "toolReply": false,
+    "bytes": 3538395
+  },
+  {
+    "turn": 1254,
+    "toolReply": false,
+    "bytes": 3538399
+  },
+  {
+    "turn": 1255,
+    "toolReply": false,
+    "bytes": 3477896
+  },
+  {
+    "turn": 1255,
+    "toolReply": true,
+    "bytes": 3478448
+  },
+  {
+    "turn": 1256,
+    "toolReply": false,
+    "bytes": 3547070
+  },
+  {
+    "turn": 1257,
+    "toolReply": false,
+    "bytes": 3547070
+  },
+  {
+    "turn": 1258,
+    "toolReply": false,
+    "bytes": 3547074
+  },
+  {
+    "turn": 1259,
+    "toolReply": false,
+    "bytes": 3487123
+  },
+  {
+    "turn": 1260,
+    "toolReply": false,
+    "bytes": 3555745
+  },
+  {
+    "turn": 1260,
+    "toolReply": true,
+    "bytes": 3556297
+  },
+  {
+    "turn": 1261,
+    "toolReply": false,
+    "bytes": 3555745
+  },
+  {
+    "turn": 1262,
+    "toolReply": false,
+    "bytes": 3555749
+  },
+  {
+    "turn": 1263,
+    "toolReply": false,
+    "bytes": 3495798
+  },
+  {
+    "turn": 1264,
+    "toolReply": false,
+    "bytes": 3564972
+  },
+  {
+    "turn": 1265,
+    "toolReply": false,
+    "bytes": 3564420
+  },
+  {
+    "turn": 1265,
+    "toolReply": true,
+    "bytes": 3564972
+  },
+  {
+    "turn": 1266,
+    "toolReply": false,
+    "bytes": 3564424
+  },
+  {
+    "turn": 1267,
+    "toolReply": false,
+    "bytes": 3504473
+  },
+  {
+    "turn": 1268,
+    "toolReply": false,
+    "bytes": 3573647
+  },
+  {
+    "turn": 1269,
+    "toolReply": false,
+    "bytes": 3573647
+  },
+  {
+    "turn": 1270,
+    "toolReply": false,
+    "bytes": 3573099
+  },
+  {
+    "turn": 1270,
+    "toolReply": true,
+    "bytes": 3573651
+  },
+  {
+    "turn": 1271,
+    "toolReply": false,
+    "bytes": 3513148
+  },
+  {
+    "turn": 1272,
+    "toolReply": false,
+    "bytes": 3582322
+  },
+  {
+    "turn": 1273,
+    "toolReply": false,
+    "bytes": 3582322
+  },
+  {
+    "turn": 1274,
+    "toolReply": false,
+    "bytes": 3582326
+  },
+  {
+    "turn": 1275,
+    "toolReply": false,
+    "bytes": 3521823
+  },
+  {
+    "turn": 1275,
+    "toolReply": true,
+    "bytes": 3522375
+  },
+  {
+    "turn": 1276,
+    "toolReply": false,
+    "bytes": 3590997
+  },
+  {
+    "turn": 1277,
+    "toolReply": false,
+    "bytes": 3590997
+  },
+  {
+    "turn": 1278,
+    "toolReply": false,
+    "bytes": 3591001
+  },
+  {
+    "turn": 1279,
+    "toolReply": false,
+    "bytes": 3591001
+  },
+  {
+    "turn": 1280,
+    "toolReply": false,
+    "bytes": 3599672
+  },
+  {
+    "turn": 1280,
+    "toolReply": true,
+    "bytes": 3600224
+  },
+  {
+    "turn": 1281,
+    "toolReply": false,
+    "bytes": 3599672
+  },
+  {
+    "turn": 1282,
+    "toolReply": false,
+    "bytes": 3599676
+  },
+  {
+    "turn": 1283,
+    "toolReply": false,
+    "bytes": 3599676
+  },
+  {
+    "turn": 1284,
+    "toolReply": false,
+    "bytes": 3608899
+  },
+  {
+    "turn": 1285,
+    "toolReply": false,
+    "bytes": 3608347
+  },
+  {
+    "turn": 1285,
+    "toolReply": true,
+    "bytes": 3608899
+  },
+  {
+    "turn": 1286,
+    "toolReply": false,
+    "bytes": 3608351
+  },
+  {
+    "turn": 1287,
+    "toolReply": false,
+    "bytes": 3608351
+  },
+  {
+    "turn": 1288,
+    "toolReply": false,
+    "bytes": 3617574
+  },
+  {
+    "turn": 1289,
+    "toolReply": false,
+    "bytes": 3617574
+  },
+  {
+    "turn": 1290,
+    "toolReply": false,
+    "bytes": 3617026
+  },
+  {
+    "turn": 1290,
+    "toolReply": true,
+    "bytes": 3617578
+  },
+  {
+    "turn": 1291,
+    "toolReply": false,
+    "bytes": 3617026
+  },
+  {
+    "turn": 1292,
+    "toolReply": false,
+    "bytes": 3626249
+  },
+  {
+    "turn": 1293,
+    "toolReply": false,
+    "bytes": 3626249
+  },
+  {
+    "turn": 1294,
+    "toolReply": false,
+    "bytes": 3626253
+  },
+  {
+    "turn": 1295,
+    "toolReply": false,
+    "bytes": 3625701
+  },
+  {
+    "turn": 1295,
+    "toolReply": true,
+    "bytes": 3626253
+  },
+  {
+    "turn": 1296,
+    "toolReply": false,
+    "bytes": 3634924
+  },
+  {
+    "turn": 1297,
+    "toolReply": false,
+    "bytes": 3634924
+  },
+  {
+    "turn": 1298,
+    "toolReply": false,
+    "bytes": 3634928
+  },
+  {
+    "turn": 1299,
+    "toolReply": false,
+    "bytes": 3634928
+  },
+  {
+    "turn": 1300,
+    "toolReply": false,
+    "bytes": 3643599
+  },
+  {
+    "turn": 1300,
+    "toolReply": true,
+    "bytes": 3644151
+  },
+  {
+    "turn": 1301,
+    "toolReply": false,
+    "bytes": 3643599
+  },
+  {
+    "turn": 1302,
+    "toolReply": false,
+    "bytes": 3643603
+  },
+  {
+    "turn": 1303,
+    "toolReply": false,
+    "bytes": 3643603
+  },
+  {
+    "turn": 1304,
+    "toolReply": false,
+    "bytes": 3712777
+  },
+  {
+    "turn": 1305,
+    "toolReply": false,
+    "bytes": 3652274
+  },
+  {
+    "turn": 1305,
+    "toolReply": true,
+    "bytes": 3652826
+  },
+  {
+    "turn": 1306,
+    "toolReply": false,
+    "bytes": 3652278
+  },
+  {
+    "turn": 1307,
+    "toolReply": false,
+    "bytes": 3652278
+  },
+  {
+    "turn": 1308,
+    "toolReply": false,
+    "bytes": 3721452
+  },
+  {
+    "turn": 1309,
+    "toolReply": false,
+    "bytes": 3661501
+  },
+  {
+    "turn": 1310,
+    "toolReply": false,
+    "bytes": 3660953
+  },
+  {
+    "turn": 1310,
+    "toolReply": true,
+    "bytes": 3661505
+  },
+  {
+    "turn": 1311,
+    "toolReply": false,
+    "bytes": 3660953
+  },
+  {
+    "turn": 1312,
+    "toolReply": false,
+    "bytes": 3730127
+  },
+  {
+    "turn": 1313,
+    "toolReply": false,
+    "bytes": 3670176
+  },
+  {
+    "turn": 1314,
+    "toolReply": false,
+    "bytes": 3670180
+  },
+  {
+    "turn": 1315,
+    "toolReply": false,
+    "bytes": 3669628
+  },
+  {
+    "turn": 1315,
+    "toolReply": true,
+    "bytes": 3670180
+  },
+  {
+    "turn": 1316,
+    "toolReply": false,
+    "bytes": 3738802
+  },
+  {
+    "turn": 1317,
+    "toolReply": false,
+    "bytes": 3678851
+  },
+  {
+    "turn": 1318,
+    "toolReply": false,
+    "bytes": 3678855
+  },
+  {
+    "turn": 1319,
+    "toolReply": false,
+    "bytes": 3678855
+  },
+  {
+    "turn": 1320,
+    "toolReply": false,
+    "bytes": 3747477
+  },
+  {
+    "turn": 1320,
+    "toolReply": true,
+    "bytes": 3748029
+  },
+  {
+    "turn": 1321,
+    "toolReply": false,
+    "bytes": 3687526
+  },
+  {
+    "turn": 1322,
+    "toolReply": false,
+    "bytes": 3687530
+  },
+  {
+    "turn": 1323,
+    "toolReply": false,
+    "bytes": 3687530
+  },
+  {
+    "turn": 1324,
+    "toolReply": false,
+    "bytes": 3756704
+  },
+  {
+    "turn": 1325,
+    "toolReply": false,
+    "bytes": 3696201
+  },
+  {
+    "turn": 1325,
+    "toolReply": true,
+    "bytes": 3696753
+  },
+  {
+    "turn": 1326,
+    "toolReply": false,
+    "bytes": 3696205
+  },
+  {
+    "turn": 1327,
+    "toolReply": false,
+    "bytes": 3696205
+  },
+  {
+    "turn": 1328,
+    "toolReply": false,
+    "bytes": 3765379
+  },
+  {
+    "turn": 1329,
+    "toolReply": false,
+    "bytes": 3765379
+  },
+  {
+    "turn": 1330,
+    "toolReply": false,
+    "bytes": 3704880
+  },
+  {
+    "turn": 1330,
+    "toolReply": true,
+    "bytes": 3705432
+  },
+  {
+    "turn": 1331,
+    "toolReply": false,
+    "bytes": 3704880
+  },
+  {
+    "turn": 1332,
+    "toolReply": false,
+    "bytes": 3774054
+  },
+  {
+    "turn": 1333,
+    "toolReply": false,
+    "bytes": 3774054
+  },
+  {
+    "turn": 1334,
+    "toolReply": false,
+    "bytes": 3714107
+  },
+  {
+    "turn": 1335,
+    "toolReply": false,
+    "bytes": 3713555
+  },
+  {
+    "turn": 1335,
+    "toolReply": true,
+    "bytes": 3714107
+  },
+  {
+    "turn": 1336,
+    "toolReply": false,
+    "bytes": 3782729
+  },
+  {
+    "turn": 1337,
+    "toolReply": false,
+    "bytes": 3782729
+  },
+  {
+    "turn": 1338,
+    "toolReply": false,
+    "bytes": 3722782
+  },
+  {
+    "turn": 1339,
+    "toolReply": false,
+    "bytes": 3722782
+  },
+  {
+    "turn": 1340,
+    "toolReply": false,
+    "bytes": 3791404
+  },
+  {
+    "turn": 1340,
+    "toolReply": true,
+    "bytes": 3791956
+  },
+  {
+    "turn": 1341,
+    "toolReply": false,
+    "bytes": 3791404
+  },
+  {
+    "turn": 1342,
+    "toolReply": false,
+    "bytes": 3731457
+  },
+  {
+    "turn": 1343,
+    "toolReply": false,
+    "bytes": 3731457
+  },
+  {
+    "turn": 1344,
+    "toolReply": false,
+    "bytes": 3800631
+  },
+  {
+    "turn": 1345,
+    "toolReply": false,
+    "bytes": 3800079
+  },
+  {
+    "turn": 1345,
+    "toolReply": true,
+    "bytes": 3800631
+  },
+  {
+    "turn": 1346,
+    "toolReply": false,
+    "bytes": 3740132
+  },
+  {
+    "turn": 1347,
+    "toolReply": false,
+    "bytes": 3740132
+  },
+  {
+    "turn": 1348,
+    "toolReply": false,
+    "bytes": 3809306
+  },
+  {
+    "turn": 1349,
+    "toolReply": false,
+    "bytes": 3809306
+  },
+  {
+    "turn": 1350,
+    "toolReply": false,
+    "bytes": 3748807
+  },
+  {
+    "turn": 1350,
+    "toolReply": true,
+    "bytes": 3749359
+  },
+  {
+    "turn": 1351,
+    "toolReply": false,
+    "bytes": 3748807
+  },
+  {
+    "turn": 1352,
+    "toolReply": false,
+    "bytes": 3817981
+  },
+  {
+    "turn": 1353,
+    "toolReply": false,
+    "bytes": 3817981
+  },
+  {
+    "turn": 1354,
+    "toolReply": false,
+    "bytes": 3817985
+  },
+  {
+    "turn": 1355,
+    "toolReply": false,
+    "bytes": 3757482
+  },
+  {
+    "turn": 1355,
+    "toolReply": true,
+    "bytes": 3758034
+  },
+  {
+    "turn": 1356,
+    "toolReply": false,
+    "bytes": 3826656
+  },
+  {
+    "turn": 1357,
+    "toolReply": false,
+    "bytes": 3826656
+  },
+  {
+    "turn": 1358,
+    "toolReply": false,
+    "bytes": 3826660
+  },
+  {
+    "turn": 1359,
+    "toolReply": false,
+    "bytes": 3766709
+  },
+  {
+    "turn": 1360,
+    "toolReply": false,
+    "bytes": 3835331
+  },
+  {
+    "turn": 1360,
+    "toolReply": true,
+    "bytes": 3835883
+  },
+  {
+    "turn": 1361,
+    "toolReply": false,
+    "bytes": 3835331
+  },
+  {
+    "turn": 1362,
+    "toolReply": false,
+    "bytes": 3835335
+  },
+  {
+    "turn": 1363,
+    "toolReply": false,
+    "bytes": 3775384
+  },
+  {
+    "turn": 1364,
+    "toolReply": false,
+    "bytes": 3844558
+  },
+  {
+    "turn": 1365,
+    "toolReply": false,
+    "bytes": 3844006
+  },
+  {
+    "turn": 1365,
+    "toolReply": true,
+    "bytes": 3844558
+  },
+  {
+    "turn": 1366,
+    "toolReply": false,
+    "bytes": 3844010
+  },
+  {
+    "turn": 1367,
+    "toolReply": false,
+    "bytes": 3784059
+  },
+  {
+    "turn": 1368,
+    "toolReply": false,
+    "bytes": 3853233
+  },
+  {
+    "turn": 1369,
+    "toolReply": false,
+    "bytes": 3853233
+  },
+  {
+    "turn": 1370,
+    "toolReply": false,
+    "bytes": 3852685
+  },
+  {
+    "turn": 1370,
+    "toolReply": true,
+    "bytes": 3853237
+  },
+  {
+    "turn": 1371,
+    "toolReply": false,
+    "bytes": 3792734
+  },
+  {
+    "turn": 1372,
+    "toolReply": false,
+    "bytes": 3861908
+  },
+  {
+    "turn": 1373,
+    "toolReply": false,
+    "bytes": 3861908
+  },
+  {
+    "turn": 1374,
+    "toolReply": false,
+    "bytes": 3861912
+  },
+  {
+    "turn": 1375,
+    "toolReply": false,
+    "bytes": 3801409
+  },
+  {
+    "turn": 1375,
+    "toolReply": true,
+    "bytes": 3801961
+  },
+  {
+    "turn": 1376,
+    "toolReply": false,
+    "bytes": 3870583
+  },
+  {
+    "turn": 1377,
+    "toolReply": false,
+    "bytes": 3870583
+  },
+  {
+    "turn": 1378,
+    "toolReply": false,
+    "bytes": 3870587
+  },
+  {
+    "turn": 1379,
+    "toolReply": false,
+    "bytes": 3870587
+  },
+  {
+    "turn": 1380,
+    "toolReply": false,
+    "bytes": 3879258
+  },
+  {
+    "turn": 1380,
+    "toolReply": true,
+    "bytes": 3879810
+  },
+  {
+    "turn": 1381,
+    "toolReply": false,
+    "bytes": 3879258
+  },
+  {
+    "turn": 1382,
+    "toolReply": false,
+    "bytes": 3879262
+  },
+  {
+    "turn": 1383,
+    "toolReply": false,
+    "bytes": 3879262
+  },
+  {
+    "turn": 1384,
+    "toolReply": false,
+    "bytes": 3888485
+  },
+  {
+    "turn": 1385,
+    "toolReply": false,
+    "bytes": 3887933
+  },
+  {
+    "turn": 1385,
+    "toolReply": true,
+    "bytes": 3888485
+  },
+  {
+    "turn": 1386,
+    "toolReply": false,
+    "bytes": 3887937
+  },
+  {
+    "turn": 1387,
+    "toolReply": false,
+    "bytes": 3887937
+  },
+  {
+    "turn": 1388,
+    "toolReply": false,
+    "bytes": 3897160
+  },
+  {
+    "turn": 1389,
+    "toolReply": false,
+    "bytes": 3897160
+  },
+  {
+    "turn": 1390,
+    "toolReply": false,
+    "bytes": 3896612
+  },
+  {
+    "turn": 1390,
+    "toolReply": true,
+    "bytes": 3897164
+  },
+  {
+    "turn": 1391,
+    "toolReply": false,
+    "bytes": 3896612
+  },
+  {
+    "turn": 1392,
+    "toolReply": false,
+    "bytes": 3905835
+  },
+  {
+    "turn": 1393,
+    "toolReply": false,
+    "bytes": 3905835
+  },
+  {
+    "turn": 1394,
+    "toolReply": false,
+    "bytes": 3905839
+  },
+  {
+    "turn": 1395,
+    "toolReply": false,
+    "bytes": 3905287
+  },
+  {
+    "turn": 1395,
+    "toolReply": true,
+    "bytes": 3905839
+  },
+  {
+    "turn": 1396,
+    "toolReply": false,
+    "bytes": 3914510
+  },
+  {
+    "turn": 1397,
+    "toolReply": false,
+    "bytes": 3914510
+  },
+  {
+    "turn": 1398,
+    "toolReply": false,
+    "bytes": 3914514
+  },
+  {
+    "turn": 1399,
+    "toolReply": false,
+    "bytes": 3914514
+  },
+  {
+    "turn": 1400,
+    "toolReply": false,
+    "bytes": 3923185
+  },
+  {
+    "turn": 1400,
+    "toolReply": true,
+    "bytes": 3923737
+  },
+  {
+    "turn": 1401,
+    "toolReply": false,
+    "bytes": 3923185
+  },
+  {
+    "turn": 1402,
+    "toolReply": false,
+    "bytes": 3923189
+  },
+  {
+    "turn": 1403,
+    "toolReply": false,
+    "bytes": 3923189
+  },
+  {
+    "turn": 1404,
+    "toolReply": false,
+    "bytes": 3992363
+  },
+  {
+    "turn": 1405,
+    "toolReply": false,
+    "bytes": 3931860
+  },
+  {
+    "turn": 1405,
+    "toolReply": true,
+    "bytes": 3932412
+  },
+  {
+    "turn": 1406,
+    "toolReply": false,
+    "bytes": 3931864
+  },
+  {
+    "turn": 1407,
+    "toolReply": false,
+    "bytes": 3931864
+  },
+  {
+    "turn": 1408,
+    "toolReply": false,
+    "bytes": 4001038
+  },
+  {
+    "turn": 1409,
+    "toolReply": false,
+    "bytes": 3941087
+  },
+  {
+    "turn": 1410,
+    "toolReply": false,
+    "bytes": 3940539
+  },
+  {
+    "turn": 1410,
+    "toolReply": true,
+    "bytes": 3941091
+  },
+  {
+    "turn": 1411,
+    "toolReply": false,
+    "bytes": 3940539
+  },
+  {
+    "turn": 1412,
+    "toolReply": false,
+    "bytes": 4009713
+  },
+  {
+    "turn": 1413,
+    "toolReply": false,
+    "bytes": 3949762
+  },
+  {
+    "turn": 1414,
+    "toolReply": false,
+    "bytes": 3949766
+  },
+  {
+    "turn": 1415,
+    "toolReply": false,
+    "bytes": 3949214
+  },
+  {
+    "turn": 1415,
+    "toolReply": true,
+    "bytes": 3949766
+  },
+  {
+    "turn": 1416,
+    "toolReply": false,
+    "bytes": 4018388
+  },
+  {
+    "turn": 1417,
+    "toolReply": false,
+    "bytes": 3958437
+  },
+  {
+    "turn": 1418,
+    "toolReply": false,
+    "bytes": 3958441
+  },
+  {
+    "turn": 1419,
+    "toolReply": false,
+    "bytes": 3958441
+  },
+  {
+    "turn": 1420,
+    "toolReply": false,
+    "bytes": 4027063
+  },
+  {
+    "turn": 1420,
+    "toolReply": true,
+    "bytes": 4027615
+  },
+  {
+    "turn": 1421,
+    "toolReply": false,
+    "bytes": 3967112
+  },
+  {
+    "turn": 1422,
+    "toolReply": false,
+    "bytes": 3967116
+  },
+  {
+    "turn": 1423,
+    "toolReply": false,
+    "bytes": 3967116
+  },
+  {
+    "turn": 1424,
+    "toolReply": false,
+    "bytes": 4036290
+  },
+  {
+    "turn": 1425,
+    "toolReply": false,
+    "bytes": 3975787
+  },
+  {
+    "turn": 1425,
+    "toolReply": true,
+    "bytes": 3976339
+  },
+  {
+    "turn": 1426,
+    "toolReply": false,
+    "bytes": 3975791
+  },
+  {
+    "turn": 1427,
+    "toolReply": false,
+    "bytes": 3975791
+  },
+  {
+    "turn": 1428,
+    "toolReply": false,
+    "bytes": 4044965
+  },
+  {
+    "turn": 1429,
+    "toolReply": false,
+    "bytes": 4044965
+  },
+  {
+    "turn": 1430,
+    "toolReply": false,
+    "bytes": 3984466
+  },
+  {
+    "turn": 1430,
+    "toolReply": true,
+    "bytes": 3985018
+  },
+  {
+    "turn": 1431,
+    "toolReply": false,
+    "bytes": 3984466
+  },
+  {
+    "turn": 1432,
+    "toolReply": false,
+    "bytes": 4053640
+  },
+  {
+    "turn": 1433,
+    "toolReply": false,
+    "bytes": 4053640
+  },
+  {
+    "turn": 1434,
+    "toolReply": false,
+    "bytes": 3993693
+  },
+  {
+    "turn": 1435,
+    "toolReply": false,
+    "bytes": 3993141
+  },
+  {
+    "turn": 1435,
+    "toolReply": true,
+    "bytes": 3993693
+  },
+  {
+    "turn": 1436,
+    "toolReply": false,
+    "bytes": 4062315
+  },
+  {
+    "turn": 1437,
+    "toolReply": false,
+    "bytes": 4062315
+  },
+  {
+    "turn": 1438,
+    "toolReply": false,
+    "bytes": 4002368
+  },
+  {
+    "turn": 1439,
+    "toolReply": false,
+    "bytes": 4002368
+  },
+  {
+    "turn": 1440,
+    "toolReply": false,
+    "bytes": 4070990
+  },
+  {
+    "turn": 1440,
+    "toolReply": true,
+    "bytes": 4071542
+  },
+  {
+    "turn": 1441,
+    "toolReply": false,
+    "bytes": 4070990
+  },
+  {
+    "turn": 1442,
+    "toolReply": false,
+    "bytes": 4011043
+  },
+  {
+    "turn": 1443,
+    "toolReply": false,
+    "bytes": 4011043
+  },
+  {
+    "turn": 1444,
+    "toolReply": false,
+    "bytes": 4080217
+  },
+  {
+    "turn": 1445,
+    "toolReply": false,
+    "bytes": 4079665
+  },
+  {
+    "turn": 1445,
+    "toolReply": true,
+    "bytes": 4080217
+  },
+  {
+    "turn": 1446,
+    "toolReply": false,
+    "bytes": 4019718
+  },
+  {
+    "turn": 1447,
+    "toolReply": false,
+    "bytes": 4019718
+  },
+  {
+    "turn": 1448,
+    "toolReply": false,
+    "bytes": 4088892
+  },
+  {
+    "turn": 1449,
+    "toolReply": false,
+    "bytes": 4088892
+  },
+  {
+    "turn": 1450,
+    "toolReply": false,
+    "bytes": 4028393
+  },
+  {
+    "turn": 1450,
+    "toolReply": true,
+    "bytes": 4028945
+  },
+  {
+    "turn": 1451,
+    "toolReply": false,
+    "bytes": 4028393
+  },
+  {
+    "turn": 1452,
+    "toolReply": false,
+    "bytes": 4097567
+  },
+  {
+    "turn": 1453,
+    "toolReply": false,
+    "bytes": 4097567
+  },
+  {
+    "turn": 1454,
+    "toolReply": false,
+    "bytes": 4097571
+  },
+  {
+    "turn": 1455,
+    "toolReply": false,
+    "bytes": 4037068
+  },
+  {
+    "turn": 1455,
+    "toolReply": true,
+    "bytes": 4037620
+  },
+  {
+    "turn": 1456,
+    "toolReply": false,
+    "bytes": 4106242
+  },
+  {
+    "turn": 1457,
+    "toolReply": false,
+    "bytes": 4106242
+  },
+  {
+    "turn": 1458,
+    "toolReply": false,
+    "bytes": 4106246
+  },
+  {
+    "turn": 1459,
+    "toolReply": false,
+    "bytes": 4046295
+  },
+  {
+    "turn": 1460,
+    "toolReply": false,
+    "bytes": 4114917
+  },
+  {
+    "turn": 1460,
+    "toolReply": true,
+    "bytes": 4115469
+  },
+  {
+    "turn": 1461,
+    "toolReply": false,
+    "bytes": 4114917
+  },
+  {
+    "turn": 1462,
+    "toolReply": false,
+    "bytes": 4114921
+  },
+  {
+    "turn": 1463,
+    "toolReply": false,
+    "bytes": 4054970
+  },
+  {
+    "turn": 1464,
+    "toolReply": false,
+    "bytes": 4124144
+  },
+  {
+    "turn": 1465,
+    "toolReply": false,
+    "bytes": 4123592
+  },
+  {
+    "turn": 1465,
+    "toolReply": true,
+    "bytes": 4124144
+  },
+  {
+    "turn": 1466,
+    "toolReply": false,
+    "bytes": 4123596
+  },
+  {
+    "turn": 1467,
+    "toolReply": false,
+    "bytes": 4063645
+  },
+  {
+    "turn": 1468,
+    "toolReply": false,
+    "bytes": 4132819
+  },
+  {
+    "turn": 1469,
+    "toolReply": false,
+    "bytes": 4132819
+  },
+  {
+    "turn": 1470,
+    "toolReply": false,
+    "bytes": 4132271
+  },
+  {
+    "turn": 1470,
+    "toolReply": true,
+    "bytes": 4132823
+  },
+  {
+    "turn": 1471,
+    "toolReply": false,
+    "bytes": 4072320
+  },
+  {
+    "turn": 1472,
+    "toolReply": false,
+    "bytes": 4141494
+  },
+  {
+    "turn": 1473,
+    "toolReply": false,
+    "bytes": 4141494
+  },
+  {
+    "turn": 1474,
+    "toolReply": false,
+    "bytes": 4141498
+  },
+  {
+    "turn": 1475,
+    "toolReply": false,
+    "bytes": 4080995
+  },
+  {
+    "turn": 1475,
+    "toolReply": true,
+    "bytes": 4081547
+  },
+  {
+    "turn": 1476,
+    "toolReply": false,
+    "bytes": 4150169
+  },
+  {
+    "turn": 1477,
+    "toolReply": false,
+    "bytes": 4150169
+  },
+  {
+    "turn": 1478,
+    "toolReply": false,
+    "bytes": 4150173
+  },
+  {
+    "turn": 1479,
+    "toolReply": false,
+    "bytes": 4150173
+  },
+  {
+    "turn": 1480,
+    "toolReply": false,
+    "bytes": 4158844
+  },
+  {
+    "turn": 1480,
+    "toolReply": true,
+    "bytes": 4159396
+  },
+  {
+    "turn": 1481,
+    "toolReply": false,
+    "bytes": 4158844
+  },
+  {
+    "turn": 1482,
+    "toolReply": false,
+    "bytes": 4158848
+  },
+  {
+    "turn": 1483,
+    "toolReply": false,
+    "bytes": 4158848
+  },
+  {
+    "turn": 1484,
+    "toolReply": false,
+    "bytes": 4168071
+  },
+  {
+    "turn": 1485,
+    "toolReply": false,
+    "bytes": 4167519
+  },
+  {
+    "turn": 1485,
+    "toolReply": true,
+    "bytes": 4168071
+  },
+  {
+    "turn": 1486,
+    "toolReply": false,
+    "bytes": 4167523
+  },
+  {
+    "turn": 1487,
+    "toolReply": false,
+    "bytes": 4167523
+  },
+  {
+    "turn": 1488,
+    "toolReply": false,
+    "bytes": 4176746
+  },
+  {
+    "turn": 1489,
+    "toolReply": false,
+    "bytes": 4176746
+  },
+  {
+    "turn": 1490,
+    "toolReply": false,
+    "bytes": 4176198
+  },
+  {
+    "turn": 1490,
+    "toolReply": true,
+    "bytes": 4176750
+  },
+  {
+    "turn": 1491,
+    "toolReply": false,
+    "bytes": 4176198
+  },
+  {
+    "turn": 1492,
+    "toolReply": false,
+    "bytes": 4185421
+  },
+  {
+    "turn": 1493,
+    "toolReply": false,
+    "bytes": 4185421
+  },
+  {
+    "turn": 1494,
+    "toolReply": false,
+    "bytes": 4185425
+  },
+  {
+    "turn": 1495,
+    "toolReply": false,
+    "bytes": 4184873
+  },
+  {
+    "turn": 1495,
+    "toolReply": true,
+    "bytes": 4185425
+  },
+  {
+    "turn": 1496,
+    "toolReply": false,
+    "bytes": 4194096
+  },
+  {
+    "turn": 1497,
+    "toolReply": false,
+    "bytes": 4194096
+  },
+  {
+    "turn": 1498,
+    "toolReply": false,
+    "bytes": 4194100
+  },
+  {
+    "turn": 1499,
+    "toolReply": false,
+    "bytes": 4194100
+  }
+]

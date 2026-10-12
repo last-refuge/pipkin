@@ -11,7 +11,38 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — failed queue retention and ordered explicit resumption
+## Current follow-up — actual desktop and uninterrupted mixed soaks
+
+2026-10-12, source **`9d61b26`**, protocol 12 / engine schema 10 / desktop schema 8.
+A reusable isolated desktop harness runs the actual GPUI application and native server
+with a local scripted provider and real bash. All 1,500 replies, 300 ordered unique tool
+effects and byte-exact durable outputs pass. The window stays responsive and both owned
+processes exit cleanly. No Node/Pi trap fires. The existing mixed benchmark additionally
+passes all 720 turns without an intermediate restart, retaining every output and effect.
+See [desktop/uninterrupted evidence](pipkin-rust-engine-evidence/desktop-soak.md).
+
+The desktop run's server peak is **131,140 KiB (128.07 MiB)**, above the 100 MiB reference
+target for this expanded single-active-turn workload. Desktop RSS ends at 204,716 KiB,
+with +12.511 KiB/turn last-half slope. These findings keep resource qualification open.
+The uninterrupted two-active-turn engine ends at 31,380 KiB, peaks at 101,976 KiB,
+retains 13 idle fds and zero settled tool descendants, with +2.797 KiB/turn last-half
+slope. Neither workload proves indefinite leak freedom. Synthetic provider usage means
+realistic token accounting/compaction is not qualified.
+
+An apparent composer/sidebar clipping report was corrected after full-size screenshot
+inspection and a passing diagnostic layout test. No UI fix or diagnostic test is retained.
+Raw compositor screenshots remain private; hashes and observations are committed. AT-SPI
+returned no matching tree and is not passed. All synthetic input used the guard on the
+owned window; no automated workspace/config changes occurred.
+
+Required checks: **1,653 passed, 0 failed, 56 ignored**, clean Clippy/all-targets and
+formatting. Python parsing and diff checks pass. Existing measured rows gain evidence;
+counts stay **445 measured, 9 observed, 1 unverified,
+49 not started; 0 fully qualified**. Next: attribute the desktop/server memory growth and
+repeat after fixing confirmed causes, then complete remaining release gates. Native stays
+opt-in. Owner changes are preserved.
+
+## Prior follow-up — failed queue retention and ordered explicit resumption
 
 2026-10-12, following **`e6951d4`**, protocol 12/schema 10 unchanged. Eleven actual pinned
 Pi Harness runs compare queue modes/order, projected model requests, full visible history and

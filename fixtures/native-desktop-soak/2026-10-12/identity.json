@@ -1,0 +1,10 @@
+{
+  "appPid": 3914075,
+  "enginePid": 3914067,
+  "workspace": 1,
+  "binary": "/home/jason/coding/pipkin/target/release/pipkin",
+  "binarySha256": "c3a7159357487ef81f947477c3683db6cf42a6d17b0c4a8ecb515e02482e281e",
+  "revision": "9d61b26779142734976860f5d3415592e35b05f1",
+  "turns": 1500,
+  "scope": "Actual desktop and external native server; local scripted provider; no restart during workload"
+}

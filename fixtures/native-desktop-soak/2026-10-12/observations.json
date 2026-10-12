@@ -1,0 +1,13 @@
+{
+  "harnessSha256": "8800db9c6abad5d23d6af934c045d99d9af6d12b1eee3b064d6f923e69d12d9a",
+  "screenshots": {
+    "complete.png": "77b9b829081303a1a397baf0056e272495c98d3888cfbd1929424264e2c2bccf",
+    "mid-run.png": "45854250b41731c4a1e9d90c57917bae39c9034d05972f065b70e18e0f05da8c"
+  },
+  "screenshotPolicy": "Raw images remain private in scratch storage; compositor transparency includes unrelated desktop content. Hashes only are retained here.",
+  "accessibility": "AT-SPI lookup by the test app PID returned no matching accessible tree; not qualified.",
+  "visualObservation": "Composer, navigation footer and final reply visible at end. Earlier apparent clipping was a mistaken reading of the captures; full-size mid-run capture also shows both controls. No layout change applied.",
+  "concurrentWork": "Desktop workload overlapped the uninterrupted mixed benchmark. It is not a quiet-machine comparative latency result.",
+  "desktopScratchFilesystem": "tmpfs",
+  "machineMetadataScope": "machine.json is copied from the concurrent headless benchmark: CPU/kernel/toolchain match, but its scratch path/filesystem and starting load describe that benchmark, not this desktop run."
+}

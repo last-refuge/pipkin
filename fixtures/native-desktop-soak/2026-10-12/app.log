@@ -1,0 +1,5 @@
+[2026-10-12T13:10:36Z WARN  cosmic_text::font::system] failed to get system locale, falling back to en-US
+[2026-10-12T13:11:57Z WARN  pipkin_ui::shell::workspace] perf: input-to-frame (handler call to composer paint end; CPU, not display presentation) n=21 p50=3.523199ms p95=3.85867ms max=3.963887ms
+[2026-10-12T13:11:57Z WARN  pipkin_ui::shell::workspace] perf: transcript frames=600 p50=Some(589.5µs) p95=Some(7.943532ms) (CPU prepaint+paint, not display presentation) mounted_rows=1 cached_blocks=1 following=true rss_kb=183556
+[2026-10-12T13:15:54Z WARN  pipkin_ui::shell::workspace] perf: input-to-frame (handler call to composer paint end; CPU, not display presentation) n=42 p50=3.110207ms p95=3.85867ms max=4.892523ms
+[2026-10-12T13:15:54Z WARN  pipkin_ui::shell::workspace] perf: transcript frames=600 p50=Some(537.789µs) p95=Some(4.559544ms) (CPU prepaint+paint, not display presentation) mounted_rows=1 cached_blocks=1 following=true rss_kb=204716
