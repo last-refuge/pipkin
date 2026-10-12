@@ -1,0 +1,71 @@
+{
+  "artifacts": [
+    {
+      "label": "initial-makepkg-full-debug",
+      "archiveSha256": "feae7982fd67a7923fffec0c21b63e19f703c876418da714a1f1fda76edee4e4",
+      "archiveBytes": 211521077,
+      "installedPayloadBytes": 1046267353,
+      "app": {
+        "version": "0.0.1",
+        "revision": "c64e59b86657fae686abfc78374f63e164ced179",
+        "dirty": "true",
+        "binarySha256": "29c0c3b68637113fe6ccbd2b871822740509cd0526c8938ffd15ddb8974a8539"
+      },
+      "customRustFlags": true,
+      "globalMakepkgOptions": [
+        "strip",
+        "docs",
+        "!libtool",
+        "!staticlibs",
+        "emptydirs",
+        "zipman",
+        "purge",
+        "debug",
+        "lto"
+      ],
+      "pkgbuildSha256": "7f60f6070f8b2b8f5bcaf762ae758619cc670a108e8874b1b967cf6148bad499",
+      "recipeOptions": [
+        "!strip",
+        "!lto"
+      ]
+    },
+    {
+      "label": "cargo-release-line-tables",
+      "archiveSha256": "ad40ef39a004e2dcca5de00615f42c3d446dca6ebb8367891483f766371c3378",
+      "archiveBytes": 76328657,
+      "installedPayloadBytes": 361217499,
+      "app": {
+        "version": "0.0.1",
+        "revision": "c64e59b86657fae686abfc78374f63e164ced179",
+        "dirty": "true",
+        "binarySha256": "e976a8519458b295b0a20c42237b72fd1d55d579f1567a0ebe226c52b03d9c15"
+      },
+      "customRustFlags": true,
+      "globalMakepkgOptions": [
+        "strip",
+        "docs",
+        "!libtool",
+        "!staticlibs",
+        "emptydirs",
+        "zipman",
+        "purge",
+        "debug",
+        "lto"
+      ],
+      "pkgbuildSha256": "082321483900434b4a8554370ffae28fb278768f75a4dc3d1dfd4640b577ed58",
+      "recipeOptions": [
+        "!strip",
+        "!lto",
+        "!debug"
+      ]
+    }
+  ],
+  "scope": "actual native Arch artifacts with makepkg default full debug versus Cargo release line tables; not a Pi comparison",
+  "makepkgVersion": "makepkg (pacman) 7.1.0",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+  "nodePiBuildTrapsUsed": [],
+  "optionsNote": ".BUILDINFO options are global makepkg settings; the identified recipe overrides them with its own options.",
+  "installedPayloadReductionPercent": 65.47560258243095,
+  "archiveReductionPercent": 63.91439657807718
+}

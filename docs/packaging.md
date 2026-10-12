@@ -155,18 +155,30 @@ release key exists, nothing is published, and there is no in-app update check: a
 
 Pipkin's built-in Rust engine can be packaged on its own, with **no Node, npm or Pi** used to build it or
 shipped in it. This is a development candidate for x86_64 Linux only: **Pi remains the default engine**, the
-default `scripts/package.sh`, `release.sh`, PKGBUILD and macOS packaging are unchanged, nothing is signed, and no
+default `scripts/package.sh`, `release.sh`, Pi PKGBUILD mode and macOS packaging are unchanged, nothing is signed, and no
 new platform is qualified by it.
 
 ```
 scripts/package-native.sh               # dist/native/pipkin-native-<ver>-<arch>.tar.zst and dist/native/stage/
 scripts/package.sh --engine native      # the same; `--engine pi` (or no flag) is the existing Pi package
 scripts/test-native-package.sh          # build, package, install into a scratch prefix, bare-env probe
+(cd packaging && PIPKIN_ENGINE=native makepkg)  # Arch candidate, no Pi checkout or npm build dependency
+python3 scripts/verify-native-arch-package.py packaging/pipkin-*.pkg.tar.zst REPORT.json
 ```
 
 Build requirements: Rust (pinned by `rust-toolchain.toml`), a C compiler/cmake for the bundled SQLite and zstd,
 Python 3 and binutils (inventories), zstd and coreutils. Build identity is written by the POSIX
 `scripts/write-native-build-info.sh` instead of the Node `write-build-info.mjs` (which the Pi package still uses).
+
+The Arch recipe defaults to Pi during qualification; `PIPKIN_ENGINE=native` selects the native
+candidate explicitly and stages it in makepkg's private build directory. Both modes produce the
+`pipkin` package and replace one another rather than installing conflicting binaries. Native
+metadata omits npm from build dependencies; runtime desktop/GPU/Git requirements are unchanged.
+Native mode retains Cargo's release line tables and disables makepkg's extra full-debug override;
+`!strip` still preserves the binary exactly as identified by `build-info.json`.
+`makepkg` alone builds a package without installing it or installing dependencies. Inspect the
+candidate and back up compatible app/engine data before an eventual `pacman -U` replacement.
+The native desktop entry passes `--engine native`; the binary's no-flag default remains Pi.
 
 The archive contains `usr/bin/pipkin` (the app; it runs the engine as a private `pipkin --engine-worker` child),
 `usr/lib/pipkin/native-engine.json` (a marker naming the engine version/protocol/schema), a desktop entry that

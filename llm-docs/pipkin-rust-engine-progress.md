@@ -11,7 +11,34 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — durable tool identities and matched engine performance
+## Current follow-up — actual native Arch package
+
+2026-10-12, following **`c64e59b`**, protocol 12 / schema 10 unchanged. The Arch recipe
+now accepts `PIPKIN_ENGINE=native`, omits npm for that mode and stages the native package
+inside makepkg's build directory. Pi remains the default selector. Actual metadata checks
+cover both modes and invalid-selector rejection. Two actual unsigned Arch artifacts were
+built offline with Node/npm/npx/Pi traps; no trap fired.
+
+The first build exposed makepkg's extra full-debug override inflating the native payload.
+Native `!debug` now preserves Cargo's release line tables alongside `!strip`/`!lto`.
+Actual payload shrank **1,046,267,353 → 361,217,499 bytes**, archive **211,521,077 →
+76,328,657 bytes**. This compares two native Arch configurations, not native versus Pi.
+The final artifact passes recipe/binary identity, current installed help and **1,079 notice
+hashes**, plus isolated offline probe/import/write/edit/bash/read/restart/archive restoration
+and durable replay. The initial verifier fixture-path error was corrected without changing
+workflow assertions. All **614 Rust entries / 33 license review flags** remain represented.
+
+See [Arch evidence](pipkin-rust-engine-evidence/native-arch-package.md) and
+`fixtures/native-installed/arch/`. This host's user-managed pinned Rust toolchain was checked
+explicitly; `--nodeps` accommodated its absence from pacman's Rust/Cargo package records,
+with all other declared dependencies present. No packages were installed system-wide.
+Required workspace checks pass: **1,640 passed, 0 failed, 56 ignored**, clean Clippy and
+formatting. `PKG-PKGBUILD` moves not started → observed; counts are **444 measured, 9 observed,
+1 unverified, 50 not started**, dispositions unchanged, **0 fully qualified**. System pacman
+installation, clean-chroot/hosted CI, desktop acceptance, remaining behavior/performance and
+license review, native-default and Pi retirement remain open. Owner changes are preserved.
+
+## Prior follow-up — durable tool identities and matched engine performance
 
 2026-10-12, following **`42b196d`**, protocol 12 / schema **10**. Actual matched package
 execution exposed a native correctness bug: reused provider tool IDs caused later tool effects

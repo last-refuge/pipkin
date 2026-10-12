@@ -1,26 +1,50 @@
 # Maintainer: Jason Alexander <jason@greatspark.com>
-# Builds Pipkin from this checkout plus a Pi engine checkout. Run from the repository root:
-#   cd packaging && makepkg -si      (PI_CHECKOUT=../../pi-fork/pi by default)
+# Builds from this checkout. Pi stays the default during qualification:
+#   cd packaging && makepkg          (PI_CHECKOUT=../../pi-fork/pi by default)
+#   cd packaging && PIPKIN_ENGINE=native makepkg    (no Pi checkout or Node/npm needed)
 pkgname=pipkin
 pkgver=0.0.1
-pkgrel=2
+pkgrel=3
 pkgdesc='Native Wayland desktop client for the Pi coding agent, with a bundled engine'
 arch=('x86_64')
 url='https://github.com/last-refuge/pipkin'
 license=('MIT')
 depends=('wayland' 'libxkbcommon' 'libxkbcommon-x11' 'libxcb' 'vulkan-icd-loader' 'fontconfig' 'git')
-makedepends=('rust' 'cargo' 'npm' 'zstd' 'clang' 'cmake' 'python' 'binutils')
+makedepends=('rust' 'cargo' 'zstd' 'clang' 'cmake' 'python' 'binutils')
 optdepends=('foot: terminal for the "open terminal" action'
             'orca: screen reader'
             'fcitx5: input methods')
 options=('!strip' '!lto')   # keep debug info; LTO flags break linking the bundled SQLite
-PI_CHECKOUT=${PI_CHECKOUT:-"$startdir/../../pi-fork/pi"}
+_pipkin_engine=${PIPKIN_ENGINE:-pi}
+case $_pipkin_engine in
+  pi)
+    makedepends+=('npm')
+    PI_CHECKOUT=${PI_CHECKOUT:-"$startdir/../../pi-fork/pi"}
+    ;;
+  native)
+    pkgdesc='Native Wayland desktop coding agent with the built-in Rust engine (candidate)'
+    # Keep Cargo's release line tables; makepkg's full-DWARF override triples the payload.
+    options+=('!debug')
+    ;;
+  *)
+    printf 'Unknown PIPKIN_ENGINE: %s; choose pi or native\n' "$_pipkin_engine" >&2
+    return 1
+    ;;
+esac
 
 build() {
   cd "$startdir/.."
-  scripts/package.sh "$PI_CHECKOUT"
+  if [[ $_pipkin_engine == native ]]; then
+    PIPKIN_NATIVE_OUT="$srcdir/native" scripts/package-native.sh
+  else
+    scripts/package.sh "$PI_CHECKOUT"
+  fi
 }
 
 package() {
-  cp -a "$startdir/../dist/stage/." "$pkgdir/"
+  if [[ $_pipkin_engine == native ]]; then
+    cp -a "$srcdir/native/stage/." "$pkgdir/"
+  else
+    cp -a "$startdir/../dist/stage/." "$pkgdir/"
+  fi
 }

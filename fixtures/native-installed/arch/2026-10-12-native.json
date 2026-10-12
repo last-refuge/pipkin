@@ -1,0 +1,95 @@
+{
+  "result": "passed",
+  "archiveSha256": "ad40ef39a004e2dcca5de00615f42c3d446dca6ebb8367891483f766371c3378",
+  "package": {
+    "pkgname": [
+      "pipkin"
+    ],
+    "pkgbase": [
+      "pipkin"
+    ],
+    "xdata": [
+      "pkgtype=pkg"
+    ],
+    "pkgver": [
+      "0.0.1-3"
+    ],
+    "pkgdesc": [
+      "Native Wayland desktop coding agent with the built-in Rust engine (candidate)"
+    ],
+    "url": [
+      "https://github.com/last-refuge/pipkin"
+    ],
+    "builddate": [
+      "1791805035"
+    ],
+    "packager": [
+      "Unknown Packager"
+    ],
+    "size": [
+      "361217499"
+    ],
+    "arch": [
+      "x86_64"
+    ],
+    "license": [
+      "MIT"
+    ],
+    "depend": [
+      "wayland",
+      "libxkbcommon",
+      "libxkbcommon-x11",
+      "libxcb",
+      "vulkan-icd-loader",
+      "fontconfig",
+      "git"
+    ],
+    "optdepend": [
+      "foot: terminal for the \"open terminal\" action",
+      "orca: screen reader",
+      "fcitx5: input methods"
+    ],
+    "makedepend": [
+      "rust",
+      "cargo",
+      "zstd",
+      "clang",
+      "cmake",
+      "python",
+      "binutils"
+    ]
+  },
+  "marker": {
+    "formatVersion": 1,
+    "engine": "native",
+    "selector": "--engine native",
+    "appVersion": "0.0.1",
+    "engineVersion": "0.0.1",
+    "engineProtocol": 12,
+    "engineSchema": 10,
+    "desktopSchema": 8
+  },
+  "app": {
+    "version": "0.0.1",
+    "revision": "c64e59b86657fae686abfc78374f63e164ced179",
+    "dirty": "true",
+    "binarySha256": "e976a8519458b295b0a20c42237b72fd1d55d579f1567a0ebe226c52b03d9c15"
+  },
+  "metadataSha256": {
+    ".PKGINFO": "6142341d3570faef55b5b384b33a584ae48c1ca89240fc96f80c058b52f349bb",
+    ".BUILDINFO": "85f048273d0b1d5fa975f007a86bdfa4352bd691e879ebf975a0ce6353c5f49f",
+    ".MTREE": "7fdb5eaa4df18ce9a4c95510fad49a38f8af2f3abbd031557a446b8583b5c846"
+  },
+  "rustPackages": 614,
+  "noticeHashesVerified": 1079,
+  "licenseReviewFlags": 33,
+  "testInputsSha256": {
+    "scripts/verify-native-arch-package.py": "ceb7f55c300bcee14d8f6c1d1ecb856fec5a921721d5673452cbd40f7060cfc6",
+    "scripts/test-installed-native-workflow.py": "ad40a670fe460d663ac88f363dd78fcdea13b52406b0e57806a70aefeca65804",
+    "scripts/test-package-docs.py": "70ef0f861c18e5e3502cf72291687ba29b7d043b5612ad0aff60867a75aaeedb",
+    "packaging/PKGBUILD": "082321483900434b4a8554370ffae28fb278768f75a4dc3d1dfd4640b577ed58"
+  },
+  "probe": "Pipkin 0.0.1 (desktop schema 8) with --engine native\napp source: c64e59b86657fae686abfc78374f63e164ced179 (dirty: true)\nbinary: /tmp/pipkin-arch-check-7l_cvf7p/payload/usr/bin/pipkin\nengine: native (built into this binary) 0.0.1 (protocol 12, schema 10)\nengine runtime: `pipkin --engine-worker`; no Node, npm or Pi engine is used\ninstalled as: native candidate (/tmp/pipkin-arch-check-7l_cvf7p/payload/usr/lib/pipkin/native-engine.json)\ndata directory: ~/.local/share/pipkin\ndatabase: none yet (created on first run)\nengine data directory: ~/.local/share/pipkin/engine (not created yet)\nengine config directory: ~/.config/pipkin/engine (not created yet)\nengine isolation: default per-user directories, separate from Pi's ~/.pi\nnote: history written by the native engine is native-only; Pi does not read it.\ndisplay: no WAYLAND_DISPLAY (a window cannot open here)\nengine probe: OK (hello: protocol 12, engine 0.0.1 revision c64e59b86657fae686abfc78374f63e164ced179-dirty, schema 10; sessions in a fresh profile: 0; stopped cleanly in 0.0s)\n",
+  "workflow": "closed native data/config archive restores every file and permission; SQLite integrity passes\ninstalled native migration, coding, restart, complete archive/restore, retained output and durable replay passed\n",
+  "scope": "actual makepkg metadata/payload, extracted binary with isolated probe/import/coding/restart/archive restoration and no Node/Pi invocation; no pacman system installation, GUI or live provider"
+}

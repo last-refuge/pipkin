@@ -15,7 +15,14 @@ reference-derived output exists.
   `b92d631bb8bb2cac6f824a03a814baad9452164c518426b8bc4bbc5c2142bb05` (archive
   `2be5f68d90695e71372c01ccbd08d5728b93691e07c45918846997c8949bcabb`), plus the Pipkin desktop
   at app base `75f5c35`. Frozen reference fixtures: `fixtures/pi-sessions/` (8 scenarios, RE-02).
-- **Current follow-up:** distinct durable tool identities and matched packaged performance
+- **Current follow-up:** actual native Arch packaging following `c64e59b`, protocol
+  12/schema 10 unchanged. `PIPKIN_ENGINE=native makepkg` no longer requires Pi/npm, and
+  native mode preserves Cargo release line tables without makepkg's full-debug override.
+  The actual artifact passes metadata/recipe/binary/1,079-notice-hash checks and isolated
+  import/coding/restart/archive restoration with Node/Pi traps unused. See
+  [Arch evidence](pipkin-rust-engine-evidence/native-arch-package.md). `PKG-PKGBUILD`
+  advances not started → observed; full qualification and native-default remain open.
+- **Prior follow-up:** distinct durable tool identities and matched packaged performance
   following `42b196d`, protocol 12/schema 10. Reused provider IDs now execute independently
   while provider context retains originals; restart/replay/interrupted-call tests and actual
   schema-9 → schema-10 upgrade/backup/refusal pass. Actual Pi/native rollback passes on the
@@ -416,7 +423,7 @@ the row evidence for history; no package execution is claimed.
 | Evidence | Rows |
 | --- | --- |
 | measured | 444 |
-| observed | 8 |
+| observed | 9 |
 | failed | 0 |
 | unverified (code exists, required execution not observed) | 1 |
 | not started (implementation absent or excluded; see row evidence) | 51 |
@@ -440,8 +447,8 @@ the row evidence for history; no package execution is claimed.
 | 15 Settings / env | 34 | 30 | 1 | 3 | 0 | 0 | 0 | 0 | 0 | 31 | 0 | 0 | 0 | 3 |
 | 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 54 | 1 | 0 | 0 | 5 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
-| 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 7 | 0 | 1 | 4 |
-| **Total** | 504 | 412 | 38 | 37 | 0 | 0 | 1 | 0 | 16 | 444 | 8 | 0 | 1 | 51 |
+| 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 8 | 0 | 1 | 3 |
+| **Total** | 504 | 412 | 38 | 37 | 0 | 0 | 1 | 0 | 16 | 444 | 9 | 0 | 1 | 50 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
 whenever rows change. Release gates: native beta needs every mandatory row implemented; native
@@ -1139,7 +1146,7 @@ desktop `pipkin.sqlite3`.
 | PKG-MODEL-DATA | pkg/engine-model-data.md | Pinned model data with provenance | mdl::embedded_files_match_the_pinned_manifest | Opus · E/provider/data.rs | Manifest hash equal (b92d631b…) | all | NE | measured: mdl::embedded_files_match_the_pinned_manifest |
 | PKG-BUILDINFO | scripts/write-build-info.mjs | Build info needs Node | scripts/test-native-build-info.sh | Opus · scripts/write-native-build-info.sh (RE-23) | Same fields without Node | Linux, macOS | NC | observed: pkg-ev (scripts/write-native-build-info.sh, scripts/test-native-build-info.sh pass; run only with `/bin/sh` = bash) |
 | PKG-INSTALL | packaging/install.sh; scripts/test-install.sh | Versioned install/upgrade/rollback/uninstall; offline probe | scripts/test-install-paths.sh; scripts/test-native-package.sh | Opus · packaging/install.sh (RE-23) | Same with native engine | Linux | NC | observed: pkg-ev (test-install-paths.sh 12/12 incl. native→Pi rollback; test-native-package.sh install/probe/uninstall); initial Pi archive branch used fixtures; actual pinned Pi package install/upgrade/rollback/uninstall now passes; native CI job now wired but runner unverified; expanded Linux installed migration/write/edit/bash/read/restart and no-repeat durable replay checks pass with dependency trap shims; [current evidence](pipkin-rust-engine-evidence/fork-import.md)  Two different real native archives now pass coding across upgrade/rollback and archive restore. Rollback rejects damaged app/runtime or failed-probe targets before switching; [installed evidence](pipkin-rust-engine-evidence/installed-upgrade-restore.md). Actual installed Pi/native migration/rollback and full desktop/native archive restoration now pass headlessly ([cross-engine evidence](pipkin-rust-engine-evidence/installed-pi-rollback.md)); GUI acceptance remains open; actual schema-9 → schema-10 upgrade/backup/older-refusal and current Pi/native installed rollback pass; current native package coding/restart/restore/uninstall checks pass ([identity evidence](pipkin-rust-engine-evidence/tool-call-identities.md)) |
-| PKG-PKGBUILD | packaging/PKGBUILD | Arch package (`!lto`, deps) | none | Opus · RE-23 | Package without Node runtime dir | Arch | NC | not started: no `makepkg` package for the native candidate (pkg-ev) |
+| PKG-PKGBUILD | packaging/PKGBUILD | Arch package (`!lto`, deps) | scripts/verify-native-arch-package.py | Codex · packaging/PKGBUILD | Actual native makepkg artifact has no Node/Pi payload or npm dependency; recorded binary/notice hashes survive packaging | Arch x86_64 | NC | observed: native selector, Pi-default metadata and invalid-selector rejection verified; actual offline makepkg build with Node/Pi traps unused. Native `!debug` retains Cargo release line tables while removing full-debug payload inflation (1,046,267,353 → 361,217,499 bytes). Actual package metadata, binary/recipe identity, 1,079 notice hashes and isolated probe/import/coding/restart/archive restoration pass. User-managed Rust toolchain verified separately; local build used `--nodeps`, all other declared dependencies present. No system pacman installation, GUI, clean-chroot or hosted CI claim; [Arch evidence](pipkin-rust-engine-evidence/native-arch-package.md) |
 | PKG-RUNTIME-NODE | packaging/node-runtime.json; runtime_tests.rs | Private checksum-pinned Node 22.23.3 | scripts/test-native-package.sh | Opus · RE-23/RE-25 | Removed from native package | Linux | NC | observed: pkg-ev (native archive carries no `usr/lib/pipkin/runtime`; installer refuses a native archive that does) |
 | PKG-NOTICES | packaging/upstream-notices*; docs/bundled-licenses.md | Third-party notices, upstream attribution | scripts/test-package-docs.py --native; scripts/test-license-inventory.py | Opus · RE-23 | Attribution retained | all | NC | observed: pkg-ev (test-package-docs.py --native, test-license-inventory.py pass); corrected false missing-notice report for `yaml-rust2` 0.13.0: published MIT-LICENSE and Apache-LICENSE now discovered and retained byte-exact; actual locked native inventory has 614 Rust entries, 33 review flags and five remaining entries without notices; [filename evidence](pipkin-rust-engine-evidence/notice-filenames.md). Other notice applicability/runtime/asset review remains open |
 | PKG-SIZE | docs/packaging.md (453 MiB historical) | Package size | scripts/test-native-package.sh; perf-ev §7 | Opus · RE-22 | ≥40% installed / ≥25% archive reduction (provisional) | Linux | NC | measured: matched current packages with identical unstripped app binary: Pi/native installed 661,543,156 / 369,345,042 B (44.17% reduction); archives 157,994,870 / 77,902,093 B (50.69% reduction). Both provisional targets met. Replaces the indicative historical cross-revision comparison in pkg-ev/perf-ev; current transitional binary still contains both adapters. [Package report](../fixtures/native-installed/2026-10-12-package-comparison.json), [evidence](pipkin-rust-engine-evidence/installed-pi-rollback.md) |
