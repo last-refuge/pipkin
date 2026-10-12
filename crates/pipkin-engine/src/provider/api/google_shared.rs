@@ -549,6 +549,7 @@ impl GoogleStream {
             let u = e.usage_mut();
             u.input = n("promptTokenCount").saturating_sub(n("cachedContentTokenCount"));
             u.output = n("candidatesTokenCount") + n("thoughtsTokenCount");
+            u.reasoning = Some(n("thoughtsTokenCount"));
             u.cache_read = n("cachedContentTokenCount");
             u.cache_write = 0;
             u.total_tokens = n("totalTokenCount");

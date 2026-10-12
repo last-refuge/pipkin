@@ -11,7 +11,21 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — durable delivery and memory reclamation
+## Current follow-up — usage subset preservation
+
+Implemented on top of **`e8993de`**. Protocol, adapters, persistence/import, aggregate views,
+core and both desktop adapters now retain optional `reasoning` and `cacheWrite1h` counts.
+The usage panel shows them as subsets; costs and total tokens do not double count them.
+The existing Codex reference-golden comparisons now assert those fields too.
+See [usage evidence](pipkin-rust-engine-evidence/usage-subsets.md).
+
+Required checks: **1334 passed, 0 failed, 53 ignored**, Clippy and formatting clean.
+Ledger counts remain **503 rows; 419 measured, 7 observed, 0 currently failed, 10 unverified,
+67 not started; 0 qualified**. GEN-17 / USE-LEDGER retain partial qualification status, but
+no longer have the missing-counter implementation gap. Positional system prompt updates,
+extension compatibility, provider/external attachment gaps, and release qualification remain.
+
+## Previous follow-up — durable delivery and memory reclamation
 
 The prior import/retry batch is committed as **`63bd9ae`**. This follow-up (2026-10-11)
 implements protocol **4** / schema **3**: transactionally recorded invalidations,
@@ -232,8 +246,8 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
 
 ## 7. Current blockers
 
-1. **Correctness and migration gaps:** system prompt patches are flattened and reasoning/1h-cache
-   counters are not represented. Plugin-profile import protection and durable retry waits/counts
+1. **Correctness and migration gaps:** system prompt patches are still flattened. Reasoning/1h-cache
+   counters are now preserved end to end and tested. Plugin-profile import protection and durable retry waits/counts
    are now implemented and tested; TypeScript execution and unsupported-history conversion remain open.
 2. **Transport and compatibility:** durable invalidation replay and bounded engine/reader delivery
    now have passing recovery/pressure evidence. External attach, serialize-once fan-out and
@@ -256,7 +270,7 @@ evidence (the walkthrough's uncropped first capture stayed in a scratchpad and i
 2. Completed next batch: bounded delivery, atomic invalidation outbox, acknowledged catch-up,
    commit/snapshot ordering, and the headless memory-budget fix; see delivery/memory evidence.
    Remaining transport and broader memory qualification boundaries are listed above.
-3. Close protocol/context gaps (usage counters, positional prompt updates), Codex WebSocket
+3. Usage counter preservation is implemented and tested. Close positional prompt updates, Codex WebSocket
    lifecycle/proxy gaps and external attachment. Resolve facet ports/profile lifecycle while
    keeping Pi as the continuity path.
 4. Add the specific missing assertions in the reconciliation report; build the full native/Pi

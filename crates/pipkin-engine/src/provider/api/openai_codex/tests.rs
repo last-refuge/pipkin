@@ -326,7 +326,15 @@ async fn check_golden(name: &str, spec: &str, golden: &str) {
     for (g, w) in got_content.iter().zip(want_content) {
         assert_block_eq(name, g, w);
     }
-    for key in ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] {
+    for key in [
+        "input",
+        "output",
+        "cacheRead",
+        "cacheWrite",
+        "cacheWrite1h",
+        "reasoning",
+        "totalTokens",
+    ] {
         assert_eq!(got["usage"][key], want["usage"][key], "{name}: usage.{key}");
     }
     for key in ["input", "output", "cacheRead", "cacheWrite", "total"] {

@@ -1739,6 +1739,8 @@ mod tests {
             ),
             (100, 50, 1000, 200, 1350)
         );
+        assert_eq!(usage.cache_write_1h, Some(150));
+        assert_eq!(usage.reasoning, None);
         // 150 one-hour cache-write tokens cost 2x input; 50 five-minute ones the cache-write rate.
         let expected = (50.0 * 3.75 + 150.0 * 6.0) / 1e6;
         assert!(

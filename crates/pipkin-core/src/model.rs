@@ -14,7 +14,7 @@ pub struct ModelInfo {
     pub note: String,
 }
 
-/// Pi's committed usage for one model or tool bucket. Cost is absent when the engine did not
+/// Committed engine usage for one model or tool bucket. Cost is absent when the engine did not
 /// report one; zero is a real reported value, not an unknown sentinel.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UsageAmount {
@@ -22,6 +22,8 @@ pub struct UsageAmount {
     pub output: u64,
     pub cache_read: u64,
     pub cache_write: u64,
+    pub cache_write_1h: Option<u64>,
+    pub reasoning: Option<u64>,
     pub total_tokens: u64,
     pub cost_usd: Option<f64>,
 }
@@ -44,6 +46,13 @@ impl SessionUsage {
             total.output = total.output.saturating_add(amount.output);
             total.cache_read = total.cache_read.saturating_add(amount.cache_read);
             total.cache_write = total.cache_write.saturating_add(amount.cache_write);
+            if let Some(value) = amount.cache_write_1h {
+                total.cache_write_1h =
+                    Some(total.cache_write_1h.unwrap_or(0).saturating_add(value));
+            }
+            if let Some(value) = amount.reasoning {
+                total.reasoning = Some(total.reasoning.unwrap_or(0).saturating_add(value));
+            }
             total.total_tokens = total.total_tokens.saturating_add(amount.total_tokens);
             total.cost_usd = total.cost_usd.zip(amount.cost_usd).map(|(a, b)| a + b);
         }

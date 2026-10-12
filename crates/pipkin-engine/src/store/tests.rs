@@ -357,6 +357,51 @@ fn usage_accumulates_per_bucket() {
 }
 
 #[test]
+fn usage_optional_subsets_survive_reopen_and_later_legacy_records() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let s = Store::open(dir.path()).unwrap();
+        session(&s, "s");
+        s.tx(|tx| {
+            Store::add_usage(
+                tx,
+                "s",
+                "model",
+                "p/m",
+                &Usage {
+                    output: 20,
+                    cache_write: 8,
+                    reasoning: Some(5),
+                    cache_write_1h: Some(3),
+                    total_tokens: 28,
+                    ..Usage::default()
+                },
+            )
+        })
+        .unwrap();
+    }
+    let s = Store::open(dir.path()).unwrap();
+    s.tx(|tx| {
+        Store::add_usage(
+            tx,
+            "s",
+            "model",
+            "p/m",
+            &Usage {
+                output: 2,
+                total_tokens: 2,
+                ..Usage::default()
+            },
+        )
+    })
+    .unwrap();
+    let u = &s.usage("s").unwrap().models[0].1;
+    assert_eq!(u.reasoning, Some(5));
+    assert_eq!(u.cache_write_1h, Some(3));
+    assert_eq!(u.total_tokens, 30);
+}
+
+#[test]
 fn a_newer_schema_is_refused_untouched_and_the_lock_is_exclusive() {
     let dir = tempfile::tempdir().unwrap();
     {

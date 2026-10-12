@@ -266,6 +266,7 @@ mod tests {
             ),
             (60, 25, 40, 125)
         );
+        assert_eq!(usage.reasoning, Some(5));
         assert!((usage.cost.input - 60.0 / 1e6).abs() < 1e-12);
         assert_eq!(extra["responseId"], "resp-1");
         assert_eq!(extra["rawStopReason"], "STOP");

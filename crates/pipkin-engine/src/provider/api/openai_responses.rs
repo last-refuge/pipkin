@@ -549,6 +549,7 @@ mod tests {
                 ),
                 (600, 50, 400, 1050)
             );
+            assert_eq!(usage.reasoning, Some(20));
             assert!((usage.cost.input - 600.0 * 2.0 / 1e6).abs() < 1e-12);
             assert!(run.deltas.contains(&Delta::Text {
                 block: 1,

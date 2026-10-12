@@ -1019,10 +1019,10 @@ impl Workspace {
                             if demo {
                                 "Demo · no model usage".to_string()
                             } else {
-                                "Pi has not reported usage for this session.".to_string()
+                                "The engine has not reported usage for this session.".to_string()
                             }
                         },
-                        |u| format!("Pi session {} · committed totals", u.session_id),
+                        |u| format!("Session {} · committed totals", u.session_id),
                     )),
             )
             .when_some(totals, |d, total| {
@@ -1031,6 +1031,12 @@ impl Workspace {
                     .child(row("Output".into(), format_tokens(total.output)))
                     .child(row("Cache read".into(), format_tokens(total.cache_read)))
                     .child(row("Cache write".into(), format_tokens(total.cache_write)))
+                    .when_some(total.cache_write_1h, |d, tokens| {
+                        d.child(row("Of cache write: 1 hour".into(), format_tokens(tokens)))
+                    })
+                    .when_some(total.reasoning, |d, tokens| {
+                        d.child(row("Of output: reasoning".into(), format_tokens(tokens)))
+                    })
                     .child(row(
                         "Total tokens".into(),
                         format_tokens(total.total_tokens),

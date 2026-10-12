@@ -192,7 +192,7 @@ impl Model {
     }
 
     /// Dollar cost of a usage record, using the tier that applies to its input size.
-    pub fn cost_of(&self, usage: &mut pipkin_engine_protocol::Usage, cache_write_1h: u64) {
+    pub fn cost_of(&self, usage: &mut pipkin_engine_protocol::Usage) {
         let prompt = usage.input + usage.cache_read + usage.cache_write;
         let (input, output, cache_read, cache_write) = self
             .cost
@@ -208,6 +208,7 @@ impl Model {
                 self.cost.cache_write,
             ));
         let per = |tokens: u64, rate: f64| tokens as f64 * rate / 1_000_000.0;
+        let cache_write_1h = usage.cache_write_1h.unwrap_or(0);
         let short_writes = usage.cache_write.saturating_sub(cache_write_1h);
         usage.cost.input = per(usage.input, input);
         usage.cost.output = per(usage.output, output);
@@ -310,15 +311,16 @@ mod tests {
             input: 500,
             output: 100,
             cache_write: 200,
+            cache_write_1h: Some(100),
             ..Default::default()
         };
-        m.cost_of(&mut u, 100);
+        m.cost_of(&mut u);
         assert!((u.cost.cache_write - (100.0 * 1.25 + 100.0 * 2.0) / 1e6).abs() < 1e-12);
         let mut big = pipkin_engine_protocol::Usage {
             input: 2000,
             ..Default::default()
         };
-        m.cost_of(&mut big, 0);
+        m.cost_of(&mut big);
         assert!((big.cost.input - 2000.0 * 10.0 / 1e6).abs() < 1e-12);
     }
 }

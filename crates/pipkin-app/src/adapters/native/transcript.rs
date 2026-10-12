@@ -398,6 +398,8 @@ pub fn usage(view: &UsageView, session_id: &str) -> SessionUsage {
                         output: u.output,
                         cache_read: u.cache_read,
                         cache_write: u.cache_write,
+                        cache_write_1h: u.cache_write_1h,
+                        reasoning: u.reasoning,
                         total_tokens: u.total_tokens,
                         cost_usd: Some(u.cost.total).filter(|c| c.is_finite() && *c >= 0.0),
                     },
@@ -769,6 +771,8 @@ mod tests {
                             output: 20,
                             cache_read: 50,
                             cache_write: 10,
+                            cache_write_1h: Some(5),
+                            reasoning: Some(7),
                             total_tokens: 180,
                             cost: Cost {
                                 total: 0.12,
@@ -795,6 +799,8 @@ mod tests {
         assert_eq!(u.session_id, "s1");
         assert_eq!(u.models[0].0, "a/m", "sorted by key");
         assert_eq!(u.total().total_tokens, 190);
+        assert_eq!(u.total().cache_write_1h, Some(5));
+        assert_eq!(u.total().reasoning, Some(7));
         assert_eq!(u.total().cost_usd, Some(0.13));
     }
 

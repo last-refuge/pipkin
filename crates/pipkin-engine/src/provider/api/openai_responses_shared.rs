@@ -592,6 +592,7 @@ impl ResponsesStream {
                 .saturating_sub(cached)
                 .saturating_sub(cache_write);
             u.output = count(usage, "/output_tokens");
+            u.reasoning = Some(count(usage, "/output_tokens_details/reasoning_tokens"));
             u.cache_read = cached;
             u.cache_write = cache_write;
             u.total_tokens = count(usage, "/total_tokens");

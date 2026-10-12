@@ -161,7 +161,6 @@ pub struct Emitter {
     content: Vec<Block>,
     tool_json: HashMap<usize, String>,
     usage: Usage,
-    cache_write_1h: u64,
     tx: Option<mpsc::UnboundedSender<StreamEvent>>,
     response_id: Option<String>,
     extra: Map<String, Value>,
@@ -173,7 +172,6 @@ impl Emitter {
             content: Vec::new(),
             tool_json: HashMap::new(),
             usage: Usage::default(),
-            cache_write_1h: 0,
             tx,
             response_id: None,
             extra: Map::new(),
@@ -345,7 +343,7 @@ impl Emitter {
     }
 
     pub fn set_cache_write_1h(&mut self, tokens: u64) {
-        self.cache_write_1h = tokens;
+        self.usage.cache_write_1h = Some(tokens);
     }
 
     pub fn content(&self) -> &[Block] {
@@ -401,7 +399,7 @@ impl Emitter {
                 + self.usage.cache_read
                 + self.usage.cache_write;
         }
-        req.model.cost_of(&mut self.usage, self.cache_write_1h);
+        req.model.cost_of(&mut self.usage);
         if let Some(id) = self.response_id {
             self.extra.insert("responseId".into(), Value::String(id));
         }

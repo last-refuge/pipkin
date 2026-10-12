@@ -1131,6 +1131,7 @@ fn parse_usage(e: &mut Emitter, raw: &Value) {
     let u = e.usage_mut();
     u.input = input;
     u.output = output;
+    u.reasoning = Some(n("/completion_tokens_details/reasoning_tokens").unwrap_or(0));
     u.cache_read = cache_read;
     u.cache_write = cache_write;
     u.total_tokens = input + output + cache_read + cache_write;
@@ -2344,6 +2345,7 @@ pub(crate) mod tests {
                 ),
                 (60, 20, 30, 10, 120)
             );
+            assert_eq!(usage.reasoning, Some(5));
             assert!((usage.cost.input - 60.0 / 1e6).abs() < 1e-12);
             assert_eq!(
                 run.deltas

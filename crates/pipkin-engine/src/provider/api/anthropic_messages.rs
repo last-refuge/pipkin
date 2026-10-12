@@ -1107,6 +1107,12 @@ impl AnthropicStream {
             if let Some(v) = n(usage, "input_tokens") {
                 u.input = v;
             }
+            if let Some(v) = usage
+                .get("output_tokens_details")
+                .and_then(|d| n(d, "thinking_tokens"))
+            {
+                u.reasoning = Some(v);
+            }
             if let Some(v) = n(usage, "output_tokens") {
                 u.output = v;
             }
@@ -1598,7 +1604,7 @@ mod tests {
             json!({"type": "content_block_delta", "index": 3, "delta": {"type": "input_json_delta", "partial_json": "\tb.txt\"}"}}),
             json!({"type": "content_block_stop", "index": 3}),
             json!({"type": "message_delta", "delta": {"stop_reason": "tool_use", "stop_sequence": null},
-                "usage": {"output_tokens": 42, "input_tokens": null}}),
+                "usage": {"output_tokens": 42, "input_tokens": null, "output_tokens_details": {"thinking_tokens": 11}}}),
             json!({"type": "message_stop"}),
         ]);
         let server = MockServer::start(move |_, _| fragmented(&body, 5)).await;
@@ -1647,6 +1653,8 @@ mod tests {
             ),
             (10, 42, 100, 50, 202)
         );
+        assert_eq!(usage.reasoning, Some(11));
+        assert_eq!(usage.cache_write_1h, Some(20));
         let expected_write = (30.0 * 3.75 + 20.0 * 6.0) / 1e6;
         assert!((usage.cost.cache_write - expected_write).abs() < 1e-12);
         assert!((usage.cost.output - 42.0 * 15.0 / 1e6).abs() < 1e-12);

@@ -31,6 +31,10 @@ pub fn usage(view: &Value, session_id: &str) -> Option<SessionUsage> {
             .iter()
             .map(|(key, value)| {
                 let count = |field| value.get(field)?.as_u64();
+                let optional_count = |field| match value.get(field) {
+                    None => Some(None),
+                    Some(v) => v.as_u64().map(Some),
+                };
                 let cost = value
                     .get("cost")
                     .and_then(|c| c.get("total"))
@@ -43,6 +47,8 @@ pub fn usage(view: &Value, session_id: &str) -> Option<SessionUsage> {
                         output: count("output")?,
                         cache_read: count("cacheRead")?,
                         cache_write: count("cacheWrite")?,
+                        cache_write_1h: optional_count("cacheWrite1h")?,
+                        reasoning: optional_count("reasoning")?,
                         total_tokens: count("totalTokens")?,
                         cost_usd: cost,
                     },
@@ -522,7 +528,7 @@ mod usage_tests {
     fn committed_ledger_is_exact_and_includes_tool_spend() {
         let view = json!({ "docs": { "pi.usage": {
             "models": { "z/model": { "input": 100, "output": 20, "cacheRead": 50, "cacheWrite": 10,
-                "totalTokens": 180, "cost": { "total": 0.12 } } },
+                "cacheWrite1h": 5, "reasoning": 7, "totalTokens": 180, "cost": { "total": 0.12 } } },
             "tools": { "classifier": { "input": 8, "output": 2, "cacheRead": 0, "cacheWrite": 0,
                 "totalTokens": 10, "cost": { "total": 0.01 } } }
         } } });
@@ -530,6 +536,8 @@ mod usage_tests {
         assert_eq!(parsed.session_id, "pi-session");
         assert_eq!(parsed.total().total_tokens, 190);
         assert_eq!(parsed.total().cache_read, 50);
+        assert_eq!(parsed.total().cache_write_1h, Some(5));
+        assert_eq!(parsed.total().reasoning, Some(7));
         assert_eq!(parsed.total().cost_usd, Some(0.13));
     }
 
@@ -543,6 +551,11 @@ mod usage_tests {
         let parsed = usage(&view, "s").unwrap();
         assert_eq!(parsed.total().total_tokens, 5);
         assert_eq!(parsed.total().cost_usd, None);
+        assert_eq!(parsed.total().reasoning, None);
+        assert_eq!(parsed.total().cache_write_1h, None);
+        let mut malformed = view.clone();
+        malformed["docs"]["pi.usage"]["models"]["p/m"]["reasoning"] = json!("3");
+        assert!(usage(&malformed, "s").is_none());
         let invalid = json!({ "docs": { "pi.usage": { "models": { "p/m": { "input": "2" } }, "tools": {} } } });
         assert!(usage(&invalid, "s").is_none());
     }

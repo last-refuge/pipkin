@@ -94,6 +94,16 @@ pub struct Usage {
     pub cache_read: u64,
     #[serde(default)]
     pub cache_write: u64,
+    /// Subset of cache_write with one-hour retention; absent if not reported.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "cacheWrite1h"
+    )]
+    pub cache_write_1h: Option<u64>,
+    /// Subset of output; never add this again to total_tokens or cost.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<u64>,
     #[serde(default)]
     pub total_tokens: u64,
     #[serde(default)]
@@ -106,6 +116,12 @@ impl Usage {
         self.output = self.output.saturating_add(other.output);
         self.cache_read = self.cache_read.saturating_add(other.cache_read);
         self.cache_write = self.cache_write.saturating_add(other.cache_write);
+        if let Some(value) = other.cache_write_1h {
+            self.cache_write_1h = Some(self.cache_write_1h.unwrap_or(0).saturating_add(value));
+        }
+        if let Some(value) = other.reasoning {
+            self.reasoning = Some(self.reasoning.unwrap_or(0).saturating_add(value));
+        }
         self.total_tokens = self.total_tokens.saturating_add(other.total_tokens);
         self.cost.input += other.cost.input;
         self.cost.output += other.cost.output;
@@ -261,6 +277,45 @@ pub struct ImageInput {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn usage_optional_subsets_round_trip_and_accumulate_without_double_counting() {
+        let legacy = serde_json::to_value(Usage::default()).unwrap();
+        assert!(legacy.get("reasoning").is_none());
+        assert!(legacy.get("cacheWrite1h").is_none());
+        let mut total: Usage = serde_json::from_value(legacy).unwrap();
+        let reported: Usage = serde_json::from_value(json!({
+            "input": 10, "output": 20, "cacheWrite": 8, "cacheWrite1h": 3,
+            "reasoning": 5, "totalTokens": 38
+        }))
+        .unwrap();
+        total.add(&reported);
+        total.add(&Usage::default());
+        total.add(&reported);
+        assert_eq!(total.reasoning, Some(10));
+        assert_eq!(total.cache_write_1h, Some(6));
+        assert_eq!(total.total_tokens, 76);
+        let encoded = serde_json::to_value(&total).unwrap();
+        assert_eq!(encoded["cacheWrite1h"], 6);
+        assert_eq!(serde_json::from_value::<Usage>(encoded).unwrap(), total);
+        let mut zero = Usage::default();
+        zero.add(&Usage {
+            reasoning: Some(0),
+            cache_write_1h: Some(0),
+            ..Usage::default()
+        });
+        assert_eq!(zero.reasoning, Some(0));
+        assert_eq!(zero.cache_write_1h, Some(0));
+        let max = Usage {
+            reasoning: Some(u64::MAX),
+            cache_write_1h: Some(u64::MAX),
+            ..Usage::default()
+        };
+        zero.add(&max);
+        zero.add(&reported);
+        assert_eq!(zero.reasoning, Some(u64::MAX));
+        assert_eq!(zero.cache_write_1h, Some(u64::MAX));
+    }
 
     #[test]
     fn reference_shaped_messages_round_trip_including_unknown_fields() {

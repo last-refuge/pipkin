@@ -28,6 +28,8 @@ fn session_usage_is_conversation_scoped_and_stale_updates_are_dropped() {
                 output: 1,
                 cache_read: 0,
                 cache_write: 0,
+                cache_write_1h: None,
+                reasoning: Some(1),
                 total_tokens: 6,
                 cost_usd: Some(0.03),
             },
@@ -89,4 +91,34 @@ fn session_usage_is_conversation_scoped_and_stale_updates_are_dropped() {
             .session_id,
         "engine-1"
     );
+}
+
+#[test]
+fn usage_totals_preserve_optional_subsets_across_model_and_tool_buckets() {
+    let mut usage = SessionUsage::default();
+    assert_eq!(usage.total().reasoning, None);
+    usage.models.push((
+        "p/m".into(),
+        UsageAmount {
+            output: 20,
+            cache_write: 8,
+            reasoning: Some(5),
+            cache_write_1h: Some(3),
+            total_tokens: 28,
+            ..UsageAmount::default()
+        },
+    ));
+    usage.tools.push((
+        "tool".into(),
+        UsageAmount {
+            output: 2,
+            reasoning: Some(1),
+            total_tokens: 2,
+            ..UsageAmount::default()
+        },
+    ));
+    usage.models.push(("legacy".into(), UsageAmount::default()));
+    assert_eq!(usage.total().reasoning, Some(6));
+    assert_eq!(usage.total().cache_write_1h, Some(3));
+    assert_eq!(usage.total().total_tokens, 30);
 }
