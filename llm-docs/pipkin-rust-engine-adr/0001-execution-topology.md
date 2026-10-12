@@ -1,8 +1,10 @@
 # ADR 0001: Execution topology
 
-**Status:** Accepted (2026-10-11). Engine host and stdio worker loop implemented; desktop
-supervisor, worker entry in the `pipkin` executable and the in-process vs child benchmark are
-not yet implemented or measured.
+**Status:** Accepted; implementation reconciled at `e4c3a8c` (2026-10-11). The engine
+host, desktop supervisor and private worker entry in the shipped `pipkin` executable exist
+and are tested (`adapters/native/supervisor.rs`, `tests/engine_worker.rs`). Headless and child
+performance measurements are recorded in `../pipkin-rust-engine-evidence/performance.md`;
+this does not qualify unmeasured desktop presentation or platform gates.
 
 ## Context
 
@@ -60,7 +62,9 @@ render thread, and the same engine API for an in-process host.
 - The reference's worker survival across a server restart (`discover_workers`,
   `ce/session-worker-manager.ts:151-173`) has no native analogue; engine restart resumes from
   durable state instead (ADR 0003). This is recorded in the parity ledger (row SVC-PROC-*).
-- Performance targets (plan §7: ≤40 MiB idle, ≤250 ms warm readiness) are **not measured**.
+- Headless warm readiness and idle RSS have measured results in `performance.md`; GUI-ready,
+  cold-start and full display-presentation gates remain unverified. The long-session RSS soak
+  still fails (E2E-37).
 
 ## References
 

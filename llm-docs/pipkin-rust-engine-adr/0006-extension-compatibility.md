@@ -1,8 +1,12 @@
 # ADR 0006: Extension compatibility
 
-**Status:** Proposed (2026-10-11). The RE-05 compatibility spike has not been run. No native
-extension host exists in this tree. The parity rows for third-party facet packages are
-**blocked**; the Pi engine remains the continuity path (**legacy bridge**) for them.
+**Status:** Proposed; implementation reconciled at `e4c3a8c` (2026-10-11). Native Rust
+and process extension hosts exist (`E/extensions`, `docs/native-extensions.md`), with tested
+ports of the questions and greeting examples. These are not TypeScript package compatibility:
+custom remote services, `waitForPrompt`, hot reload and sticky/per-session profiles remain
+missing. The importer does not yet detect facet selection (IMP-PLUGIN-STATE), so decision 3's
+refusal is a required implementation gap, not an existing safeguard. Pi remains the continuity
+path for existing facet packages; the no-feature-loss completion gate is unchanged.
 
 ## Context
 
@@ -86,5 +90,5 @@ critical-path work").
   (`the_engines_extension_question_service_is_there_and_refuses_an_answer_to_nothing`,
   `an_extension_in_the_engine_asks_three_questions_and_the_answers_reach_it`,
   `declining_ends_the_question_and_a_lost_connection_does_not_leave_it_answerable`).
-- Native: none yet (planned owner `crates/pipkin-engine/src/extensions/`, in progress by a
-  concurrent worker; not in this tree).
+- Native: `crates/pipkin-engine/src/extensions/` (trait host, process host, question host and
+  example tests), with supported and missing features in `docs/native-extensions.md`.

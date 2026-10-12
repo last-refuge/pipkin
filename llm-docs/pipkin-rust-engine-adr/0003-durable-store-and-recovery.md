@@ -1,10 +1,12 @@
 # ADR 0003: Durable store and recovery
 
-**Status:** Accepted (2026-10-11). Schema version 1, the OS-locked store, admission ledger,
-runs, streamed-chunk commits, tool-call intent/result rows, retained tool output, usage,
-subagent tasks, `kv` and `import_map` are implemented with unit tests
-(`crates/pipkin-engine/src/store/`). Power-loss behavior, disk-full/read-only injection,
-corruption recovery and migration from a non-empty older native schema are **not yet tested**.
+**Status:** Accepted; implementation reconciled at `e4c3a8c` (2026-10-11). Schema 1,
+OS-locked storage, admission ledger, runs, streamed chunks, tool intent/result/output, usage,
+subagent tasks, `kv` and `import_map` are implemented. Injected disk-full/read-only faults at
+admission and mid-run are covered in `runtime/fault_tests.rs`. Actual worker SIGKILL boundaries,
+damaged-database refusal without mutation and orphan process reaping are covered in
+`tests/crash_points.rs`; a second process is refused in `tests/worker_process.rs`.
+Power loss and migration from a non-empty older native schema remain unverified.
 
 ## Context
 
@@ -78,9 +80,9 @@ each commit durable progress (`scheduler.ts:893-896`); on open every `running` t
   every document, including `pi.provider.sessionId` (provider cache affinity) and
   `pi.agent.extensions` (subagent enable state), into these rows or `kv`; unknown payloads are
   preserved verbatim and block conversion of that conversation.
-- Not yet covered: disk-full/read-only injection, corruption set-aside, migration of a
-  non-empty older native schema, power-loss, competing-writer across processes beyond the lock
-  test. They are open rows in the parity ledger (DUR-*).
+- Still unverified: migration of a non-empty older native schema and power loss. Corrupt
+  databases are refused and left untouched (tested), not automatically set aside or repaired.
+  Fault tests inject SQLite failures; they do not claim a physically full-disk or power-loss test.
 
 ## References
 

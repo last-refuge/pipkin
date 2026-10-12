@@ -1,12 +1,11 @@
 # ADR 0005: Tool replay and subagent recovery contract
 
-**Status:** Accepted (2026-10-11). Tool-call intent/result rows, the unsafe-by-default replay
-rule, and the atomic subagent child/task mapping with once-only result delivery are
-implemented in the store and runtime. The coding tools themselves (`read`, `write`, `edit`,
-`bash`) and the shared tool machinery are **in progress** in `E/tools` (in this tree
-`builtin_tools()` is empty and `tools::run` returns an error result). The recorded
-**contract-provenance check** for subagent recovery (the overlay's `recoveryContract`) is not yet
-implemented.
+**Status:** Accepted; implementation reconciled at `e4c3a8c` (2026-10-11). Coding tools,
+unsafe-by-default replay, atomic subagent child mapping, once-only delivery and recorded
+contract checks are implemented. Runtime fault tests cover disabled-subagent recovery,
+contract mismatch, stopping a running child and delivering an already-finished child once.
+Worker SIGKILL tests cover unsafe tool interruption and recovery of the same subagent child.
+Nested permit exhaustion remains unverified; engine-build provenance is still a proposal.
 
 ## Context
 
@@ -58,9 +57,9 @@ Reference (audit `engine-tools-durable-usage.md` §3.7, `extensions-subagents.md
    already-admitted calls recover. To match the overlay's safety boundary, recovery must also
    check a recorded contract (name, description, parameter schema, replay policy) against the
    current registration and refuse recovery with an explicit interrupted result on mismatch.
-   **Open item:** add a `contract` column (or `kv` record) at intent time and the check at
-   recovery, with the two overlay tests ported. Until then the row SUB-RECOVERY-CONTRACT is
-   open.
+   **Implemented:** `runtime/run.rs` stores `tool_contract:<call>` in `kv` atomically
+   with intent and compares it before replay. `runtime/fault_tests.rs` tests both disabled
+   recovery and changed/missing contracts (SUB-RECOVERY-DISABLED/CONTRACT).
 5. **Provenance improvement (proposed, I-05):** record the engine build/revision alongside the
    contract so recovery can distinguish an identical-contract code change; the overlay README
    admits this is unproven (`packaging/pi-subagents/README.md:17`). This needs owner sign-off
@@ -89,5 +88,5 @@ Reference (audit `engine-tools-durable-usage.md` §3.7, `extensions-subagents.md
   `store/mod.rs` (`tool_intent`, `tool_result`, `create_task`, `mark_task_delivered`).
 - Tests (pass, 2026-10-11): `store/tests.rs` —
   `a_child_task_is_created_once_per_parent_call_and_delivered_once`,
-  `tool_output_is_retained_with_honest_drop_counts`. Runtime-level subagent and tool-replay
-  tests are pending the tools work package.
+  `tool_output_is_retained_with_honest_drop_counts`. Runtime-level evidence is in `runtime/tests.rs`, `runtime/fault_tests.rs` and
+  `tests/crash_points.rs`; the ledger names the individual assertions.

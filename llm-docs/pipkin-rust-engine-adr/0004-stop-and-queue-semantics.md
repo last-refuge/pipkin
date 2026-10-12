@@ -1,10 +1,10 @@
 # ADR 0004: Stop and queue semantics
 
-**Status:** Accepted (2026-10-11). Admission modes, queue, withdrawal, durable Stop intent,
-aborted settlement and input retirement are implemented and unit-tested against the scripted
-provider. The differential comparison of the **next provider request** against the reference
-after Stop, steering and follow-ups has **not been run**, and `steeringMode`/`followUpMode`
-`all` delivery is not covered by a test yet.
+**Status:** Accepted; implementation reconciled at `e4c3a8c` (2026-10-11). Admission,
+queue, durable Stop, aborted settlement and input retirement are tested. Both `all` delivery
+modes and one-at-a-time steering have assertions in `runtime/settings_tests.rs`. Frozen
+import fixtures exercise reference Stop/context mapping, and live Claude Stop/reopen passed;
+a complete native-generation/reference differential remains outstanding.
 
 ## Context
 
@@ -70,8 +70,9 @@ Reference semantics (audit `engine-tools-durable-usage.md` §3.5–3.6, `service
 - `retired` is a single bit per entry; it cannot express `replace` edits. If an audited
   workflow needs `replace` (none of the built-ins produce it, audit §3.10), add an explicit
   edit table rather than overloading the flag.
-- Background compaction survival across Stop is not yet implementable (compaction is
-  `Unsupported` in the native runtime) and stays an open row.
+- Manual, threshold, background and overflow compaction exist in `runtime/compaction.rs`.
+  Background compaction survival across Stop remains unverified (STOP-BACKGROUND), as does
+  the general completed-before-Stop race (STOP-RACE).
 
 ## References
 

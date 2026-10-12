@@ -1,11 +1,10 @@
 # ADR 0002: Protocol and transport
 
-**Status:** Accepted (2026-10-11). Types, limits, frame codec, epoch/seq events, control lane
-and protocol-version refusal are implemented in `pipkin-engine-protocol` (protocol version 1).
-The **durable ordered outbox with acknowledged cursors and paged catch-up is not implemented**:
-events are currently published in memory after commit (`runtime/mod.rs`, `Shared::publish`),
-and a client that misses events must re-read snapshots. The desktop adapter that consumes this
-contract is not implemented.
+**Status:** Accepted; implementation reconciled at `e4c3a8c` (2026-10-11). Protocol **2**,
+frame limits, epoch/seq events, control lane, version refusal and desktop NativeBackend are
+implemented. The **durable ordered outbox with acknowledged cursors and paged catch-up is not
+implemented**: events publish in memory after commit and clients resync snapshots on a gap.
+Per-client channels remain unbounded; item 9 is still required.
 
 ## Context
 
@@ -44,13 +43,13 @@ The desktop core already routes every backend event through `(conversation, gene
    acknowledged or published (ADR 0003), so a resync never loses an outcome.
 5. **Control lane:** `Call::Stop` and `Call::Shutdown` are `Lane::Control` and are handled
    ahead of queued normal calls (`Call::lane`).
-6. **Versioning:** `PROTOCOL_VERSION = 1`; `Hello` with any other version is refused
+6. **Versioning:** `PROTOCOL_VERSION = 2`; `Hello` with any other version is refused
    (`ErrorCode::Incompatible`); the reply `Welcome` carries engine version/revision, schema,
    epoch and capabilities. No guessing across versions.
 7. **Errors:** a closed taxonomy (`Incompatible, NotFound, Conflict, Invalid, TooLarge, Busy,
    Unsupported, Storage, ShuttingDown, Internal`). `Unsupported` is the explicit result for
-   reserved or not-yet-implemented capabilities (manual compaction today; the Claude
-   subscription sign-in, ADR 0007).
+   not-yet-implemented capabilities. Manual compaction and Claude subscription sign-in
+   are implemented; ADR 0007 records the latter's evidence boundary.
 8. **Secrets on the wire:** sign-in answers and API keys travel as `Secret`, whose `Debug`
    prints `[redacted]`; `AuthSnapshot`/`AuthChallenge` debug output omits URLs/codes. Auth
    state is client-scoped (`Shared::publish_to`) and never enters a durable outbox.

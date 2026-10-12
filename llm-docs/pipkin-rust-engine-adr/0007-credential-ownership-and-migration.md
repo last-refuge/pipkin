@@ -1,10 +1,11 @@
 # ADR 0007: Credential ownership and migration
 
-**Status:** Accepted (2026-10-11). Configuration paths, the isolated-environment switch and
-settings loading are implemented (`crates/pipkin-engine/src/config.rs`). The credential store,
-resolution precedence, OAuth flows and import are **in progress** in `E/auth` and `E/import`
-(in this tree `auth/mod.rs` is an interface skeleton: sign-in calls return `Unsupported`). The
-Claude subscription path is **reserved for Codex — not implemented or qualified**.
+**Status:** Accepted; implementation reconciled at `e4c3a8c` (2026-10-11). Credential
+store, precedence, generic OAuth lifecycle and explicit import are implemented. Codex completed
+the previously reserved Claude subscription boundary: browser and copy-code sign-in, saved
+reuse, forced-expiry refresh, a real coding turn and imported-fixture Stop/reopen passed.
+See `../pipkin-rust-engine-evidence/claude-subscription.md` for identities and limitations.
+Full provider/platform qualification and a qualified OS secret store remain outstanding.
 
 ## Context
 
@@ -52,21 +53,13 @@ Reference (audit `providers-auth.md` §4.0, §4.11, §4.12, §5; `prompt-setting
    `view.rs::CredentialKind`) and billing path are distinct. An Anthropic API key never stands
    in for a Claude subscription credential; a failed refresh never falls back to a different
    billing credential; custom endpoints only receive their own configured credential.
-6. **Reserved Claude subscription boundary.** The `anthropic` OAuth sign-in and every
-   subscription-specific request behavior are reserved for Codex. The native engine:
-   - lists the provider with `available: false` and an `unavailable_reason`
-     (`AuthProviderView`), refuses `AuthStart{anthropic}` with `ErrorCode::Unsupported`
-     (`auth/mod.rs` module docs) — no fake authentication, no dead-end flow, no `todo!()`;
-   - treats a stored/imported subscription credential as making affected models
-     **unavailable**, never silently using an API key or retrying on Pi;
-   - preserves imported subscription credential references and conversations without
-     activating them on the native engine (they stay Pi-owned) until RE-13B qualifies.
-   Reference locations only: `ai/src/auth/oauth/anthropic.ts` (`loginAnthropic`,
-   `loginAnthropicCopyCode`, `refreshAnthropicToken`, `anthropicOAuth`),
-   `ai/src/providers/anthropic.ts` (`lazyOAuth`), `ai/src/api/anthropic-messages.ts`
-   (`isOAuthToken`, OAuth branch of `createClient`, `claudeCodeVersion`, `claudeCodeTools`,
-   `getBetaFeatures`, OAuth `system` branch of `buildParams`), overlay
-   `packaging/pi-onboarding/provider-auth.ts:4` (`SignInProvider`).
+6. **Claude subscription boundary (formerly reserved for Codex).** The native engine now
+   advertises Anthropic OAuth and implements browser/copy-code authorization, refresh and
+   subscription-specific request conversion, ported from the pinned Pi source in `E/auth/oauth/
+   anthropic.rs` and `E/provider/api/anthropic_messages.rs`. Explicit OAuth import is enabled.
+   Stored OAuth owns credential resolution; failure does not switch billing credentials.
+   Fixture and live lifecycle evidence is linked above. This implementation does not qualify
+   every model, platform or production-history migration, nor change the default engine.
 7. **Generic lifecycle is primary work:** start/challenge/answer/cancel/reuse/remove,
    per-client attempt isolation and stale-attempt guards, refresh serialization per credential
    with atomic persistence, structured errors — tested with fictitious providers and local
