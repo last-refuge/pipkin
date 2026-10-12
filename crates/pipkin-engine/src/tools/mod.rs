@@ -327,6 +327,55 @@ pub trait ToolHost: Send + Sync {
         Box::pin(async { Err("No MCP service is configured".into()) })
     }
 
+    #[allow(clippy::type_complexity)]
+    fn mcp_resources<'a>(
+        &'a self,
+        _server: Option<&'a str>,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<(Vec<crate::mcp::ResourceInfo>, Vec<(String, String)>), crate::mcp::McpError>,
+            String,
+        >,
+    > {
+        Box::pin(async { Err("No MCP service is configured".into()) })
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn mcp_read<'a>(
+        &'a self,
+        _server: &'a str,
+        _uri: &'a str,
+    ) -> BoxFuture<'a, Result<Result<Vec<crate::mcp::ResourcePart>, crate::mcp::McpError>, String>>
+    {
+        Box::pin(async { Err("No MCP service is configured".into()) })
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn mcp_prompts<'a>(
+        &'a self,
+        _server: Option<&'a str>,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<(Vec<crate::mcp::PromptInfo>, Vec<(String, String)>), crate::mcp::McpError>,
+            String,
+        >,
+    > {
+        Box::pin(async { Err("No MCP service is configured".into()) })
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn mcp_prompt<'a>(
+        &'a self,
+        _server: &'a str,
+        _prompt: &'a str,
+        _arguments: serde_json::Map<String, Value>,
+    ) -> BoxFuture<'a, Result<Result<crate::mcp::PromptOutcome, crate::mcp::McpError>, String>>
+    {
+        Box::pin(async { Err("No MCP service is configured".into()) })
+    }
+
     /// A retained source and its text (None when unknown or expired).
     #[allow(clippy::type_complexity)]
     fn web_source<'a>(

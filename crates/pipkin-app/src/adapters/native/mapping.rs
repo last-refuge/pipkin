@@ -1021,6 +1021,9 @@ pub fn mcp_snapshot(view: &pipkin_engine_protocol::McpServersView) -> pipkin_cor
                 })
                 .collect(),
             disabled_tools: s.disabled_tools.clone(),
+            resources: s.resources,
+            prompts: s.prompts,
+            capabilities: s.capabilities.clone(),
             command: s.command.clone(),
             env: s.env.clone(),
             keep_alive: s.keep_alive,

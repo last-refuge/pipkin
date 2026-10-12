@@ -101,6 +101,11 @@ pub struct McpServer {
     pub tools: Option<usize>,
     pub catalog: Vec<McpTool>,
     pub disabled_tools: Vec<String>,
+    /// Resources and prompt templates offered, once listed.
+    pub resources: Option<usize>,
+    pub prompts: Option<usize>,
+    /// What the server declared: `tools`, `resources`, `prompts`, ...
+    pub capabilities: Vec<String>,
     /// The command line, or the URL.
     pub command: String,
     /// `NAME=$REF` / `NAME=secret:key` / `NAME=…` (literals are never shown).

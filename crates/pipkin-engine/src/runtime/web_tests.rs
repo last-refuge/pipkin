@@ -722,7 +722,7 @@ fn web_tools_are_offered_and_only_read_is_recoverable() {
     let tail: Vec<&str> = names
         .iter()
         .rev()
-        .take(6)
+        .take(10)
         .rev()
         .map(String::as_str)
         .collect();
@@ -734,7 +734,11 @@ fn web_tools_are_offered_and_only_read_is_recoverable() {
             "web_read",
             "mcp_search",
             "mcp_describe",
-            "mcp_call"
+            "mcp_call",
+            "mcp_resources",
+            "mcp_read",
+            "mcp_prompts",
+            "mcp_prompt"
         ]
     );
     let shared = e.handle.shared();

@@ -35,7 +35,7 @@ struct Policy {
     next_token: u32,
 }
 
-struct HttpMcp {
+pub(super) struct HttpMcp {
     _rt: tokio::runtime::Runtime,
     mock: MockServer,
     seen: Arc<Mutex<Seen>>,
@@ -78,7 +78,7 @@ fn form(body: &[u8]) -> HashMap<String, String> {
 }
 
 impl HttpMcp {
-    fn start(require_auth: bool) -> HttpMcp {
+    pub(super) fn start(require_auth: bool) -> HttpMcp {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -206,7 +206,7 @@ impl HttpMcp {
         }
     }
 
-    fn url(&self) -> String {
+    pub(super) fn url(&self) -> String {
         format!("{}/mcp", self.mock.url)
     }
 
@@ -622,7 +622,7 @@ fn management_calls_edit_settings_test_reconnect_and_switch_tools_off() {
     assert!(test.tools.contains(&"echo".to_owned()));
     assert!(
         test.message
-            .contains("Connected to mcp-fixture 0.0.0 with 6 tool(s)"),
+            .contains("Connected to mcp-fixture 0.0.0 with 8 tool(s)"),
         "{}",
         test.message
     );

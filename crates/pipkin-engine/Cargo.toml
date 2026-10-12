@@ -44,7 +44,7 @@ sse-stream = "0.2"
 [dev-dependencies]
 tempfile = "3"
 # The MCP fixture server (examples/mcp_fixture.rs) is built with the SDK's server side.
-rmcp = { version = "=3.5.1", default-features = false, features = ["client", "server", "macros", "schemars", "transport-child-process", "transport-io"] }
+rmcp = { version = "=3.5.1", default-features = false, features = ["client", "server", "macros", "schemars", "transport-child-process", "transport-io", "elicitation"] }
 schemars = "1"
 tokio = { version = "1", features = ["test-util"] }
 

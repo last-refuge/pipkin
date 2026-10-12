@@ -177,11 +177,45 @@ Children launched with the `worker` profile keep the three tools; `reviewer`, `s
 - **Credential storage.** The private file `mcp-auth.json` (mode-restricted like
   `auth.json`), not an OS keychain. Client-credential and enterprise-managed OAuth grants
   are not implemented; `secret` prompts from a flow are refused on the page.
-- **Protocol surface.** Tools only. Resources, prompts, elicitation, sampling and apps are
-  MCP-3.
+- **Protocol surface.** Tools, resources, prompts and form elicitation. Subscriptions,
+  completions, sampling, tasks and apps are not implemented (see the section above).
 - **Not exercised.** Any real third-party server or authorization server; pagination beyond
   what the SDK's `list_all_tools` does; the per-session versus shared process question:
   servers are engine-wide and shared by every session whose settings name them.
 - **Nothing native was verified.** The MCP servers section renders in GPUI but has not
   been driven in a window; keyboard operation and project switching on the page are
   unverified.
+
+## Resources, prompts and requests for input
+
+MCP-3 adds the rest of the tool-facing protocol surface, still through compact built-in
+tools so the catalog offered to the model stays small:
+
+| Tool | Does | Replay after a restart |
+| --- | --- | --- |
+| `mcp_resources` | Lists resources and resource templates across enabled servers (or one), filtered by a query; servers that do not offer resources are reported beside the list | Rerun (pure read) |
+| `mcp_read` | Reads one resource by server and URI; text comes back in bounded slices (`offset`/`limit`, default 8,000 and at most 40,000 characters); binary content is reported by type and decoded size only | Rerun (pure read) |
+| `mcp_prompts` | Lists prompt templates with their arguments (`name?` marks optional ones) | Rerun (pure read) |
+| `mcp_prompt` | Renders a template by `server/name` with arguments; required arguments are checked before the request; the messages come back as `[role]` text | Rerun (pure read) |
+
+Listings are cached per server until it sends `resources/list_changed` or
+`prompts/list_changed`. A server's declared capabilities (`tools`, `resources`,
+`resourcesSubscribe`, `prompts`, `logging`, `completions`) are recorded at initialization,
+shown on the MCP servers page, and a feature a server did not declare is refused as
+`unsupported` rather than attempted. Resource subscriptions and completions are not used.
+
+**Elicitation.** The engine advertises form elicitation (no URL elicitation, no sampling, no
+roots). When a server asks for input during a call, the request becomes native questions
+for the person whose session made the call, one field at a time: enumerations as a choice,
+booleans as a confirmation, strings and numbers as an input with the field's title and
+description, and optional fields marked. Numbers are parsed and asked again (up to three
+times) when the answer is not a number; an empty answer skips an optional field and
+declines a required one. The person declining any field declines the whole request (the
+server decides what to do without the data); stopping the run cancels it; with no
+presentation connected the request is declined. Answers are typed per the schema's
+primitive types; they are not otherwise validated against the schema, and the capability
+says so. A URL elicitation is declined. An empty form is a single yes/no on the message.
+
+**Not implemented (MCP-3 scope limits).** Resource subscriptions and `resources/updated`,
+argument completion, sampling (`sampling/createMessage` is refused by the SDK's default
+handler), tasks, and MCP apps / remote HTML, which the GPUI shell does not run.

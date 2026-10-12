@@ -21,6 +21,7 @@ pub mod service;
 
 pub use config::{McpConfig, McpServerConfig};
 pub use service::{
-    AuthProgress, CallOutcome, McpError, McpService, PromptView, ServerHandle, ServerSnapshot,
-    TestOutcome, ToolInfo,
+    AuthProgress, CallOutcome, ElicitOutcome, Elicitor, McpError, McpService, PromptArgumentInfo,
+    PromptInfo, PromptOutcome, PromptView, ResourceInfo, ResourcePart, ServerHandle,
+    ServerSnapshot, TestOutcome, ToolInfo,
 };

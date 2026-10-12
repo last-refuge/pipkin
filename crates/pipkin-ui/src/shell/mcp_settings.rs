@@ -111,6 +111,34 @@ impl Workspace {
         if let Some(n) = server.tools {
             header = header.child(chip(format!("{n} tool(s)"), c.text_muted, c.bg_active, cx));
         }
+        if let Some(n) = server.resources {
+            header = header.child(chip(
+                format!("{n} resource(s)"),
+                c.text_muted,
+                c.bg_active,
+                cx,
+            ));
+        }
+        if let Some(n) = server.prompts {
+            header = header.child(chip(
+                format!("{n} prompt(s)"),
+                c.text_muted,
+                c.bg_active,
+                cx,
+            ));
+        }
+        for capability in &server.capabilities {
+            if matches!(capability.as_str(), "resources" | "prompts")
+                && server.state == McpServerState::Ready
+            {
+                header = header.child(chip(
+                    format!("offers {capability}"),
+                    c.text_faint,
+                    c.bg_active,
+                    cx,
+                ));
+            }
+        }
         if server.auth.signed_in {
             header = header.child(chip("signed in", c.success, c.bg_active, cx));
         }

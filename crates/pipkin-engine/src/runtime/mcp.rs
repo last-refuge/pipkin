@@ -17,7 +17,10 @@ use crate::config::Settings;
 use crate::mcp::config::{McpServerConfig, merge_spec, parse_server, valid_name};
 use crate::mcp::{AuthProgress, McpConfig, McpError, ServerSnapshot};
 use crate::tools::Tool;
-use crate::tools::mcp::{McpCallTool, McpDescribeTool, McpSearchTool};
+use crate::tools::mcp::{
+    McpCallTool, McpDescribeTool, McpPromptTool, McpPromptsTool, McpReadTool, McpResourcesTool,
+    McpSearchTool,
+};
 
 /// How often idle servers are checked.
 const REAP_INTERVAL: Duration = Duration::from_secs(1);
@@ -27,12 +30,75 @@ fn invalid(message: impl Into<String>) -> ProtoError {
 }
 
 impl Shared {
-    pub fn mcp_tools(&self) -> [Arc<dyn Tool>; 3] {
+    pub fn mcp_tools(&self) -> [Arc<dyn Tool>; 7] {
         [
             Arc::new(McpSearchTool),
             Arc::new(McpDescribeTool),
             Arc::new(McpCallTool),
+            Arc::new(McpResourcesTool),
+            Arc::new(McpReadTool),
+            Arc::new(McpPromptsTool),
+            Arc::new(McpPromptTool),
         ]
+    }
+
+    /// Enabled servers to list a feature from: one by name, or every enabled server.
+    fn mcp_targets(&self, server: Option<&str>) -> Result<Vec<String>, McpError> {
+        let config = self.mcp.config();
+        if config.servers.is_empty() {
+            return Err(McpError::NotConfigured(
+                "add servers under mcp.servers in settings.json".into(),
+            ));
+        }
+        match server {
+            Some(name) => {
+                let s = config
+                    .server(name)
+                    .ok_or_else(|| McpError::UnknownServer(name.to_owned()))?;
+                if !s.enabled {
+                    return Err(McpError::Disabled(name.to_owned()));
+                }
+                Ok(vec![name.to_owned()])
+            }
+            None => Ok(config
+                .servers
+                .iter()
+                .filter(|s| s.enabled)
+                .map(|s| s.name.clone())
+                .collect()),
+        }
+    }
+
+    /// Resources across servers; servers without the feature or that fail are reported
+    /// beside the list rather than failing it.
+    pub async fn mcp_resources(
+        &self,
+        server: Option<&str>,
+    ) -> Result<(Vec<crate::mcp::ResourceInfo>, Vec<(String, String)>), McpError> {
+        let mut found = Vec::new();
+        let mut problems = Vec::new();
+        for name in self.mcp_targets(server)? {
+            match self.mcp.resources(&name).await {
+                Ok(list) => found.extend(list),
+                Err(e) => problems.push((name, e.to_string())),
+            }
+        }
+        Ok((found, problems))
+    }
+
+    pub async fn mcp_prompts(
+        &self,
+        server: Option<&str>,
+    ) -> Result<(Vec<crate::mcp::PromptInfo>, Vec<(String, String)>), McpError> {
+        let mut found = Vec::new();
+        let mut problems = Vec::new();
+        for name in self.mcp_targets(server)? {
+            match self.mcp.prompts(&name).await {
+                Ok(list) => found.extend(list),
+                Err(e) => problems.push((name, e.to_string())),
+            }
+        }
+        Ok((found, problems))
     }
 
     /// The session's working directory, when the session exists.
@@ -352,6 +418,283 @@ impl Shared {
     }
 }
 
+/// Presents a server's form (elicitation) through the session's question host, one field at
+/// a time: enums as a choice, booleans as a confirmation, strings and numbers as an input.
+/// The person declining any field declines the whole request; a stopped run cancels it.
+struct QuestionElicitor {
+    shared: std::sync::Weak<Shared>,
+}
+
+/// One field of an elicitation schema.
+struct Field {
+    name: String,
+    title: String,
+    description: Option<String>,
+    kind: FieldKind,
+    required: bool,
+    default: Option<Value>,
+}
+
+enum FieldKind {
+    Text,
+    Number { integer: bool },
+    Boolean,
+    Choice(Vec<(String, String)>),
+}
+
+fn fields_of(schema: &Value) -> Vec<Field> {
+    let required: Vec<&str> = schema
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|r| r.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let Some(props) = schema.get("properties").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    props
+        .iter()
+        .take(16)
+        .map(|(name, p)| {
+            let kind = if let Some(values) = p.get("enum").and_then(Value::as_array) {
+                let names: Vec<String> = p
+                    .get("enumNames")
+                    .and_then(Value::as_array)
+                    .map(|n| {
+                        n.iter()
+                            .map(|v| v.as_str().unwrap_or("").to_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                FieldKind::Choice(
+                    values
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| {
+                            let value = match v {
+                                Value::String(s) => s.clone(),
+                                other => other.to_string(),
+                            };
+                            let label = names
+                                .get(i)
+                                .filter(|n| !n.is_empty())
+                                .cloned()
+                                .unwrap_or_else(|| value.clone());
+                            (value, label)
+                        })
+                        .collect(),
+                )
+            } else if let Some(one_of) = p.get("oneOf").and_then(Value::as_array) {
+                FieldKind::Choice(
+                    one_of
+                        .iter()
+                        .filter_map(|o| {
+                            let value = o.get("const")?;
+                            let value = match value {
+                                Value::String(s) => s.clone(),
+                                other => other.to_string(),
+                            };
+                            let label = o
+                                .get("title")
+                                .and_then(Value::as_str)
+                                .unwrap_or(&value)
+                                .to_owned();
+                            Some((value, label))
+                        })
+                        .collect(),
+                )
+            } else {
+                match p.get("type").and_then(Value::as_str) {
+                    Some("boolean") => FieldKind::Boolean,
+                    Some("integer") => FieldKind::Number { integer: true },
+                    Some("number") => FieldKind::Number { integer: false },
+                    _ => FieldKind::Text,
+                }
+            };
+            Field {
+                name: name.clone(),
+                title: p
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .filter(|t| !t.trim().is_empty())
+                    .unwrap_or(name)
+                    .to_owned(),
+                description: p
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                kind,
+                required: required.contains(&name.as_str()),
+                default: p.get("default").cloned(),
+            }
+        })
+        .collect()
+}
+
+impl crate::mcp::Elicitor for QuestionElicitor {
+    fn elicit(
+        &self,
+        session: &str,
+        server: &str,
+        message: &str,
+        schema: Value,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> crate::provider::BoxFuture<'static, crate::mcp::ElicitOutcome> {
+        use crate::extensions::questions::Question;
+        use crate::mcp::ElicitOutcome;
+        use crate::tools::ask::AskOutcome;
+        let shared = self.shared.clone();
+        let session = session.to_owned();
+        let server = server.to_owned();
+        let message = message.to_owned();
+        Box::pin(async move {
+            let decline = |content: Option<Value>| ElicitOutcome {
+                action: "decline".into(),
+                content,
+            };
+            let Some(shared) = shared.upgrade() else {
+                return decline(None);
+            };
+            if !shared.has_clients() {
+                return decline(None);
+            }
+            let fields = fields_of(&schema);
+            let mut content = Map::new();
+            let cancelled = || crate::mcp::ElicitOutcome {
+                action: "cancel".into(),
+                content: None,
+            };
+            // An empty form is a yes/no on the message itself.
+            if fields.is_empty() {
+                let q = Question::confirm(format!("{server} asks: {message}"));
+                return match shared.ask_user(&session, q, cancel.clone()).await {
+                    AskOutcome::Answered(Answer::Confirm { value: true }) => ElicitOutcome {
+                        action: "accept".into(),
+                        content: Some(Value::Object(content)),
+                    },
+                    _ if cancel.is_cancelled() => cancelled(),
+                    _ => decline(None),
+                };
+            }
+            let intro = format!("{server} asks: {message}");
+            for (i, field) in fields.iter().enumerate() {
+                let title = if field.required {
+                    field.title.clone()
+                } else {
+                    format!("{} (optional)", field.title)
+                };
+                let mut note = if i == 0 { intro.clone() } else { String::new() };
+                if let Some(d) = &field.description {
+                    if !note.is_empty() {
+                        note.push('\n');
+                    }
+                    note.push_str(d);
+                }
+                let mut attempts = 0;
+                loop {
+                    attempts += 1;
+                    let mut q = match &field.kind {
+                        FieldKind::Choice(options) => Question::select(
+                            title.clone(),
+                            options
+                                .iter()
+                                .map(|(value, label)| QuestionOption {
+                                    value: value.clone(),
+                                    label: label.clone(),
+                                    description: None,
+                                })
+                                .collect(),
+                        ),
+                        FieldKind::Boolean => Question::confirm(title.clone()),
+                        FieldKind::Text | FieldKind::Number { .. } => {
+                            Question::input(title.clone())
+                        }
+                    };
+                    if !note.is_empty() {
+                        q = q.with_message(note.clone());
+                    }
+                    if let Some(d) = &field.default {
+                        let text = match d {
+                            Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        };
+                        q = q.with_default(text);
+                    }
+                    let answer = shared.ask_user(&session, q, cancel.clone()).await;
+                    let value = match (answer, &field.kind) {
+                        (AskOutcome::Answered(Answer::Choice { value }), FieldKind::Choice(_)) => {
+                            Value::String(value)
+                        }
+                        (AskOutcome::Answered(Answer::Confirm { value }), FieldKind::Boolean) => {
+                            Value::Bool(value)
+                        }
+                        (AskOutcome::Answered(Answer::Text { value }), FieldKind::Text) => {
+                            if value.trim().is_empty() {
+                                if field.required {
+                                    return decline(None);
+                                }
+                                break;
+                            }
+                            Value::String(value)
+                        }
+                        (
+                            AskOutcome::Answered(Answer::Text { value }),
+                            FieldKind::Number { integer },
+                        ) => {
+                            let trimmed = value.trim();
+                            if trimmed.is_empty() {
+                                if field.required {
+                                    return decline(None);
+                                }
+                                break;
+                            }
+                            let parsed = if *integer {
+                                trimmed.parse::<i64>().ok().map(Value::from)
+                            } else {
+                                trimmed
+                                    .parse::<f64>()
+                                    .ok()
+                                    .and_then(serde_json::Number::from_f64)
+                                    .map(Value::Number)
+                            };
+                            match parsed {
+                                Some(v) => v,
+                                None if attempts < 3 => {
+                                    note = format!(
+                                        "{} is not {}; try again.",
+                                        trimmed,
+                                        if *integer {
+                                            "a whole number"
+                                        } else {
+                                            "a number"
+                                        }
+                                    );
+                                    continue;
+                                }
+                                None => return decline(None),
+                            }
+                        }
+                        (AskOutcome::Answered(_), _) => return decline(None),
+                        (AskOutcome::Unanswered, _)
+                            if cancel.is_cancelled() || shared.stopping.is_cancelled() =>
+                        {
+                            return cancelled();
+                        }
+                        (AskOutcome::Unanswered, _) | (AskOutcome::Unavailable(_), _) => {
+                            return decline(None);
+                        }
+                    };
+                    content.insert(field.name.clone(), value);
+                    break;
+                }
+            }
+            ElicitOutcome {
+                action: "accept".into(),
+                content: Some(Value::Object(content)),
+            }
+        })
+    }
+}
+
 fn auth_view(config: &McpServerConfig, snap: &ServerSnapshot) -> McpAuthView {
     let AuthProgress {
         status,
@@ -403,6 +746,9 @@ fn server_view(snap: ServerSnapshot) -> McpServerView {
         tools: snap.catalog.as_ref().map(Vec::len),
         catalog,
         disabled_tools: config.disabled_tools.clone(),
+        resources: snap.resources.as_ref().map(Vec::len),
+        prompts: snap.prompts.as_ref().map(Vec::len),
+        capabilities: snap.capabilities.clone(),
         revision: config.revision.clone(),
         command: config.command_line(),
         env: config.values_display(),
@@ -420,6 +766,9 @@ pub(super) fn attach(shared: &Arc<Shared>) {
     shared.mcp.set_http(Arc::new({
         let weak = weak.clone();
         move || weak.upgrade().map(|s| s.refresh_net()).unwrap_or_default()
+    }));
+    shared.mcp.set_elicitor(Arc::new(QuestionElicitor {
+        shared: weak.clone(),
     }));
     shared.mcp.set_listener(Arc::new({
         let weak = weak.clone();

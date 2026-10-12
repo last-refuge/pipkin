@@ -27,6 +27,7 @@ pub use view::*;
 // Version 18 adds the verifying state and the goal audit record.
 // Version 19 adds `McpServers` (configured MCP servers and their state) and the `mcp` capability.
 // Version 20 adds MCP management: server edits, tests, sign-in, import, `McpChanged`.
-pub const PROTOCOL_VERSION: u32 = 20;
+// Version 21 adds MCP resources, prompts and declared capabilities to the server view.
+pub const PROTOCOL_VERSION: u32 = 21;
 
 pub mod delivery;

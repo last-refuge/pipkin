@@ -1,5 +1,29 @@
 # Scorecard
 
+## MCP resources, prompts and elicitation, MCP-3 (2026-10-12)
+
+Four more compact tools list and read resources (bounded slices, binary by size) and list
+and render prompt templates; servers' declared capabilities are recorded and shown; a
+server's request for input becomes native questions, typed per field, with decline, stop
+and absence handled honestly ([mcp.md](mcp.md)); protocol 21.
+
+- **Measured (automated).** Engine tests against the stdio fixture: resources and
+  templates listed and searched, text read in slices with continuation offsets, binary
+  reported by size, templates read by filled URI, unknown URIs as the server's error,
+  `resources/list_changed` refreshing the cached list, counts and capabilities in the
+  view; prompts listed with required/optional arguments, rendered with arguments, a missing
+  required argument refused before the request, unknown prompts and bad names classified;
+  pure reads in the recovery registry and the capabilities advertised; a server without
+  resources reported beside the list and refused as unsupported; elicitation as four typed
+  questions (integer re-asked on a non-number, enum as a choice, boolean as a confirmation)
+  returning the typed content, declining a field declining the request, an empty form as a
+  yes/no, URL elicitation declined without a question, and Stop cancelling the request and
+  withdrawing the question. The repository gate passed.
+- **Observed.** Nothing native.
+- **Unverified.** Any third-party server's resources, prompts or elicitation; the questions
+  in a window; subscriptions, completions, sampling and apps (not built). Not a release
+  qualification.
+
 ## MCP management, HTTP transport and OAuth, MCP-2 (2026-10-12)
 
 HTTP servers connect through the engine's own HTTP client, OAuth sign-in runs on the

@@ -212,7 +212,7 @@ fn search_describe_and_call_reach_the_fixture_server() {
     assert_eq!(revision.len(), 16);
     let view = server_state(&mut e, &s, "fx");
     assert_eq!(view.state, "ready");
-    assert_eq!(view.tools, Some(6));
+    assert_eq!(view.tools, Some(8));
     assert_eq!(view.revision, revision);
 
     let (is_error, text, details) = run(&mut e, &s, "r2", r#"mcp_describe {"tool": "fx/echo"}"#);
@@ -249,7 +249,7 @@ fn search_describe_and_call_reach_the_fixture_server() {
     assert!(!dump.contains("hello-from-env"), "{dump}");
     // An empty query lists everything; a server filter limits it.
     let (is_error, text, _) = run(&mut e, &s, "r4", r#"mcp_search {"server": "fx"}"#);
-    assert!(!is_error && text.contains("6 MCP tool(s) on fx"), "{text}");
+    assert!(!is_error && text.contains("8 MCP tool(s) on fx"), "{text}");
     let (is_error, text, details) = run(&mut e, &s, "r5", r#"mcp_search {"query": "zzz"}"#);
     assert!(!is_error && text.contains("No tools matched."), "{text}");
     assert_eq!(details["tools"], json!([]));
@@ -474,7 +474,7 @@ fn a_catalog_change_notification_refreshes_the_cached_catalog() {
         );
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert_eq!(server_state(&mut e, &s, "fx").tools, Some(7));
+    assert_eq!(server_state(&mut e, &s, "fx").tools, Some(9));
     // The new tool is callable only through the cached (refreshed) schema.
     let (is_error, text, _) = run(
         &mut e,
@@ -514,7 +514,7 @@ fn idle_servers_stop_and_restart_on_use_while_kept_alive_ones_stay() {
     assert!(!is_error && text == "b", "{text}");
     assert_eq!(server_state(&mut e, &s, "fx").state, "ready");
     let stopped = wait_state(&mut e, &s, "fx", "stopped");
-    assert_eq!(stopped.tools, Some(6), "the catalog outlives the process");
+    assert_eq!(stopped.tools, Some(8), "the catalog outlives the process");
     assert_eq!(server_state(&mut e, &s, "keep").state, "ready");
     // A search answers from the cached catalog without starting the process.
     let (is_error, text, _) = run(
@@ -739,7 +739,7 @@ fn the_catalog_persists_across_restarts_and_the_capability_is_advertised() {
     assert_eq!(view.state, "stopped");
     assert_eq!(
         view.tools,
-        Some(6),
+        Some(8),
         "the cached catalog survived the restart"
     );
     let (is_error, text, _) = run(&mut e, &s, "r2", r#"mcp_describe {"tool": "fx/echo"}"#);

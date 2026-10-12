@@ -9,7 +9,11 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use pipkin_engine_protocol::AuthStatus;
-use rmcp::model::{CallToolRequestParams, ClientConfig, ContentBlock, Implementation};
+use rmcp::model::{
+    CallToolRequestParams, ClientConfig, ContentBlock, ElicitRequestParams, ElicitResult,
+    ElicitationAction, GetPromptRequestParams, Implementation, ReadResourceRequestParams,
+    ResourceContents,
+};
 use rmcp::service::RunningService;
 use rmcp::transport::child_process::TokioChildProcess;
 use rmcp::transport::streamable_http_client::{
@@ -64,6 +68,72 @@ impl ToolInfo {
     }
 }
 
+/// A resource or resource template a server offers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResourceInfo {
+    pub server: String,
+    /// The URI, or the URI template (`template` is set).
+    pub uri: String,
+    pub name: String,
+    pub description: String,
+    pub mime_type: Option<String>,
+    pub size: Option<u64>,
+    pub template: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PromptArgumentInfo {
+    pub name: String,
+    pub description: String,
+    pub required: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PromptInfo {
+    pub server: String,
+    pub name: String,
+    pub description: String,
+    pub arguments: Vec<PromptArgumentInfo>,
+}
+
+/// One part of a read resource: text, or a binary blob reported by size.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResourcePart {
+    pub uri: String,
+    pub mime_type: Option<String>,
+    pub text: Option<String>,
+    /// Decoded size of a blob (its bytes are not kept).
+    pub blob_bytes: Option<usize>,
+}
+
+/// A rendered prompt: its messages as `(role, text)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PromptOutcome {
+    pub description: Option<String>,
+    pub messages: Vec<(String, String)>,
+}
+
+/// What the person decided about a server's request for input (elicitation).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ElicitOutcome {
+    /// `accept`, `decline` or `cancel`.
+    pub action: String,
+    pub content: Option<Value>,
+}
+
+/// Presents a server's form to the person of the session whose call triggered it. `cancel`
+/// is the triggering call's cancellation: a stopped run withdraws the questions.
+pub trait Elicitor: Send + Sync {
+    fn elicit(
+        &self,
+        session: &str,
+        server: &str,
+        message: &str,
+        schema: Value,
+        cancel: CancellationToken,
+    ) -> BoxFuture<'static, ElicitOutcome>;
+}
+
 /// A sign-in prompt as a client sees it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PromptView {
@@ -92,6 +162,11 @@ pub struct ServerSnapshot {
     pub state: String,
     pub error: Option<String>,
     pub catalog: Option<Vec<ToolInfo>>,
+    pub resources: Option<Vec<ResourceInfo>>,
+    pub prompts: Option<Vec<PromptInfo>>,
+    /// What the server declared at initialization: `tools`, `resources`,
+    /// `resourcesSubscribe`, `prompts`, `logging`, `completions`.
+    pub capabilities: Vec<String>,
     pub in_flight: usize,
     pub auth: AuthProgress,
     /// Saved tokens exist for this server (metadata only).
@@ -127,6 +202,11 @@ pub enum McpError {
         server: String,
         tool: String,
     },
+    /// The server did not declare this feature (resources, prompts).
+    Unsupported {
+        server: String,
+        feature: String,
+    },
     InvalidArguments(String),
     Timeout {
         server: String,
@@ -150,6 +230,7 @@ impl McpError {
             McpError::AuthRequired { .. } => "auth_required",
             McpError::UnknownTool { .. } => "unknown_tool",
             McpError::ToolDisabled { .. } => "tool_disabled",
+            McpError::Unsupported { .. } => "unsupported",
             McpError::InvalidArguments(_) => "invalid_arguments",
             McpError::Timeout { .. } => "timeout",
             McpError::Cancelled => "cancelled",
@@ -177,6 +258,9 @@ impl std::fmt::Display for McpError {
             McpError::ToolDisabled { server, tool } => {
                 write!(f, "tool {server}/{tool} is switched off in settings")
             }
+            McpError::Unsupported { server, feature } => {
+                write!(f, "MCP server {server} does not offer {feature}")
+            }
             McpError::InvalidArguments(m) => f.write_str(m),
             McpError::Timeout { server, tool, secs } => write!(
                 f,
@@ -200,13 +284,28 @@ pub struct CallOutcome {
 /// Receives catalog-change notifications for one server.
 #[derive(Clone)]
 struct Handler {
+    server: String,
     dirty: Arc<AtomicBool>,
+    resources_dirty: Arc<AtomicBool>,
+    prompts_dirty: Arc<AtomicBool>,
+    /// Sessions with a call in flight on this server (with the call's cancellation), oldest
+    /// first; a server's request for input goes to the most recent caller.
+    callers: Arc<Mutex<Vec<(String, CancellationToken)>>>,
+    elicitor: Option<Arc<dyn Elicitor>>,
 }
 
 impl ClientHandler for Handler {
     fn get_info(&self) -> ClientConfig {
+        // Advertised honestly: form elicitation when a presentation can answer; no sampling,
+        // no roots, no URL elicitation.
+        let mut capabilities = rmcp::model::ClientCapabilities::default();
+        if self.elicitor.is_some() {
+            // Form elicitation without schema validation (the person's answers are typed by
+            // the question host, not checked against the schema here).
+            capabilities.elicitation = serde_json::from_value(serde_json::json!({"form": {}})).ok();
+        }
         ClientConfig::new(
-            rmcp::model::ClientCapabilities::default(),
+            capabilities,
             Implementation::new("pipkin", env!("CARGO_PKG_VERSION")),
         )
     }
@@ -218,7 +317,70 @@ impl ClientHandler for Handler {
         self.dirty.store(true, Ordering::SeqCst);
         std::future::ready(())
     }
+
+    fn on_resource_list_changed(
+        &self,
+        _context: rmcp::service::NotificationContext<RoleClient>,
+    ) -> impl std::future::Future<Output = ()> + Send + '_ {
+        self.resources_dirty.store(true, Ordering::SeqCst);
+        std::future::ready(())
+    }
+
+    fn on_prompt_list_changed(
+        &self,
+        _context: rmcp::service::NotificationContext<RoleClient>,
+    ) -> impl std::future::Future<Output = ()> + Send + '_ {
+        self.prompts_dirty.store(true, Ordering::SeqCst);
+        std::future::ready(())
+    }
+
+    fn create_elicitation(
+        &self,
+        request: ElicitRequestParams,
+        _context: rmcp::service::RequestContext<RoleClient>,
+    ) -> impl std::future::Future<Output = Result<ElicitResult, rmcp::ErrorData>> + Send + '_ {
+        let caller = self
+            .callers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .last()
+            .cloned();
+        let elicitor = self.elicitor.clone();
+        let server = self.server.clone();
+        Box::pin(async move {
+            let (Some((session, cancel)), Some(elicitor)) = (caller, elicitor) else {
+                return Ok(ElicitResult::new(ElicitationAction::Decline));
+            };
+            match request {
+                ElicitRequestParams::FormElicitationParams {
+                    message,
+                    requested_schema,
+                    ..
+                } => {
+                    let schema = serde_json::to_value(&requested_schema).unwrap_or(Value::Null);
+                    let outcome = elicitor
+                        .elicit(&session, &server, &message, schema, cancel)
+                        .await;
+                    let action = match outcome.action.as_str() {
+                        "accept" => ElicitationAction::Accept,
+                        "cancel" => ElicitationAction::Cancel,
+                        _ => ElicitationAction::Decline,
+                    };
+                    let mut result = ElicitResult::new(action);
+                    if let Some(content) = outcome.content {
+                        result = result.with_content(content);
+                    }
+                    Ok(result)
+                }
+                // URL elicitation is not advertised; a server sending it is declined.
+                _ => Ok(ElicitResult::new(ElicitationAction::Decline)),
+            }
+        })
+    }
 }
+
+/// Sessions with a call in flight on a server, with each call's cancellation.
+type Callers = Arc<Mutex<Vec<(String, CancellationToken)>>>;
 
 type Client = RunningService<RoleClient, Handler>;
 
@@ -240,6 +402,9 @@ enum State {
     Ready {
         client: Arc<Client>,
         dirty: Arc<AtomicBool>,
+        resources_dirty: Arc<AtomicBool>,
+        prompts_dirty: Arc<AtomicBool>,
+        callers: Arc<Mutex<Vec<(String, CancellationToken)>>>,
     },
     /// The server answered 401; the person must sign in.
     AuthRequired {
@@ -260,6 +425,9 @@ struct Entry {
     config: McpServerConfig,
     state: State,
     catalog: Option<Vec<ToolInfo>>,
+    resources: Option<Vec<ResourceInfo>>,
+    prompts: Option<Vec<PromptInfo>>,
+    capabilities: Vec<String>,
     last_used: Instant,
     in_flight: usize,
     auth: AuthProgress,
@@ -283,6 +451,7 @@ pub struct McpService {
     credentials: Arc<dyn CredentialStore>,
     http: Mutex<Option<HttpSource>>,
     listener: Mutex<Option<ChangeListener>>,
+    elicitor: Mutex<Option<Arc<dyn Elicitor>>>,
 }
 
 impl McpService {
@@ -298,12 +467,19 @@ impl McpService {
             cache_path: data_dir.join("mcp-catalog.json"),
             http: Mutex::new(None),
             listener: Mutex::new(None),
+            elicitor: Mutex::new(None),
         })
     }
 
     /// Where HTTP transports and sign-in get their client (the engine's, with its policy).
     pub fn set_http(&self, source: HttpSource) {
         *self.http.lock().unwrap_or_else(|e| e.into_inner()) = Some(source);
+    }
+
+    /// Who presents servers' requests for input; without one, form elicitation is not
+    /// advertised and every request is declined.
+    pub fn set_elicitor(&self, elicitor: Arc<dyn Elicitor>) {
+        *self.elicitor.lock().unwrap_or_else(|e| e.into_inner()) = Some(elicitor);
     }
 
     /// Called after any state a client may show changes.
@@ -367,6 +543,9 @@ impl McpService {
                             config: server.clone(),
                             state: State::Stopped,
                             catalog: self.cached_catalog(server),
+                            resources: None,
+                            prompts: None,
+                            capabilities: Vec::new(),
                             last_used: Instant::now(),
                             in_flight: 0,
                             auth: AuthProgress::default(),
@@ -413,6 +592,9 @@ impl McpService {
                     state: state.into(),
                     error,
                     catalog: e.catalog.clone(),
+                    resources: e.resources.clone(),
+                    prompts: e.prompts.clone(),
+                    capabilities: e.capabilities.clone(),
                     in_flight: e.in_flight,
                     auth: e.auth.clone(),
                     signed_in: e.signed_in,
@@ -583,8 +765,20 @@ impl McpService {
         self.set_state(name, State::Connecting);
         let start_timeout = Duration::from_secs(self.config().start_timeout_secs);
         let dirty = Arc::new(AtomicBool::new(false));
+        let resources_dirty = Arc::new(AtomicBool::new(false));
+        let prompts_dirty = Arc::new(AtomicBool::new(false));
+        let callers = Arc::new(Mutex::new(Vec::new()));
         let handler = Handler {
+            server: name.to_owned(),
             dirty: dirty.clone(),
+            resources_dirty: resources_dirty.clone(),
+            prompts_dirty: prompts_dirty.clone(),
+            callers: callers.clone(),
+            elicitor: self
+                .elicitor
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
         };
         let served = match &server.transport {
             Transport::Stdio {
@@ -702,11 +896,46 @@ impl McpService {
                 ));
             }
         };
+        let capabilities = client
+            .peer_info()
+            .map(|info| {
+                let caps = &info.capabilities;
+                let mut list = Vec::new();
+                if caps.tools.is_some() {
+                    list.push("tools".to_owned());
+                }
+                if let Some(r) = &caps.resources {
+                    list.push("resources".to_owned());
+                    if r.subscribe == Some(true) {
+                        list.push("resourcesSubscribe".to_owned());
+                    }
+                }
+                if caps.prompts.is_some() {
+                    list.push("prompts".to_owned());
+                }
+                if caps.logging.is_some() {
+                    list.push("logging".to_owned());
+                }
+                if caps.completions.is_some() {
+                    list.push("completions".to_owned());
+                }
+                list
+            })
+            .unwrap_or_default();
+        {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(entry) = servers.get_mut(name) {
+                entry.capabilities = capabilities;
+            }
+        }
         self.set_state(
             name,
             State::Ready {
                 client: client.clone(),
                 dirty,
+                resources_dirty,
+                prompts_dirty,
+                callers,
             },
         );
         Ok(client)
@@ -932,6 +1161,7 @@ impl McpService {
     /// with the configured timeout, cancellable. A lost reply is reported as unknown effect.
     pub async fn call(
         &self,
+        session: &str,
         qualified: &str,
         arguments: Value,
         cancel: CancellationToken,
@@ -952,6 +1182,12 @@ impl McpService {
         let client = self.ensure_started(&tool.server).await?;
         let timeout_secs = self.config().call_timeout_secs;
         self.adjust_in_flight(&tool.server, 1);
+        let callers = self.callers_of(&tool.server);
+        if let Some(c) = &callers {
+            c.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push((session.to_owned(), cancel.clone()));
+        }
         let request = CallToolRequestParams::new(tool.name.clone()).with_arguments(args);
         let call = client.call_tool(request);
         let result = tokio::select! {
@@ -964,6 +1200,12 @@ impl McpService {
             },
         };
         self.adjust_in_flight(&tool.server, -1);
+        if let Some(c) = &callers {
+            let mut c = c.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(pos) = c.iter().rposition(|(s, _)| s == session) {
+                c.remove(pos);
+            }
+        }
         let result = result?;
         let content = result
             .content
@@ -985,6 +1227,292 @@ impl McpService {
             structured: result.structured_content,
             is_error: result.is_error.unwrap_or(false),
             tool,
+        })
+    }
+
+    fn callers_of(&self, name: &str) -> Option<Callers> {
+        let servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+        match servers.get(name).map(|e| &e.state) {
+            Some(State::Ready { callers, .. }) => Some(callers.clone()),
+            _ => None,
+        }
+    }
+
+    fn capability_check(&self, name: &str, feature: &str) -> Result<(), McpError> {
+        let servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+        let entry = servers
+            .get(name)
+            .ok_or_else(|| McpError::UnknownServer(name.to_owned()))?;
+        if entry.capabilities.iter().any(|c| c == feature) {
+            Ok(())
+        } else {
+            Err(McpError::Unsupported {
+                server: name.to_owned(),
+                feature: feature.to_owned(),
+            })
+        }
+    }
+
+    /// The server's resources and resource templates, cached until it reports a change.
+    pub async fn resources(&self, name: &str) -> Result<Vec<ResourceInfo>, McpError> {
+        let (cached, dirty) = {
+            let servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            let entry = servers.get(name);
+            let dirty = entry.is_some_and(|e| match &e.state {
+                State::Ready {
+                    resources_dirty, ..
+                } => resources_dirty.swap(false, Ordering::SeqCst),
+                _ => false,
+            });
+            (entry.and_then(|e| e.resources.clone()), dirty)
+        };
+        if let Some(list) = cached
+            && !dirty
+        {
+            return Ok(list);
+        }
+        self.server_config(name)?;
+        let client = self.ensure_started(name).await?;
+        self.capability_check(name, "resources")?;
+        let listed = client
+            .list_all_resources()
+            .await
+            .map_err(|e| self.transport_error(name, &e))?;
+        let templates = client
+            .list_all_resource_templates()
+            .await
+            .map_err(|e| self.transport_error(name, &e))?;
+        let cut = |s: Option<String>| -> String {
+            s.unwrap_or_default()
+                .chars()
+                .take(MAX_DESCRIPTION_CHARS)
+                .collect()
+        };
+        let mut list: Vec<ResourceInfo> = listed
+            .into_iter()
+            .take(MAX_TOOLS_PER_SERVER)
+            .map(|r| ResourceInfo {
+                server: name.to_owned(),
+                uri: r.uri,
+                name: r.title.unwrap_or(r.name),
+                description: cut(r.description),
+                mime_type: r.mime_type,
+                size: r.size,
+                template: false,
+            })
+            .collect();
+        list.extend(
+            templates
+                .into_iter()
+                .take(MAX_TOOLS_PER_SERVER)
+                .map(|t| ResourceInfo {
+                    server: name.to_owned(),
+                    uri: t.uri_template,
+                    name: t.title.unwrap_or(t.name),
+                    description: cut(t.description),
+                    mime_type: t.mime_type,
+                    size: None,
+                    template: true,
+                }),
+        );
+        {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(entry) = servers.get_mut(name) {
+                entry.resources = Some(list.clone());
+            }
+        }
+        self.changed();
+        Ok(list)
+    }
+
+    /// Read one resource. Text parts are kept; blobs are reported by decoded size only.
+    pub async fn read_resource(
+        &self,
+        name: &str,
+        uri: &str,
+    ) -> Result<Vec<ResourcePart>, McpError> {
+        self.server_config(name)?;
+        let client = self.ensure_started(name).await?;
+        self.capability_check(name, "resources")?;
+        let timeout_secs = self.config().call_timeout_secs;
+        let read = tokio::time::timeout(
+            Duration::from_secs(timeout_secs),
+            client.read_resource(ReadResourceRequestParams::new(uri)),
+        )
+        .await
+        .map_err(|_| McpError::Timeout {
+            server: name.to_owned(),
+            tool: format!("read {uri}"),
+            secs: timeout_secs,
+        })?
+        .map_err(|e| match &e {
+            rmcp::service::ServiceError::McpError(m) => {
+                McpError::InvalidArguments(format!("{name} could not read {uri}: {}", m.message))
+            }
+            other => self.transport_error(name, other),
+        })?;
+        Ok(read
+            .contents
+            .into_iter()
+            .map(|part| match part {
+                ResourceContents::TextResourceContents {
+                    uri,
+                    mime_type,
+                    text,
+                    ..
+                } => ResourcePart {
+                    uri,
+                    mime_type,
+                    text: Some(text),
+                    blob_bytes: None,
+                },
+                ResourceContents::BlobResourceContents {
+                    uri,
+                    mime_type,
+                    blob,
+                    ..
+                } => ResourcePart {
+                    uri,
+                    mime_type,
+                    text: None,
+                    blob_bytes: Some(blob.len() * 3 / 4),
+                },
+                _ => ResourcePart {
+                    uri: uri.to_owned(),
+                    mime_type: None,
+                    text: Some("[content of a kind this engine does not show]".into()),
+                    blob_bytes: None,
+                },
+            })
+            .collect())
+    }
+
+    /// The server's prompt templates, cached until it reports a change.
+    pub async fn prompts(&self, name: &str) -> Result<Vec<PromptInfo>, McpError> {
+        let (cached, dirty) = {
+            let servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            let entry = servers.get(name);
+            let dirty = entry.is_some_and(|e| match &e.state {
+                State::Ready { prompts_dirty, .. } => prompts_dirty.swap(false, Ordering::SeqCst),
+                _ => false,
+            });
+            (entry.and_then(|e| e.prompts.clone()), dirty)
+        };
+        if let Some(list) = cached
+            && !dirty
+        {
+            return Ok(list);
+        }
+        self.server_config(name)?;
+        let client = self.ensure_started(name).await?;
+        self.capability_check(name, "prompts")?;
+        let listed = client
+            .list_all_prompts()
+            .await
+            .map_err(|e| self.transport_error(name, &e))?;
+        let list: Vec<PromptInfo> = listed
+            .into_iter()
+            .take(MAX_TOOLS_PER_SERVER)
+            .map(|p| PromptInfo {
+                server: name.to_owned(),
+                name: p.name,
+                description: p
+                    .description
+                    .unwrap_or_default()
+                    .chars()
+                    .take(MAX_DESCRIPTION_CHARS)
+                    .collect(),
+                arguments: p
+                    .arguments
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|a| PromptArgumentInfo {
+                        name: a.name,
+                        description: a.description.unwrap_or_default(),
+                        required: a.required.unwrap_or(false),
+                    })
+                    .collect(),
+            })
+            .collect();
+        {
+            let mut servers = self.servers.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(entry) = servers.get_mut(name) {
+                entry.prompts = Some(list.clone());
+            }
+        }
+        self.changed();
+        Ok(list)
+    }
+
+    /// Render a prompt template with arguments.
+    pub async fn get_prompt(
+        &self,
+        name: &str,
+        prompt: &str,
+        arguments: Map<String, Value>,
+    ) -> Result<PromptOutcome, McpError> {
+        let known = self.prompts(name).await?;
+        let info =
+            known
+                .iter()
+                .find(|p| p.name == prompt)
+                .ok_or_else(|| McpError::UnknownTool {
+                    server: name.to_owned(),
+                    tool: prompt.to_owned(),
+                })?;
+        if let Some(missing) = info
+            .arguments
+            .iter()
+            .find(|a| a.required && !arguments.contains_key(&a.name))
+        {
+            return Err(McpError::InvalidArguments(format!(
+                "prompt {name}/{prompt} needs the argument {:?}",
+                missing.name
+            )));
+        }
+        let client = self.ensure_started(name).await?;
+        let timeout_secs = self.config().call_timeout_secs;
+        let request = GetPromptRequestParams::new(prompt).with_arguments(arguments);
+        let got = tokio::time::timeout(
+            Duration::from_secs(timeout_secs),
+            client.get_prompt(request),
+        )
+        .await
+        .map_err(|_| McpError::Timeout {
+            server: name.to_owned(),
+            tool: format!("prompt {prompt}"),
+            secs: timeout_secs,
+        })?
+        .map_err(|e| match &e {
+            rmcp::service::ServiceError::McpError(m) => McpError::InvalidArguments(format!(
+                "{name} could not render {prompt}: {}",
+                m.message
+            )),
+            other => self.transport_error(name, other),
+        })?;
+        Ok(PromptOutcome {
+            description: got.description,
+            messages: got
+                .messages
+                .into_iter()
+                .map(|m| {
+                    let role = match m.role {
+                        rmcp::model::Role::User => "user",
+                        rmcp::model::Role::Assistant => "assistant",
+                    }
+                    .to_owned();
+                    let text = match m.content {
+                        ContentBlock::Text(t) => t.text.clone(),
+                        ContentBlock::Image(i) => {
+                            format!("[image {} ({} bytes of base64)]", i.mime_type, i.data.len())
+                        }
+                        other => {
+                            serde_json::to_string(&other).unwrap_or_else(|_| "[content]".into())
+                        }
+                    };
+                    (role, text)
+                })
+                .collect(),
         })
     }
 

@@ -130,6 +130,8 @@ The adapter now also compares itself with newer Pi built-in MCP. That does not p
 
 **MCP-3 — richer protocol features.** Add resources, prompt templates and elicitation after tools work. Map bounded forms onto native questions. Advertise unsupported capabilities honestly. Sampling, task extensions and interactive MCP apps are separate opt-ins. Remote HTML does not run in GPUI; embedded browser feasibility follows the existing [Browse plan](right-pane-browse-plan.md).
 
+**Progress (2026-10-12).** MCP-3 done for tools-adjacent features: resources and resource templates (`mcp_resources`, `mcp_read` with bounded slices and binary-by-size), prompt templates (`mcp_prompts`, `mcp_prompt` with required-argument checks), declared server capabilities recorded and shown with `unsupported` refusals, list-changed invalidation for both, and form elicitation mapped onto the session's native questions field by field (typed answers, re-ask on bad numbers, decline/cancel/absent handled; URL elicitation declined; no sampling or roots advertised); protocol 21, capabilities `mcpResources`, `mcpPrompts`, `mcpElicitation`. Not done: resource subscriptions and completions, sampling, tasks, MCP apps / remote HTML (the Browse plan), native verification.
+
 ### Acceptance
 
 - Scripted stdio and HTTP servers exercise pagination, duplicate names, tool changes, oversized output, malformed schema, cancellation, auth expiry, reconnect and clean shutdown.

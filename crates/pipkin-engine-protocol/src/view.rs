@@ -662,7 +662,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 20);
+        assert_eq!(crate::PROTOCOL_VERSION, 21);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };
@@ -1052,6 +1052,16 @@ pub struct McpServerView {
     pub catalog: Vec<McpToolView>,
     #[serde(default)]
     pub disabled_tools: Vec<String>,
+    /// Resources and resource templates offered, when they have been listed.
+    #[serde(default)]
+    pub resources: Option<usize>,
+    /// Prompt templates offered, when they have been listed.
+    #[serde(default)]
+    pub prompts: Option<usize>,
+    /// What the server declared at initialization: `tools`, `resources`,
+    /// `resourcesSubscribe`, `prompts`, `logging`, `completions`.
+    #[serde(default)]
+    pub capabilities: Vec<String>,
     /// Hash of the launch-relevant configuration.
     pub revision: String,
     pub command: String,

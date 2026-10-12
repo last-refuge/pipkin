@@ -189,6 +189,10 @@ impl Shared {
             // Catalog reads are pure; `mcp_call` is deliberately absent (its effect is unknown).
             crate::tools::mcp::MCP_SEARCH => Some(Arc::new(crate::tools::mcp::McpSearchTool)),
             crate::tools::mcp::MCP_DESCRIBE => Some(Arc::new(crate::tools::mcp::McpDescribeTool)),
+            crate::tools::mcp::MCP_RESOURCES => Some(Arc::new(crate::tools::mcp::McpResourcesTool)),
+            crate::tools::mcp::MCP_READ => Some(Arc::new(crate::tools::mcp::McpReadTool)),
+            crate::tools::mcp::MCP_PROMPTS => Some(Arc::new(crate::tools::mcp::McpPromptsTool)),
+            crate::tools::mcp::MCP_PROMPT => Some(Arc::new(crate::tools::mcp::McpPromptTool)),
             _ => None,
         }
     }
@@ -645,6 +649,9 @@ async fn dispatch_with_cancel(
                     "goals".into(),
                     "mcp".into(),
                     "mcpManagement".into(),
+                    "mcpResources".into(),
+                    "mcpPrompts".into(),
+                    "mcpElicitation".into(),
                     "compaction".into(),
                     "toolOutput".into(),
                 ],
@@ -1284,6 +1291,8 @@ mod goal3_tests;
 mod goal_tests;
 #[cfg(test)]
 mod mcp2_tests;
+#[cfg(test)]
+mod mcp3_tests;
 #[cfg(test)]
 mod mcp_tests;
 #[cfg(test)]

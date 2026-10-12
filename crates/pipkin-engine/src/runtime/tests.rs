@@ -758,7 +758,11 @@ fn the_system_prompt_carries_project_instructions_and_stays_byte_stable() {
             "web_read",
             "mcp_search",
             "mcp_describe",
-            "mcp_call"
+            "mcp_call",
+            "mcp_resources",
+            "mcp_read",
+            "mcp_prompts",
+            "mcp_prompt"
         ]
     );
     assert_eq!(reqs[0].thinking, crate::provider::ThinkingLevel::Medium);

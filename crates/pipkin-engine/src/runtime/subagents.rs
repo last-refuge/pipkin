@@ -259,7 +259,68 @@ impl ToolHost for Host {
     ) -> BoxFuture<'a, Result<Result<crate::mcp::CallOutcome, crate::mcp::McpError>, String>> {
         Box::pin(async move {
             self.shared.mcp_refresh(Some(&self.parent));
-            Ok(self.shared.mcp.call(qualified, arguments, cancel).await)
+            Ok(self
+                .shared
+                .mcp
+                .call(&self.parent, qualified, arguments, cancel)
+                .await)
+        })
+    }
+
+    fn mcp_resources<'a>(
+        &'a self,
+        server: Option<&'a str>,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<(Vec<crate::mcp::ResourceInfo>, Vec<(String, String)>), crate::mcp::McpError>,
+            String,
+        >,
+    > {
+        Box::pin(async move {
+            self.shared.mcp_refresh(Some(&self.parent));
+            Ok(self.shared.mcp_resources(server).await)
+        })
+    }
+
+    fn mcp_read<'a>(
+        &'a self,
+        server: &'a str,
+        uri: &'a str,
+    ) -> BoxFuture<'a, Result<Result<Vec<crate::mcp::ResourcePart>, crate::mcp::McpError>, String>>
+    {
+        Box::pin(async move {
+            self.shared.mcp_refresh(Some(&self.parent));
+            Ok(self.shared.mcp.read_resource(server, uri).await)
+        })
+    }
+
+    fn mcp_prompts<'a>(
+        &'a self,
+        server: Option<&'a str>,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Result<(Vec<crate::mcp::PromptInfo>, Vec<(String, String)>), crate::mcp::McpError>,
+            String,
+        >,
+    > {
+        Box::pin(async move {
+            self.shared.mcp_refresh(Some(&self.parent));
+            Ok(self.shared.mcp_prompts(server).await)
+        })
+    }
+
+    fn mcp_prompt<'a>(
+        &'a self,
+        server: &'a str,
+        prompt: &'a str,
+        arguments: serde_json::Map<String, Value>,
+    ) -> BoxFuture<'a, Result<Result<crate::mcp::PromptOutcome, crate::mcp::McpError>, String>>
+    {
+        Box::pin(async move {
+            self.shared.mcp_refresh(Some(&self.parent));
+            Ok(self.shared.mcp.get_prompt(server, prompt, arguments).await)
         })
     }
 
