@@ -25,6 +25,8 @@ pub mod config_value;
 pub mod models_json;
 pub mod oauth;
 pub mod providers;
+#[cfg(test)]
+mod refresh_tests;
 mod remote_catalog;
 mod signin;
 pub mod store;
@@ -415,7 +417,7 @@ impl Inner {
     }
 
     async fn resolve(
-        &self,
+        self: &Arc<Self>,
         model: &Model,
         http: &reqwest::Client,
     ) -> Result<ResolvedAuth, AuthError> {
@@ -585,7 +587,7 @@ impl Inner {
 
     /// A valid OAuth credential, refreshing (once, under the locks) when it expires soon.
     async fn fresh_oauth(
-        &self,
+        self: &Arc<Self>,
         provider: &str,
         flow: Arc<dyn OAuthFlow>,
         stored: OAuthCredential,
@@ -601,6 +603,7 @@ impl Inner {
         let ctx = self.flow_ctx(http.clone(), None);
         let timeout = *lock(&self.refresh_timeout);
         let provider_owned = provider.to_owned();
+        let inner = self.clone();
         // The refresh runs in its own task: a caller that stops waiting cannot discard a
         // rotated refresh token before it is persisted.
         let task = tokio::spawn(async move {
@@ -610,7 +613,7 @@ impl Inner {
                 .await
                 .map_err(|e| AuthError::Failed(e.to_string()))?
                 .map_err(store_failed)?;
-            match txn.get(&provider) {
+            let result = match txn.get(&provider) {
                 Some(StoredCredential::OAuth(current)) if expires_soon(&current) => {
                     let next =
                         match tokio::time::timeout(timeout, flow.refresh(&ctx, &current)).await {
@@ -632,22 +635,26 @@ impl Inner {
                             "OAuth refresh for {provider} could not be saved: {e}"
                         ))
                     })?;
-                    Ok((next, true))
+                    Ok(next)
                 }
-                // Another request or process refreshed it meanwhile.
-                Some(StoredCredential::OAuth(current)) => Ok((current, false)),
+                // Another request or process refreshed it meanwhile. Release the file lock
+                // before rebuilding the credential-dependent catalog.
+                Some(StoredCredential::OAuth(current)) => {
+                    drop(txn);
+                    Ok(current)
+                }
                 // Signed out meanwhile.
                 _ => Err(not_configured(&provider)),
+            };
+            if result.is_ok() {
+                // Persistence and catalog publication both outlive a caller that stops
+                // waiting. Also observe credentials refreshed by another process.
+                inner.reload();
             }
+            result
         });
-        let (credential, refreshed) = task.await.map_err(|e| {
-            AuthError::Failed(format!("OAuth refresh failed for {provider}: {e}"))
-        })??;
-        if refreshed {
-            // Credential-dependent catalog data (Copilot's model list) may have changed.
-            self.reload();
-        }
-        Ok(credential)
+        task.await
+            .map_err(|e| AuthError::Failed(format!("OAuth refresh failed for {provider}: {e}")))?
     }
 
     /// A stable installation id (UUID), kept in `settings.json` as `deviceId` (reference

@@ -11,7 +11,28 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — product identity, embedded help and OAuth reachability
+## Current follow-up — stored provider refresh and cancellation
+
+Following **`1429251`**, five real local-HTTP/auth-store tests cover Copilot and default/custom
+Radius refresh: concurrent deduplication, token rotation, expiry, restart, failures and no
+API-key billing fallback. A cancellation regression reproduced stale live Copilot catalogs
+after token persistence; catalog publication now belongs to the owned refresh task and
+survives caller cancellation. See [refresh evidence](pipkin-rust-engine-evidence/provider-refresh.md).
+
+Required checks: **1509 passed, 0 failed, 53 ignored**; Clippy and formatting clean.
+The first targeted run reproduced the bug and exposed a fixture omission; both corrected.
+Copilot refresh intentionally does not retry catalog 429s, as the pinned source specifies;
+the old ledger claim was corrected. No live account or full qualification is claimed.
+
+Recomputed inventory: **504 rows, 488 non-OS; NC 412, NE 37, NP 37, PA 1, BL 0,
+LB 1, OS 16; 438 measured, 7 observed, 6 unverified, 53 not started; 0 fully qualified**.
+PRV-radius reopens: authenticated gateway catalog refresh and independent persistence are
+missing, and OAuth rotation discards the legacy catalog field. This required gap is next,
+along with Copilot login Retry-After date/non-finite handling. Then close remaining runtime
+assertions and sustained/installed/package qualification before native-default/Pi retirement.
+Unrelated owner plan and worktree files remain untouched; native stays opt-in.
+
+## Prior follow-up — product identity, embedded help and OAuth reachability
 
 Following **`291e854`**, the native system prompt identifies Pipkin and embeds a compact
 product/engine reference from `docs/native-engine-reference.md`. It no longer points at
