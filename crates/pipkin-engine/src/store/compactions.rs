@@ -85,6 +85,7 @@ pub struct SummaryResponse {
 #[serde(tag = "outcome", rename_all = "camelCase", deny_unknown_fields)]
 pub enum CompactionOutcome {
     Done { entry: u64 },
+    Submitted { submission: u64 },
     Nothing { reason: String },
     Failed { error: String },
     Aborted,

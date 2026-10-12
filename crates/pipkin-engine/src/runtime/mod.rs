@@ -690,7 +690,9 @@ async fn dispatch_with_cancel(
                 .compact_manual(&sess, instructions.as_deref(), cancel)
                 .await
             {
-                Ok(compaction::Compacted::Done(_)) => Ok(Reply::Ok),
+                Ok(compaction::Compacted::Done(_) | compaction::Compacted::Submitted(_)) => {
+                    Ok(Reply::Ok)
+                }
                 Ok(compaction::Compacted::Nothing(why)) => {
                     Err(ProtoError::new(ErrorCode::Invalid, why))
                 }

@@ -11,7 +11,37 @@ candidate (`--engine native`); Pi remains the default and only shipped engine. *
 qualified** and no parity row is passed. The Claude subscription integration is **reserved for
 Codex — not implemented or qualified**; the native boundary reports it unavailable.
 
-## Current follow-up — durable compaction runtime
+## Current follow-up — durable queued summary placement
+
+Following **`138d879`**, schema **8** (protocol **9**) adds durable built-in summary
+writes. Manual/background results queue while busy, place before selected inputs at
+tool/final boundaries, and survive Stop/restart. Equal cuts are allowed; only backward
+cuts become stale. Usage/submission/terminal classification is atomic; boundary markers
+make post-tools placement and one-at-a-time steering restart-safe. A per-session bound
+retains up to 64 accepted nonblocking summaries without another provider call on overflow.
+See [queued-write evidence](pipkin-rust-engine-evidence/queued-summary-writes.md).
+
+Actual SIGKILL tests cover both sides of the tool boundary and busy summary submission:
+no lost write, extra steer, duplicate summary usage or replayed completed shell effect.
+Runtime/store tests cover Stop, final/tool ordering, capacity recovery, rollback and
+schema-7 backup/history preservation. Four original pinned-reference inbox cases are
+captured; native placement and user selection have bounded function differentials.
+This does not qualify the full reference scheduler, desktop or live-provider lifecycle.
+
+Required checks: **1465 passed, 0 failed, 53 ignored**; Clippy and formatting clean.
+Logs: `/tmp/pipkin-summary-writes-final-{workspace,clippy,fmt}.log`. An initial Clippy
+test-module placement warning was fixed and Clippy/fmt rerun; earlier failed assertions
+and sandbox-only test failures remain recorded in the evidence.
+
+`Q-WRITES` moves **PA → NC**, measured. Recomputed inventory: **504 rows, 489 non-OS;
+NC 406, NE 25, NP 30, PA 27, BL 0, LB 1, OS 15; 432 measured, 7 observed,
+8 unverified, 57 not started; 0 qualified**. Native remains opt-in.
+
+Next: remaining context replacement/history and provider/settings/auth audits, wider
+reliability/performance, installed migration/workflows, packaging/CI/platform qualification,
+then native default and Pi/Node removal. Extension compatibility stays out of scope.
+
+## Prior follow-up — durable compaction runtime
 
 Journal foundation **`74898a4`** is now activated by schema **7** (protocol **9**).
 All compaction scopes admit durable jobs; startup/reopen resumes selected requests,

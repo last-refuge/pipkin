@@ -158,6 +158,10 @@ impl Shared {
             if let CompactionProgress::Terminal { result } = &job.progress {
                 return match result {
                     Outcome::Done { entry } => Ok(Compacted::Done(*entry)),
+                    Outcome::Submitted { submission } => {
+                        self.next_from_queue(sess).await;
+                        Ok(Compacted::Submitted(*submission))
+                    }
                     Outcome::Nothing { reason } => Ok(Compacted::Nothing(reason.clone())),
                     Outcome::Failed { error } => Err(error.clone()),
                     Outcome::Aborted => Err("Compaction aborted.".into()),
@@ -395,31 +399,25 @@ impl Shared {
             let mut changes = vec![];
             let progress = match algo::validate_summary(&response.message) {
                 Ok(summary) => {
-                    let result = if Store::last_head(tx, &sess.id)?
-                        .is_some_and(|(_, cut)| cut >= request.first_kept)
-                    {
-                        Outcome::Nothing {
-                            reason: "Compaction summary dropped: the context changed under it."
-                                .into(),
-                        }
-                    } else {
-                        let entry = Store::append_entry(
-                            tx,
-                            &sess.id,
-                            now_ms(),
-                            job.run,
-                            &EntryKind::Compaction {
-                                summary,
-                                first_kept: request.first_kept,
-                                tokens_before: request.tokens_before,
-                            },
-                        )?;
+                    let kind = EntryKind::Compaction {
+                        summary,
+                        first_kept: request.first_kept,
+                        tokens_before: request.tokens_before,
+                    };
+                    let result = if job.scope == CompactionScope::Blocking {
+                        let entry = Store::append_entry(tx, &sess.id, now_ms(), job.run, &kind)?;
                         let id = entry.id;
                         changes.extend([
                             SessionChange::EntryAppended { entry },
                             SessionChange::BoundaryMoved { has_older: true },
                         ]);
                         Outcome::Done { entry: id }
+                    } else {
+                        let submission = Store::admit_summary_write(tx, &sess.id, job.id, &kind)?;
+                        if Store::open_run_in(tx, &sess.id)?.is_none() {
+                            changes.extend(Self::flush_summary_writes(tx, &sess.id)?);
+                        }
+                        Outcome::Submitted { submission }
                     };
                     CompactionProgress::Terminal { result }
                 }

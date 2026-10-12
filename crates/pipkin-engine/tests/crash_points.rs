@@ -490,6 +490,20 @@ impl Worker {
         }
     }
 
+    fn history(&mut self, session: &str) -> Vec<Entry> {
+        match self.ok(Call::HistoryPage {
+            session: session.into(),
+            before: None,
+            limit: 100,
+        }) {
+            Reply::Page {
+                entries,
+                has_older: false,
+            } => entries,
+            other => panic!("fixture should fit one history page: {other:?}"),
+        }
+    }
+
     /// SIGKILL: no orderly shutdown of any kind.
     fn kill(mut self) {
         self.child.kill().unwrap();
@@ -1130,7 +1144,10 @@ fn sigkill_compaction_boundaries_recover_without_open_and_account_once() {
         let mut w = Worker::start(&p, None);
         // No OpenSession/Compact request: startup alone recovers the journal.
         let terminal = wait_compactions(&p);
-        assert_eq!(terminal["result"]["outcome"], "done", "{point}: {terminal}");
+        assert_eq!(
+            terminal["result"]["outcome"], "submitted",
+            "{point}: {terminal}"
+        );
         assert_eq!(
             stub.bodies().len(),
             5,
@@ -1258,5 +1275,186 @@ fn sigkill_after_overflow_summary_reuses_it_before_retrying_coding() {
             .iter()
             .any(|text| text == "trigger overflow")
     );
+    w.close();
+}
+
+#[test]
+fn sigkill_around_tool_boundary_places_summary_once_and_consumes_only_one_steer() {
+    for point in ["after_tools_before_boundary", "after_tool_boundary"] {
+        let stub = Stub::start(|n, _| match n {
+            4 => tool_plan(
+                n,
+                "bash",
+                json!({"command": "printf x >> effects; touch tool-started; while ! test -f release-tool; do sleep 0.01; done; printf tool-done"}),
+            ),
+            5 => text_plan("queued summary"),
+            _ => text_plan("answer"),
+        });
+        let p = Profile::new(&stub.url());
+        compaction_settings(&p, false, 0);
+        let mut w = Worker::start(&p, Some(point));
+        let s = seed_compaction(&mut w, &p);
+        w.prompt(&s, "tools", "use a tool").unwrap().unwrap();
+        let deadline = Instant::now() + WAIT;
+        while !p.project.join("tool-started").exists() {
+            assert!(Instant::now() < deadline, "tool did not start");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        for (key, mode) in [
+            ("steer-one", InputMode::Steer),
+            ("steer-two", InputMode::Steer),
+            ("follow", InputMode::FollowUp),
+        ] {
+            w.ok(Call::Enqueue {
+                session: s.clone(),
+                request: key.into(),
+                mode,
+                text: key.into(),
+                images: vec![],
+            });
+        }
+        w.ok(Call::Compact {
+            session: s.clone(),
+            instructions: None,
+        });
+        let conn = rusqlite::Connection::open(p.data.join("engine.sqlite")).unwrap();
+        let queued: u64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM summary_writes WHERE state = 'queued'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(queued, 1);
+        std::fs::write(p.project.join("release-tool"), "go").unwrap();
+        w.reap_killed();
+        let mut w = Worker::start(&p, None);
+        for key in ["tools", "steer-one", "steer-two", "follow"] {
+            assert_eq!(w.settled(&s, key), RunOutcome::Completed);
+        }
+        let mut snap = w.snapshot(&s);
+        // OpenSession intentionally starts at the newest head marker; inspect the
+        // pageable history too when proving pre-compaction tool/user ordering.
+        snap.entries = w.history(&s);
+        let summaries: Vec<_> = snap
+            .entries
+            .iter()
+            .filter(|e| matches!(e.kind, EntryKind::Compaction { .. }))
+            .collect();
+        assert_eq!(summaries.len(), 1, "{point}");
+        let user = |text: &str| {
+            snap.entries.iter().find(|e| matches!(&e.kind, EntryKind::Message { message: m @ Message::User { .. }, .. } if m.text() == text)).unwrap_or_else(|| panic!("missing {text}: {:?}", texts(&snap)))
+        };
+        assert_eq!(user("use a tool").run, user("steer-one").run);
+        assert_ne!(
+            user("steer-one").run,
+            user("steer-two").run,
+            "{point}: one-at-a-time must survive replay"
+        );
+        assert_ne!(user("steer-one").run, user("follow").run);
+        let result = snap
+            .entries
+            .iter()
+            .find(|e| {
+                matches!(
+                    &e.kind,
+                    EntryKind::Message {
+                        message: Message::ToolResult { .. },
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        assert!(result.id < summaries[0].id && summaries[0].id < user("steer-one").id);
+        assert_eq!(
+            std::fs::read_to_string(p.project.join("effects")).unwrap(),
+            "x",
+            "{point}: completed tool must not replay"
+        );
+        let bodies = stub.bodies();
+        let first_resumed = messages_with_role(&bodies[6], "user");
+        assert!(first_resumed.iter().any(|text| text == "steer-one"));
+        assert!(
+            !first_resumed
+                .iter()
+                .any(|text| text == "steer-two" || text == "follow")
+        );
+        let (placed, boundaries): (u64,u64) = conn.query_row("SELECT (SELECT COUNT(*) FROM summary_writes WHERE state = 'placed'), (SELECT COUNT(*) FROM tool_boundaries)", [], |r| Ok((r.get(0)?,r.get(1)?))).unwrap();
+        assert_eq!((placed, boundaries), (1, 1));
+        w.close();
+    }
+}
+
+#[test]
+fn sigkill_after_summary_submission_recovers_queued_write_without_resummarizing() {
+    let stub = Stub::start(|n, _| match n {
+        4 => hang_plan(),
+        5 => text_plan("durable queued summary"),
+        _ => text_plan("answer"),
+    });
+    let p = Profile::new(&stub.url());
+    compaction_settings(&p, false, 0);
+    let mut w = Worker::start(&p, Some("compaction_classified"));
+    let s = seed_compaction(&mut w, &p);
+    w.prompt(&s, "busy", "continue coding").unwrap().unwrap();
+    let deadline = Instant::now() + WAIT;
+    while stub.bodies().len() < 5 {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let _ = w.call(Call::Compact {
+        session: s.clone(),
+        instructions: None,
+    });
+    w.reap_killed();
+    let conn = rusqlite::Connection::open(p.data.join("engine.sqlite")).unwrap();
+    let queued: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM summary_writes WHERE state = 'queued'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(queued, 1);
+    let mut w = Worker::start(&p, None);
+    assert_eq!(w.settled(&s, "busy"), RunOutcome::Completed);
+    let mut snap = w.snapshot(&s);
+    snap.entries = w.history(&s);
+    let summary = snap.entries.iter().find(|e| matches!(&e.kind, EntryKind::Compaction { summary, .. } if summary == "durable queued summary")).unwrap();
+    let answer = snap
+        .entries
+        .iter()
+        .rev()
+        .find(|e| {
+            matches!(
+                &e.kind,
+                EntryKind::Message {
+                    message: Message::Assistant { .. },
+                    partial: false,
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    assert!(
+        answer.id < summary.id,
+        "write waits until the final boundary"
+    );
+    assert_eq!(
+        stub.bodies().len(),
+        7,
+        "four seeds, interrupted coding, summary and coding retry"
+    );
+    let tokens: u64 = conn
+        .query_row(
+            "SELECT json_extract(value, '$.totalTokens') FROM usage WHERE bucket = 'model'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(tokens, 90, "saved summary usage is counted exactly once");
+    w.close();
+    let w = Worker::start(&p, None);
+    assert_eq!(stub.bodies().len(), 7);
     w.close();
 }

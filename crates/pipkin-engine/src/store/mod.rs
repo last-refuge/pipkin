@@ -17,6 +17,7 @@ mod generation;
 mod outbox;
 pub(crate) mod prompt_result;
 mod schema;
+mod writes;
 pub use generation::GenerationState;
 
 use std::path::{Path, PathBuf};

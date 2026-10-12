@@ -275,16 +275,15 @@ impl Shared {
                     Admission::New(row) => row,
                     _ => return Ok((Err(ErrorCode::Conflict), vec![])),
                 };
+            let mut changes = Self::flush_summary_writes(tx, session)?;
             let run = Store::start_run(tx, session, Some(key), now)?;
             let entry = Store::append_entry(tx, session, now, Some(run), &user_entry(&row))?;
             let view = Store::run_in(tx, run)?.and_then(|r| r.view());
-            Ok((
-                Ok(Out::Started(run)),
-                vec![
-                    SessionChange::EntryAppended { entry },
-                    SessionChange::RunChanged { run: view },
-                ],
-            ))
+            changes.extend([
+                SessionChange::EntryAppended { entry },
+                SessionChange::RunChanged { run: view },
+            ]);
+            Ok((Ok(Out::Started(run)), changes))
         })?;
         match out {
             Ok(Out::Started(run)) => {
@@ -338,17 +337,16 @@ impl Shared {
                 ));
             }
             // Idle: place it now as a new run.
+            let mut changes = Self::flush_summary_writes(tx, session)?;
             let run = Store::start_run(tx, session, Some(key), now)?;
             Store::consume_queued(tx, session, std::slice::from_ref(&row.key), run)?;
             let entry = Store::append_entry(tx, session, now, Some(run), &user_entry(&row))?;
             let view = Store::run_in(tx, run)?.and_then(|r| r.view());
-            Ok((
-                Ok((row.queue_entry, Some(run))),
-                vec![
-                    SessionChange::EntryAppended { entry },
-                    SessionChange::RunChanged { run: view },
-                ],
-            ))
+            changes.extend([
+                SessionChange::EntryAppended { entry },
+                SessionChange::RunChanged { run: view },
+            ]);
+            Ok((Ok((row.queue_entry, Some(run))), changes))
         })?;
         match result {
             Ok((entry, started)) => {
@@ -579,6 +577,9 @@ impl Shared {
                     let entry = Store::append_entry(tx, &session, now, Some(run), &kind)?;
                     changes.push(SessionChange::EntryAppended { entry });
                 }
+            }
+            if outcome == RunOutcome::Completed {
+                changes.extend(Self::flush_summary_writes(tx, &session)?);
             }
             Store::settle_run(tx, run, &outcome, now)?;
             for req in Store::requests_of_run(tx, run)? {

@@ -106,7 +106,18 @@ Test citations are `<prefix>::<function>`; a prefix names one file:
 
 Owner: **Opus** = main implementation; **Codex** = reserved final integration.
 
-## Status summary (2026-10-11, durable compaction runtime)
+## Status summary (2026-10-11, durable queued summary placement)
+
+Schema **8** adds durable passive writes for built-in manual/background summaries.
+Busy summaries wait for a tool/final boundary, precede selected users, and survive Stop
+and restart. Durable tool-boundary markers prevent skipping delivery or consuming an
+extra steer after recovery. Equal cuts remain valid; only backward cuts are stale.
+Queue capacity, migration, rollback and actual SIGKILL are measured. Executed pinned
+inbox functions provide bounded placement/selection comparisons, not full scheduler
+qualification. `Q-WRITES` moves PA → NC; see [queued-write evidence](pipkin-rust-engine-evidence/queued-summary-writes.md).
+Native remains opt-in.
+
+Prior compaction runtime batch:
 
 Schema **7** activates durable manual/background/blocking/overflow compactions. Startup
 and explicit reopen recover saved selections/responses/retries; usage, summary placement,
@@ -187,10 +198,10 @@ of all 504 capabilities.
 
 | Disposition (target) | Rows |
 | --- | --- |
-| `NC` native implementation of the same contract | 405 |
+| `NC` native implementation of the same contract | 406 |
 | `NE` native equivalent | 25 |
 | `NP` not present in the baseline (evidence in row) | 30 |
-| `PA` pending audit | 28 |
+| `PA` pending audit | 27 |
 | `BL` blocked | 0 |
 | `LB` legacy bridge only | 1 |
 | `RC` reserved for Codex — not implemented or qualified | 0 |
@@ -210,11 +221,11 @@ the row evidence for history; no package execution is claimed.
 
 | Evidence | Rows |
 | --- | --- |
-| measured | 431 |
+| measured | 432 |
 | observed | 7 |
 | failed | 0 |
 | unverified (code exists, no test) | 8 |
-| not started (implementation absent or excluded; see row evidence) | 58 |
+| not started (implementation absent or excluded; see row evidence) | 57 |
 
 | Section | Rows | NC | NE | NP | PA | BL | LB | RC | OS | measured | observed | failed | unverified | not started |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -225,7 +236,7 @@ the row evidence for history; no package execution is claimed.
 | 5 Provider config (P03/P19) | 14 | 10 | 1 | 2 | 1 | 0 | 0 | 0 | 0 | 11 | 0 | 0 | 0 | 3 |
 | 6 Credentials / OAuth (P04) | 59 | 48 | 1 | 1 | 9 | 0 | 0 | 0 | 0 | 56 | 0 | 0 | 2 | 1 |
 | 7 Service API / transport | 48 | 37 | 0 | 5 | 2 | 0 | 0 | 0 | 4 | 38 | 0 | 0 | 0 | 10 |
-| 8 Durable / queue / Stop (P05–P08) | 43 | 39 | 0 | 2 | 2 | 0 | 0 | 0 | 0 | 41 | 0 | 0 | 0 | 2 |
+| 8 Durable / queue / Stop (P05–P08) | 43 | 40 | 0 | 2 | 1 | 0 | 0 | 0 | 0 | 42 | 0 | 0 | 0 | 1 |
 | 9 Subagents (P09/P10) | 17 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16 | 0 | 0 | 1 | 0 |
 | 10 Attachments / models / usage (P11) | 9 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 8 | 0 | 0 | 1 | 0 |
 | 11 Prompt / resources (P12) | 23 | 16 | 0 | 4 | 3 | 0 | 0 | 0 | 0 | 18 | 0 | 0 | 1 | 4 |
@@ -236,7 +247,7 @@ the row evidence for history; no package execution is claimed.
 | 16 Desktop workflows (P05–P19) | 60 | 44 | 12 | 0 | 0 | 0 | 1 | 0 | 3 | 53 | 1 | 0 | 1 | 5 |
 | 17 Import (plan §6) | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 0 | 0 |
 | 18 Packaging / platform (P20) | 18 | 14 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 6 | 6 | 0 | 0 | 6 |
-| **Total** | 504 | 405 | 25 | 30 | 28 | 0 | 1 | 0 | 15 | 431 | 7 | 0 | 8 | 58 |
+| **Total** | 504 | 406 | 25 | 30 | 27 | 0 | 1 | 0 | 15 | 432 | 7 | 0 | 8 | 57 |
 
 Counts are produced by parsing the tables (first disposition code per row); re-run the count
 whenever rows change. Release gates: native beta needs every mandatory row implemented; native
@@ -612,7 +623,7 @@ is the differential target; Chord replicated-state op streams are not reproduced
 | Q-FOLLOW-ONE | inbox.ts | `followUpMode: one-at-a-time` | rt::stop_withdraws_queued_inputs_and_follow_ups_run_after_completion | Opus · E/runtime | — | Same run order | — | NC | measured: rt::stop_withdraws_queued_inputs_and_follow_ups_run_after_completion, ne2e::a_follow_up_waits_in_the_engines_queue_then_runs_by_itself; no differential |
 | Q-FOLLOW-ALL | inbox.ts | `followUpMode: all` | rts::follow_up_mode_all_starts_one_run_with_every_queued_follow_up | Opus · E/runtime | settings import | Same | — | NC | measured: rts::follow_up_mode_all_starts_one_run_with_every_queued_follow_up (two queued follow-ups start one run; one request carries both); no differential |
 | Q-WITHDRAW | submissions.ts:102-115 | Withdraw queued → aborted; placed → already_placed | rt::queued_inputs_can_be_withdrawn_before_they_run | Opus · E/store::cancel_queued | — | Same outcomes | — | NC | measured: rt::queued_inputs_can_be_withdrawn_before_they_run, ne2e::a_queued_input_removed_before_it_runs_never_reaches_the_model; no differential |
-| Q-WRITES | D/harness/submissions.ts:154-211; compaction.ts:400-436 | Built-in manual/background summaries use durable `write` submissions; busy conversations place them at a boundary, with stale head checks | Planned: busy-run boundary, restart, Stop and ordering tests | Native · E/runtime/compaction + queue | write entries imported as entries | Required by built-in compaction even though the desktop never submits generic writes | — | PA | not started: pinned source confirms non-blocking summaries queue when busy. Native journal now recovers summaries but still appends them directly at classification; durable queued placement and input/write boundary ordering remain required. This is not Pi extension compatibility (compaction-runtime.md) |
+| Q-WRITES | D/harness/submissions.ts:154-211; compaction.ts:400-436 | Built-in manual/background summaries use durable `write` submissions; busy conversations place them at a boundary, with stale head checks | compaction_tests, store::writes and crash_points; executed inbox reference fixture | Native · E/runtime/compaction + queue | write entries imported as entries | Required by built-in compaction even though the desktop never submits generic writes | — | NC | measured: schema-8 queued summaries place before users at tool/final/idle-admission boundaries; strict stale cuts, equal cuts, Stop/restart survival, 64-summary capacity, rollback and migration tests. Actual SIGKILL on both sides of tool boundary and after busy submission. Bounded executed reference placement/selection comparisons; full scheduler qualification open (queued-summary-writes.md) |
 | Q-BOUND | (no reference cap) | Queue length unbounded in reference | st::queue_entries_are_ordered_withdrawable_and_bounded | Opus · P/limits.rs MAX_QUEUE=64 | import refuses >64 queued? decide | Recorded difference D-03 | — | NC | measured: st::queue_entries_are_ordered_withdrawable_and_bounded |
 | STOP-INTENT | plan §4; D/scheduler.ts:321+ | Abort marks tasks abort_requested in one commit, then signals | st::stop_intent_is_durable_and_settlement_closes_the_run | Opus · E/store::request_stop | `abort_requested` tasks → runs.stopping | Stop durable before reply | — | NC | measured: st::stop_intent_is_durable_and_settlement_closes_the_run; no differential |
 | STOP-WITHDRAW | inbox.ts:343-351 | Stop withdraws queued inputs (writes stay) | rt::stop_withdraws_queued_inputs_and_follow_ups_run_after_completion | Opus · E/runtime/session.rs | — | Same | — | NC | measured: rt::stop_withdraws_queued_inputs_and_follow_ups_run_after_completion; no differential |
@@ -717,7 +728,7 @@ is the differential target; Chord replicated-state op streams are not reproduced
 | CTX-SUMMARY-PROMPT | compaction.ts:57-207 | Exact summarization system prompt, format, serialization (2000-char tool result truncation), cacheRetention none, maxTokens min(0.8·reserve, model) | cmp::summary_request_text_is_exact; cmp::serializes_a_transcript_and_truncates_tool_results | Opus · E/context/compaction.rs + E/runtime/compaction.rs | — | Byte-identical request | — | NC | measured: cmp::summary_request_text_is_exact, cmp::serializes_a_transcript_and_truncates_tool_results, cmp::summarizes_an_earlier_summary_marker_first, rt::manual_and_overflow_compaction_summarize_older_context (no tools); no differential; `e-compaction` fixture's summary request not compared |
 | CTX-CHECKPOINT | D/harness/compaction.ts:33-52,112-217 | Durable select/summarize/retry phases preserve model/thinking/options, context tail/cut and absolute retry deadline across restart; foreground Stop intent survives | compaction_tests + crash_points (compaction-runtime.md) | Native · E/runtime/compaction.rs + E/store | In-flight imports currently refuse; completed summaries preserved | Same operation and pinned request after restart | — | NC | measured: schema-7 runtime admits and recovers every compaction scope with pinned input/options/attempt count, live retry policy, fresh credentials and absolute deadlines; saved-response classification commits usage/summary/terminal together. Actual SIGKILL at four phases and overflow handoff; startup without OpenSession; Stop/background, bounded recovery, storage-failure reopen and schema-6 upgrade tests. No executed reference differential; not fully qualified |
 | CTX-SUMMARY-RESULT | compaction.ts | Valid summary rules; failure texts; retry via durable retry; usage recorded | cmp::validates_summaries_with_the_reference_failure_texts | Opus · E/context/compaction.rs + E/runtime/compaction.rs | — | Same outcomes | — | NC | measured: cmp::validates_summaries_with_the_reference_failure_texts; real-worker SIGKILL tests preserve failed-summary retry deadlines and budgets; saved-response recovery and late-summary tests verify atomic usage accounting (compaction-runtime.md); no differential |
-| CTX-PLACEMENT | compaction.ts:407-436 | `pi.compaction` head marker with wrapped summary; non-blocking placed via write submission (`compaction:<taskId>`), stale if passed | rt::manual_and_overflow_compaction_summarize_older_context | Opus · E/context/compaction.rs + E/runtime/compaction.rs | `pi.compaction` → head marker entry | Same context after compaction | — | NC | measured (part): rt::manual_and_overflow_compaction_summarize_older_context (`BoundaryMoved`, next request starts with the summary); compaction_tests::a_late_summary_cannot_replace_a_newer_head_but_its_usage_is_counted_once verifies stale placement/accounting; general queued-write equivalence remains PA (Q-WRITES); no differential |
+| CTX-PLACEMENT | compaction.ts:407-436 | `pi.compaction` head marker with wrapped summary; non-blocking placed via write submission (`compaction:<taskId>`), stale if passed | rt::manual_and_overflow_compaction_summarize_older_context | Opus · E/context/compaction.rs + E/runtime/compaction.rs | `pi.compaction` → head marker entry | Same context after compaction | — | NC | measured: manual/overflow placement plus durable nonblocking submissions (Q-WRITES), stale usage, equal cuts, write-before-user ordering, Stop/restart and actual SIGKILL boundary tests. Executed reference inbox placement comparison; full scheduler/desktop qualification remains open (queued-summary-writes.md) |
 | CTX-BOUNDARY-UI | e2e::history_before_a_compaction_is_paged_in_once_and_in_order | Desktop pages history before a compaction once, in order | rt::manual_and_overflow_compaction_summarize_older_context; ne2e::older_history_pages_in_and_stays_through_later_updates | Opus · `BoundaryMoved`, HistoryPage | — | Same visible history | desktop | NC | measured (part): rt::manual_and_overflow_compaction_summarize_older_context (`has_older` after compaction), ne2e::older_history_pages_in_and_stays_through_later_updates (paging without a compaction); desktop paging across a compaction boundary not in the native e2e; no differential |
 | CTX-SETTINGS | ca/core/settings-manager.ts:23-33,914-960 | `compaction.enabled/reserveTokens/keepRecentTokens` (+`modelOverrides` per model) | cfg::project_settings_override_global_and_defaults_apply; cfg::compaction_model_overrides_apply_per_field_by_exact_key; rts::compaction_model_overrides_apply_to_the_session_model | Opus · E/config.rs CompactionSettings | settings import | Same effective policy | — | NC | measured: cfg::project_settings_override_global_and_defaults_apply, rt::manual_and_overflow_compaction_summarize_older_context (`keepRecentTokens` honoured), cfg::compaction_model_overrides_apply_per_field_by_exact_key, rts::compaction_model_overrides_apply_to_the_session_model (see SET-COMPACTION-OVERRIDES); no differential |
 | CTX-HOOK | D/harness hooks `beforeCompact` | Hooks can decline or supply a summary (no built-in uses it) | n/a | Opus · E/extensions | — | — | — | NP (no built-in registers it; A-ext §5.5) | not started (NP) |

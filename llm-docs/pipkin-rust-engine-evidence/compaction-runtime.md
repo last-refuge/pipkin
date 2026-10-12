@@ -4,6 +4,10 @@
 This closes the missing runtime implementation in CTX-CHECKPOINT. Native remains opt-in;
 this evidence does not qualify the entire context subsystem or the release.
 
+Follow-up: [queued summary placement](queued-summary-writes.md) implements the
+Q-WRITES gap identified below, with schema 8, boundary recovery and bounded reference
+comparisons. The direct-placement description below records this batch's historical state.
+
 ## Implemented behavior
 
 Manual, threshold background, threshold blocking and overflow compactions now admit a

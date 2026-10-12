@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -207,7 +207,33 @@ CREATE INDEX compactions_run ON compactions(run, id) WHERE run IS NOT NULL;
 "#;
 // V7 activates journal execution. V6 runtimes must refuse active recoverable jobs.
 const V7: &str = "CREATE INDEX compactions_recovery ON compactions(id) WHERE state != 'settled';";
-const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7];
+const V8: &str = r#"
+CREATE TABLE summary_writes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session TEXT NOT NULL REFERENCES sessions(id),
+    compaction INTEGER NOT NULL UNIQUE REFERENCES compactions(id),
+    state TEXT NOT NULL CHECK (state IN ('queued', 'placed', 'stale')),
+    body TEXT CHECK (body IS NULL OR json_valid(body)),
+    entry INTEGER,
+    CHECK ((state = 'queued') = (body IS NOT NULL)),
+    CHECK ((state = 'placed') = (entry IS NOT NULL))
+) STRICT;
+CREATE INDEX summary_writes_pending ON summary_writes(session, id) WHERE state = 'queued';
+CREATE TABLE tool_boundaries (
+    run INTEGER NOT NULL REFERENCES runs(id),
+    assistant INTEGER NOT NULL,
+    PRIMARY KEY(run, assistant)
+) STRICT;
+-- A later user/assistant message in the same run proves the old runtime already crossed
+-- this tool boundary. Do not consume another steer when upgrading a streaming run.
+INSERT INTO tool_boundaries(run, assistant)
+SELECT e.run, e.id FROM entries e
+WHERE e.run IS NOT NULL AND json_extract(e.body, '$.message.role') = 'assistant'
+AND json_extract(e.body, '$.message.stopReason') = 'toolUse'
+AND EXISTS (SELECT 1 FROM entries n WHERE n.session = e.session AND n.run = e.run
+    AND n.id > e.id AND json_extract(n.body, '$.message.role') IN ('assistant', 'user'));
+"#;
+const MIGRATIONS: &[&str] = &[V1, V2, V3, "", "", V6, V7, V8];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

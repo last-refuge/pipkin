@@ -54,6 +54,7 @@ pub(super) struct Prepared {
 
 enum Step {
     Tools(Vec<(String, String, Value)>),
+    Boundary(u64),
     Final,
     Retry(i64),
     Error(u64, i64, Box<Message>),
@@ -122,13 +123,14 @@ impl Shared {
                     if cancel.is_cancelled() {
                         continue;
                     }
-                    let settings = self.settings_for(&sess.id);
-                    if self
-                        .place_queued(sess, run, settings.steering_mode, false)
-                        .is_err()
-                    {
+                    super::faults::crash_point("after_tools_before_boundary");
+                }
+                Step::Boundary(assistant) => {
+                    let mode = self.settings_for(&sess.id).steering_mode;
+                    if self.place_queued(sess, run, assistant, mode).is_err() {
                         return None;
                     }
+                    super::faults::crash_point("after_tool_boundary");
                 }
                 Step::Retry(until) => {
                     let remaining = until.saturating_sub(now_ms()).max(0) as u64;
@@ -306,6 +308,11 @@ impl Shared {
                                     _ => unreachable!(),
                                 }),
                             });
+                        }
+                        if *stop_reason == StopReason::ToolUse && has_calls {
+                            let placed: bool = c.query_row("SELECT EXISTS(SELECT 1 FROM tool_boundaries WHERE run = ?1 AND assistant = ?2)",
+                                rusqlite::params![run, last.id], |r| r.get(0))?;
+                            if !placed { return Ok(Step::Boundary(last.id)); }
                         }
                         match stop_reason {
                             StopReason::Stop | StopReason::Length => Ok(Step::Final),
@@ -840,19 +847,29 @@ impl Shared {
         &self,
         sess: &SessionRt,
         run: u64,
+        assistant: u64,
         mode: QueueDelivery,
-        follow_ups: bool,
     ) -> Result<(), ProtoError> {
         let session = sess.id.clone();
         self.commit(sess, |tx| {
             let queue = Store::queue_in(tx, &session)?;
-            let chosen = choose(&queue, mode, follow_ups, QueueDelivery::OneAtATime);
-            if chosen.is_empty() {
+            if Store::run_in(tx, run)?.is_none_or(|r| r.stop_requested || r.view().is_none()) {
                 return Ok(((), vec![]));
+            }
+            let inserted = tx.execute(
+                "INSERT OR IGNORE INTO tool_boundaries(run, assistant) VALUES (?1, ?2)",
+                rusqlite::params![run, assistant],
+            )?;
+            if inserted == 0 {
+                return Ok(((), vec![]));
+            }
+            let mut changes = Self::flush_summary_writes(tx, &session)?;
+            let chosen = choose(&queue, mode, false, QueueDelivery::OneAtATime);
+            if chosen.is_empty() {
+                return Ok(((), changes));
             }
             let keys: Vec<String> = chosen.iter().map(|r| r.key.clone()).collect();
             Store::consume_queued(tx, &session, &keys, run)?;
-            let mut changes = Vec::new();
             let now = now_ms();
             for row in &chosen {
                 let entry = Store::append_entry(tx, &session, now, Some(run), &user_entry(row))?;
@@ -887,11 +904,11 @@ impl Shared {
             let Some(first) = chosen.first() else {
                 return Ok((None, vec![]));
             };
+            let mut changes = Self::flush_summary_writes(tx, &session)?;
             let now = now_ms();
             let run = Store::start_run(tx, &session, Some(&first.key), now)?;
             let keys: Vec<String> = chosen.iter().map(|r| r.key.clone()).collect();
             Store::consume_queued(tx, &session, &keys, run)?;
-            let mut changes = Vec::new();
             for row in &chosen {
                 let entry = Store::append_entry(tx, &session, now, Some(run), &user_entry(row))?;
                 changes.push(SessionChange::EntryAppended { entry });
@@ -1041,5 +1058,62 @@ impl Shared {
                 libc::malloc_trim(0);
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod queue_reference_tests {
+    use super::*;
+
+    #[test]
+    fn user_selection_matches_executed_reference_boundaries() {
+        let reference: Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/native-queue/inbox-reference.json"
+        ))
+        .unwrap();
+        for case in reference["cases"].as_array().unwrap() {
+            let name = case["name"].as_str().unwrap();
+            if name == "stop" {
+                continue;
+            }
+            let queue: Vec<_> = case["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|item| item["mode"] != "write")
+                .map(|item| RequestRow {
+                    session: "s".into(),
+                    key: item["id"].to_string(),
+                    fingerprint: String::new(),
+                    mode: if item["mode"] == "steer" {
+                        InputMode::Steer
+                    } else {
+                        InputMode::FollowUp
+                    },
+                    state: crate::store::RequestState::Queued,
+                    queue_entry: item["id"].as_u64(),
+                    run: None,
+                    outcome: None,
+                    text: item["content"][0]["text"].as_str().unwrap().into(),
+                    images: vec![],
+                    model: None,
+                    created_at_ms: 0,
+                })
+                .collect();
+            let mode = if name == "final-all" {
+                QueueDelivery::All
+            } else {
+                QueueDelivery::OneAtATime
+            };
+            let chosen = choose(&queue, mode, name.starts_with("final"), mode);
+            let actual: Vec<_> = chosen.iter().map(|r| r.text.as_str()).collect();
+            let expected: Vec<_> = case["placed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|e| e["user"].as_str())
+                .collect();
+            assert_eq!(actual, expected, "{name}");
+        }
     }
 }

@@ -16,10 +16,23 @@ mod request;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Compacted {
     Done(EntryId),
+    Submitted(u64),
     Nothing(String),
 }
 
 impl Shared {
+    pub(super) fn flush_summary_writes(
+        tx: &rusqlite::Connection,
+        session: &str,
+    ) -> crate::store::Result<Vec<SessionChange>> {
+        let mut changes = Vec::new();
+        for entry in Store::place_summary_writes(tx, session, crate::util::now_ms())? {
+            changes.push(SessionChange::EntryAppended { entry });
+            changes.push(SessionChange::BoundaryMoved { has_older: true });
+        }
+        Ok(changes)
+    }
+
     pub(super) async fn compact_manual(
         self: &Arc<Self>,
         sess: &Arc<SessionRt>,
@@ -53,6 +66,15 @@ impl Shared {
             let _lock = sess.lock.lock().await;
             if cancel.is_cancelled() {
                 return Err("Compaction aborted.".into());
+            }
+            if run.is_none()
+                && self
+                    .store
+                    .read(|c| Store::pending_summaries(c, &sess.id))
+                    .map_err(|e| e.to_string())?
+                    >= 64
+            {
+                return Err("The summary queue is full. Wait for a conversation boundary.".into());
             }
             self.commit(sess, |tx| {
                 let job = Store::admit_compaction(tx, &sess.id, key, run, scope, instructions)?;
@@ -117,7 +139,7 @@ impl Shared {
                     let pending: Option<u64> = tx.query_row(
                         "SELECT id FROM compactions WHERE session = ?1 AND scope = 'background' AND state != 'settled' LIMIT 1",
                         [&sess.id], |r| r.get(0)).optional()?;
-                    if pending.is_none() {
+                    if pending.is_none() && Store::pending_summaries(tx, &sess.id)? < 64 {
                         Store::admit_compaction(tx, &sess.id, &format!("background:{tail}"), None,
                             CompactionScope::Background, None)?;
                     }

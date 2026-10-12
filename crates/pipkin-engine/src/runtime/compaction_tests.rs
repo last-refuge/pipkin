@@ -396,7 +396,7 @@ fn stop_persists_foreground_compaction_intent_even_without_an_open_coding_run() 
     assert!(matches!(
         background.progress,
         CompactionProgress::Terminal {
-            result: CompactionOutcome::Done { .. }
+            result: CompactionOutcome::Submitted { .. }
         }
     ));
     assert_eq!(
@@ -672,6 +672,13 @@ fn a_late_summary_cannot_replace_a_newer_head_but_its_usage_is_counted_once() {
         },
     );
     until(|| summaries.load(Ordering::SeqCst) == 1);
+    e.prompt(
+        &session,
+        "advance",
+        "advance the conversation to a later cut",
+    )
+    .unwrap();
+    e.settled("advance");
     send(
         &conn,
         2,
@@ -688,13 +695,20 @@ fn a_late_summary_cannot_replace_a_newer_head_but_its_usage_is_counted_once() {
     first.open();
     let results = replies(&conn, 2);
     assert_eq!(results[&2], Ok(Reply::Ok));
-    assert!(
-        results[&1]
-            .as_ref()
-            .unwrap_err()
-            .message
-            .contains("context changed")
-    );
+    assert_eq!(results[&1], Ok(Reply::Ok)); // Admission succeeds; its passive write is stale.
+    let stale: u64 = e
+        .handle
+        .shared()
+        .store
+        .read(|c| {
+            Ok(c.query_row(
+                "SELECT COUNT(*) FROM summary_writes WHERE state = 'stale'",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(stale, 1);
     let entries = e.handle.shared().store.context_entries(&session).unwrap();
     assert_eq!(
         entries
@@ -707,7 +721,7 @@ fn a_late_summary_cannot_replace_a_newer_head_but_its_usage_is_counted_once() {
         e.handle.shared().store.usage(&session).unwrap().models[0]
             .1
             .total_tokens,
-        90
+        105
     );
 }
 
@@ -832,5 +846,276 @@ fn compaction_retry_policy_changes_apply_without_resetting_the_attempt() {
             .pending_compaction_ids()
             .unwrap()
             .is_empty()
+    );
+}
+
+fn queued_writes(e: &Engine) -> u64 {
+    e.handle
+        .shared()
+        .store
+        .read(|c| {
+            Ok(c.query_row(
+                "SELECT COUNT(*) FROM summary_writes WHERE state = 'queued'",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap()
+}
+
+#[test]
+fn full_summary_queue_refuses_before_provider_and_recovers_after_placement() {
+    let fx = Fixture::new();
+    settings(&fx, false);
+    let provider = Scripted::new(|req, _| {
+        if req.system == SUMMARIZATION_SYSTEM_PROMPT {
+            R::Text("accepted summary".into())
+        } else if req.messages.last().is_some_and(|m| m.text() == "hang") {
+            R::Hang
+        } else {
+            R::Text("answer".into())
+        }
+    });
+    let mut e = fx.start(&provider);
+    let session = seed(&fx, &mut e);
+    e.prompt(&session, "busy", "hang").unwrap();
+    until(|| provider.requests().len() == 5);
+    let compact = || Call::Compact {
+        session: session.clone(),
+        instructions: None,
+    };
+    for _ in 0..64 {
+        e.call(compact()).unwrap();
+    }
+    assert_eq!(queued_writes(&e), 64);
+    let requests = provider.requests().len();
+    let refused = e.call(compact()).unwrap_err();
+    assert!(refused.message.contains("summary queue is full"));
+    assert_eq!(provider.requests().len(), requests);
+    assert_eq!(queued_writes(&e), 64);
+    e.call(Call::Stop {
+        session: session.clone(),
+    })
+    .unwrap();
+    assert_eq!(e.settled("busy"), RunOutcome::Aborted);
+    assert_eq!(queued_writes(&e), 64);
+    e.prompt(&session, "drain", "continue after Stop").unwrap();
+    assert_eq!(e.settled("drain"), RunOutcome::Completed);
+    assert_eq!(queued_writes(&e), 0);
+    let placed = e
+        .handle
+        .shared()
+        .store
+        .read(|c| {
+            Ok(c.query_row(
+                "SELECT COUNT(*) FROM summary_writes WHERE state = 'placed'",
+                [],
+                |r| r.get::<_, u64>(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(
+        placed, 64,
+        "accepted summaries are retained, including equal cuts"
+    );
+    e.call(compact()).unwrap();
+    assert_eq!(provider.requests().len(), requests + 2);
+}
+
+#[test]
+fn a_completed_summary_waits_through_stop_and_restart_until_the_next_input() {
+    let fx = Fixture::new();
+    settings(&fx, false);
+    let provider = Scripted::new(|req, _| {
+        if req.system == SUMMARIZATION_SYSTEM_PROMPT {
+            R::Text("retained summary".into())
+        } else if req.messages.last().is_some_and(|m| m.text() == "hang") {
+            R::Hang
+        } else {
+            R::Text("answer".into())
+        }
+    });
+    let mut e = fx.start(&provider);
+    let session = seed(&fx, &mut e);
+    e.prompt(&session, "busy", "hang").unwrap();
+    until(|| provider.requests().len() == 5);
+    e.call(Call::Compact {
+        session: session.clone(),
+        instructions: None,
+    })
+    .unwrap();
+    assert_eq!(queued_writes(&e), 1);
+    assert!(
+        !e.handle
+            .shared()
+            .store
+            .context_entries(&session)
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e.kind, EntryKind::Compaction { .. }))
+    );
+    e.call(Call::Stop {
+        session: session.clone(),
+    })
+    .unwrap();
+    assert_eq!(e.settled("busy"), RunOutcome::Aborted);
+    assert_eq!(
+        queued_writes(&e),
+        1,
+        "Stop withdraws inputs, not accepted writes"
+    );
+    e.handle.shutdown(std::time::Duration::from_secs(1));
+    drop(e);
+    let resumed = Scripted::echo("next answer");
+    let mut e = fx.start(&resumed);
+    assert_eq!(queued_writes(&e), 1);
+    e.prompt(&session, "next", "next input").unwrap();
+    assert_eq!(e.settled("next"), RunOutcome::Completed);
+    assert_eq!(queued_writes(&e), 0);
+    let request = &resumed.requests()[0];
+    assert!(request.messages[0].text().contains("retained summary"));
+    assert!(!request.messages.iter().any(|m| m.text() == "hang"));
+    let input = request
+        .messages
+        .iter()
+        .position(|m| matches!(m, Message::User { .. }) && m.text().contains("next input"));
+    assert!(
+        input.is_some_and(|index| index > 0),
+        "{:?}",
+        request.messages
+    );
+}
+
+#[test]
+fn final_boundary_places_passive_writes_before_an_earlier_follow_up() {
+    let fx = Fixture::new();
+    settings(&fx, false);
+    let gate = Gate::new();
+    let held = gate.clone();
+    let provider = Scripted::new(move |req, _| {
+        if req.system == SUMMARIZATION_SYSTEM_PROMPT {
+            R::Text("queued summary".into())
+        } else if req
+            .messages
+            .last()
+            .is_some_and(|m| m.text() == "busy final")
+        {
+            R::Gated(held.clone(), Box::new(R::Text("final answer".into())))
+        } else {
+            R::Text("answer".into())
+        }
+    });
+    let mut e = fx.start(&provider);
+    let session = seed(&fx, &mut e);
+    e.prompt(&session, "busy", "busy final").unwrap();
+    until(|| provider.requests().len() == 5);
+    e.call(Call::Enqueue {
+        session: session.clone(),
+        request: "follow".into(),
+        mode: InputMode::FollowUp,
+        text: "follow up".into(),
+        images: vec![],
+    })
+    .unwrap();
+    e.call(Call::Compact {
+        session: session.clone(),
+        instructions: None,
+    })
+    .unwrap();
+    assert_eq!(queued_writes(&e), 1);
+    gate.open();
+    assert_eq!(e.settled("busy"), RunOutcome::Completed);
+    assert_eq!(e.settled("follow"), RunOutcome::Completed);
+    assert_eq!(queued_writes(&e), 0);
+    let entries = e.handle.shared().store.page(&session, None, 100).unwrap().0;
+    let summary = entries
+        .iter()
+        .find(|e| matches!(e.kind, EntryKind::Compaction { .. }))
+        .unwrap()
+        .id;
+    let follow = entries.iter().find(|e| matches!(&e.kind, EntryKind::Message { message, .. } if message.text() == "follow up")).unwrap().id;
+    let final_answer = entries.iter().find(|e| matches!(&e.kind, EntryKind::Message { message, .. } if message.text() == "final answer")).unwrap().id;
+    assert!(final_answer < summary && summary < follow);
+}
+
+#[test]
+#[cfg(unix)]
+fn tool_boundary_places_summary_before_steer_and_does_not_consume_follow_up() {
+    let fx = Fixture::new();
+    settings(&fx, false);
+    let marker = fx.project.join("tool-started");
+    let release = fx.project.join("release-tool");
+    let command =
+        "touch tool-started; while ! test -f release-tool; do sleep 0.01; done; printf tool-done";
+    let provider = Scripted::new(move |req, _| {
+        if req.system == SUMMARIZATION_SYSTEM_PROMPT {
+            R::Text("tool summary".into())
+        } else if req.messages.last().is_some_and(|m| m.text() == "run tool") {
+            R::Tools(
+                None,
+                vec![("bash".into(), serde_json::json!({"command":command}))],
+            )
+        } else {
+            R::Text("answer".into())
+        }
+    });
+    let mut e = fx.start(&provider);
+    let session = seed(&fx, &mut e);
+    e.prompt(&session, "busy", "run tool").unwrap();
+    until(|| marker.exists());
+    for (key, mode) in [("steer", InputMode::Steer), ("follow", InputMode::FollowUp)] {
+        e.call(Call::Enqueue {
+            session: session.clone(),
+            request: key.into(),
+            mode,
+            text: key.into(),
+            images: vec![],
+        })
+        .unwrap();
+    }
+    e.call(Call::Compact {
+        session: session.clone(),
+        instructions: None,
+    })
+    .unwrap();
+    assert_eq!(queued_writes(&e), 1);
+    std::fs::write(release, "go").unwrap();
+    assert_eq!(e.settled("busy"), RunOutcome::Completed);
+    assert_eq!(e.settled("follow"), RunOutcome::Completed);
+    let entries = e.handle.shared().store.page(&session, None, 100).unwrap().0;
+    let summary = entries
+        .iter()
+        .find(|e| matches!(e.kind, EntryKind::Compaction { .. }))
+        .unwrap()
+        .id;
+    let steer = entries
+        .iter()
+        .find(
+            |e| matches!(&e.kind, EntryKind::Message { message, .. } if message.text() == "steer"),
+        )
+        .unwrap();
+    let result = entries
+        .iter()
+        .find(|e| {
+            matches!(
+                &e.kind,
+                EntryKind::Message {
+                    message: Message::ToolResult { .. },
+                    ..
+                }
+            )
+        })
+        .unwrap()
+        .id;
+    assert!(result < summary && summary < steer.id);
+    let follow = entries
+        .iter()
+        .find(
+            |e| matches!(&e.kind, EntryKind::Message { message, .. } if message.text() == "follow"),
+        )
+        .unwrap();
+    assert_ne!(
+        steer.run, follow.run,
+        "follow-up waits for a final boundary"
     );
 }

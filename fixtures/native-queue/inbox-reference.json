@@ -1,0 +1,446 @@
+{
+  "reference": "d2a311097cbcf669e699479587332ae3988a49d0",
+  "scope": "Executed inbox functions; transaction recorder, not a full reference engine run",
+  "sources": {
+    "packages/durable/src/harness/inbox.ts": "d2bb7fd00ca2e117c6a9a7d1f0cbba7f08ca10d991931824cfbc7b8b2614cccf",
+    "packages/durable/src/documents.ts": "7b5e6b95c6dbb13b27dfea7778e383f6501d8038eb49936ff68bb64329b33d42",
+    "packages/durable/src/entries.ts": "cd11739efbfbd0b4407ffe99aa400ad9b7424122e5e22e6854ffa3667c0f0250"
+  },
+  "cases": [
+    {
+      "name": "post-tools-one",
+      "items": [
+        {
+          "id": 1,
+          "mode": "steer",
+          "content": [
+            {
+              "type": "text",
+              "text": "steer-one"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "mode": "followUp",
+          "content": [
+            {
+              "type": "text",
+              "text": "follow"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 3,
+            "summary": "first",
+            "model": []
+          }
+        },
+        {
+          "id": 4,
+          "mode": "steer",
+          "content": [
+            {
+              "type": "text",
+              "text": "steer-two"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 3,
+            "summary": "equal",
+            "model": []
+          }
+        },
+        {
+          "id": 6,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 2,
+            "summary": "backward",
+            "model": []
+          }
+        },
+        {
+          "id": 7,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 4,
+            "summary": "forward",
+            "model": []
+          }
+        }
+      ],
+      "placed": [
+        {
+          "summary": "first",
+          "head": 3
+        },
+        {
+          "summary": "equal",
+          "head": 3
+        },
+        {
+          "summary": "forward",
+          "head": 4
+        },
+        {
+          "user": "steer-one"
+        }
+      ],
+      "settled": [
+        {
+          "id": 6,
+          "status": "unanswered",
+          "reason": "stale"
+        }
+      ],
+      "remaining": [
+        2,
+        4
+      ],
+      "result": {
+        "users": [
+          1
+        ],
+        "reset": false
+      }
+    },
+    {
+      "name": "final-one",
+      "items": [
+        {
+          "id": 1,
+          "mode": "steer",
+          "content": [
+            {
+              "type": "text",
+              "text": "steer-one"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "mode": "followUp",
+          "content": [
+            {
+              "type": "text",
+              "text": "follow"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 3,
+            "summary": "first",
+            "model": []
+          }
+        },
+        {
+          "id": 4,
+          "mode": "steer",
+          "content": [
+            {
+              "type": "text",
+              "text": "steer-two"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 3,
+            "summary": "equal",
+            "model": []
+          }
+        },
+        {
+          "id": 6,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 2,
+            "summary": "backward",
+            "model": []
+          }
+        },
+        {
+          "id": 7,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 4,
+            "summary": "forward",
+            "model": []
+          }
+        }
+      ],
+      "placed": [
+        {
+          "summary": "first",
+          "head": 3
+        },
+        {
+          "summary": "equal",
+          "head": 3
+        },
+        {
+          "summary": "forward",
+          "head": 4
+        },
+        {
+          "user": "steer-one"
+        },
+        {
+          "user": "follow"
+        }
+      ],
+      "settled": [
+        {
+          "id": 6,
+          "status": "unanswered",
+          "reason": "stale"
+        }
+      ],
+      "remaining": [
+        4
+      ],
+      "result": {
+        "users": [
+          1,
+          2
+        ],
+        "reset": false
+      }
+    },
+    {
+      "name": "final-all",
+      "items": [
+        {
+          "id": 1,
+          "mode": "steer",
+          "content": [
+            {
+              "type": "text",
+              "text": "steer-one"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "mode": "followUp",
+          "content": [
+            {
+              "type": "text",
+              "text": "follow"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 3,
+            "summary": "first",
+            "model": []
+          }
+        },
+        {
+          "id": 4,
+          "mode": "steer",
+          "content": [
+            {
+              "type": "text",
+              "text": "steer-two"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 3,
+            "summary": "equal",
+            "model": []
+          }
+        },
+        {
+          "id": 6,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 2,
+            "summary": "backward",
+            "model": []
+          }
+        },
+        {
+          "id": 7,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 4,
+            "summary": "forward",
+            "model": []
+          }
+        }
+      ],
+      "placed": [
+        {
+          "summary": "first",
+          "head": 3
+        },
+        {
+          "summary": "equal",
+          "head": 3
+        },
+        {
+          "summary": "forward",
+          "head": 4
+        },
+        {
+          "user": "steer-one"
+        },
+        {
+          "user": "follow"
+        },
+        {
+          "user": "steer-two"
+        }
+      ],
+      "settled": [
+        {
+          "id": 6,
+          "status": "unanswered",
+          "reason": "stale"
+        }
+      ],
+      "remaining": [],
+      "result": {
+        "users": [
+          1,
+          2,
+          4
+        ],
+        "reset": false
+      }
+    },
+    {
+      "name": "stop",
+      "items": [
+        {
+          "id": 1,
+          "mode": "steer",
+          "content": [
+            {
+              "type": "text",
+              "text": "steer-one"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "mode": "followUp",
+          "content": [
+            {
+              "type": "text",
+              "text": "follow"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 3,
+            "summary": "first",
+            "model": []
+          }
+        },
+        {
+          "id": 4,
+          "mode": "steer",
+          "content": [
+            {
+              "type": "text",
+              "text": "steer-two"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 3,
+            "summary": "equal",
+            "model": []
+          }
+        },
+        {
+          "id": 6,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 2,
+            "summary": "backward",
+            "model": []
+          }
+        },
+        {
+          "id": 7,
+          "mode": "write",
+          "entry": {
+            "kind": "pi.compaction",
+            "head": 4,
+            "summary": "forward",
+            "model": []
+          }
+        }
+      ],
+      "placed": [],
+      "settled": [
+        {
+          "id": 4,
+          "status": "unanswered",
+          "reason": "aborted"
+        },
+        {
+          "id": 2,
+          "status": "unanswered",
+          "reason": "aborted"
+        },
+        {
+          "id": 1,
+          "status": "unanswered",
+          "reason": "aborted"
+        }
+      ],
+      "remaining": [
+        3,
+        5,
+        6,
+        7
+      ],
+      "result": null
+    }
+  ]
+}
