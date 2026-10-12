@@ -21,6 +21,42 @@ below remains the risk/evidence record, not a claim that waived or unobserved ch
 - [ ] Windows CI/port after Mac review.
 - [ ] Final 1.0 version, approval, tag and artifact publication. No experimental 0.0.1 artifact is relabelled as 1.0.
 
+## Owner-directed v1.0 scope (2026-10-12)
+
+With the built-in Rust engine default and Pi/Node retired, the owner redefined what remains for
+1.0. The release-gate items below are **deferred past 1.0** by owner decision, not passed:
+screen-reader (Orca) composer speech and workflow, extended automated soak and the day-long
+real-window session (overall pressure and performance testing happens after 1.0), the
+clean-install/upgrade/rollback walkthrough on a second machine, signing-key/verification
+machinery, license and provenance appraisal, documentation consolidation, and the native
+observation of the new feature surfaces. The gate record keeps their honest status.
+
+The 1.0 list is now:
+
+1. **JOB-1 / JOB-2** — managed jobs: supervisor, durable records, bounded logs, cancellation,
+   completion events, the Jobs inspector (plan §9).
+2. **STATUS-1 / STATUS-2** — the compact status model and the engine-fed context-usage view
+   (plan §11).
+3. **SUB-2 / SUB-3** — per-child Stop and Steer, then asynchronous children with launch
+   receipts and durable completion delivery (plan §6).
+4. **ASK-2** — the questionnaire contract: grouped questions, multi-select, previews, notes,
+   background-conversation attention (plan §7).
+5. **OBS-1, then OBS-2 / OBS-3** — local correlated diagnostics, then the opt-in exporter
+   (plan §12).
+6. **Leftovers inside finished slices** — web citation rendering and a fallback provider
+   chain; goal cost limits and a pinned auditor model; subagent result artifact references;
+   MCP OS-keychain storage, legacy SSE and image retention as artifacts; the live-provider
+   checks each slice deferred.
+7. **Owner-run native gates** on the supported desktop: minimize/restore, suspend/resume,
+   cold boot, monitor unplug, the 150% scale and large-text matrix, IME commit/cancel,
+   picker/drop/clipboard/links, the engine-unavailable state.
+8. **Scope decision** — macOS (experimental build, no Developer ID/notarization, no
+   interactive acceptance) and Windows (not supported): an explicit statement of what 1.0
+   advertises.
+
+Still post-1.0 unless pulled in: WEB-2 extraction breadth, MCP apps / remote HTML (Browse
+plan), an independent job daemon, multi-goal workflows, the website.
+
 ## Evidence and working rules
 
 Reference these documents and implementations, but verify their current state before changing code:
