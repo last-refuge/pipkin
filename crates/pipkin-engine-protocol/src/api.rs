@@ -463,6 +463,30 @@ pub enum Call {
     },
     /// The trace exporter's state (OBS-2).
     ExportHealth,
+    /// Write the exporter's settings (OBS-3): `export` in the user settings file. The
+    /// endpoint is required while enabled. Answered by the new health.
+    ExportConfigure {
+        enabled: bool,
+        #[serde(default)]
+        endpoint: Option<String>,
+        /// `metadata` or `content`.
+        content: String,
+        #[serde(default)]
+        service_name: Option<String>,
+    },
+    /// Store the collector credential (one header) in the engine's private credential file.
+    ExportSetCredential {
+        header: String,
+        value: Secret,
+    },
+    ExportClearCredential,
+    /// An example payload at `content` level, built from the session's newest records (or a
+    /// sample when there are none), so the person can see what would leave the machine.
+    ExportPreview {
+        #[serde(default)]
+        session: Option<SessionId>,
+        content: String,
+    },
     AuthState,
     AuthStart {
         provider: String,
@@ -625,6 +649,10 @@ pub enum Reply {
         records: u64,
     },
     ExportHealth(ExportHealthView),
+    ExportPreview {
+        content: String,
+        payload: String,
+    },
     Plan(PlanView),
     PlanUpdated(PlanReceipt),
     WebSources(Vec<WebSourceView>),

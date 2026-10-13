@@ -75,7 +75,16 @@ pub struct ExportHealth {
     pub state: String,
     /// The collector's host only.
     pub endpoint: Option<String>,
+    /// `metadata` or `content`.
     pub content: String,
+    pub kind: String,
+    pub service_name: Option<String>,
+    /// The configured endpoint URL (no query string), for the settings page.
+    pub endpoint_url: Option<String>,
+    /// The stored credential's header name; its value never reaches the desktop.
+    pub credential: Option<String>,
+    /// Header values sit in the settings file; the page suggests moving them.
+    pub headers_in_settings: bool,
     pub queued: u64,
     pub sent: u64,
     pub dropped: u64,
@@ -113,4 +122,25 @@ impl ExportHealth {
         }
         parts.join(" · ")
     }
+}
+
+/// The Trace export settings page's own state (the health is app-wide too).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ExportPage {
+    /// What the backend is doing for the page ("Saving…").
+    pub busy: Option<String>,
+    /// The last refusal.
+    pub notice: Option<String>,
+    /// The last payload preview and the content level it was made at.
+    pub preview: Option<(String, String)>,
+}
+
+/// What the person asked the exporter to be.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportConfig {
+    pub enabled: bool,
+    pub endpoint: String,
+    /// `metadata` or `content`.
+    pub content: String,
+    pub service_name: String,
 }

@@ -34,6 +34,13 @@ pub enum LifecycleEvent {
     },
     /// The engine's trace exporter state (OBS-2).
     ExportHealth(crate::diagnostics::ExportHealth),
+    /// An example export payload at a content level (OBS-3).
+    ExportPreview {
+        content: String,
+        payload: String,
+    },
+    /// A trace export settings action was refused; shown on the page.
+    ExportFailed(String),
 }
 
 pub type LifecycleSink = Box<dyn Fn(LifecycleEvent) + Send + Sync>;

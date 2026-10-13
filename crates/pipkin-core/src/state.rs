@@ -305,6 +305,8 @@ pub struct Goal {
 pub struct AppState {
     /// The engine's trace exporter as it last reported itself (`None` until it does).
     pub export_health: Option<crate::diagnostics::ExportHealth>,
+    /// The Trace export settings page.
+    pub export_page: crate::diagnostics::ExportPage,
     pub projects: Vec<Project>,
     pub models: Vec<ModelInfo>,
     pub conversations: Vec<ConversationState>,
@@ -392,6 +394,7 @@ impl AppState {
             import: crate::import::ImportFlow::default(),
             mcp: Default::default(),
             export_health: None,
+            export_page: Default::default(),
             owners: Default::default(),
             release: Default::default(),
             notice: None,
@@ -535,9 +538,112 @@ impl AppState {
 
     pub fn set_export_health(&mut self, health: crate::diagnostics::ExportHealth) -> Outcome {
         let mut out = Outcome::default();
+        if self.export_page.busy.take().is_some() {
+            out.notes.push(Note::Other);
+        }
         if self.export_health.as_ref() != Some(&health) {
             self.export_health = Some(health);
             out.notes.push(Note::Other);
+        }
+        out
+    }
+
+    pub fn export_previewed(&mut self, content: String, payload: String) -> Outcome {
+        self.export_page.busy = None;
+        self.export_page.preview = Some((content, payload));
+        Outcome::note(Note::Other)
+    }
+
+    pub fn export_failed(&mut self, message: String) -> Outcome {
+        self.export_page.busy = None;
+        self.export_page.notice = Some(message);
+        Outcome::note(Note::Other)
+    }
+
+    fn dispatch_export(&mut self, cmd: Command) -> Outcome {
+        let mut out = Outcome::default();
+        if self.mode != Mode::Real || !self.connection.is_ready() {
+            return out;
+        }
+        let page = &mut self.export_page;
+        let send = |out: &mut Outcome,
+                    page: &mut crate::diagnostics::ExportPage,
+                    busy: &str,
+                    r: BackendRequest| {
+            page.busy = Some(busy.into());
+            page.notice = None;
+            out.effects.push(Effect::Backend(r));
+            out.notes.push(Note::Other);
+        };
+        match cmd {
+            Command::ExportDismissNotice => {
+                page.notice = None;
+                page.preview = None;
+                out.notes.push(Note::Other);
+            }
+            _ if page.busy.is_some() => {}
+            Command::ExportConfigure(config) => {
+                send(
+                    &mut out,
+                    page,
+                    "Saving…",
+                    BackendRequest::ExportConfigure(config),
+                );
+            }
+            Command::ExportDisable => {
+                let Some(h) = &self.export_health else {
+                    return out;
+                };
+                let config = crate::diagnostics::ExportConfig {
+                    enabled: false,
+                    endpoint: h.endpoint_url.clone().unwrap_or_default(),
+                    content: h.content.clone(),
+                    service_name: h.service_name.clone().unwrap_or_default(),
+                };
+                send(
+                    &mut out,
+                    page,
+                    "Turning export off…",
+                    BackendRequest::ExportConfigure(config),
+                );
+            }
+            Command::ExportSetCredential { header, value } => {
+                if header.trim().is_empty() || value.expose().trim().is_empty() {
+                    page.notice = Some("A header name and a value are needed.".into());
+                    out.notes.push(Note::Other);
+                    return out;
+                }
+                send(
+                    &mut out,
+                    page,
+                    "Storing the credential…",
+                    BackendRequest::ExportSetCredential {
+                        header: header.trim().to_owned(),
+                        value,
+                    },
+                );
+            }
+            Command::ExportClearCredential => {
+                send(
+                    &mut out,
+                    page,
+                    "Removing the credential…",
+                    BackendRequest::ExportClearCredential,
+                );
+            }
+            Command::ExportPreview(content) => {
+                let conversation = self.selected;
+                send(
+                    &mut out,
+                    page,
+                    "Building the preview…",
+                    BackendRequest::ExportPreview {
+                        conversation,
+                        content,
+                    },
+                );
+            }
+            _ => {}
         }
         out
     }
@@ -859,6 +965,12 @@ impl AppState {
             | Command::CancelJob(_)
             | Command::MarkJobsSeen
             | Command::DismissJobError => return self.dispatch_jobs(cmd),
+            Command::ExportConfigure(_)
+            | Command::ExportDisable
+            | Command::ExportSetCredential { .. }
+            | Command::ExportClearCredential
+            | Command::ExportPreview(_)
+            | Command::ExportDismissNotice => return self.dispatch_export(cmd),
             Command::RefreshDiagnostics | Command::ExportDiagnostics => {
                 let real = self.mode == Mode::Real && self.connection.is_ready();
                 let Some(c) = self.selected.and_then(|id| self.conv_mut(id)) else {

@@ -410,6 +410,8 @@ The [Langfuse Pi plugin](https://github.com/langfuse/pi-observability-plugin) tr
 
 **OBS-3 — opt-in configuration.** User chooses endpoint/project and content level. Default export off; metadata-only is the first enabled level. Prompt, tool body, image and source-content export require an explicit content setting. Redact credentials before enqueueing. Offer an example payload preview and a disable control. Use the existing credential abstraction; do not make remote telemetry a prerequisite for local costs or debugging.
 
+**Progress (2026-10-12).** OBS-3 done: `ExportConfigure` / `ExportSetCredential` / `ExportClearCredential` / `ExportPreview` (protocol 28, capability `exportConfig`), the `content` level with bounded texts and a redactor, the credential in the engine's private credential file through the existing store, the Trace export settings page with a payload preview and Turn off. See [docs/export.md](../docs/export.md).
+
 ### Acceptance
 
 - A scripted parent/child run produces correctly related traces and exactly-once local accounting, including retries and errors. Remote delivery may be retried; use stable ids to avoid duplicate records where the backend permits.

@@ -113,14 +113,15 @@ STATUS-3 (cached Git summary) is optional; take it only if cheap after STATUS-2.
   Langfuse mapping (outcome: OTLP/HTTP, Langfuse through its OTLP endpoint); bounded buffers,
   retry/backoff, drop/spool policy, visible export health; export failure never delays model
   or tool work; bounded flush at shutdown.
-- [ ] **OBS-3 opt-in configuration.** Off by default; metadata-only first; prompt/tool/image/
-  source content only with an explicit setting; credentials redacted before enqueueing; payload
-  preview and a disable control; the existing credential abstraction.
-- [ ] **Acceptance.** Scripted parent/child run yields correctly related traces and
+- [x] **OBS-3 opt-in configuration.** (2026-10-12) Off by default; metadata-only first; prompt/tool
+  content only with an explicit setting (images and source bodies never); credentials
+  redacted before enqueueing; payload preview and a disable control; the existing credential
+  abstraction.
+- [x] **Acceptance.** (2026-10-12) Scripted parent/child run yields correctly related traces and
   exactly-once local accounting; a slow or rejecting collector cannot block Stop, streaming or
   commits; disabled export makes no requests; metadata-only payloads carry no bodies; restart
   preserves correlation without resending history.
-- [ ] Docs and scorecard entry.
+- [x] Docs (`docs/diagnostics.md`, `docs/export.md`) and scorecard entries.
 
 ## 6. Leftovers inside finished slices
 
@@ -185,3 +186,6 @@ above.
 - 2026-10-12 — OBS-2 shipped: the OTLP trace exporter over the diagnostics records with
   durable cursors, bounded batches, backoff, drop accounting and a reported health state.
   Open from §5: OBS-3.
+- 2026-10-12 — OBS-3 shipped: export configuration through the engine, the content level
+  with redaction, the stored credential, the payload preview and the Trace export settings
+  page. Open from §5: nothing.

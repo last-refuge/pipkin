@@ -18,14 +18,16 @@ pub(super) enum SettingsSection {
     Session,
     Connections,
     Servers,
+    Export,
 }
 
 impl SettingsSection {
-    const ALL: [Self; 4] = [
+    const ALL: [Self; 5] = [
         Self::Appearance,
         Self::Session,
         Self::Connections,
         Self::Servers,
+        Self::Export,
     ];
 
     fn title(self) -> &'static str {
@@ -34,6 +36,7 @@ impl SettingsSection {
             Self::Session => "Session",
             Self::Connections => "Connections",
             Self::Servers => "MCP servers",
+            Self::Export => "Trace export",
         }
     }
 
@@ -43,6 +46,7 @@ impl SettingsSection {
             Self::Session => "Choose what Pi may do in this session.",
             Self::Connections => "Manage the accounts Pipkin uses for models.",
             Self::Servers => "Connect tool servers the model can search and call.",
+            Self::Export => "Send the engine's traces to a collector you choose. Off by default.",
         }
     }
 
@@ -52,6 +56,7 @@ impl SettingsSection {
             Self::Session => "zap",
             Self::Connections => "wrench",
             Self::Servers => "terminal",
+            Self::Export => "arrow-up",
         }
     }
 }
@@ -190,6 +195,9 @@ impl Workspace {
         self.settings_section = section;
         if section == SettingsSection::Servers {
             self.dispatch(Command::McpRefresh, cx);
+        }
+        if section == SettingsSection::Export {
+            self.prefill_export_page(cx);
         }
         cx.notify();
     }
@@ -371,6 +379,7 @@ impl Workspace {
                     .into_any_element()
             }
             SettingsSection::Servers => self.render_mcp_section(cx),
+            SettingsSection::Export => self.render_export_section(cx),
         };
         div()
             .id("settings-content")
@@ -563,7 +572,13 @@ mod tests {
             .collect();
         assert_eq!(
             labels,
-            ["Appearance", "Session", "Connections", "MCP servers"]
+            [
+                "Appearance",
+                "Session",
+                "Connections",
+                "MCP servers",
+                "Trace export"
+            ]
         );
     }
 }

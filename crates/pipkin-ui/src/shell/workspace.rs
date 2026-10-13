@@ -161,6 +161,12 @@ pub struct Workspace {
     /// draft key and kept, with their text, while that questionnaire stays open.
     pub(super) form_editors: Vec<(String, Entity<ComposerEditor>)>,
     pub(super) form_editors_key: Option<String>,
+    /// The Trace export settings page's fields and its content-level choice.
+    pub(super) export_endpoint: Entity<ComposerEditor>,
+    pub(super) export_service: Entity<ComposerEditor>,
+    pub(super) export_header: Entity<ComposerEditor>,
+    pub(super) export_secret: Entity<ComposerEditor>,
+    pub(super) export_content: String,
     pub(super) mcp_kind: pipkin_core::McpKind,
     pub(super) mcp_scope: pipkin_core::McpScope,
     pub(super) setup_challenge: Option<String>,
@@ -266,6 +272,26 @@ impl Workspace {
             e.set_label("Steer the selected subagent", cx);
             e.set_placeholder("Tell this subagent something\u{2026}");
         });
+        let export_endpoint = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        export_endpoint.update(cx, |e, cx| {
+            e.set_label("Collector endpoint URL", cx);
+            e.set_placeholder("https://host/v1/traces");
+        });
+        let export_service = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        export_service.update(cx, |e, cx| {
+            e.set_label("Service name", cx);
+            e.set_placeholder("pipkin-engine");
+        });
+        let export_header = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        export_header.update(cx, |e, cx| {
+            e.set_label("Credential header name", cx);
+            e.set_placeholder("Authorization");
+        });
+        let export_secret = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        export_secret.update(cx, |e, cx| {
+            e.set_label("Credential value", cx);
+            e.set_placeholder("Basic …");
+        });
         let subagent_task = cx.new(|cx| ComposerEditor::single_line(window, cx));
         subagent_task.update(cx, |e, cx| {
             e.set_label("Task for a new background subagent", cx);
@@ -331,6 +357,11 @@ impl Workspace {
             subagent_task,
             form_editors: Vec::new(),
             form_editors_key: None,
+            export_endpoint,
+            export_service,
+            export_header,
+            export_secret,
+            export_content: "metadata".into(),
             mcp_kind: pipkin_core::McpKind::Stdio,
             mcp_scope: pipkin_core::McpScope::User,
             setup_challenge: None,

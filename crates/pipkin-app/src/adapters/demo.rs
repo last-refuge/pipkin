@@ -633,6 +633,10 @@ impl Worker {
             | BackendRequest::CancelJob { .. }
             | BackendRequest::Diagnostics { .. }
             | BackendRequest::ExportDiagnostics { .. }
+            | BackendRequest::ExportConfigure(_)
+            | BackendRequest::ExportSetCredential { .. }
+            | BackendRequest::ExportClearCredential
+            | BackendRequest::ExportPreview { .. }
             // The demo manages no MCP servers; the page says so instead of simulating one.
             | BackendRequest::McpRefresh { .. }
             | BackendRequest::McpUpsert { .. }

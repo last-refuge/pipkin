@@ -534,6 +534,10 @@ impl Harness {
                     waiting,
                 } => self.state.set_question_waiting(conversation, waiting),
                 LifecycleEvent::ExportHealth(health) => self.state.set_export_health(health),
+                LifecycleEvent::ExportPreview { content, payload } => {
+                    self.state.export_previewed(content, payload)
+                }
+                LifecycleEvent::ExportFailed(message) => self.state.export_failed(message),
             };
             self.exec(outcome);
         }

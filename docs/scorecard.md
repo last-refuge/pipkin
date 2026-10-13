@@ -1,5 +1,29 @@
 # Scorecard
 
+## Export configuration, OBS-3 (2026-10-12)
+
+Export is configured through the engine from a Trace export settings page: off by default,
+metadata as the first enabled level, a `content` level that adds prompts, replies and tool
+texts bounded and redacted, the collector credential in the engine's private credential
+store, a payload preview at either level and a Turn off control
+([export.md](export.md)); protocol 28, capability `exportConfig`.
+
+- **Measured (automated).** Engine tests: the configuration call refuses a missing or
+  non-http endpoint and an unknown level, writes `export` to the user settings file and the
+  health reports it at once; the credential lands in `export-auth.json` with mode 0600 and
+  never in the settings file or the health view (only its header name), reaches the
+  collector as the header, and stops once removed; turning export off keeps the rest; at the
+  metadata level no prompt, reply or credential text is in any payload, at the content level
+  the run's input and output, the completion and the tool arguments and output appear with
+  the credential value and an `sk-` key replaced by `[redacted]`; the preview shows a sample
+  or the session's own records at either level, redacted, refuses an unknown level or
+  session, and sends nothing. Core tests cover the page's commands (one at a time, real
+  engine only, the credential needing both parts and never printed, the preview landing with
+  its level). The repository gate passed.
+- **Observed.** Nothing native.
+- **Unverified.** The page in a window; a real collector or Langfuse project. Not a
+  release qualification.
+
 ## Trace export, OBS-2 (2026-10-12)
 
 The engine's diagnostics records become OTLP/HTTP JSON spans posted to a configured

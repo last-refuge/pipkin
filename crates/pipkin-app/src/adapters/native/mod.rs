@@ -873,6 +873,20 @@ impl Live {
 
     /// MCP state changed in the engine (or a management call answered): publish the servers
     /// for the open project.
+    /// A trace export settings call answered by the new health, or a refusal for the page.
+    fn export_call(&mut self, worker: &mut Worker, call: Call) {
+        match self.call(call) {
+            Ok(Reply::ExportHealth(view)) => {
+                (worker.sink)(LifecycleEvent::ExportHealth(mapping::export_health(&view)))
+            }
+            Ok(_) => self.publish_export_health(worker),
+            Err(CallError::Refused(e)) => (worker.sink)(LifecycleEvent::ExportFailed(e.message)),
+            Err(error) => (worker.sink)(LifecycleEvent::ExportFailed(format!(
+                "The engine did not answer: {error}"
+            ))),
+        }
+    }
+
     /// The exporter's state as the engine reports it (engines without it say nothing).
     fn publish_export_health(&mut self, worker: &mut Worker) {
         if let Ok(Reply::ExportHealth(view)) = self.call(Call::ExportHealth) {
@@ -1852,6 +1866,42 @@ impl Live {
                     },
                 };
                 worker.emit(conversation, generation, kind);
+            }
+            BackendRequest::ExportConfigure(config) => {
+                let call = Call::ExportConfigure {
+                    enabled: config.enabled,
+                    endpoint: Some(config.endpoint).filter(|e| !e.trim().is_empty()),
+                    content: config.content,
+                    service_name: Some(config.service_name).filter(|s| !s.trim().is_empty()),
+                };
+                self.export_call(worker, call);
+            }
+            BackendRequest::ExportSetCredential { header, value } => {
+                let call = Call::ExportSetCredential {
+                    header,
+                    value: pipkin_engine_protocol::Secret(value.expose().to_owned()),
+                };
+                self.export_call(worker, call);
+            }
+            BackendRequest::ExportClearCredential => {
+                self.export_call(worker, Call::ExportClearCredential);
+            }
+            BackendRequest::ExportPreview {
+                conversation,
+                content,
+            } => {
+                let session = conversation.and_then(|c| self.session_of(c).map(|s| s.id.clone()));
+                match self.call(Call::ExportPreview { session, content }) {
+                    Ok(Reply::ExportPreview { content, payload }) => {
+                        (worker.sink)(LifecycleEvent::ExportPreview { content, payload })
+                    }
+                    Ok(other) => (worker.sink)(LifecycleEvent::ExportFailed(format!(
+                        "Unexpected reply {other:?}"
+                    ))),
+                    Err(error) => (worker.sink)(LifecycleEvent::ExportFailed(format!(
+                        "Could not build the preview: {error}"
+                    ))),
+                }
             }
             BackendRequest::CancelJob {
                 conversation,

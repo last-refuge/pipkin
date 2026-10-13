@@ -36,6 +36,8 @@ pub use view::*;
 // `Answer::Form`.
 // Version 26 adds engine diagnostics: `Diagnostics`, `ExportDiagnostics`, `DiagnosticsView`.
 // Version 27 adds the trace exporter: `ExportHealth`, `ExportChanged`.
-pub const PROTOCOL_VERSION: u32 = 27;
+// Version 28 adds export configuration: `ExportConfigure`, `ExportSetCredential`,
+// `ExportClearCredential`, `ExportPreview`, and the settings fields on `ExportHealthView`.
+pub const PROTOCOL_VERSION: u32 = 28;
 
 pub mod delivery;

@@ -489,7 +489,7 @@ impl Shared {
             }
             _ => None,
         };
-        let committed = self.commit(sess, move |tx| {
+        let committed: Result<u64, ProtoError> = self.commit(sess, move |tx| {
             let now = now_ms();
             let mut message = message;
             Store::disambiguate_tool_ids(tx, &session, &mut message)?;
@@ -499,7 +499,7 @@ impl Shared {
                 request: None,
                 partial: false,
             };
-            let change = match partial {
+            let (entry_id, change) = match partial {
                 Some(id) => {
                     let entry = Entry {
                         id,
@@ -509,11 +509,12 @@ impl Shared {
                         kind,
                     };
                     Store::replace_entry(tx, &session, &entry)?;
-                    SessionChange::EntryReplaced { entry }
+                    (id, SessionChange::EntryReplaced { entry })
                 }
-                None => SessionChange::EntryAppended {
-                    entry: Store::append_entry_owned(tx, &session, now, Some(run), kind)?,
-                },
+                None => {
+                    let entry = Store::append_entry_owned(tx, &session, now, Some(run), kind)?;
+                    (entry.id, SessionChange::EntryAppended { entry })
+                }
             };
             if !is_error {
                 Store::reset_generation_state(tx, run)?;
@@ -525,10 +526,12 @@ impl Shared {
                     usage: Store::usage_in(tx, &session)?,
                 });
             }
-            Ok(((), changes))
+            Ok((entry_id, changes))
         });
         match committed {
-            Ok(()) => {
+            Ok(entry_id) => {
+                let mut diag = diag;
+                diag["entry"] = serde_json::json!(entry_id);
                 self.diag(&sess.id, "provider.request", Some(run), None, None, diag);
                 super::faults::crash_point("after_generation_result");
                 Ok(())

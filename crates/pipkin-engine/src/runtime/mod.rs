@@ -700,6 +700,7 @@ async fn dispatch_with_cancel(
                     "questionnaires".into(),
                     "diagnostics".into(),
                     "export".into(),
+                    "exportConfig".into(),
                     "plans".into(),
                     "web".into(),
                     "goals".into(),
@@ -1147,6 +1148,29 @@ async fn dispatch_with_cancel(
             })
         }
         Call::ExportHealth => Ok(Reply::ExportHealth(shared.export.health())),
+        Call::ExportConfigure {
+            enabled,
+            endpoint,
+            content,
+            service_name,
+        } => Ok(Reply::ExportHealth(shared.export_configure(
+            enabled,
+            endpoint,
+            &content,
+            service_name,
+        )?)),
+        Call::ExportSetCredential { header, value } => {
+            shared.export_set_credential(&header, &value.0)?;
+            Ok(Reply::ExportHealth(shared.export.health()))
+        }
+        Call::ExportClearCredential => {
+            shared.export_clear_credential()?;
+            Ok(Reply::ExportHealth(shared.export.health()))
+        }
+        Call::ExportPreview { session, content } => Ok(Reply::ExportPreview {
+            payload: shared.export_preview(session.as_deref(), &content)?,
+            content,
+        }),
         Call::AuthState => Ok(Reply::Auth(shared.auth.snapshot(client))),
         Call::AuthStart { provider } => {
             if let Some(error) = shared.refresh_net_async().await?.validation_error {
@@ -1434,6 +1458,8 @@ pub fn registry_with(extra: Arc<dyn ApiAdapter>) -> Registry {
 mod ask2_tests;
 #[cfg(test)]
 mod ask_tests;
+#[cfg(test)]
+mod export3_tests;
 #[cfg(test)]
 mod export_tests;
 #[cfg(test)]

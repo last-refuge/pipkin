@@ -195,10 +195,89 @@ fn the_export_health_is_app_wide_and_summarized_in_one_line() {
         failures: 2,
         last_error: Some("the collector answered 503".into()),
         last_success_ms: Some(1),
+        ..ExportHealth::default()
     };
     s.set_export_health(busy);
     assert_eq!(
         s.export_health.as_ref().unwrap().summary(),
         "Retrying to collector.example:4318 · 120 sent · 7 waiting · 3 dropped · the collector answered 503"
     );
+}
+
+#[test]
+fn export_settings_commands_go_to_a_real_engine_one_at_a_time_and_answers_settle_them() {
+    use pipkin_core::onboarding::SignInAnswer;
+    let mut s = state(Mode::Real);
+    let config = ExportConfig {
+        enabled: true,
+        endpoint: "http://127.0.0.1:4318/v1/traces".into(),
+        content: "content".into(),
+        service_name: "app".into(),
+    };
+    let out = s.dispatch(Command::ExportConfigure(config.clone()));
+    assert_eq!(
+        backend(&out),
+        [BackendRequest::ExportConfigure(config.clone())]
+    );
+    assert_eq!(s.export_page.busy.as_deref(), Some("Saving…"));
+    // One at a time.
+    assert!(backend(&s.dispatch(Command::ExportPreview("metadata".into()))).is_empty());
+    // The health answers it.
+    s.set_export_health(ExportHealth {
+        enabled: true,
+        state: "idle".into(),
+        endpoint_url: Some(config.endpoint.clone()),
+        content: "content".into(),
+        service_name: Some("app".into()),
+        ..ExportHealth::default()
+    });
+    assert!(s.export_page.busy.is_none());
+    // Disable keeps the configuration.
+    let out = s.dispatch(Command::ExportDisable);
+    assert_eq!(
+        backend(&out),
+        [BackendRequest::ExportConfigure(ExportConfig {
+            enabled: false,
+            ..config.clone()
+        })]
+    );
+    s.export_failed("Cannot write settings".into());
+    assert_eq!(
+        s.export_page.notice.as_deref(),
+        Some("Cannot write settings")
+    );
+    assert!(s.export_page.busy.is_none());
+    // The credential needs both parts; the value is never printed.
+    let out = s.dispatch(Command::ExportSetCredential {
+        header: "Authorization".into(),
+        value: SignInAnswer::new(" ".into()),
+    });
+    assert!(backend(&out).is_empty());
+    assert!(s.export_page.notice.as_deref().unwrap().contains("needed"));
+    let out = s.dispatch(Command::ExportSetCredential {
+        header: " Authorization ".into(),
+        value: SignInAnswer::new("Basic abc".into()),
+    });
+    let requests = backend(&out);
+    assert!(
+        matches!(&requests[..], [BackendRequest::ExportSetCredential { header, .. }] if header == "Authorization")
+    );
+    assert!(!format!("{requests:?}").contains("Basic abc"));
+    s.set_export_health(ExportHealth::default());
+    // The preview lands on the page with its level.
+    let out = s.dispatch(Command::ExportPreview("content".into()));
+    assert_eq!(
+        backend(&out),
+        [BackendRequest::ExportPreview {
+            conversation: Some(ConversationId(1)),
+            content: "content".into()
+        }]
+    );
+    s.export_previewed("content".into(), "{}".into());
+    assert_eq!(s.export_page.preview, Some(("content".into(), "{}".into())));
+    s.dispatch(Command::ExportDismissNotice);
+    assert!(s.export_page.preview.is_none() && s.export_page.notice.is_none());
+    // The demo sends nothing.
+    let mut d = state(Mode::Demo);
+    assert!(backend(&d.dispatch(Command::ExportConfigure(config))).is_empty());
 }

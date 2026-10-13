@@ -5,6 +5,7 @@ mod center;
 mod clipboard_image;
 pub mod commands;
 pub mod controls;
+mod export_settings;
 mod inspector;
 mod jobs;
 mod mcp_settings;

@@ -65,6 +65,19 @@ pub enum Command {
     RefreshDiagnostics,
     /// Ask the engine to write the conversation's retained diagnostics as a file.
     ExportDiagnostics,
+    /// Trace export settings (OBS-3): write the configuration through the engine.
+    ExportConfigure(crate::diagnostics::ExportConfig),
+    /// Turn export off, keeping the rest of the configuration.
+    ExportDisable,
+    /// Store the collector credential (one header) in the engine's private store.
+    ExportSetCredential {
+        header: String,
+        value: crate::onboarding::SignInAnswer,
+    },
+    ExportClearCredential,
+    /// Ask for an example payload at this content level.
+    ExportPreview(String),
+    ExportDismissNotice,
     NewConversation,
     RenameConversation(ConversationId, String),
     SetSearch(String),
@@ -443,6 +456,18 @@ pub enum BackendRequest {
     ExportDiagnostics {
         conversation: ConversationId,
         generation: u64,
+    },
+    /// Trace export settings, answered through the lifecycle (`ExportHealth`,
+    /// `ExportPreview`, `ExportFailed`).
+    ExportConfigure(crate::diagnostics::ExportConfig),
+    ExportSetCredential {
+        header: String,
+        value: crate::onboarding::SignInAnswer,
+    },
+    ExportClearCredential,
+    ExportPreview {
+        conversation: Option<ConversationId>,
+        content: String,
     },
 
     /// MCP management. `conversation` is the open one, whose project may hold its own

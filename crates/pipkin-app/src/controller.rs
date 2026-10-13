@@ -1171,6 +1171,12 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                     LifecycleEvent::ExportHealth(health) => {
                         m.mutate(|state| state.set_export_health(health), cx)
                     }
+                    LifecycleEvent::ExportPreview { content, payload } => {
+                        m.mutate(|state| state.export_previewed(content, payload), cx)
+                    }
+                    LifecycleEvent::ExportFailed(message) => {
+                        m.mutate(|state| state.export_failed(message), cx)
+                    }
                 });
                 if alive.is_err() {
                     break;

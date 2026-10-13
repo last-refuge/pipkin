@@ -540,8 +540,24 @@ pub struct ExportHealthView {
     pub state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
-    /// `metadata` (the only content level in OBS-2).
+    /// `metadata` (ids, timings, counts, outcomes) or `content` (adds prompts, replies, tool
+    /// arguments and outputs, bounded and redacted).
     pub content: String,
+    /// `otlp`.
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_name: Option<String>,
+    /// The configured endpoint URL without its query string (for the settings page).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint_url: Option<String>,
+    /// The header name of the stored credential, when one is stored. Its value is never
+    /// reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential: Option<String>,
+    /// `export.headers` in the settings file carries values: better moved to the credential.
+    #[serde(default)]
+    pub headers_in_settings: bool,
     /// Records recorded since export was enabled and not yet sent.
     pub queued: u64,
     pub sent: u64,
@@ -888,7 +904,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 27);
+        assert_eq!(crate::PROTOCOL_VERSION, 28);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };
