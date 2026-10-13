@@ -4,3 +4,5 @@ zed/
 dist/
 qualification-logs/
 .claude/worktrees/
+release/
+release-logs/
