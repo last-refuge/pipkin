@@ -608,6 +608,7 @@ impl Worker {
             Ok(Reply::Auth(snapshot)) => live.publish_auth(self, &snapshot),
             other => log::warn!("could not read sign-in state: {other:?}"),
         }
+        live.publish_export_health(self);
         self.report(Connection::Ready);
         if let Some((conversation, generation, initial)) = self.last_open
             && live.open(self, conversation, generation, initial)
@@ -872,6 +873,13 @@ impl Live {
 
     /// MCP state changed in the engine (or a management call answered): publish the servers
     /// for the open project.
+    /// The exporter's state as the engine reports it (engines without it say nothing).
+    fn publish_export_health(&mut self, worker: &mut Worker) {
+        if let Ok(Reply::ExportHealth(view)) = self.call(Call::ExportHealth) {
+            (worker.sink)(LifecycleEvent::ExportHealth(mapping::export_health(&view)));
+        }
+    }
+
     fn publish_mcp(&mut self, worker: &mut Worker) {
         let session = self.mcp_session(None);
         match self.call(Call::McpServers { session }) {
@@ -985,6 +993,9 @@ impl Live {
             }
             Event::AuthChanged(snapshot) => self.publish_auth(worker, &snapshot),
             Event::McpChanged => self.publish_mcp(worker),
+            Event::ExportChanged { export } => (worker.sink)(LifecycleEvent::ExportHealth(
+                mapping::export_health(&export),
+            )),
             Event::Notice { message } => worker.notice(message),
             Event::Session {
                 session,
@@ -1396,6 +1407,7 @@ impl Live {
                 return;
             };
             self.publish_auth(worker, &auth);
+            self.publish_export_health(worker);
             self.refresh_models(worker, None);
         }
         self.needs_resync = false;

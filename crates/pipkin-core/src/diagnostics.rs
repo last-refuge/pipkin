@@ -66,3 +66,51 @@ pub fn format_ms(ms: u64) -> String {
         format!("{ms} ms")
     }
 }
+
+/// The engine's trace exporter as it reports itself (OBS-2); app-wide, not per conversation.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ExportHealth {
+    pub enabled: bool,
+    /// `off`, `idle`, `sending`, `backoff` or `failed`.
+    pub state: String,
+    /// The collector's host only.
+    pub endpoint: Option<String>,
+    pub content: String,
+    pub queued: u64,
+    pub sent: u64,
+    pub dropped: u64,
+    pub failures: u32,
+    pub last_error: Option<String>,
+    pub last_success_ms: Option<i64>,
+}
+
+impl ExportHealth {
+    /// One line for the session dialog.
+    pub fn summary(&self) -> String {
+        if !self.enabled {
+            return "Off".into();
+        }
+        let mut parts = vec![format!(
+            "{} to {}",
+            match self.state.as_str() {
+                "idle" => "Idle",
+                "sending" => "Sending",
+                "backoff" => "Retrying",
+                "failed" => "Failing",
+                other => other,
+            },
+            self.endpoint.as_deref().unwrap_or("?")
+        )];
+        parts.push(format!("{} sent", self.sent));
+        if self.queued > 0 {
+            parts.push(format!("{} waiting", self.queued));
+        }
+        if self.dropped > 0 {
+            parts.push(format!("{} dropped", self.dropped));
+        }
+        if let Some(error) = &self.last_error {
+            parts.push(error.clone());
+        }
+        parts.join(" · ")
+    }
+}

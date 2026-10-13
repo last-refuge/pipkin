@@ -1,5 +1,28 @@
 # Scorecard
 
+## Trace export, OBS-2 (2026-10-12)
+
+The engine's diagnostics records become OTLP/HTTP JSON spans posted to a configured
+collector (Langfuse through its OTLP endpoint, with its observation attributes) from a
+separate task with a durable per-session cursor, bounded batches, retry with backoff, a
+drop policy and a reported health state ([export.md](export.md)); protocol 27, capability
+`export`; the session dialog shows the exporter's state.
+
+- **Measured (automated).** Engine tests against a recording mock collector: a parent run
+  with a tool call and a child yields spans sharing one trace id, the child's run span
+  parented on the parent's `subagent` tool span, generation spans with model and token
+  attributes, and payloads that contain none of the prompt, task or tool output text; a
+  restart resends nothing (the cursor is durable) while new work is sent; records from
+  before export was enabled are never sent; a disabled exporter makes no request; a
+  rejecting collector moves the state to backoff and the batch is dropped after the bounded
+  attempts, while a slow collector and a rejecting one leave a turn and a Stop as fast as
+  without export; the health view carries counts and a bounded error and never the headers;
+  an invalid configuration is reported, not sent to. A core test covers the health line.
+  The repository gate passed.
+- **Observed.** Nothing native, nothing against a real collector.
+- **Unverified.** A live OTLP collector or Langfuse project; OBS-3 (not built). Not a
+  release qualification.
+
 ## Engine diagnostics, OBS-1 (2026-10-12)
 
 The engine records bounded structured facts per session (run start with queue wait,

@@ -530,6 +530,34 @@ pub struct DiagnosticsView {
     pub has_older: bool,
 }
 
+/// The trace exporter's state (OBS-2). Never carries a credential or an endpoint path with
+/// secrets: `endpoint` is the host the engine posts to.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportHealthView {
+    pub enabled: bool,
+    /// `off`, `idle`, `sending`, `backoff` or `failed` (the last batch was dropped).
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// `metadata` (the only content level in OBS-2).
+    pub content: String,
+    /// Records recorded since export was enabled and not yet sent.
+    pub queued: u64,
+    pub sent: u64,
+    /// Records given up on (after retries, or aged out of the spool before they were sent).
+    pub dropped: u64,
+    /// Consecutive failed attempts of the current batch.
+    pub failures: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_success_ms: Option<i64>,
+    /// Only records from this moment on are exported (set when export was enabled).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since_ms: Option<i64>,
+}
+
 /// Everything needed to show an opened session, read atomically at one revision.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -860,7 +888,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 26);
+        assert_eq!(crate::PROTOCOL_VERSION, 27);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };

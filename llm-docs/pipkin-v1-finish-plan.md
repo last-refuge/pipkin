@@ -108,10 +108,11 @@ STATUS-3 (cached Git summary) is optional; take it only if cheap after STATUS-2.
   timing, first-token timing, retries, tool duration, cancellation, queue wait and terminal
   outcome recorded as bounded structured records with provenance; model latency kept distinct
   from UI frame latency.
-- [ ] **OBS-2 exporter interface.** Asynchronous sinks fed from stable engine events with
+- [x] **OBS-2 exporter interface.** (2026-10-12) Asynchronous sinks fed from stable engine events with
   parent/child correlation and committed usage; OTLP evaluated alongside the documented
-  Langfuse mapping; bounded buffers, retry/backoff, drop/spool policy, visible export health;
-  export failure never delays model or tool work; bounded flush at shutdown.
+  Langfuse mapping (outcome: OTLP/HTTP, Langfuse through its OTLP endpoint); bounded buffers,
+  retry/backoff, drop/spool policy, visible export health; export failure never delays model
+  or tool work; bounded flush at shutdown.
 - [ ] **OBS-3 opt-in configuration.** Off by default; metadata-only first; prompt/tool/image/
   source content only with an explicit setting; credentials redacted before enqueueing; payload
   preview and a disable control; the existing credential abstraction.
@@ -181,3 +182,6 @@ above.
 - 2026-10-12 — OBS-1 shipped: per-session diagnostics records with the engine's identities
   and timings, the summary/paging/export calls and the session dialog's section. Open from
   §5: OBS-2 and OBS-3.
+- 2026-10-12 — OBS-2 shipped: the OTLP trace exporter over the diagnostics records with
+  durable cursors, bounded batches, backoff, drop accounting and a reported health state.
+  Open from §5: OBS-3.

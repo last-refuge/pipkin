@@ -1540,6 +1540,9 @@ impl Workspace {
                 }
             }
         }
+        if let Some(health) = self.state(cx).export_health.clone() {
+            section = section.child(row("Export", health.summary()));
+        }
         if let Some(exported) = &d.exported {
             section = section.child(
                 div()

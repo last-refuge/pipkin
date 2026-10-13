@@ -350,8 +350,30 @@ pub struct Settings {
     pub http_idle_timeout_ms: Option<Value>,
     pub shell_path: Option<String>,
     pub enabled_models: Option<Vec<String>>,
+    /// Trace export (plan §12, OBS-2). Off unless `export.enabled` is true.
+    #[serde(deserialize_with = "null_default")]
+    pub export: ExportSettings,
     #[serde(flatten)]
     pub other: Map<String, Value>,
+}
+
+/// What the engine exports its diagnostics records to, and how much of them.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExportSettings {
+    pub enabled: bool,
+    /// `otlp` (OTLP/HTTP JSON traces; Langfuse through its OTLP endpoint). The only kind.
+    pub kind: Option<String>,
+    /// The collector URL the traces are posted to (e.g. `https://host/v1/traces`).
+    pub endpoint: Option<String>,
+    /// Extra request headers (an `Authorization` value, say). Never shown back.
+    pub headers: Map<String, Value>,
+    /// `metadata` (ids, timings, counts, outcomes; the only level in OBS-2).
+    pub content: Option<String>,
+    /// `service.name` on the exported resource (default `pipkin-engine`).
+    pub service_name: Option<String>,
+    /// First retry delay in milliseconds (default 1000; doubles per attempt, at most 60 s).
+    pub retry_base_ms: Option<u64>,
 }
 
 // Preserve explicit null as a supplied value for getters that reject it.
@@ -406,6 +428,7 @@ impl Default for Settings {
             http_idle_timeout_ms: None,
             shell_path: None,
             enabled_models: None,
+            export: ExportSettings::default(),
             other: Map::new(),
         }
     }

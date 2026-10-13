@@ -5,6 +5,7 @@ mod ask;
 mod compaction;
 mod context_usage;
 pub mod diagnostics;
+pub mod export;
 pub mod faults;
 mod glue;
 mod goals;
@@ -60,6 +61,8 @@ pub struct Shared {
     pub jobs: jobs::JobsRuntime,
     /// Child sessions a background watcher is attached to (see [`subagents`]).
     pub(super) subagent_watchers: Mutex<std::collections::HashSet<String>>,
+    /// The trace exporter (see [`export`]).
+    pub export: export::ExportRuntime,
     pub generations: Arc<Semaphore>,
     pub processes: Arc<Semaphore>,
     pub locks: Arc<MutationLocks>,
@@ -344,6 +347,7 @@ impl EngineHandle {
             mcp,
             jobs: jobs::JobsRuntime::default(),
             subagent_watchers: Mutex::new(std::collections::HashSet::new()),
+            export: export::ExportRuntime::default(),
             generations: Arc::new(Semaphore::new(config.max_active_generations.max(1))),
             processes: Arc::new(Semaphore::new(config.max_tool_processes.max(1))),
             config,
@@ -402,6 +406,7 @@ impl EngineHandle {
         mcp::attach(&shared);
         shared.jobs_recover();
         shared.subagents_recover();
+        export::start(&shared);
         Ok(EngineHandle {
             runtime: Mutex::new(Some(runtime)),
             shared,
@@ -592,6 +597,7 @@ impl EngineHandle {
             let grace = timeout.min(Duration::from_secs(2));
             let mcp = self.shared.mcp.clone();
             let jobs_done = self.shared.jobs_shutdown();
+            let export_done = self.shared.export.done();
             let done = rt.spawn(async move {
                 for sess in sessions {
                     sess.questions.dispose();
@@ -606,6 +612,8 @@ impl EngineHandle {
                 for done in jobs_done {
                     let _ = tokio::time::timeout(grace, done.notified()).await;
                 }
+                // The exporter finishes the post in flight (bounded) and never starts another.
+                let _ = tokio::time::timeout(grace, export_done.notified()).await;
             });
             let deadline = std::time::Instant::now() + grace + Duration::from_millis(500);
             while !done.is_finished() && std::time::Instant::now() < deadline {
@@ -691,6 +699,7 @@ async fn dispatch_with_cancel(
                     "askUserQuestion".into(),
                     "questionnaires".into(),
                     "diagnostics".into(),
+                    "export".into(),
                     "plans".into(),
                     "web".into(),
                     "goals".into(),
@@ -1137,6 +1146,7 @@ async fn dispatch_with_cancel(
                 records,
             })
         }
+        Call::ExportHealth => Ok(Reply::ExportHealth(shared.export.health())),
         Call::AuthState => Ok(Reply::Auth(shared.auth.snapshot(client))),
         Call::AuthStart { provider } => {
             if let Some(error) = shared.refresh_net_async().await?.validation_error {
@@ -1424,6 +1434,8 @@ pub fn registry_with(extra: Arc<dyn ApiAdapter>) -> Registry {
 mod ask2_tests;
 #[cfg(test)]
 mod ask_tests;
+#[cfg(test)]
+mod export_tests;
 #[cfg(test)]
 mod fault_tests;
 #[cfg(test)]

@@ -303,6 +303,8 @@ pub struct Goal {
 }
 
 pub struct AppState {
+    /// The engine's trace exporter as it last reported itself (`None` until it does).
+    pub export_health: Option<crate::diagnostics::ExportHealth>,
     pub projects: Vec<Project>,
     pub models: Vec<ModelInfo>,
     pub conversations: Vec<ConversationState>,
@@ -389,6 +391,7 @@ impl AppState {
             import_available: false,
             import: crate::import::ImportFlow::default(),
             mcp: Default::default(),
+            export_health: None,
             owners: Default::default(),
             release: Default::default(),
             notice: None,
@@ -525,6 +528,15 @@ impl AppState {
             && c.waiting_question != waiting
         {
             c.waiting_question = waiting;
+            out.notes.push(Note::Other);
+        }
+        out
+    }
+
+    pub fn set_export_health(&mut self, health: crate::diagnostics::ExportHealth) -> Outcome {
+        let mut out = Outcome::default();
+        if self.export_health.as_ref() != Some(&health) {
+            self.export_health = Some(health);
             out.notes.push(Note::Other);
         }
         out

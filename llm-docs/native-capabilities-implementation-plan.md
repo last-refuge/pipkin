@@ -406,6 +406,8 @@ The [Langfuse Pi plugin](https://github.com/langfuse/pi-observability-plugin) tr
 
 **OBS-2 — exporter interface.** Feed asynchronous sinks from stable engine events, with parent/child correlation and usage from the committed ledger. Evaluate OpenTelemetry/OTLP plus the current documented Langfuse mapping rather than importing the TypeScript plugin. Use bounded buffers, retry/backoff, drop/spool policy and a visible export-health state. Export failure must never fail or delay the model/tool operation. Shutdown gets a bounded flush.
 
+**Progress (2026-10-12).** OBS-2 done: `runtime/export.rs` (OTLP/HTTP JSON spans from the diagnostics records with stable ids and parent/child linkage, Langfuse through its OTLP endpoint with its observation attributes, durable per-session cursors with a `since` boundary, 200-record batches, backoff and a five-attempt drop policy, aged-out accounting, a health view published as `ExportChanged`, bounded flush at shutdown), `export` settings, protocol 27 and capability `export`, the core/adapter plumbing and the session dialog's Export line. See [docs/export.md](../docs/export.md). Not done: OBS-3 below.
+
 **OBS-3 — opt-in configuration.** User chooses endpoint/project and content level. Default export off; metadata-only is the first enabled level. Prompt, tool body, image and source-content export require an explicit content setting. Redact credentials before enqueueing. Offer an example payload preview and a disable control. Use the existing credential abstraction; do not make remote telemetry a prerequisite for local costs or debugging.
 
 ### Acceptance

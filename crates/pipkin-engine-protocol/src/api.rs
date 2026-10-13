@@ -461,6 +461,8 @@ pub enum Call {
     ExportDiagnostics {
         session: SessionId,
     },
+    /// The trace exporter's state (OBS-2).
+    ExportHealth,
     AuthState,
     AuthStart {
         provider: String,
@@ -622,6 +624,7 @@ pub enum Reply {
         path: String,
         records: u64,
     },
+    ExportHealth(ExportHealthView),
     Plan(PlanView),
     PlanUpdated(PlanReceipt),
     WebSources(Vec<WebSourceView>),
@@ -738,6 +741,10 @@ pub enum Event {
     AuthChanged(AuthSnapshot),
     /// MCP server state (connection, sign-in, catalog) changed; read `McpServers` again.
     McpChanged,
+    /// The trace exporter's state changed.
+    ExportChanged {
+        export: ExportHealthView,
+    },
     Notice {
         message: String,
     },

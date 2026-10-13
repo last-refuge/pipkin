@@ -24,7 +24,7 @@ pub struct DiagRow {
     pub record: Value,
 }
 
-fn row(r: &rusqlite::Row) -> rusqlite::Result<DiagRow> {
+pub fn row(r: &rusqlite::Row) -> rusqlite::Result<DiagRow> {
     let record: String = r.get("record")?;
     Ok(DiagRow {
         session: r.get("session")?,

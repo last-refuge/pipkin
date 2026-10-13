@@ -35,6 +35,7 @@ pub use view::*;
 // Version 25 adds questionnaires: `QuestionKind::Form`, `QuestionView::form` / `source`,
 // `Answer::Form`.
 // Version 26 adds engine diagnostics: `Diagnostics`, `ExportDiagnostics`, `DiagnosticsView`.
-pub const PROTOCOL_VERSION: u32 = 26;
+// Version 27 adds the trace exporter: `ExportHealth`, `ExportChanged`.
+pub const PROTOCOL_VERSION: u32 = 27;
 
 pub mod delivery;

@@ -192,6 +192,7 @@ impl Shared {
         if let Err(error) = result {
             log::debug!("session {session}: diagnostics not recorded ({kind}): {error}");
         }
+        self.export.notify.notify_one();
     }
 
     pub fn diagnostics_view(

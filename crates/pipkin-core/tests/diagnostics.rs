@@ -168,3 +168,37 @@ fn milliseconds_are_shown_at_a_readable_precision() {
     assert_eq!(format_ms(1_250), "1.3 s");
     assert_eq!(format_ms(12_400), "12 s");
 }
+
+#[test]
+fn the_export_health_is_app_wide_and_summarized_in_one_line() {
+    let mut s = state(Mode::Real);
+    assert!(s.export_health.is_none());
+    let off = ExportHealth {
+        state: "off".into(),
+        content: "metadata".into(),
+        ..ExportHealth::default()
+    };
+    assert!(!s.set_export_health(off.clone()).notes.is_empty());
+    assert!(
+        s.set_export_health(off.clone()).notes.is_empty(),
+        "unchanged"
+    );
+    assert_eq!(s.export_health.as_ref().unwrap().summary(), "Off");
+    let busy = ExportHealth {
+        enabled: true,
+        state: "backoff".into(),
+        endpoint: Some("collector.example:4318".into()),
+        content: "metadata".into(),
+        queued: 7,
+        sent: 120,
+        dropped: 3,
+        failures: 2,
+        last_error: Some("the collector answered 503".into()),
+        last_success_ms: Some(1),
+    };
+    s.set_export_health(busy);
+    assert_eq!(
+        s.export_health.as_ref().unwrap().summary(),
+        "Retrying to collector.example:4318 · 120 sent · 7 waiting · 3 dropped · the collector answered 503"
+    );
+}

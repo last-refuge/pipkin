@@ -32,6 +32,8 @@ pub enum LifecycleEvent {
         conversation: ConversationId,
         waiting: bool,
     },
+    /// The engine's trace exporter state (OBS-2).
+    ExportHealth(crate::diagnostics::ExportHealth),
 }
 
 pub type LifecycleSink = Box<dyn Fn(LifecycleEvent) + Send + Sync>;

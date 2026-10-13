@@ -1186,6 +1186,23 @@ pub fn diagnostics(
 /// Record lines shown in the dialog.
 pub const MAX_DIAGNOSTIC_LINES: usize = 40;
 
+pub fn export_health(
+    view: &pipkin_engine_protocol::ExportHealthView,
+) -> pipkin_core::diagnostics::ExportHealth {
+    pipkin_core::diagnostics::ExportHealth {
+        enabled: view.enabled,
+        state: view.state.clone(),
+        endpoint: view.endpoint.clone(),
+        content: view.content.clone(),
+        queued: view.queued,
+        sent: view.sent,
+        dropped: view.dropped,
+        failures: view.failures,
+        last_error: view.last_error.clone(),
+        last_success_ms: view.last_success_ms,
+    }
+}
+
 pub fn jobs(view: &pipkin_engine_protocol::JobsView) -> pipkin_core::JobsSync {
     use pipkin_core::{Job, JobOrigin, JobState};
     pipkin_core::JobsSync {

@@ -685,6 +685,19 @@ impl Shared {
                     .optional()?
                     .flatten();
                 let (name, detail) = super::diagnostics::outcome_name(&outcome);
+                // The run's start record (queue wait, parent and call for a child) is
+                // copied so the end record stands on its own for an exporter.
+                let started: Option<String> = tx
+                    .query_row(
+                        "SELECT record FROM diagnostics WHERE session = ?1 AND run = ?2
+                         AND kind = 'run.start' ORDER BY seq LIMIT 1",
+                        rusqlite::params![session, run as i64],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                let started: serde_json::Value = started
+                    .and_then(|t| serde_json::from_str(&t).ok())
+                    .unwrap_or(serde_json::Value::Null);
                 Store::diag_append(
                     tx,
                     &session,
@@ -699,6 +712,9 @@ impl Shared {
                         "durationMs": now.saturating_sub(row.started_at_ms).max(0),
                         "stopRequested": row.stop_requested,
                         "stopLatencyMs": stop_at.map(|t| now.saturating_sub(t).max(0)),
+                        "queueWaitMs": started.get("queueWaitMs").cloned().unwrap_or(serde_json::Value::Null),
+                        "parent": started.get("parent").cloned().unwrap_or(serde_json::Value::Null),
+                        "parentCall": started.get("parentCall").cloned().unwrap_or(serde_json::Value::Null),
                     }),
                 )?;
             }
@@ -711,6 +727,7 @@ impl Shared {
             Ok((Some(row.request), changes))
         })?;
         self.publish_context(&session);
+        self.export.notify.notify_one();
         if let Some(request) = request {
             self.goal_after_settlement(&session, request.clone(), outcome.clone());
             let _ = sess.settled.send(Settled {

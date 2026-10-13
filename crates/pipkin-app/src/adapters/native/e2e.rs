@@ -533,6 +533,7 @@ impl Harness {
                     conversation,
                     waiting,
                 } => self.state.set_question_waiting(conversation, waiting),
+                LifecycleEvent::ExportHealth(health) => self.state.set_export_health(health),
             };
             self.exec(outcome);
         }
@@ -3713,5 +3714,51 @@ fn engine_diagnostics_reach_the_session_dialog_and_export_to_a_file() {
     let path = exported.split(" (").next().unwrap();
     assert!(path.starts_with(fx.root.to_str().unwrap()), "{path}");
     assert_eq!(std::fs::read_to_string(path).unwrap().lines().count(), 5);
+    h.stop();
+}
+
+// ------------------------------------------------------------------------------ trace export
+
+/// The exporter's health reaches the desktop: off by default after connecting, and a
+/// configuration the engine cannot use is reported as failing, with the reason and never
+/// the headers.
+#[test]
+fn the_export_health_reaches_the_desktop_and_reports_a_bad_configuration() {
+    let fx = Fixture::start(|_, _| Reply::Text("unused".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.until("the exporter reported itself", |s| {
+        s.export_health.is_some()
+    });
+    let health = h.state.export_health.clone().unwrap();
+    assert!(!health.enabled && health.state == "off");
+    assert_eq!(health.summary(), "Off");
+    let config = fx.root.join("engine-config");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("settings.json"),
+        json!({"export": {"enabled": true, "kind": "zipkin", "endpoint": "http://127.0.0.1:9/v1/traces", "headers": {"Authorization": "Basic SECRET"}}}).to_string(),
+    )
+    .unwrap();
+    h.until("the bad configuration was reported", |s| {
+        s.export_health
+            .as_ref()
+            .is_some_and(|e| e.enabled && e.state == "failed")
+    });
+    let health = h.state.export_health.clone().unwrap();
+    assert!(
+        health
+            .last_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("not supported"),
+        "{health:?}"
+    );
+    assert!(!format!("{health:?}").contains("SECRET"));
+    assert!(
+        health.summary().starts_with("Failing to"),
+        "{}",
+        health.summary()
+    );
     h.stop();
 }
