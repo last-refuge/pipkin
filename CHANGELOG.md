@@ -78,6 +78,8 @@ reactivates the previous version, subject to the schema and backup rules in
 
 - A screen reader does not yet speak typed characters in the composer; Orca work is deferred
   past 1.0.
+- On macOS the engine cannot find and stop a background job's process after it restarts;
+  the job is marked interrupted with "the process is gone". Linux stops it.
 - The owner-run native gate rows in [docs/native-gate-testing.md](docs/native-gate-testing.md)
   keep their recorded status; soak and performance qualification happen after 1.0.
 - Detailed diagnostics (`pipkin --diagnose`) can include sensitive log text; review before

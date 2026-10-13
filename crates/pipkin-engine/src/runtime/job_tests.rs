@@ -619,12 +619,15 @@ fn restarts_mark_orphans_interrupted_or_unknown_and_never_relaunch() {
                 .is_some_and(|j| j.state == JobState::Interrupted)
                 && three.as_ref().is_some_and(|j| j.state == JobState::Unknown)
             {
-                assert!(
-                    two.unwrap()
-                        .reason
-                        .unwrap()
-                        .contains("process was stopped on restart")
-                );
+                // Orphans are found and killed through /proc; elsewhere the engine can only
+                // report that it lost the process.
+                let expected = if cfg!(target_os = "linux") {
+                    "process was stopped on restart"
+                } else {
+                    "the process is gone"
+                };
+                let reason = two.unwrap().reason.unwrap();
+                assert!(reason.contains(expected), "{reason}");
                 assert!(
                     three
                         .unwrap()

@@ -327,6 +327,22 @@ esac
         )
         .unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Another test thread may fork while the script is still open for writing; its child
+        // holds that descriptor until it execs, and running the script meanwhile fails with
+        // ETXTBSY. Wait until the script runs (an unknown command exits 2) before handing it out.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            match Command::new(&script).arg("noop").status() {
+                Ok(_) => break,
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::ExecutableFileBusy
+                        && Instant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => panic!("fake secret-tool does not run: {e}"),
+            }
+        }
         script
     }
 
