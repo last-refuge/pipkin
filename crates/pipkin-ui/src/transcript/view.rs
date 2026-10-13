@@ -1152,12 +1152,22 @@ impl TranscriptView {
         };
         let label = if steer { "You (steering)" } else { "You" };
         let blocks = self.blocks_for(ctx.conv, item, ctx.expanded);
-        let mut card = div().w_full();
+        let mut card = div()
+            .w_full()
+            .bg(c.bg_card)
+            .rounded(px(12.0 * theme.scale))
+            .px(px(14.0 * theme.scale))
+            .py(px(10.0 * theme.scale));
         for (bi, block) in blocks.iter().enumerate() {
             card = card.child(self.block_element(ctx, item, item_ix, bi, block, cx));
         }
         if !attachments.is_empty() {
-            let mut chips = div().flex().flex_wrap().gap(px(6.0)).mt(px(6.0));
+            let mut chips = div()
+                .flex()
+                .flex_wrap()
+                .justify_end()
+                .gap(px(6.0))
+                .mt(px(6.0));
             for a in attachments {
                 let tint = if a.error.is_some() {
                     c.danger
@@ -1190,14 +1200,27 @@ impl TranscriptView {
             .id(ElementId::NamedInteger("msg".into(), item.id.0))
             .role(Role::Article)
             .aria_label(aria)
+            .w_full()
             .flex()
-            .gap(px(10.0))
-            .child(Self::avatar(theme, false))
+            .justify_end()
             .child(
+                // Give every user message the same bounded, right-anchored column.
+                // Text stays in normal block layout so long lines wrap instead of
+                // acquiring an unconstrained intrinsic width inside a flex row.
                 div()
-                    .flex_1()
+                    .w(gpui::relative(0.85))
                     .min_w_0()
-                    .child(self.author_line(label, item.at, status, theme))
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .justify_end()
+                            .items_center()
+                            .gap(px(10.0))
+                            .mb(px(8.0 * theme.scale))
+                            .child(self.author_line(label, item.at, status, theme))
+                            .child(Self::avatar(theme, false)),
+                    )
                     .child(card),
             )
             .into_any_element()

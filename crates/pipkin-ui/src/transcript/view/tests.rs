@@ -177,6 +177,60 @@ fn append(h: &Harness, text: &str, cx: &mut VisualTestContext) {
 }
 
 #[gpui::test]
+fn user_messages_align_right_and_keep_hit_testing(cx: &mut TestAppContext) {
+    let (h, cx) = setup(cx, 0);
+    let long = format!(
+        "Background job failed. Last output:\n{}\n   Compiling pipkin-ui v1.1.0 (/home/jason/coding/pipkin/crates/pipkin-ui)\nUse job_log for the full log.",
+        "A long message must wrap inside the conversation column, never overflow into the navigation or inspector. ".repeat(3)
+    );
+    let mut previous_edges = None;
+    for text in ["A short message", long.as_str(), "First line\nSecond line"] {
+        let mut user = item(0);
+        user.kind = ItemKind::User {
+            text: text.into(),
+            attachments: vec![],
+            delivery: Delivery::Sent,
+            steer: false,
+        };
+        let mut assistant = item(1);
+        assistant.kind = ItemKind::Assistant {
+            text: "A short reply".into(),
+            streaming: false,
+        };
+        open(&h.model, 1, vec![user, assistant], false, cx);
+        frame(&h, cx);
+        cx.update(|_, cx| {
+            let registry = h.view.read(cx).registry.borrow();
+            let user = registry.find(ItemId(0), 0).expect("user painted");
+            let assistant = registry.find(ItemId(1), 0).expect("assistant painted");
+            assert!(user.bounds.left() > assistant.bounds.left() + px(40.0));
+            // The bubble ends at the conversation boundary; its text is inset
+            // by the bubble's horizontal padding.
+            let padding = px(14.0 * cx.global::<UiTheme>().scale);
+            assert!((user.bounds.right() + padding - assistant.bounds.right()).abs() < px(1.0));
+            let edges = (user.bounds.left(), user.bounds.right());
+            if let Some(previous) = previous_edges {
+                assert_eq!(edges, previous, "message length must not change alignment");
+            }
+            previous_edges = Some(edges);
+            if text == long {
+                assert!(user.layout.wrapped_text().lines().count() > text.lines().count());
+            }
+            for (offset, ch) in text.char_indices() {
+                let mut position = user.layout.position_for_index(offset).unwrap();
+                assert!(position.x >= user.bounds.left() - px(1.0));
+                assert!(position.x <= user.bounds.right() + px(1.0));
+                if ch != '\n' {
+                    position.x += px(0.5);
+                    position.y += user.layout.line_height() / 2.0;
+                    assert_eq!(registry.hit_test(position), Some((ItemId(0), 0, offset)));
+                }
+            }
+        });
+    }
+}
+
+#[gpui::test]
 fn mounted_rows_are_bounded_for_ten_thousand_items(cx: &mut TestAppContext) {
     let (h, cx) = setup(cx, 10_000);
     frame(&h, cx);
