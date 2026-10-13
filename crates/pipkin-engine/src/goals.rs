@@ -117,6 +117,7 @@ pub const REASON_PROPOSED: &str =
     "Completion proposed by the executor with accepted evidence for every criterion; not audited.";
 pub const REASON_TURNS_USED: &str = "Turn allowance used; raise the limit to continue.";
 pub const REASON_TOKENS_USED: &str = "Token allowance used (checked before each turn, so the last turn may have overshot); raise the limit to continue.";
+pub const REASON_COST_USED: &str = "Cost allowance used (checked before each turn from the reported cost, so the last turn may have overshot); raise the limit to continue.";
 pub const REASON_NO_STATUS: &str = "Paused: the executor reported no goal status this turn (use update_goal, or a final status marker).";
 /// Default consecutive no-progress turns before pausing (`goals.stallTurns`).
 pub const DEFAULT_STALL_TURNS: u32 = 3;
@@ -651,6 +652,7 @@ mod audit_tests {
             last_request: None,
             created_at_ms: 0,
             updated_at_ms: 0,
+            usage_cost_usd: 0.0,
             criteria: vec![GoalCriterion {
                 id: 1,
                 text: "c".into(),

@@ -146,6 +146,7 @@ pub enum Command {
     SetGoalLimits {
         max_turns: Option<u64>,
         max_tokens: Option<u64>,
+        max_cost_usd: Option<f64>,
     },
     /// Replace the engine-owned goal's completion criteria.
     SetGoalCriteria(Vec<String>),

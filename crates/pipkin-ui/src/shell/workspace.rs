@@ -430,6 +430,16 @@ impl Workspace {
         window.focus(&h, cx);
     }
 
+    /// The current goal's allowances (turns, tokens, dollars), so one `/goal` subcommand
+    /// can change a single limit while keeping the others.
+    fn goal_limits_all(&self, cx: &Context<Self>) -> (Option<u64>, Option<u64>, Option<f64>) {
+        self.state(cx)
+            .current()
+            .and_then(|c| c.goal.as_ref())
+            .map(|g| (g.max_turns, g.max_tokens, g.max_cost_usd))
+            .unwrap_or((None, None, None))
+    }
+
     pub(super) fn show_toast(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
         self.toast = Some(text.into());
         self.toast_task = Some(cx.spawn(async move |this, cx| {
@@ -687,22 +697,17 @@ impl Workspace {
                 "skip-audit" => Command::SkipGoalAudit,
                 _ if value.starts_with("turns ") || value == "turns" => {
                     let n = value.trim_start_matches("turns").trim();
+                    let (_, max_tokens, max_cost_usd) = self.goal_limits_all(cx);
                     match n.parse::<u64>() {
                         Ok(n) => Command::SetGoalLimits {
                             max_turns: Some(n),
-                            max_tokens: self
-                                .state(cx)
-                                .current()
-                                .and_then(|c| c.goal.as_ref())
-                                .and_then(|g| g.max_tokens),
+                            max_tokens,
+                            max_cost_usd,
                         },
                         Err(_) if n == "off" => Command::SetGoalLimits {
                             max_turns: None,
-                            max_tokens: self
-                                .state(cx)
-                                .current()
-                                .and_then(|c| c.goal.as_ref())
-                                .and_then(|g| g.max_tokens),
+                            max_tokens,
+                            max_cost_usd,
                         },
                         Err(_) => {
                             self.show_toast("Usage: /goal turns <n> or /goal turns off", cx);
@@ -712,25 +717,43 @@ impl Workspace {
                 }
                 _ if value.starts_with("tokens ") || value == "tokens" => {
                     let n = value.trim_start_matches("tokens").trim();
+                    let (max_turns, _, max_cost_usd) = self.goal_limits_all(cx);
                     match n.parse::<u64>() {
                         Ok(n) => Command::SetGoalLimits {
-                            max_turns: self
-                                .state(cx)
-                                .current()
-                                .and_then(|c| c.goal.as_ref())
-                                .and_then(|g| g.max_turns),
+                            max_turns,
                             max_tokens: Some(n),
+                            max_cost_usd,
                         },
                         Err(_) if n == "off" => Command::SetGoalLimits {
-                            max_turns: self
-                                .state(cx)
-                                .current()
-                                .and_then(|c| c.goal.as_ref())
-                                .and_then(|g| g.max_turns),
+                            max_turns,
                             max_tokens: None,
+                            max_cost_usd,
                         },
                         Err(_) => {
                             self.show_toast("Usage: /goal tokens <n> or /goal tokens off", cx);
+                            return;
+                        }
+                    }
+                }
+                _ if value.starts_with("cost ") || value == "cost" => {
+                    let n = value
+                        .trim_start_matches("cost")
+                        .trim()
+                        .trim_start_matches('$');
+                    let (max_turns, max_tokens, _) = self.goal_limits_all(cx);
+                    match n.parse::<f64>() {
+                        Ok(usd) if usd.is_finite() && usd > 0.0 => Command::SetGoalLimits {
+                            max_turns,
+                            max_tokens,
+                            max_cost_usd: Some(usd),
+                        },
+                        _ if n == "off" => Command::SetGoalLimits {
+                            max_turns,
+                            max_tokens,
+                            max_cost_usd: None,
+                        },
+                        _ => {
+                            self.show_toast("Usage: /goal cost <usd> or /goal cost off", cx);
                             return;
                         }
                     }

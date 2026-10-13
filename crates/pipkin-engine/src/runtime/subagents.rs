@@ -107,6 +107,7 @@ impl Tool for SubagentTool {
                 context,
                 wait,
                 wake,
+                model: None,
             };
             match host
                 .subagent(&ctx.call_id, launch, ctx.cancel.clone())
@@ -597,7 +598,11 @@ impl Shared {
                     .join(", ")
             )
         })?;
-        let model = profile.model.clone().or_else(|| parent_row.model.clone());
+        let model = launch
+            .model
+            .clone()
+            .or_else(|| profile.model.clone())
+            .or_else(|| parent_row.model.clone());
         if let Some(key) = &model {
             let catalog = self.auth.catalog();
             let found = catalog.find(key).cloned();
@@ -1205,6 +1210,7 @@ impl Shared {
             context,
             wait: false,
             wake: false,
+            model: None,
         };
         let call_id = format!("user:{request}");
         let (row, created) = self

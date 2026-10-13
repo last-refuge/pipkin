@@ -127,8 +127,9 @@ STATUS-3 (cached Git summary) is optional; take it only if cheap after STATUS-2.
 
 - [x] Web: desktop citation rendering (click to open a retained source), a configured
   fallback provider chain, bounded batch fetches (plan §5). (2026-10-12)
-- [ ] Goals: cost limits beyond tokens, a pinned auditor model setting; job-event waits once
-  JOB-1 lands (plan §8).
+- [x] Goals: cost limits beyond tokens, a pinned auditor model setting (2026-10-12).
+  Job-event waits stay open: a goal turn can cite a job's log as evidence today, and a
+  wait-for-job primitive is not needed for v1.
 - [ ] Subagents: result artifact references, a small structured parallel group (plan §6).
 - [ ] MCP: OS-keychain credential storage behind the existing store trait, legacy HTTP+SSE
   only if a real server needs it, image/binary content retained as artifacts (plan §4).
@@ -189,3 +190,6 @@ above.
 - 2026-10-12 — OBS-3 shipped: export configuration through the engine, the content level
   with redaction, the stored credential, the payload preview and the Trace export settings
   page. Open from §5: nothing.
+- 2026-10-12 — Goals leftovers shipped: a dollar allowance (`/goal cost`, schema 20 and
+  protocol 30) attributed per turn from the usage ledger alongside tokens, and the
+  `goals.auditorModel` setting pinning the audit's model with no silent fallback.

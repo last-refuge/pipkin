@@ -8,7 +8,10 @@ use super::{Result, Store};
 
 const COLUMNS: &str = "id, objective, revision, state, reason, epoch, turns, last_request, \
     provenance, archived, created_at, updated_at, criteria, limits, usage_tokens, stall, note, \
-    linked_tasks, decision, audit";
+    linked_tasks, decision, audit, usage_cost";
+
+/// The progress signature and the token and cost marks taken when the turn started.
+pub type TurnMarks = (Option<String>, Option<u64>, Option<f64>);
 
 fn view_from_row(r: &rusqlite::Row) -> rusqlite::Result<(GoalView, bool)> {
     let state: String = r.get("state")?;
@@ -28,6 +31,7 @@ fn view_from_row(r: &rusqlite::Row) -> rusqlite::Result<(GoalView, bool)> {
             criteria: serde_json::from_str(&r.get::<_, String>("criteria")?).unwrap_or_default(),
             limits: serde_json::from_str(&r.get::<_, String>("limits")?).unwrap_or_default(),
             usage_tokens: r.get::<_, i64>("usage_tokens")? as u64,
+            usage_cost_usd: r.get::<_, f64>("usage_cost")?,
             stall_turns: r.get::<_, i64>("stall")? as u32,
             note: r.get("note")?,
             linked_tasks: serde_json::from_str(&r.get::<_, String>("linked_tasks")?)
@@ -277,7 +281,7 @@ impl Store {
     ) -> Result<()> {
         tx.execute(
             "UPDATE goals SET criteria = ?3, limits = ?4, usage_tokens = ?5, stall = ?6, note = ?7,
-                linked_tasks = ?8, decision = ?9, updated_at = ?10, audit = ?11
+                linked_tasks = ?8, decision = ?9, updated_at = ?10, audit = ?11, usage_cost = ?12
              WHERE session = ?1 AND id = ?2 AND archived = 0",
             params![
                 session,
@@ -292,7 +296,8 @@ impl Store {
                     .as_ref()
                     .map(|d| serde_json::to_string(d).expect("serializes")),
                 now,
-                serde_json::to_string(&view.audit).expect("serializes")
+                serde_json::to_string(&view.audit).expect("serializes"),
+                view.usage_cost_usd
             ],
         )?;
         Ok(())
@@ -305,30 +310,37 @@ impl Store {
         session: &str,
         id: u64,
         tokens: u64,
+        cost_usd: f64,
         stall: Option<u32>,
         now: i64,
     ) -> Result<()> {
         tx.execute(
-            "UPDATE goals SET usage_tokens = usage_tokens + ?3, stall = COALESCE(?4, stall), updated_at = ?5
+            "UPDATE goals SET usage_tokens = usage_tokens + ?3, usage_cost = usage_cost + ?6,
+                stall = COALESCE(?4, stall), updated_at = ?5
              WHERE session = ?1 AND id = ?2 AND archived = 0",
-            params![session, id as i64, tokens as i64, stall.map(|s| s as i64), now],
+            params![
+                session,
+                id as i64,
+                tokens as i64,
+                stall.map(|s| s as i64),
+                now,
+                cost_usd.max(0.0)
+            ],
         )?;
         Ok(())
     }
 
     /// The progress signature and the session token count at the start of the current turn.
-    pub fn goal_turn_marks(
-        c: &Connection,
-        session: &str,
-        id: u64,
-    ) -> Result<(Option<String>, Option<u64>)> {
+    pub fn goal_turn_marks(c: &Connection, session: &str, id: u64) -> Result<TurnMarks> {
         Ok(c.query_row(
-            "SELECT signature, turn_tokens_start FROM goals WHERE session = ?1 AND id = ?2",
+            "SELECT signature, turn_tokens_start, turn_cost_start FROM goals
+             WHERE session = ?1 AND id = ?2",
             params![session, id as i64],
             |r| {
                 Ok((
                     r.get::<_, Option<String>>(0)?,
                     r.get::<_, Option<i64>>(1)?.map(|v| v as u64),
+                    r.get::<_, Option<f64>>(2)?,
                 ))
             },
         )?)
@@ -340,10 +352,18 @@ impl Store {
         id: u64,
         signature: Option<&str>,
         turn_tokens_start: Option<u64>,
+        turn_cost_start: Option<f64>,
     ) -> Result<()> {
         tx.execute(
-            "UPDATE goals SET signature = ?3, turn_tokens_start = ?4 WHERE session = ?1 AND id = ?2",
-            params![session, id as i64, signature, turn_tokens_start.map(|v| v as i64)],
+            "UPDATE goals SET signature = ?3, turn_tokens_start = ?4, turn_cost_start = ?5
+             WHERE session = ?1 AND id = ?2",
+            params![
+                session,
+                id as i64,
+                signature,
+                turn_tokens_start.map(|v| v as i64),
+                turn_cost_start
+            ],
         )?;
         Ok(())
     }

@@ -1104,6 +1104,12 @@ impl Workspace {
                                     goal.usage_tokens, max
                                 ));
                             }
+                            if let Some(max) = goal.max_cost_usd {
+                                detail.push_str(&format!(
+                                    " · ${:.2} of ${:.2}",
+                                    goal.usage_cost_usd, max
+                                ));
+                            }
                             if goal.audit_required {
                                 detail.push_str(" · audit required");
                             }

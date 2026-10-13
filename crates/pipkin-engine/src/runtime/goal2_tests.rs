@@ -399,6 +399,7 @@ fn allowances_and_stalls_pause_the_goal_with_actionable_reasons() {
         GoalAction::SetLimits {
             max_turns: Some(2),
             max_tokens: None,
+            max_cost_usd: None,
         },
     );
     let paused = until_state(&mut e, &s, GoalState::Paused);
@@ -412,6 +413,7 @@ fn allowances_and_stalls_pause_the_goal_with_actionable_reasons() {
         GoalAction::SetLimits {
             max_turns: None,
             max_tokens: None,
+            max_cost_usd: None,
         },
     );
     control(&mut e, &s, GoalAction::Resume);
@@ -453,6 +455,7 @@ fn allowances_and_stalls_pause_the_goal_with_actionable_reasons() {
         GoalAction::SetLimits {
             max_turns: None,
             max_tokens: Some(1),
+            max_cost_usd: None,
         },
     );
     let paused = until_state(&mut e, &s, GoalState::Paused);
@@ -594,5 +597,83 @@ fn goal_tools_are_root_only_and_refuse_without_a_goal() {
             .shared()
             .recoverable_tool("propose_goal_completion")
             .is_none()
+    );
+}
+
+#[test]
+fn a_cost_allowance_pauses_the_goal_and_is_attributed_per_turn() {
+    // The scripted model reports 10 input and 5 output tokens per call; priced at a dollar
+    // a token, every turn costs at least $15, so a $10 allowance pauses before turn two.
+    let fx = Fixture::new();
+    let provider = Scripted::new(scripted_turns(vec![
+        (
+            vec![("update_goal", json!({"status": "continue", "note": "a"}))],
+            "t1",
+        ),
+        (
+            vec![("update_goal", json!({"status": "continue", "note": "b"}))],
+            "t2",
+        ),
+    ]));
+    let mut config = fx.config();
+    config.extra_models[0].cost.input = 1_000_000.0;
+    config.extra_models[0].cost.output = 1_000_000.0;
+    let mut e = fx.start_config(&provider, config);
+    let s = e.create(&fx.project, "c");
+    e.snapshot(&s);
+    set_goal(&mut e, &s, "spend");
+    let view = control(
+        &mut e,
+        &s,
+        GoalAction::SetLimits {
+            max_turns: None,
+            max_tokens: None,
+            max_cost_usd: Some(10.0),
+        },
+    )
+    .unwrap();
+    assert_eq!(view.limits.max_cost_usd, Some(10.0));
+    let paused = until_state(&mut e, &s, GoalState::Paused);
+    assert_eq!(paused.reason.as_deref(), Some(goals::REASON_COST_USED));
+    assert_eq!(paused.turns, 1);
+    assert!(
+        paused.usage_cost_usd >= 15.0,
+        "one turn of two calls at a dollar a token: {}",
+        paused.usage_cost_usd
+    );
+    assert!(paused.usage_tokens >= 15);
+
+    // Zero, negative and non-finite allowances clear the limit rather than pausing at once.
+    let view = control(
+        &mut e,
+        &s,
+        GoalAction::SetLimits {
+            max_turns: None,
+            max_tokens: None,
+            max_cost_usd: Some(0.0),
+        },
+    )
+    .unwrap();
+    assert_eq!(view.limits.max_cost_usd, None);
+    assert_eq!(
+        serde_json::to_value(GoalAction::SetLimits {
+            max_turns: Some(1),
+            max_tokens: None,
+            max_cost_usd: None
+        })
+        .unwrap(),
+        json!({"action": "setLimits", "max_turns": 1, "max_tokens": null, "max_cost_usd": null})
+    );
+    // Older desktops omit the cost field.
+    let action: GoalAction =
+        serde_json::from_value(json!({"action": "setLimits", "max_turns": 2, "max_tokens": null}))
+            .unwrap();
+    assert_eq!(
+        action,
+        GoalAction::SetLimits {
+            max_turns: Some(2),
+            max_tokens: None,
+            max_cost_usd: None
+        }
     );
 }

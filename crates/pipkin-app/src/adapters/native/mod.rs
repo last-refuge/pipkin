@@ -1640,9 +1640,11 @@ impl Live {
                     GoalControlAction::SetLimits {
                         max_turns,
                         max_tokens,
+                        max_cost_usd,
                     } => pipkin_engine_protocol::GoalAction::SetLimits {
                         max_turns,
                         max_tokens,
+                        max_cost_usd,
                     },
                     GoalControlAction::SetCriteria(criteria) => {
                         pipkin_engine_protocol::GoalAction::SetCriteria { criteria }

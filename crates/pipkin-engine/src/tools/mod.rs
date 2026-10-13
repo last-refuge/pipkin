@@ -464,6 +464,9 @@ pub struct SubagentLaunch {
     /// Background children only: follow up in this session when the child finishes
     /// (`wake`), or just record and notify (`notify`).
     pub wake: bool,
+    /// A model (`provider/model`) that replaces the profile's and the parent's choice
+    /// (the goal audit's pinned auditor model). Validated like any other.
+    pub model: Option<String>,
 }
 
 /// Serializes writes/edits to the same canonical path across sessions in this process.

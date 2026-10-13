@@ -908,7 +908,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 29);
+        assert_eq!(crate::PROTOCOL_VERSION, 30);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };
@@ -1616,7 +1616,7 @@ impl GoalState {
 }
 
 /// The engine-owned goal of a session.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoalView {
     /// Stable within the session; never reused.
@@ -1646,6 +1646,9 @@ pub struct GoalView {
     /// Tokens (input, output and cache) reported for this goal's turns so far.
     #[serde(default)]
     pub usage_tokens: u64,
+    /// Dollars reported for this goal's turns so far (zero when the model has no price).
+    #[serde(default)]
+    pub usage_cost_usd: f64,
     /// Consecutive continued turns with no change to the progress signature.
     #[serde(default)]
     pub stall_turns: u32,
@@ -1712,7 +1715,7 @@ pub struct GoalAudit {
 }
 
 /// A person's control over the current goal.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "camelCase")]
 pub enum GoalAction {
     Pause,
@@ -1724,11 +1727,12 @@ pub enum GoalAction {
     Archive,
     /// Set or clear allowances (`None` clears).
     SetLimits {
-        #[serde(default)]
         max_turns: Option<u64>,
-        #[serde(default)]
         max_tokens: Option<u64>,
+        #[serde(default)]
+        max_cost_usd: Option<f64>,
     },
+
     /// Replace the completion criteria (statuses start open; prior evidence is kept in the
     /// event log).
     SetCriteria {
@@ -1809,13 +1813,16 @@ pub struct GoalCriterion {
 
 /// Person-set allowances. The engine checks them before scheduling a turn, so the last turn
 /// may still overshoot a token allowance by one turn's usage; it never invents them.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoalLimits {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_turns: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u64>,
+    /// Dollars, from the usage ledger's reported cost; checked before each turn like tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_cost_usd: Option<f64>,
 }
 
 /// The executor's structured report for a turn (`update_goal` / `propose_goal_completion`).

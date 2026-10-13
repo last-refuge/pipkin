@@ -188,7 +188,7 @@ impl Shared {
                 self.goal_commit(session, |tx| {
                     Store::goal_revise(tx, session, current.id, &objective, now)?;
                     Store::goal_write_progress(tx, session, &view, now)?;
-                    Store::goal_set_turn_marks(tx, session, current.id, None, None)
+                    Store::goal_set_turn_marks(tx, session, current.id, None, None, None)
                 })?;
                 self.goal_tick(session, None).await;
             }
@@ -200,11 +200,13 @@ impl Shared {
             GoalAction::SetLimits {
                 max_turns,
                 max_tokens,
+                max_cost_usd,
             } => {
                 let mut view = current.clone();
                 view.limits = GoalLimits {
                     max_turns: max_turns.filter(|n| *n > 0),
                     max_tokens: max_tokens.filter(|n| *n > 0),
+                    max_cost_usd: max_cost_usd.filter(|c| c.is_finite() && *c > 0.0),
                 };
                 self.goal_commit(session, |tx| {
                     Store::goal_write_progress(tx, session, &view, now)
@@ -307,6 +309,14 @@ impl Shared {
     }
 
     /// Tokens reported for the whole conversation tree (input, output and cache).
+    /// Dollars the usage ledger reports for the session (zero where models have no price).
+    fn session_cost(&self, session: &str) -> f64 {
+        self.store
+            .usage(session)
+            .map(|u| u.models.iter().map(|(_, usage)| usage.cost.total).sum())
+            .unwrap_or(0.0)
+    }
+
     fn session_tokens(&self, session: &str) -> u64 {
         self.store
             .usage(session)
@@ -817,13 +827,15 @@ impl Shared {
                         );
                     }
                 }
-                // Account this turn's tokens before anything else.
+                // Account this turn's tokens and cost before anything else.
                 let tokens_now = self.session_tokens(session);
-                let (signature_before, tokens_start) = self
+                let cost_now = self.session_cost(session);
+                let (signature_before, tokens_start, cost_start) = self
                     .store
                     .read(|c| Store::goal_turn_marks(c, session, goal.id))
-                    .unwrap_or((None, None));
+                    .unwrap_or((None, None, None));
                 let spent = tokens_start.map_or(0, |start| tokens_now.saturating_sub(start));
+                let spent_cost = cost_start.map_or(0.0, |start| (cost_now - start).max(0.0));
                 // The structured decision of this epoch wins; the marker is the fallback.
                 let decision = goal
                     .decision
@@ -856,9 +868,25 @@ impl Shared {
                     0
                 };
                 let usage_after = goal.usage_tokens.saturating_add(spent);
+                let cost_after = goal.usage_cost_usd + spent_cost;
                 let _ = self.goal_commit(session, |tx| {
-                    Store::goal_account(tx, session, goal.id, spent, Some(stall_turns), now_ms())?;
-                    Store::goal_set_turn_marks(tx, session, goal.id, Some(&signature), tokens_start)
+                    Store::goal_account(
+                        tx,
+                        session,
+                        goal.id,
+                        spent,
+                        spent_cost,
+                        Some(stall_turns),
+                        now_ms(),
+                    )?;
+                    Store::goal_set_turn_marks(
+                        tx,
+                        session,
+                        goal.id,
+                        Some(&signature),
+                        tokens_start,
+                        cost_start,
+                    )
                 });
                 match verdict {
                     goals::Verdict::Continue => {}
@@ -893,6 +921,13 @@ impl Shared {
                 }
                 if goal.limits.max_tokens.is_some_and(|max| usage_after >= max) {
                     return pause(GoalState::Paused, goals::REASON_TOKENS_USED);
+                }
+                if goal
+                    .limits
+                    .max_cost_usd
+                    .is_some_and(|max| cost_after >= max)
+                {
+                    return pause(GoalState::Paused, goals::REASON_COST_USED);
                 }
             }
             // Another input settled: the goal only moves on its own turns, except that a
@@ -942,17 +977,26 @@ impl Shared {
         {
             return pause(GoalState::Paused, goals::REASON_TOKENS_USED);
         }
+        if goal
+            .limits
+            .max_cost_usd
+            .is_some_and(|max| goal.usage_cost_usd >= max)
+        {
+            return pause(GoalState::Paused, goals::REASON_COST_USED);
+        }
         let key = goals::request_key(goal.id, goal.epoch + 1);
         let tokens_start = self.session_tokens(session);
+        let cost_start = self.session_cost(session);
         let scheduled = self.goal_commit(session, |tx| {
             Store::goal_schedule_turn(tx, session, goal.id, goal.epoch, &key, now_ms())?;
-            let (signature, _) = Store::goal_turn_marks(tx, session, goal.id)?;
+            let (signature, _, _) = Store::goal_turn_marks(tx, session, goal.id)?;
             Store::goal_set_turn_marks(
                 tx,
                 session,
                 goal.id,
                 signature.as_deref(),
                 Some(tokens_start),
+                Some(cost_start),
             )?;
             Ok(())
         });
@@ -985,17 +1029,19 @@ impl Shared {
     /// Add the settled turn's tokens (session total minus the start mark) to the goal.
     fn account_turn_tokens(&self, session: &str, goal: &GoalView) {
         let tokens_now = self.session_tokens(session);
-        let (signature, tokens_start) = self
+        let cost_now = self.session_cost(session);
+        let (signature, tokens_start, cost_start) = self
             .store
             .read(|c| Store::goal_turn_marks(c, session, goal.id))
-            .unwrap_or((None, None));
+            .unwrap_or((None, None, None));
         let Some(start) = tokens_start else {
             return;
         };
         let spent = tokens_now.saturating_sub(start);
+        let spent_cost = cost_start.map_or(0.0, |c| (cost_now - c).max(0.0));
         let _ = self.goal_commit(session, |tx| {
-            Store::goal_account(tx, session, goal.id, spent, None, now_ms())?;
-            Store::goal_set_turn_marks(tx, session, goal.id, signature.as_deref(), None)
+            Store::goal_account(tx, session, goal.id, spent, spent_cost, None, now_ms())?;
+            Store::goal_set_turn_marks(tx, session, goal.id, signature.as_deref(), None, None)
         });
     }
 
@@ -1011,13 +1057,25 @@ impl Shared {
         fingerprint: String,
     ) {
         let tokens_start = self.session_tokens(session);
+        let cost_start = self.session_cost(session);
         let call_id = goals::audit_call_id(goal.id, round);
+        // A pinned auditor model (`goals.auditorModel`) replaces the profile's choice.
+        let auditor_model = self
+            .settings_for(session)
+            .other
+            .get("goals")
+            .and_then(|g| g.get("auditorModel"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .map(str::to_owned);
         let launch = SubagentLaunch {
             task: goals::audit_prompt(&goal, round, &summary),
             profile: Some("auditor".into()),
             context: Some(crate::profiles::ContextMode::Fresh),
             wait: true,
             wake: false,
+            model: auditor_model,
         };
         let outcome = self
             .run_subagent(session, &call_id, launch, CancellationToken::new())
@@ -1060,6 +1118,7 @@ impl Shared {
         view.usage_tokens = view
             .usage_tokens
             .saturating_add(self.session_tokens(session).saturating_sub(tokens_start));
+        view.usage_cost_usd += (self.session_cost(session) - cost_start).max(0.0);
         let (verdict, findings, auditor_summary) = match &outcome {
             Ok((text, _)) => match goals::parse_audit_verdict(text) {
                 Some(v) => (

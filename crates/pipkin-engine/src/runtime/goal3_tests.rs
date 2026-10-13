@@ -398,3 +398,71 @@ fn stop_and_restart_end_an_audit_without_approval() {
             .starts_with("Audit approved (round 2)")
     );
 }
+
+#[test]
+fn a_pinned_auditor_model_replaces_the_profiles_choice_and_an_unknown_one_pauses() {
+    // `goals.auditorModel` names the model every audit runs on; the executor keeps its own.
+    let fx = Fixture::new();
+    std::fs::write(fx.project.join("a.txt"), "done").unwrap();
+    let hash = crate::web::sha256_hex(b"done");
+    let provider = Scripted::new(audit_script(hash.clone(), |_| {
+        verdict("approved", true, "a.txt says done")
+    }));
+    let mut config = fx.config();
+    let mut reviewer = crate::provider::scripted::model();
+    reviewer.id = "reviewer".into();
+    config.extra_models.push(reviewer);
+    std::fs::create_dir_all(fx.dir.path().join("config")).unwrap();
+    std::fs::write(
+        fx.dir.path().join("config/settings.json"),
+        json!({"goals": {"auditorModel": "scripted/reviewer"}}).to_string(),
+    )
+    .unwrap();
+    let mut e = fx.start_config(&provider, config.clone());
+    let s = e.create(&fx.project, "c");
+    start_audited_goal(&fx, &mut e, &s);
+    let done = until_state(&mut e, &s, GoalState::Completed);
+    assert_eq!(done.audit.result.as_ref().unwrap().verdict, "approved");
+    assert!(
+        done.usage_cost_usd >= 0.0,
+        "cost is accounted (zero for an unpriced model)"
+    );
+    let requests = provider.requests();
+    let auditor = requests
+        .iter()
+        .find(|r| is_auditor(r))
+        .expect("the auditor ran");
+    assert_eq!(auditor.model.id, "reviewer");
+    let executor = requests
+        .iter()
+        .find(|r| !is_auditor(r))
+        .expect("the executor ran");
+    assert_eq!(executor.model.id, "scripted");
+    e.handle.shutdown(Duration::from_secs(1));
+    drop(e);
+
+    // A pinned model that is not in the catalog never silently falls back: the audit cannot
+    // start and the goal pauses for review with the reason.
+    std::fs::write(
+        fx.dir.path().join("config/settings.json"),
+        json!({"goals": {"auditorModel": "scripted/missing"}}).to_string(),
+    )
+    .unwrap();
+    let provider = Scripted::new(audit_script(hash, |_| {
+        verdict("approved", true, "a.txt says done")
+    }));
+    let mut e = fx.start_config(&provider, config);
+    let s = e.create(&fx.project, "c2");
+    start_audited_goal(&fx, &mut e, &s);
+    let paused = until_state(&mut e, &s, GoalState::Paused);
+    assert!(
+        paused
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("scripted/missing"),
+        "{:?}",
+        paused.reason
+    );
+    assert!(provider.requests().iter().all(|r| !is_auditor(r)));
+}

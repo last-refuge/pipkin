@@ -105,11 +105,20 @@ claim `unverified` and clears the decision; the event log keeps the prior state.
 accepted as a fallback and labelled as such. A turn with neither pauses the goal ("reported
 no goal status this turn").
 
-**Allowances** (`/goal turns N`, `/goal tokens N`, `off` to clear; `GoalAction::SetLimits`)
-are checked before each turn and shown on the strip. Tokens are the goal's turns' reported
-input, output and cache tokens, attributed per turn from the session ledger; because the
-check runs before the next call, the last turn may overshoot a token allowance by one turn's
-usage. The engine never invents an allowance.
+**Allowances** (`/goal turns N`, `/goal tokens N`, `/goal cost USD`, `off` to clear;
+`GoalAction::SetLimits`) are checked before each turn and shown on the strip. Tokens are
+the goal's turns' reported input, output and cache tokens, attributed per turn from the
+session ledger; dollars are the same turns' cost from the usage ledger, priced by the
+catalog's model prices (an unpriced model costs zero, so a cost allowance only binds where
+prices are configured). Because the check runs before the next call, the last turn may
+overshoot a token or cost allowance by one turn's usage. The engine never invents an
+allowance; a zero, negative or non-finite cost clears the limit.
+
+**Pinned auditor model.** The `goals.auditorModel` setting (a `provider/modelId` key)
+names the model every audit runs on, replacing the `auditor` profile's choice; without it
+the auditor inherits the executor's model. A pinned model that is not in the catalog, or is
+unavailable, never falls back to another: the audit cannot start and the goal pauses with
+"the audit could not run" naming the key.
 
 **Stall detection.** A progress signature (criteria statuses and evidence counts, the note,
 linked tasks, the plan revision) is taken at each continued turn; `goals.stallTurns`
@@ -151,8 +160,9 @@ giving the auditor its own verification jobs is still open.
 - The audit is a model's judgment over the engine's evidence checks; it is recorded as
   such, and the state label still says what happened ("Audit approved" versus "Reported
   met").
-- Cost limits are not supported, only turns and tokens; provider-reported usage can arrive
-  late, which is why limits are enforced before the next call rather than as hard stops.
+- Allowances are enforced before the next call rather than as hard stops, because
+  provider-reported usage can arrive late; a cost allowance rests on the catalog's prices
+  and is inert for unpriced models.
 - A subagent cannot own a goal; context inheritance never carries one.
 - Keep-running after the window closes is not offered (the engine is app-owned).
 - Legacy Pi conversations keep the desktop runner unchanged.

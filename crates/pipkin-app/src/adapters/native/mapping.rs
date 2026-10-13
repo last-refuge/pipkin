@@ -471,8 +471,10 @@ pub fn goal(view: &GoalView) -> Goal {
             .count() as u32,
         criteria_total: view.criteria.len() as u32,
         usage_tokens: view.usage_tokens,
+        usage_cost_usd: view.usage_cost_usd,
         max_turns: view.limits.max_turns,
         max_tokens: view.limits.max_tokens,
+        max_cost_usd: view.limits.max_cost_usd,
         audit_required: view.audit.required,
         audit_verdict: view.audit.result.as_ref().map(|r| r.verdict.clone()),
     }

@@ -287,7 +287,7 @@ pub struct FormDraft {
     pub selections: Vec<(String, Vec<String>)>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Goal {
     pub text: String,
     pub paused: Option<String>,
@@ -302,8 +302,11 @@ pub struct Goal {
     pub criteria_met: u32,
     pub criteria_total: u32,
     pub usage_tokens: u64,
+    /// Dollars the goal's turns have cost so far (zero where models carry no price).
+    pub usage_cost_usd: f64,
     pub max_turns: Option<u64>,
     pub max_tokens: Option<u64>,
+    pub max_cost_usd: Option<f64>,
     /// Engine-owned goals: an independent audit is required before completion, and the
     /// latest audit's verdict (`pending`, `approved`, `changes_requested`, …).
     pub audit_required: bool,
@@ -1662,8 +1665,10 @@ impl AppState {
                             criteria_met: 0,
                             criteria_total: 0,
                             usage_tokens: 0,
+                            usage_cost_usd: 0.0,
                             max_turns: None,
                             max_tokens: None,
+                            max_cost_usd: None,
                             audit_required: false,
                             audit_verdict: None,
                         });
@@ -1726,6 +1731,7 @@ impl AppState {
             Command::SetGoalLimits {
                 max_turns,
                 max_tokens,
+                max_cost_usd,
             } => {
                 if let Some(id) = self.selected
                     && let Some(c) = self.conversation(id).filter(|c| c.goal_native)
@@ -1738,6 +1744,7 @@ impl AppState {
                             action: GoalControlAction::SetLimits {
                                 max_turns,
                                 max_tokens,
+                                max_cost_usd,
                             },
                         }));
                 }
@@ -3566,8 +3573,10 @@ impl AppState {
                     criteria_met: 0,
                     criteria_total: 0,
                     usage_tokens: 0,
+                    usage_cost_usd: 0.0,
                     max_turns: None,
                     max_tokens: None,
+                    max_cost_usd: None,
                     audit_required: false,
                     audit_verdict: None,
                 });

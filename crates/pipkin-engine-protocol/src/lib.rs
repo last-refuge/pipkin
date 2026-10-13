@@ -39,6 +39,7 @@ pub use view::*;
 // Version 28 adds export configuration: `ExportConfigure`, `ExportSetCredential`,
 // `ExportClearCredential`, `ExportPreview`, and the settings fields on `ExportHealthView`.
 // Version 29 adds `webSources` to snapshots and `WebSourcesChanged`.
-pub const PROTOCOL_VERSION: u32 = 29;
+// Version 30 adds goal cost limits (`maxCostUsd`, `usageCostUsd`).
+pub const PROTOCOL_VERSION: u32 = 30;
 
 pub mod delivery;

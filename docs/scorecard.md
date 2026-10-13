@@ -1,5 +1,18 @@
 # Scorecard
 
+## Goal cost allowance and pinned auditor model (2026-10-12)
+
+- **Measured (automated).** Engine tests: with the scripted model priced at a dollar a
+  token, a $10 allowance pauses the goal after the first turn with the cost reason and the
+  goal's dollars attributed from that turn; zero clears the limit; the action's wire form
+  omits nothing and still reads an older desktop's form without the cost field. The
+  `goals.auditorModel` setting routes the audit request to the pinned model while the
+  executor keeps its own; an unknown pinned model pauses the goal naming the key and never
+  substitutes another. The repository gate passed.
+- **Observed.** Nothing native: the strip's "$x of $y" detail and `/goal cost` in a window
+  are unverified.
+- **Unverified.** A live model as auditor (owner-run with credentials).
+
 ## Web leftovers: citations, fallback chain, batch fetches (2026-10-12)
 
 - **Measured (automated).** Engine tests: a Brave primary the fixture does not serve hands
