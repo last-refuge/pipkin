@@ -1,6 +1,6 @@
 # Platforms: what is supported, what was checked, what blocks the rest
 
-## Proposed 1.0 statement (draft for the owner's decision, 2026-10-12)
+## 1.0 statement (adopted by the owner on 2026-10-13 with the 1.0.0 release)
 
 Pipkin 1.0 supports **x86_64 Linux on Omarchy/Arch with Hyprland on Wayland**, with the
 built-in engine. Everything else is explicitly outside 1.0 support:
@@ -12,11 +12,11 @@ built-in engine. Everything else is explicitly outside 1.0 support:
 - **Other Linux desktops and distributions**: expected to work but unverified; issues there
   are welcome and are not release blockers.
 
-Adopting this statement is the owner's call (finish plan §8); until it is adopted the table
-below stands as the record.
+The owner adopted this statement on 2026-10-13 (finish plan §8); it is repeated in the 1.0.0 release
+notes (`CHANGELOG.md`). The table below records the evidence behind it.
 
-**Working v1 qualification scope: x86_64 Arch/Omarchy, Hyprland/Wayland.** Final support/acceptance approval and
-installed native gates remain open. See the current [release-gate record](v1-release-gates.md); successful headless
+**Supported scope: x86_64 Arch/Omarchy, Hyprland/Wayland.** The owner-run native gate rows in
+[native gates](native-gate-testing.md) keep their recorded status. See the current [release-gate record](v1-release-gates.md); successful headless
 Ubuntu CI does not qualify an Ubuntu desktop or an additional supported distribution.
 
 Native observations below include historical author-machine checks (Arch/Omarchy, Hyprland 0.56, Intel + NVIDIA,
@@ -25,11 +25,11 @@ recorded in [native gates](native-gate-testing.md); do not read that historical 
 
 | Target | Status | Evidence |
 | --- | --- | --- |
-| x86_64 Omarchy/Arch, Wayland (Hyprland) | **Qualification build; final approval open** | Owner-reported daily use; current locked development/packaged engine checks and scratch installer checks passed. Historical 1500-prompt measurement is not final-candidate soak. Clean installed desktop/native gates remain open |
+| x86_64 Omarchy/Arch, Wayland (Hyprland) | **Supported (1.0.0)** | Owner-reported daily use; current locked development/packaged engine checks and scratch installer checks passed. Historical 1500-prompt measurement is not final-candidate soak. Clean installed desktop/native gates remain open |
 | Arch/other Linux, X11 (also Xwayland) | **Builds and starts; checked under Xwayland only** | The `x11` GPUI feature is enabled alongside `wayland` (one binary; the display server picks at run time). Launched with `WAYLAND_DISPLAY` unset on Xwayland: it renders correctly. A pure X11 session, other window managers, and IME/screen reader on X11 were not tried |
 | Other Wayland compositors (GNOME, KDE) | **Unverified** | Same Wayland code path as Hyprland, but portals (file picker), decorations, clipboard and IME were not tried on them |
 | Other Linux distributions | **Experimental; native install/runtime unqualified** | Generic installer mechanics passed in scratch prefixes, not a distribution desktop matrix. Native ABI and external libraries vary by artifact; the local app references GLIBC_2.44. Ubuntu 24.04 headless CI builds its own artifact and is not proof that the local binary runs there |
-| macOS | **Experimental native build/port in progress; not supported** | Observed green Apple Silicon native build and two scripted engine smoke checks in run 37482847877 on f52e8c2, with an experimental app archive. See [first-pass limits](macos-first-pass.md); actual interactive native acceptance and Intel/universal builds remain unverified |
+| macOS | **Experimental build published with 1.0.0; not supported** | Observed green Apple Silicon native build and two scripted engine smoke checks in run 37482847877 on f52e8c2, with an experimental app archive. See [first-pass limits](macos-first-pass.md); actual interactive native acceptance and Intel/universal builds remain unverified |
 | Windows | **Not supported** | See the blockers below |
 
 ## Cross-platform implementation and remaining boundaries

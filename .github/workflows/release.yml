@@ -1,0 +1,229 @@
+name: Release
+
+# Builds the release archives for Linux x86_64 and macOS (Apple Silicon and Intel) and, when
+# the run was started by a `v*` tag, publishes them with SHA256SUMS as a GitHub release.
+# A workflow_dispatch run is a dry run: it builds and retains the same files and publishes nothing.
+# Archives are not signed; there is no release signing key yet (docs/packaging.md).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_INCREMENTAL: "0"
+      RUST_BACKTRACE: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Restore native Rust build cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            ${{ runner.os }}-${{ runner.arch }}-native-
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake pkg-config zstd jq binutils python3 \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libfreetype-dev \
+            libvulkan-dev libegl1-mesa-dev libssl-dev libasound2-dev libdbus-1-dev \
+            libxcb1-dev libxcb-xkb-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxcb-randr0-dev libxcb-render-util0-dev
+      - name: Install the repository Rust toolchain
+        run: |
+          toolchain=$(awk -F '"' '/^channel =/ {print $2}' rust-toolchain.toml)
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+      - name: Reject Node, npm and Pi in release build commands
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-shims"
+          for tool in node npm npx pi; do
+            printf '#!/bin/sh\necho "unexpected native dependency: %s" >&2\ntouch "%s/native-forbidden-invocations"\nexit 93\n' \
+              "$tool" "$RUNNER_TEMP" > "$RUNNER_TEMP/native-shims/$tool"
+            chmod +x "$RUNNER_TEMP/native-shims/$tool"
+          done
+          echo "$RUNNER_TEMP/native-shims" >> "$GITHUB_PATH"
+      - name: Check that the tag names the workspace version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(cargo pkgid -p pipkin-app | sed 's/.*[#@]//')
+          test "v$version" = "$GITHUB_REF_NAME" || {
+            echo "tag $GITHUB_REF_NAME does not match workspace version $version" >&2; exit 1; }
+      - name: Build and verify the Linux package
+        run: |
+          mkdir -p release-logs release/linux
+          set -o pipefail
+          scripts/package.sh 2>&1 | tee release-logs/linux-package.log
+          version=$(cargo pkgid -p pipkin-app | sed 's/.*[#@]//')
+          package="dist/native/pipkin-native-$version-$(uname -m).tar.zst"
+          scripts/test-native-package.sh --no-build "$package" 2>&1 | tee release-logs/linux-installed.log
+          test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
+          cp "$package" release/linux/
+          cp dist/native/stage/usr/share/doc/pipkin/build-info.json "release/linux/build-info-linux-x86_64.json"
+      - name: Retain the Linux release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-linux-x86_64
+          path: release/linux/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain the Linux build logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-logs-linux-x86_64
+          path: release-logs/
+          if-no-files-found: warn
+          retention-days: 90
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            optional: false
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            optional: true
+    # The Intel archive is best effort: no Intel build has been checked on a Mac, and a
+    # failure there must not block the Linux and Apple Silicon release.
+    continue-on-error: ${{ matrix.optional }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: "3"
+      CARGO_INCREMENTAL: "0"
+      RUST_BACKTRACE: "1"
+      TMPDIR: /private/tmp/pipkin-release
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Restore native Rust build cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            ${{ runner.os }}-${{ runner.arch }}-native-
+      - name: Prepare native dependencies and pinned toolchain
+        run: |
+          mkdir -p "$TMPDIR" release-logs
+          chmod 700 "$TMPDIR"
+          brew install cmake pkg-config
+          toolchain=$(awk -F '"' '/^channel =/ {print $2}' rust-toolchain.toml)
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+          uname -a > release-logs/runner.txt
+          rustc -vV > release-logs/rustc.txt
+          xcodebuild -version > release-logs/xcode.txt
+      - name: Reject Node, npm and Pi in release build commands
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-shims"
+          for tool in node npm npx pi; do
+            printf '#!/bin/sh\necho "unexpected native dependency: %s" >&2\ntouch "%s/native-forbidden-invocations"\nexit 93\n' \
+              "$tool" "$RUNNER_TEMP" > "$RUNNER_TEMP/native-shims/$tool"
+            chmod +x "$RUNNER_TEMP/native-shims/$tool"
+          done
+          echo "$RUNNER_TEMP/native-shims" >> "$GITHUB_PATH"
+      - name: Check that the tag names the workspace version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(cargo pkgid -p pipkin-app | sed 's/.*[#@]//')
+          test "v$version" = "$GITHUB_REF_NAME" || {
+            echo "tag $GITHUB_REF_NAME does not match workspace version $version" >&2; exit 1; }
+      - name: Build and verify the macOS app, ZIP and DMG
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -o pipefail
+          host=$(rustc -vV | awk '/^host:/ {print $2}')
+          test "$host" = "$TARGET" || { echo "runner builds $host, expected $TARGET" >&2; exit 1; }
+          python3 scripts/test-package-macos.py
+          cargo fetch --locked --target "$TARGET" 2>&1 | tee release-logs/notice-inputs.log
+          PIPKIN_REVISION="$(git rev-parse HEAD)" cargo build -p pipkin-app --release --locked 2>&1 | tee release-logs/build.log
+          python3 scripts/write-license-inventory.py dist/macos-notices "$TARGET" 2>&1 | tee release-logs/notices.log
+          python3 scripts/package-macos.py "$TARGET" 2>&1 | tee release-logs/package.log
+          test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
+          mkdir -p "release/macos-$TARGET"
+          cp dist/macos/*.zip dist/macos/*.dmg "release/macos-$TARGET/"
+          cp dist/macos/build-info.json "release/macos-$TARGET/build-info-$TARGET.json"
+          cp dist/macos/SHA256SUMS release-logs/
+      - name: Retain the macOS release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-macos-${{ matrix.target }}
+          path: release/macos-${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain the macOS build logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-logs-macos-${{ matrix.target }}
+          path: release-logs/
+          if-no-files-found: warn
+          retention-days: 90
+
+  publish:
+    # Only a tag publishes. The Linux and Apple Silicon jobs must have succeeded; the Intel
+    # job is optional, so whatever it retained is included.
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [linux, macos]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Collect the release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          path: collected
+          merge-multiple: true
+      - name: Assemble SHA256SUMS and the release notes
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          mkdir -p dist/release
+          find collected -type f ! -name SHA256SUMS -exec cp {} dist/release/ \;
+          test -f "dist/release/pipkin-native-$version-x86_64.tar.zst"
+          test -f "dist/release/pipkin-$version-aarch64-apple-darwin-experimental.dmg"
+          (cd dist/release && sha256sum * > SHA256SUMS && sha256sum --check --strict SHA256SUMS)
+          awk -v v="$version" '$0 ~ "^## " v "( |$)" {p=1; next} /^## / {p=0} p' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "CHANGELOG.md has no section for $version" >&2; exit 1; }
+          ls -l dist/release
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Pipkin $version" \
+            --notes-file notes.md dist/release/*

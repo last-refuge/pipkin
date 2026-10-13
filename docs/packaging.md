@@ -13,7 +13,11 @@ scripts/verify-install.sh PATH.tar.zst       # verify an existing native archive
 scripts/release.sh                          # clean identified checkout; optional PIPKIN_SIGN_KEY
 ```
 
-`release.sh` assembles files locally and never publishes a release. No signed release is claimed.
+`release.sh` assembles files locally and never publishes a release. Publication is the `Release` GitHub
+Actions workflow (`.github/workflows/release.yml`): a `v<version>` tag whose version matches the workspace
+builds the Linux archive and the macOS ZIP/DMG, verifies them, and publishes them with one `SHA256SUMS`
+and the matching `CHANGELOG.md` section as the release body. A `workflow_dispatch` run of it is a dry run.
+No signed release is claimed.
 Builds use locked Rust dependencies and pinned source/vendor inputs. Python, binutils and native
 build libraries are prerequisites; Pi/Node/npm are neither build nor runtime dependencies.
 `build-info.json` identifies source, binary, protocol/schema and public build inputs. The inventory
@@ -93,6 +97,8 @@ PIPKIN_SIGN_KEY=<gpg key id> scripts/release.sh   # also SHA256SUMS.asc (detache
 scripts/verify-release.sh DIR [--require-signature]   # what a downloader runs
 ```
 
-Checked here with a throwaway gpg key (signature verifies; a modified tarball fails the checksum). No real
-release key exists, nothing is published, and there is no in-app update check: an update is "download, verify,
-`./install.sh`", with `--rollback` selecting a retained prior package, subject to the schema/backup requirements above.
+Checked here with a throwaway gpg key (signature verifies; a modified tarball fails the checksum). Releases are
+published on [GitHub Releases](https://github.com/last-refuge/pipkin/releases) with checksums only: no real
+release key exists yet, so `SHA256SUMS` proves integrity, not publisher identity. There is no in-app update
+check: an update is "download, verify, `./install.sh`", with `--rollback` selecting a retained prior package,
+subject to the schema/backup requirements above.

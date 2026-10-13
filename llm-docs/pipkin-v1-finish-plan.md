@@ -165,9 +165,10 @@ each gate, including the engine-unavailable one).
 
 ## 8. Scope decision
 
-- [ ] Explicit 1.0 statement for macOS (experimental build; no Developer ID/notarization; no
+- [x] Explicit 1.0 statement for macOS (experimental build; no Developer ID/notarization; no
   interactive acceptance) and Windows (not supported), recorded in `docs/platforms.md` and
-  the release notes.
+  the release notes. Adopted by the owner on 2026-10-13; the statement heads `docs/platforms.md`
+  and the 1.0.0 section of `CHANGELOG.md`.
 
 ## Still post-1.0 unless pulled in
 

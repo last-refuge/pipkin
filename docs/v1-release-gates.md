@@ -843,3 +843,18 @@ Status meanings: **passed (automated)**, **owner-reported**, **partial**, **open
 3. Schedule owner-run clean-install and native gates while onboarding/support work proceeds.
 
 For step details and exit criteria, use the sequenced plan. `docs/native-gate-testing.md` remains the manual procedure reference; unrecorded owner use must not be assumed to have passed a particular gate.
+
+## 1.0.0 release (2026-10-13)
+
+The owner declared 1.0 on 2026-10-13. The workspace version moved from `0.0.1` to `1.0.0`, the
+platform statement at the top of [platforms](platforms.md) was adopted, and tag `v1.0.0` was
+built and published by the `Release` workflow (`.github/workflows/release.yml`): the Linux
+x86_64 archive (built, installed and probed in a scratch prefix on the runner), the macOS Apple
+Silicon ZIP/DMG (strict signature check and offline probe of the extracted app) and a best-effort
+Intel macOS build, with one `SHA256SUMS` and the `CHANGELOG.md` section as the release body.
+The release is unsigned; no release key exists.
+
+The gate tracker above is **not** rewritten by this: rows marked open, partial or unverified
+keep that status. Items the owner deferred past 1.0 (Orca, soak and performance, second-machine
+install walkthrough, signing key, license appraisal) are listed in
+[`llm-docs/pipkin-v1-release-plan.md`](../llm-docs/pipkin-v1-release-plan.md).

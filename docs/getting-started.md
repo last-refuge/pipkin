@@ -1,8 +1,9 @@
-# Getting started with the qualification build
+# Getting started
 
-Pipkin is still an unsigned, unpublished **0.0.1 qualification build**, not an approved v1 release. The working
-release target is x86_64 Arch/Omarchy with Hyprland/Wayland. Other desktops and pure X11 remain experimental.
-See [release gates](v1-release-gates.md) for automated, observed, failed and unverified results.
+Pipkin **1.0.0** is published on [GitHub Releases](https://github.com/last-refuge/pipkin/releases) with SHA-256
+checksums (no signing key yet). The supported target is x86_64 Arch/Omarchy with Hyprland/Wayland; macOS builds
+are experimental and other desktops and pure X11 are unverified. See the [changelog](../CHANGELOG.md),
+[platforms](platforms.md) and the [release gates](v1-release-gates.md) for what was and was not checked.
 
 ## Recommended: one-command source setup
 

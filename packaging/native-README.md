@@ -1,10 +1,10 @@
 # Pipkin installed help
 
-This qualification package uses Pipkin's built-in Rust engine by default. It carries only the `pipkin`
+This package is a Pipkin release build using the built-in Rust engine. It carries only the `pipkin`
 binary (which also runs the engine as a private `pipkin --engine-worker` process), the desktop entry, icons,
 notices and inventories. It contains **no Node runtime, npm tree or Pi engine**, and it does not install system
-Node, Git or graphics/desktop libraries. It is not a release, not signed and not qualified on any additional
-platform.
+Node, Git or graphics/desktop libraries. Releases are published with SHA-256 checksums only (no signing key yet)
+and are supported on x86_64 Linux with Hyprland/Wayland; other platforms are experimental or unverified.
 
 - Both `pipkin` and the desktop entry use the built-in engine. `--engine native` is an optional alias.
 - Native engine data lives in its own directories (`~/.local/share/pipkin/engine` and `~/.config/pipkin/engine`,

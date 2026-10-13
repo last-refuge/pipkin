@@ -3,3 +3,4 @@ zed/
 .DS_Store
 dist/
 qualification-logs/
+.claude/worktrees/

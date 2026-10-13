@@ -30,9 +30,10 @@ tool calls you can read at a glance, a view of the project's working-tree change
 with visible save status. It is a real application, not a web view: one Rust binary, GPU-drawn, with its own text
 editing, selection and accessibility tree.
 
-> **Alpha.** Built and used on Arch / Omarchy (Hyprland, Wayland). It runs a built-in Rust engine, and the
-> install, accessibility and scaling checks that need a person at a machine are only partly done. See
-> [Status](#status) before you rely on it.
+> **1.0.0.** Built and used daily on Arch / Omarchy (Hyprland, Wayland), which is the one supported platform.
+> It runs a built-in Rust engine. macOS builds are experimental, and some of the accessibility and scaling
+> checks that need a person at a machine are still open. See [Status](#status) and the
+> [changelog](CHANGELOG.md) before you rely on it.
 
 ## Features
 
@@ -89,11 +90,25 @@ editing, selection and accessibility tree.
 
 ## Install
 
-The working qualification scope is **x86_64 Arch/Omarchy, Hyprland/Wayland** with a Vulkan-capable GPU driver.
+The supported platform is **x86_64 Arch/Omarchy, Hyprland/Wayland** with a Vulkan-capable GPU driver.
 The package contains the app and engine in one Rust binary. Building and running it requires no Pi checkout,
 Node or npm. Git and the libraries in [`packaging/PKGBUILD`](packaging/PKGBUILD) remain required.
 Other desktops/distributions and X11 remain experimental; native ABI compatibility depends on build inputs.
 Native credentials and configuration live separately from Pi; `--pi-agent-dir DIR` selects an import source.
+
+### Download a release
+
+Release archives are on [GitHub Releases](https://github.com/last-refuge/pipkin/releases): the Linux x86_64
+archive with its installer, the experimental macOS DMG/ZIP for Apple Silicon and Intel, `build-info-*.json`
+and one `SHA256SUMS`. Check the checksum before installing; releases carry no signature yet.
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
+tar --zstd -xf pipkin-native-<version>-x86_64.tar.zst && ./install.sh     # Linux: into ~/.local, no root needed
+```
+
+On a Mac, open the DMG and drag Pipkin to Applications; the app is ad-hoc signed and not notarized, so
+Gatekeeper warns on first launch. See [macOS notes](docs/macos-first-pass.md).
 
 ### Build and use it from source (Mac or Linux)
 
@@ -123,16 +138,16 @@ build while the old app runs; **Quit and relaunch to use the new build**. See th
 For a pacman-managed Arch package instead of the per-user installer, see the advanced instructions in
 [getting started](docs/getting-started.md).
 
-### Experimental generic Linux installer
+### The generic Linux installer
 
 ```sh
-tar --zstd -xf pipkin-native-<version>-x86_64.tar.zst && ./install.sh     # into ~/.local, no root needed
 ./install.sh --list            # installed versions
 ./install.sh --rollback        # go back to the previous version in one step
+./install.sh --uninstall       # remove the installed versions; your data stays
 ```
 
 The installer checks native libraries and performs an isolated offline worker handshake. It keeps versioned
-binaries and preserves application data. There is no published signed release yet. Database rollback requires
+binaries and preserves application data. Releases are checksummed but not signed. Database rollback requires
 compatible schemas or the documented backup restoration; see [packaging](docs/packaging.md).
 
 ### Advanced external engine
@@ -209,20 +224,20 @@ flowchart LR
 | Real read path, first real workflow, daily-use execution and recovery | Built, tested against a real engine |
 | Complete local product (history, search, tool output, offline cache) | Built; native gates partly run |
 | Distributable alpha (bundled engine, package, diagnostics, upgrade / rollback) | Built; checked in a scratch prefix, not on a clean machine |
-| Broader release (X11, other Linux, signed releases) | Groundwork only; nothing but Arch / Omarchy is claimed |
+| 1.0.0 release (Linux archive, experimental macOS builds, checksums) | Published; nothing but Arch / Omarchy is supported, and releases are not signed |
 
 **Not done or not verified yet:** a screen reader does not yet speak typed characters in the composer; input methods
 are verified with one engine; 150% scale, minimize / suspend / resume, a clean `pacman -U` install and a long soak are
-for a person to run; macOS has experimental native builds but Windows remains deferred; there is no published release or update channel. The
+for a person to run; macOS has experimental native builds but Windows remains deferred; there is no in-app update channel. The
 owner-run checks are written up in [`docs/native-gate-testing.md`](docs/native-gate-testing.md) and the full plan, with
 what each milestone really covers, is in [`docs/rust-desktop-client-plan.md`](docs/rust-desktop-client-plan.md).
 
 | Platform | Support |
 | --- | --- |
-| Arch / Omarchy, Wayland (Hyprland) | **Alpha** |
+| Arch / Omarchy, Wayland (Hyprland) | **Supported (1.0.0)** |
 | X11 / Xwayland | Builds and starts; seen under Xwayland only |
 | GNOME, KDE, other distributions | Unverified |
-| macOS Apple Silicon / Intel | Experimental source setup; Apple Silicon native CI/artifacts verified, interactive acceptance partial |
+| macOS Apple Silicon / Intel | Experimental release builds (ad-hoc signed, not notarized); interactive acceptance partial |
 | Windows | Deferred ([platform status](docs/platforms.md)) |
 
 ## Developing

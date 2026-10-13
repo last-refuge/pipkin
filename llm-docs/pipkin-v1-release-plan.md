@@ -19,7 +19,7 @@ below remains the risk/evidence record, not a claim that waived or unobserved ch
 - [x] First macOS CI build/artifact: Apple Silicon native build, core/transport/ownership checks and two scripted engine smoke checks passed in run 37482847877 on clean f52e8c2. Downloaded bundle hashes/permissions/notices were verified without executing it on Linux.
 - [ ] Owner evaluates the Mac artifact; decide next Mac packaging/native changes before expanding scope.
 - [ ] Windows CI/port after Mac review.
-- [ ] Final 1.0 version, approval, tag and artifact publication. No experimental 0.0.1 artifact is relabelled as 1.0.
+- [x] Final 1.0 version, approval, tag and artifact publication. Version bumped to 1.0.0 and tag `v1.0.0` built fresh by `.github/workflows/release.yml` on 2026-10-13; no experimental 0.0.1 artifact was relabelled.
 
 ## Owner-directed v1.0 scope (2026-10-12)
 
