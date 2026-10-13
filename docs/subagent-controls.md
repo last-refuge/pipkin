@@ -83,6 +83,19 @@ A detached watcher per background child records the settlement and delivers. On 
 engine re-attaches a watcher to every background child whose delivery is still pending (its
 run is resumed by ordinary session recovery) and finishes deliveries a restart cut off.
 
+### Results and artifacts
+
+A waiting parent receives the child's answer inline up to 16 KiB; a longer answer ends with
+"[Answer continues: N of M characters shown; read the rest with subagent_result child C
+offset N.]". `subagent_result` reads a bounded slice from a character `offset` (at most
+16 KiB per read) or, with `find`, the places where a text occurs with context and no slice.
+Every result lists the child's **artifacts** after the answer: the files its settled `write`
+and `edit` calls touched (each once, resolved against the child's cwd; a call whose result
+was an error is not listed) and the web sources it retained (final URL and title), at most
+100. `SubagentResultView` carries them as `artifacts` with `resultChars`, `resultOffset` and
+`resultTruncated`; the tool's `details.subagent` repeats them. A retained source is a
+reference, not a copy: the parent fetches it again to read it in its own conversation.
+
 ### Launching from the inspector
 
 `LaunchSubagent { session, request, task, profile?, context? }` starts a background child on
@@ -112,6 +125,7 @@ marker.
   parent, only in the child's activity.
 - A background child outlives the parent run that started it (like a job). Stopping the
   parent suppresses the wake but does not stop the child; use the inspector to stop it.
-- No structured parallel groups and no result artifact references (plan §6 leftovers).
+- No structured parallel groups (plan §6 leftover). Artifact references name files and
+  sources only; jobs a child started are its own and are not referenced.
 - The inspector's launch row has no profile or context choice yet (worker, fresh); the call
   accepts both.

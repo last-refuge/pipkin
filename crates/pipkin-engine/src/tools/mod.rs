@@ -424,11 +424,17 @@ pub trait ToolHost: Send + Sync {
         Box::pin(async { Err("No subagent service is configured".into()) })
     }
 
-    /// One child's recorded result.
+    /// One child's recorded result, its answer sliced from a character offset.
     fn subagent_result<'a>(
         &'a self,
         _child: u64,
+        _offset: usize,
     ) -> BoxFuture<'a, Result<pipkin_engine_protocol::SubagentResultView, String>> {
+        Box::pin(async { Err("No subagent service is configured".into()) })
+    }
+
+    /// One child's whole recorded answer (for `find`), `None` until it has one.
+    fn subagent_answer<'a>(&'a self, _child: u64) -> BoxFuture<'a, Result<Option<String>, String>> {
         Box::pin(async { Err("No subagent service is configured".into()) })
     }
 

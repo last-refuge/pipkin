@@ -1508,6 +1508,24 @@ impl Store {
         .optional()?)
     }
 
+    /// Settled calls of the named tools, oldest first (the child's file ledger).
+    pub fn tool_calls_done_named(
+        c: &Connection,
+        session: &str,
+        names: &[&str],
+    ) -> Result<Vec<ToolCallRow>> {
+        let mut stmt = c.prepare_cached(
+            "SELECT * FROM tool_calls WHERE session = ?1 AND state = 'done' ORDER BY started_at",
+        )?;
+        let rows = stmt
+            .query_map(params![session], Self::tool_from_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows
+            .into_iter()
+            .filter(|r| names.contains(&r.name.as_str()))
+            .collect())
+    }
+
     pub fn tools_in_state(c: &Connection, session: &str, state: &str) -> Result<Vec<ToolCallRow>> {
         let mut stmt = c.prepare_cached(
             "SELECT * FROM tool_calls WHERE session = ?1 AND state = ?2 ORDER BY started_at",

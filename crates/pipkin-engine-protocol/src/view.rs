@@ -459,12 +459,39 @@ pub struct SubagentResultView {
     pub status: String,
     /// Bounded task excerpt.
     pub task: String,
-    /// The child's final answer, when it completed.
+    /// The child's final answer, when it completed: the slice that starts at
+    /// `result_offset` (the whole answer when `result_truncated` is false).
     pub result: Option<String>,
     pub note: Option<String>,
     pub origin: String,
     pub delivery: String,
     pub session: SessionId,
+    /// Characters in the whole answer.
+    #[serde(default)]
+    pub result_chars: u64,
+    /// Character offset `result` starts at.
+    #[serde(default)]
+    pub result_offset: u64,
+    /// More of the answer follows `result`.
+    #[serde(default)]
+    pub result_truncated: bool,
+    /// What the child produced beyond its answer (files it wrote or edited, sources it
+    /// retained), bounded by [`limits::MAX_SUBAGENT_ARTIFACTS`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<SubagentArtifact>,
+}
+
+/// A reference to something a child produced that outlives its answer.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentArtifact {
+    /// `file` (written or edited by the child) or `source` (a web source it retained).
+    pub kind: String,
+    /// A path the parent can read, or the source's final URL.
+    pub reference: String,
+    /// The source's title, when it had one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -908,7 +935,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 30);
+        assert_eq!(crate::PROTOCOL_VERSION, 31);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };

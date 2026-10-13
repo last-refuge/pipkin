@@ -27,6 +27,10 @@ pub const MAX_RETAINED_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_SUBAGENT_ROWS: u32 = 4096;
 /// Longest task excerpt carried in a subagent row.
 pub const SUBAGENT_TASK_EXCERPT_CHARS: usize = 160;
+/// Most of a child's answer delivered inline to the parent (the rest is read by offset).
+pub const SUBAGENT_RESULT_INLINE_CHARS: usize = 16 * 1024;
+/// Most artifact references carried with one child's result.
+pub const MAX_SUBAGENT_ARTIFACTS: usize = 100;
 /// Most live (non-archived) tasks in one plan.
 pub const MAX_PLAN_TASKS: usize = 500;
 /// Most tasks (live plus archived) returned in one plan view.

@@ -76,6 +76,36 @@ fn script(
                 .to_owned();
             return match kind.as_str() {
                 "hang" => R::Gated(child_gate.clone(), Box::new(R::Text("child done".into()))),
+                "write" => {
+                    let results = req
+                        .messages
+                        .iter()
+                        .filter(|m| matches!(m, Message::ToolResult { .. }))
+                        .count();
+                    match results {
+                        0 => R::Tools(
+                            None,
+                            vec![
+                                (
+                                    "write".into(),
+                                    json!({"path": "out.txt", "content": "made by child"}),
+                                ),
+                                (
+                                    "write".into(),
+                                    json!({"path": "out.txt", "content": "made by child again"}),
+                                ),
+                                (
+                                    "write".into(),
+                                    json!({"path": "/proc/pipkin-cannot-write/x", "content": "no"}),
+                                ),
+                            ],
+                        ),
+                        _ => R::Text(format!(
+                            "long answer start {} long answer end",
+                            "x".repeat(20_000)
+                        )),
+                    }
+                }
                 "steer" => match last_tool_result(req) {
                     None => R::Gated(
                         child_gate.clone(),
@@ -543,4 +573,99 @@ fn stopping_the_launching_run_suppresses_the_wake_but_keeps_the_result() {
     assert_eq!((r.status.as_str(), r.has_result), ("done", true));
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(user_texts(&e.snapshot(&s)).len(), 1, "no follow-up");
+}
+
+#[test]
+fn a_long_answer_is_delivered_bounded_with_artifact_references_and_read_by_offset_or_find() {
+    let fx = Fixture::new();
+    let provider = Scripted::new(script(Gate::new(), Gate::new()));
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    e.prompt(&s, "r1", r#"delegate {"task":"child:write"}"#)
+        .unwrap();
+    assert_eq!(e.settled("r1"), RunOutcome::Completed);
+    assert_eq!(
+        std::fs::read_to_string(fx.project.join("out.txt")).unwrap(),
+        "made by child again"
+    );
+    // The waiting parent got the first 16 KiB, a pointer to the rest, and the artifacts:
+    // the file once (two successful writes, one failed write), no sources.
+    let (is_error, text) = parent_result(&e.snapshot(&s));
+    assert!(!is_error, "{}", &text[..80]);
+    assert!(text.starts_with("long answer start xxx"), "{}", &text[..80]);
+    assert!(!text.contains("long answer end"), "the tail is not inline");
+    assert!(
+        text.contains("[Answer continues: 16384 of 20034 characters shown; read the rest with subagent_result child 1 offset 16384.]"),
+        "{}",
+        &text[text.len() - 300..]
+    );
+    let file = fx.project.join("out.txt").display().to_string();
+    assert!(
+        text.ends_with(&format!("\nArtifacts:\n- file: {file}")),
+        "{}",
+        &text[text.len() - 200..]
+    );
+    assert!(
+        !text.contains("pipkin-cannot-write"),
+        "a failed write is not an artifact"
+    );
+    // Reading by offset continues where the inline answer stopped.
+    e.prompt(
+        &s,
+        "r2",
+        r#"lookup subagent_result {"child":1,"offset":16384}"#,
+    )
+    .unwrap();
+    assert_eq!(e.settled("r2"), RunOutcome::Completed);
+    let (is_error, text) = parent_result(&e.snapshot(&s));
+    assert!(!is_error, "{}", &text[..80]);
+    assert!(
+        text.contains("Answer (characters 16384-20034 of 20034):")
+            && text.contains("long answer end"),
+        "{}",
+        &text[..120]
+    );
+    assert!(!text.contains("More follows"), "{text}");
+    assert!(text.contains(&format!("- file: {file}")), "{text}");
+    // `find` locates text anywhere in the answer without returning the slice.
+    e.prompt(
+        &s,
+        "r3",
+        r#"lookup subagent_result {"child":1,"find":"ANSWER END"}"#,
+    )
+    .unwrap();
+    assert_eq!(e.settled("r3"), RunOutcome::Completed);
+    let (is_error, text) = parent_result(&e.snapshot(&s));
+    assert!(!is_error, "{text}");
+    assert!(
+        text.contains("\"ANSWER END\" occurs 1 time(s) in its answer") && text.contains("@20024:"),
+        "{text}"
+    );
+    assert!(
+        text.chars().count() < 600,
+        "no slice with a find: {}",
+        text.len()
+    );
+    assert!(
+        text.contains(&format!("\nArtifacts:\n- file: {file}")),
+        "{text}"
+    );
+    // The client call carries the bounded slice and the artifacts too.
+    let Ok(Reply::SubagentResult(result)) = e.call(Call::SubagentResult {
+        session: s.clone(),
+        child: 1,
+    }) else {
+        panic!()
+    };
+    assert_eq!(result.result_chars, 20034);
+    assert_eq!(result.result.as_ref().unwrap().chars().count(), 16384);
+    assert!(result.result_truncated);
+    assert_eq!(result.artifacts.len(), 1);
+    assert_eq!(
+        (
+            result.artifacts[0].kind.as_str(),
+            result.artifacts[0].reference.as_str()
+        ),
+        ("file", file.as_str())
+    );
 }

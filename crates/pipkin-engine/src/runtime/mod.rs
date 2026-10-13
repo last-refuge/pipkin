@@ -1131,7 +1131,7 @@ async fn dispatch_with_cancel(
                 .await?,
         )),
         Call::SubagentResult { session, child } => Ok(Reply::SubagentResult(
-            shared.subagent_result(&session, child)?,
+            shared.subagent_result(&session, child, 0)?,
         )),
         Call::Diagnostics {
             session,

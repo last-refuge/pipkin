@@ -25,7 +25,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use pipkin_engine_protocol::limits::SUBAGENT_TASK_EXCERPT_CHARS;
+use pipkin_engine_protocol::limits::{
+    MAX_SUBAGENT_ARTIFACTS, SUBAGENT_RESULT_INLINE_CHARS, SUBAGENT_TASK_EXCERPT_CHARS,
+};
 use pipkin_engine_protocol::*;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -434,11 +436,25 @@ impl ToolHost for Host {
     fn subagent_result<'a>(
         &'a self,
         child: u64,
+        offset: usize,
     ) -> BoxFuture<'a, Result<SubagentResultView, String>> {
         Box::pin(async move {
             self.shared
-                .subagent_result(&self.parent, child)
+                .subagent_result(&self.parent, child, offset)
                 .map_err(|e| e.message)
+        })
+    }
+
+    fn subagent_answer<'a>(&'a self, child: u64) -> BoxFuture<'a, Result<Option<String>, String>> {
+        Box::pin(async move {
+            let task = self
+                .shared
+                .authorized_child(&self.parent, child)
+                .map_err(|e| e.message)?;
+            Ok(match task.status.as_str() {
+                "done" => task.result,
+                _ => None,
+            })
         })
     }
 
@@ -549,7 +565,12 @@ impl Shared {
             .await_child(&parent_session, &sess, &task_row, cancel)
             .await?;
         match self.record_outcome(&task_row, &outcome) {
-            ChildEnd::Answered(answer) => Ok((answer, details)),
+            ChildEnd::Answered(answer) => {
+                let artifacts = self.child_artifacts(&task_row.child_session);
+                let mut details = details;
+                details["artifacts"] = json!(artifacts);
+                Ok((inline_answer(task_row.child, &answer, &artifacts), details))
+            }
             ChildEnd::Unanswered(message) => Err(message),
         }
     }
@@ -1036,7 +1057,74 @@ impl Shared {
                 ));
             }
         }
+        text.push_str(&artifact_lines(&self.child_artifacts(&task.child_session)));
         text
+    }
+
+    /// What a child produced beyond its answer: the files its settled `write` and `edit`
+    /// calls touched (resolved against its cwd, in first-touched order) and the web sources
+    /// it retained, bounded by [`MAX_SUBAGENT_ARTIFACTS`].
+    pub(super) fn child_artifacts(&self, child_session: &str) -> Vec<SubagentArtifact> {
+        let mut out = Vec::new();
+        let cwd = self
+            .store
+            .session(child_session)
+            .ok()
+            .flatten()
+            .map(|r| std::path::PathBuf::from(r.cwd))
+            .unwrap_or_default();
+        let calls = self
+            .store
+            .read(|c| Store::tool_calls_done_named(c, child_session, &["write", "edit"]))
+            .unwrap_or_default();
+        for call in calls {
+            let Some(path) = call.arguments.get("path").and_then(Value::as_str) else {
+                continue;
+            };
+            // A call whose result was an error changed nothing.
+            let failed = call.result_entry.is_some_and(|id| {
+                matches!(
+                    self.store
+                        .entry(child_session, id)
+                        .ok()
+                        .flatten()
+                        .map(|e| e.kind),
+                    Some(EntryKind::Message {
+                        message: Message::ToolResult { is_error: true, .. },
+                        ..
+                    })
+                )
+            });
+            if failed {
+                continue;
+            }
+            let reference = cwd.join(path).display().to_string();
+            if out
+                .iter()
+                .any(|a: &SubagentArtifact| a.kind == "file" && a.reference == reference)
+            {
+                continue;
+            }
+            out.push(SubagentArtifact {
+                kind: "file".into(),
+                reference,
+                label: None,
+            });
+            if out.len() >= MAX_SUBAGENT_ARTIFACTS {
+                return out;
+            }
+        }
+        for source in self.web_sources_bounded(child_session).unwrap_or_default() {
+            if out.len() >= MAX_SUBAGENT_ARTIFACTS {
+                break;
+            }
+            out.push(SubagentArtifact {
+                kind: "source".into(),
+                reference: source.final_url,
+                label: source.title,
+            });
+        }
+        out
     }
 
     /// Startup: re-attach watchers to background children and finish cut-off deliveries.
@@ -1230,8 +1318,20 @@ impl Shared {
         &self,
         root: &str,
         child: u64,
+        offset: usize,
     ) -> Result<SubagentResultView, ProtoError> {
-        Ok(result_view(&self.authorized_child(root, child)?))
+        let task = self.authorized_child(root, child)?;
+        let mut view = result_view(&task);
+        if let Some(answer) = view.result.take() {
+            let (piece, total, more) =
+                crate::web::slice_chars(&answer, offset, SUBAGENT_RESULT_INLINE_CHARS);
+            view.result = Some(piece);
+            view.result_chars = total as u64;
+            view.result_offset = offset.min(total) as u64;
+            view.result_truncated = more;
+        }
+        view.artifacts = self.child_artifacts(&task.child_session);
+        Ok(view)
     }
 
     /// Wait (bounded) for a child to finish, then its result; a still-running child is
@@ -1248,7 +1348,7 @@ impl Shared {
         loop {
             let task = self.authorized_child(root, child)?;
             if task.finished() {
-                return Ok(result_view(&task));
+                return self.subagent_result(root, child, 0);
             }
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_millis(250)) => {}
@@ -1474,18 +1574,56 @@ pub(super) fn row_view(t: &TaskRow) -> SubagentRow {
     }
 }
 
+/// The row as a result view with the whole answer; `Shared::subagent_result` slices it
+/// and attaches artifacts.
 fn result_view(t: &TaskRow) -> SubagentResultView {
+    let result = match t.status.as_str() {
+        "done" => t.result.clone(),
+        _ => None,
+    };
     SubagentResultView {
         child: t.child,
         status: t.status.clone(),
         task: excerpt(&t.task),
-        result: match t.status.as_str() {
-            "done" => t.result.clone(),
-            _ => None,
-        },
+        result_chars: result.as_ref().map_or(0, |r| r.chars().count() as u64),
+        result,
         note: t.note.clone(),
         origin: t.origin.clone(),
         delivery: t.delivery.clone(),
         session: t.child_session.clone(),
+        result_offset: 0,
+        result_truncated: false,
+        artifacts: vec![],
     }
+}
+
+/// The answer a waiting parent receives inline: at most [`SUBAGENT_RESULT_INLINE_CHARS`],
+/// with the rest reachable by offset, and the child's artifacts listed after it.
+fn inline_answer(child: u64, answer: &str, artifacts: &[SubagentArtifact]) -> String {
+    let (piece, total, more) = crate::web::slice_chars(answer, 0, SUBAGENT_RESULT_INLINE_CHARS);
+    let mut text = piece;
+    if more {
+        let shown = text.chars().count();
+        text.push_str(&format!(
+            "\n[Answer continues: {} of {total} characters shown; read the rest with subagent_result child {child} offset {shown}.]",
+            shown
+        ));
+    }
+    text.push_str(&artifact_lines(artifacts));
+    text
+}
+
+/// "Artifacts:" lines for a result (empty when there are none).
+pub(crate) fn artifact_lines(artifacts: &[SubagentArtifact]) -> String {
+    if artifacts.is_empty() {
+        return String::new();
+    }
+    let mut text = String::from("\nArtifacts:");
+    for a in artifacts {
+        text.push_str(&format!("\n- {}: {}", a.kind, a.reference));
+        if let Some(label) = &a.label {
+            text.push_str(&format!(" ({label})"));
+        }
+    }
+    text
 }

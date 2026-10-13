@@ -39,7 +39,8 @@ pub use view::*;
 // Version 28 adds export configuration: `ExportConfigure`, `ExportSetCredential`,
 // `ExportClearCredential`, `ExportPreview`, and the settings fields on `ExportHealthView`.
 // Version 29 adds `webSources` to snapshots and `WebSourcesChanged`.
-// Version 30 adds goal cost limits (`maxCostUsd`, `usageCostUsd`).
-pub const PROTOCOL_VERSION: u32 = 30;
+// Version 30 adds goal cost limits (`maxCostUsd`, `usageCostUsd`); 31 adds bounded subagent
+// results with artifact references (`SubagentResultView.artifacts`, `resultChars`).
+pub const PROTOCOL_VERSION: u32 = 31;
 
 pub mod delivery;

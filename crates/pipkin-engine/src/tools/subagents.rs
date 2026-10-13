@@ -3,6 +3,9 @@
 //! a child finishes. All three are pure reads of durable task rows and so replay-safe.
 
 use pipkin_engine_protocol::{Block, SubagentResultView, SubagentRow};
+
+use crate::runtime::subagents::artifact_lines;
+use crate::web::find_in;
 use serde_json::{Value, json};
 
 use super::{Tool, ToolCtx, ToolError, ToolOutput};
@@ -68,14 +71,32 @@ fn result_text(view: &SubagentResultView) -> String {
         text.push_str(&format!(" {note}."));
     }
     match (&view.result, view.status.as_str()) {
-        (Some(answer), _) if !answer.trim().is_empty() => {
-            text.push_str(&format!("\nAnswer:\n{}", answer.trim_end()));
+        (Some(answer), _) if !answer.trim().is_empty() || view.result_offset > 0 => {
+            let heading = if view.result_offset > 0 || view.result_truncated {
+                let end = view.result_offset + answer.chars().count() as u64;
+                format!(
+                    "\nAnswer (characters {}-{end} of {}):\n",
+                    view.result_offset, view.result_chars
+                )
+            } else {
+                "\nAnswer:\n".to_owned()
+            };
+            text.push_str(&heading);
+            text.push_str(answer.trim_end());
+            if view.result_truncated {
+                text.push_str(&format!(
+                    "\n[More follows: read on with subagent_result child {} offset {}.]",
+                    view.child,
+                    view.result_offset + answer.chars().count() as u64
+                ));
+            }
         }
         (_, "done") => text.push_str(" It gave no answer text."),
         (_, "failed") => text.push_str(" No answer was recorded."),
         (_, "aborted") => text.push_str(" No answer will arrive."),
         _ => text.push_str(" No answer yet."),
     }
+    text.push_str(&artifact_lines(&view.artifacts));
     text
 }
 
@@ -87,6 +108,10 @@ fn details(view: &SubagentResultView) -> Value {
         "delivery": view.delivery,
         "origin": view.origin,
         "conversationId": view.session,
+        "resultChars": view.result_chars,
+        "resultOffset": view.result_offset,
+        "resultTruncated": view.result_truncated,
+        "artifacts": view.artifacts,
     }})
 }
 
@@ -167,11 +192,13 @@ impl Tool for SubagentResultTool {
         ToolSpec {
             constrained_sampling: None,
             name: SUBAGENT_RESULT.into(),
-            description: "Read a subagent's recorded answer by its number (the full text, also for children that finished in the background).".into(),
+            description: "Read a subagent's recorded answer by its number (also for children that finished in the background): a bounded slice from a character offset (at most 16384 characters), or the places where `find` occurs with context. The result lists the files the child wrote or edited and the sources it retained.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "child": {"type": "integer", "description": "The subagent number"}
+                    "child": {"type": "integer", "description": "The subagent number"},
+                    "offset": {"type": "integer", "description": "Character offset to read from (default 0)"},
+                    "find": {"type": "string", "description": "Return the places where this text occurs in the answer instead of a slice"}
                 },
                 "required": ["child"]
             }),
@@ -189,13 +216,50 @@ impl Tool for SubagentResultTool {
     ) -> BoxFuture<'a, Result<ToolOutput, ToolError>> {
         Box::pin(async move {
             let child = child_arg(&args)?;
-            let view = host(ctx)?
-                .subagent_result(child)
+            let offset = args.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let find = args
+                .get("find")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|f| !f.is_empty())
+                .map(str::to_owned);
+            let host = host(ctx)?;
+            let mut view = host
+                .subagent_result(child, offset)
                 .await
                 .map_err(ToolError::new)?;
+            let Some(find) = find else {
+                return Ok(ToolOutput {
+                    content: Some(vec![Block::text(result_text(&view))]),
+                    details: Some(details(&view)),
+                    ..ToolOutput::default()
+                });
+            };
+            let answer = host.subagent_answer(child).await.map_err(ToolError::new)?;
+            let (matches, total) = find_in(answer.as_deref().unwrap_or_default(), &find);
+            let mut lines = vec![format!(
+                "Subagent #{} {}. \"{find}\" occurs {total} time(s) in its answer{}",
+                view.child,
+                status_word(&view.status),
+                if total > matches.len() {
+                    format!("; showing the first {}", matches.len())
+                } else {
+                    String::new()
+                }
+            )];
+            for m in &matches {
+                lines.push(format!("@{}: …{}…", m.offset, m.context));
+            }
+            let text = lines.join("\n") + &artifact_lines(&view.artifacts);
+            view.result = None;
+            let mut details = details(&view);
+            details["subagent"]["find"] = json!(find);
+            details["subagent"]["matches"] = json!(total);
+            details["subagent"]["offsets"] =
+                json!(matches.iter().map(|m| m.offset).collect::<Vec<_>>());
             Ok(ToolOutput {
-                content: Some(vec![Block::text(result_text(&view))]),
-                details: Some(details(&view)),
+                content: Some(vec![Block::text(text)]),
+                details: Some(details),
                 ..ToolOutput::default()
             })
         })

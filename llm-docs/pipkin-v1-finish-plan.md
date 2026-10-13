@@ -130,7 +130,9 @@ STATUS-3 (cached Git summary) is optional; take it only if cheap after STATUS-2.
 - [x] Goals: cost limits beyond tokens, a pinned auditor model setting (2026-10-12).
   Job-event waits stay open: a goal turn can cite a job's log as evidence today, and a
   wait-for-job primitive is not needed for v1.
-- [ ] Subagents: result artifact references, a small structured parallel group (plan §6).
+- [x] Subagents: result artifact references (2026-10-12). A structured parallel group
+  stays out: the `subagent` tool with `wait: false` plus `subagent_wait` already runs
+  children side by side, and no v1 flow needs a group primitive.
 - [ ] MCP: OS-keychain credential storage behind the existing store trait, legacy HTTP+SSE
   only if a real server needs it, image/binary content retained as artifacts (plan §4).
 - [ ] Plans: goal linkage and scoped task references to children, a crash fixture at the
@@ -193,3 +195,6 @@ above.
 - 2026-10-12 — Goals leftovers shipped: a dollar allowance (`/goal cost`, schema 20 and
   protocol 30) attributed per turn from the usage ledger alongside tokens, and the
   `goals.auditorModel` setting pinning the audit's model with no silent fallback.
+- 2026-10-12 — Subagent result artifacts shipped (protocol 31): inline answers bounded at
+  16 KiB with offset and `find` reads through `subagent_result`, and every result listing
+  the files the child wrote or edited and the sources it retained.

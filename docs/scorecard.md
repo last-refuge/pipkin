@@ -1,5 +1,14 @@
 # Scorecard
 
+## Subagent result artifacts (2026-10-12)
+
+- **Measured (automated).** Engine test: a child that writes a file twice, fails a third
+  write and answers with 20 KiB; the waiting parent gets the first 16 KiB, the continuation
+  pointer and the file listed once (the failed write is absent); `subagent_result` reads on
+  from the offset and locates text with `find` without returning a slice; the client call
+  carries the bounded slice, its length and the artifacts. The repository gate passed.
+- **Observed.** Nothing native: no desktop surface shows artifacts yet.
+
 ## Goal cost allowance and pinned auditor model (2026-10-12)
 
 - **Measured (automated).** Engine tests: with the scripted model priced at a dollar a
