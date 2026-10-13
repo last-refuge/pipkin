@@ -6,6 +6,27 @@ automated package evidence, owner-reported daily-use beta, and the release track
 
 These checks need a person at the machine and a real desktop session. They are **unverified** unless a result is recorded below. Launch with `scripts/try-m2.sh` (managed engine, scripted provider), or `cargo run -p pipkin-app --release -- --demo normal`.
 
+## v1 candidate (prepared 2026-10-12)
+
+The candidate for the owner-run gates below is the code at commit **`9c07a1b6a660`** on
+`main` (schema 20, protocol 31; this note lands in the docs-only commit that follows it).
+`pipkin --version` on the candidate prints `source 9c07a1b6a660…, engine protocol 31,
+engine schema 20`. Prepared by engineering: `cargo test --workspace`,
+`cargo clippy --workspace --all-targets` and `cargo fmt --all --check` pass (1655 tests),
+and `cargo build --release -p pipkin-app` produces `target/release/pipkin`.
+
+Launch forms for the gates:
+
+- Real engine, scratch data: `target/release/pipkin --data-dir /tmp/pipkin-gate --project <dir>`.
+- Demo content (no provider): `target/release/pipkin --demo normal --data-dir /tmp/pipkin-gate`.
+- Engine unavailable (gate 13): `target/release/pipkin --engine-attach /tmp/no-engine --data-dir <your daily data dir>` after `mkdir -p /tmp/no-engine` (an endpoint directory with no server).
+
+Gates asked for in the finish plan (§7) map to the rows: minimize/restore 1, suspend/resume
+2, cold boot 3, monitor unplug/replug 19, 150% scale and large text 6, IME commit/cancel 5,
+picker/drop/clipboard/links 12 and 20, engine-unavailable 13. Record each with the date,
+compositor, scale and input-method engine; fixes go back to engineering and the candidate
+commit is bumped here.
+
 | # | Gate | Steps | Pass when | Result |
 |---|------|-------|-----------|--------|
 | 1 | Minimize/restore | Open a conversation with text in the composer, minimize, restore. | Focus returns to the composer, draft intact, transcript scroll position unchanged, no blank frame. | unverified |
@@ -30,11 +51,13 @@ These checks need a person at the machine and a real desktop session. They are *
 | # | Gate | Steps | Pass when | Result |
 |---|------|-------|-----------|--------|
 | 12 | Drag and drop | Drag two files and a folder from a file manager onto the conversation. | The two files appear as attachment chips; a message says folders were skipped; the area tints while dragging. Needs a real drag, so it was only built, not tried. | unverified |
-| 13 | Engine unavailable | Start with `--pi-repo /nonexistent`, then open a saved conversation. | A red strip says the engine is not available and to run `pipkin --diagnose`; sending is off. | unverified (built only) |
+| 13 | Engine unavailable | `mkdir -p /tmp/no-engine` and start with `--engine-attach /tmp/no-engine`, then open a saved conversation. | A red strip says "Not connected to the built-in engine" with an actionable reason, the cached history still renders, sending is off, and the strip clears after a restart without the flag. | unverified (built only) |
 | 14 | X11 session | Log into an X11 session (or use Xwayland), run Pipkin; try the IME and Orca. | Renders, types, resizes; IME and screen reader work. Rendering was seen under Xwayland only. | partial |
 | 15 | Other compositors | Run on GNOME and KDE Wayland: file picker, clipboard, decorations, IME. | Everything in the walkthrough works. | unverified |
 | 16 | Generic installer on another distribution | `./install.sh` from the tarball on Fedora/Debian/Ubuntu using packaged Node (without system Node); upgrade, rollback, uninstall. | Same results as `scripts/test-install.sh`, and a launcher entry works. | unverified (checked on Arch in a scratch prefix) |
 | 17 | Signed release | Sign with a real key, download elsewhere, run `verify-release.sh --require-signature`. | Verifies; a tampered file fails. | partial (throwaway key only) |
 | 18 | Beta | See `beta.md` and `v1-release-gates.md`. | Targets met with recorded evidence. | owner reports heavy daily use; quantitative targets and other-user qualification remain open |
+| 19 | Monitor unplug/replug | With the window on an external monitor and a run in progress, unplug the monitor, wait ten seconds, plug it back in (or toggle it with `hyprctl keyword monitor`). | The window survives on the remaining output, keeps its scale when it returns, no blank or frozen frame, the run's output is complete, no duplicate send. | unverified |
+| 20 | Picker, clipboard, links and launching | Attach a file through the picker (portal); copy a code block and paste it elsewhere; paste text and an image into the composer; click a web citation `[s1]` and a plain link in a reply; use "open in editor" and "open terminal". | The picker opens and the chip appears; the clipboard carries the code; pasted text and image land in the composer; links open in the default browser; editor and terminal launch in the project directory. | unverified |
 
 Record results here with the date, compositor, scale and input-method engine used.

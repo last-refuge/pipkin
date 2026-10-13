@@ -1,5 +1,20 @@
 # Platforms: what is supported, what was checked, what blocks the rest
 
+## Proposed 1.0 statement (draft for the owner's decision, 2026-10-12)
+
+Pipkin 1.0 supports **x86_64 Linux on Omarchy/Arch with Hyprland on Wayland**, with the
+built-in engine. Everything else is explicitly outside 1.0 support:
+
+- **macOS**: an experimental build only. It is not signed with a Developer ID and not
+  notarized, no interactive acceptance has been run on a Mac, and no issue on it blocks a
+  1.0 release. The release notes say "experimental, unsupported".
+- **Windows**: not supported and not built. The release notes say so.
+- **Other Linux desktops and distributions**: expected to work but unverified; issues there
+  are welcome and are not release blockers.
+
+Adopting this statement is the owner's call (finish plan §8); until it is adopted the table
+below stands as the record.
+
 **Working v1 qualification scope: x86_64 Arch/Omarchy, Hyprland/Wayland.** Final support/acceptance approval and
 installed native gates remain open. See the current [release-gate record](v1-release-gates.md); successful headless
 Ubuntu CI does not qualify an Ubuntu desktop or an additional supported distribution.

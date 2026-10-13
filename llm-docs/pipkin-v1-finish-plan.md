@@ -141,11 +141,15 @@ STATUS-3 (cached Git summary) is optional; take it only if cheap after STATUS-2.
   batch/result boundary (plan §8 PLAN-1 note).
 - [ ] Live-provider checks each slice deferred (Brave/SearXNG, a real MCP server, a live model
   as auditor), run with owner-authorized credentials and recorded separately from fixtures.
+  Procedures prepared in [docs/live-provider-checks.md](../docs/live-provider-checks.md)
+  (2026-10-12); the runs themselves are the owner's.
 
 ## 7. Owner-run native gates (supported desktop: x86_64 Omarchy/Hyprland/Wayland)
 
 Procedures in [docs/native-gate-testing.md](../docs/native-gate-testing.md). Engineering
-prepares the candidate and fixes findings; the owner runs and records each.
+prepares the candidate and fixes findings; the owner runs and records each. Candidate
+prepared 2026-10-12 (its "v1 candidate" section names the commit and the launch form for
+each gate, including the engine-unavailable one).
 
 - [ ] Minimize/restore
 - [ ] Suspend/resume during a run
@@ -205,3 +209,9 @@ above.
   by `mcp.credentialStore`, keychain lookups for `secret:` references, and images and blob
   resources retained under `mcp-artifacts` with the path in the result. Legacy HTTP+SSE
   recorded as a scope decision.
+- 2026-10-12 — Candidate prepared for the owner-run gates (§7): the native gate notes name
+  the commit and launch forms and gained rows for monitor unplug/replug and
+  picker/clipboard/links/launching; the engine-unavailable row now uses the built-in
+  engine's `--engine-attach` form. Live-provider procedures written (§6). Open: §7 and §6
+  live runs (owner), §8 scope statement (owner decision; a draft is in
+  [docs/platforms.md](../docs/platforms.md)).
