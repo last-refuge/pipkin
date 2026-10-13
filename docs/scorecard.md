@@ -1,5 +1,19 @@
 # Scorecard
 
+## Candidate observation: engine-unavailable state, diagnose probe (2026-10-12)
+
+- **Measured (automated).** `pipkin --diagnose --probe` on the release candidate against a
+  scratch data directory: protocol 31, schema 20, engine probe OK, clean stop.
+- **Observed (native, engineering).** The candidate launched with `--engine-attach` at an
+  endpoint directory with no server, pinned through `scripts/guard.sh` and captured by
+  window region on Hyprland 0.56 at scale 1.6: the centre reads "Engine failed: cannot
+  attach to /tmp/no-engine: …" with the concrete reason (the permission rule for a 0755
+  directory; "No such file or directory" for a missing one) and the sidebar offers only New
+  conversation. Two launches, both closed cleanly; nothing else on the desktop was touched.
+- **Unverified.** The red strip over a saved conversation, cached history rendering with
+  the engine down, sending disabled, and the clear after a restart (needs the owner's daily
+  profile). All other §7 gates: owner-run.
+
 ## MCP leftovers: keychain credentials, binary artifacts (2026-10-12)
 
 - **Measured (automated).** Unit tests: the keychain store round-trips credentials through

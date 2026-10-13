@@ -158,7 +158,10 @@ each gate, including the engine-unavailable one).
 - [ ] 150% scale and large-text matrix, both themes, narrow window
 - [ ] IME commit/cancel (fcitx5), including path completion
 - [ ] Picker, drag-and-drop, clipboard, links and launching
-- [ ] Engine-unavailable native state (actionable error, cached history, dispatch off)
+- [ ] Engine-unavailable native state (actionable error, cached history, dispatch off).
+  Partially observed by engineering on 2026-10-12 (the no-conversation state names the
+  reason; see gate 13); the strip over a saved conversation and cached history stay
+  owner-run.
 
 ## 8. Scope decision
 
@@ -209,6 +212,11 @@ above.
   by `mcp.credentialStore`, keychain lookups for `secret:` references, and images and blob
   resources retained under `mcp-artifacts` with the path in the result. Legacy HTTP+SSE
   recorded as a scope decision.
+- 2026-10-12 — Engineering observed what it safely can on the candidate: the
+  engine-unavailable state (gate 13, partial) and `--diagnose --probe` (gate 8's probe
+  line). Suspend/resume, cold boot, monitor unplug, display scale, IME, the picker and
+  drag-and-drop need a person at the machine or changes to the owner's desktop that the
+  agent rules forbid, so they remain the owner's.
 - 2026-10-12 — Candidate prepared for the owner-run gates (§7): the native gate notes name
   the commit and launch forms and gained rows for monitor unplug/replug and
   picker/clipboard/links/launching; the engine-unavailable row now uses the built-in
