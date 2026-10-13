@@ -1,5 +1,20 @@
 # Scorecard
 
+## MCP leftovers: keychain credentials, binary artifacts (2026-10-12)
+
+- **Measured (automated).** Unit tests: the keychain store round-trips credentials through
+  a fake `secret-tool`, scopes items by store label, reads its own pending writes, refuses
+  a second transaction while one is open, reports a missing client as an error and parses
+  the client's search output; artifacts are decoded, named by content hash, deduplicated,
+  kept inside the artifacts directory and bounded at 16 MiB. Engine tests: a `secret:`
+  reference resolved from the keychain reaches the fixture server's environment, a missing
+  client keeps the file with a warning and the reference fails as before; an image in a
+  tool result is retained as a file named in the result and reaches the model as an image
+  block; a blob resource is retained and named by path. The repository gate passed.
+- **Unverified.** A live Secret Service (gnome-keyring or KeePassXC) behind the real
+  `secret-tool`: owner-run on the supported desktop.
+- **Decided.** Legacy HTTP+SSE stays unsupported for v1 (no real server needs it).
+
 ## Subagent result artifacts (2026-10-12)
 
 - **Measured (automated).** Engine test: a child that writes a file twice, fails a third

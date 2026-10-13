@@ -18,10 +18,12 @@
 //! sign-in or configured subscription token never falls back to API-key billing.
 //!
 //! Storage: `auth.json` via [`store::FileStore`] (0600 file, 0700 dir, atomic writes, `flock`).
-//! An OS secret store (Secret Service, Keychain) is not yet qualified; it would implement
-//! [`store::CredentialStore`].
+//! The OS Secret Service is reachable through [`keychain::SecretToolStore`] (the same
+//! [`store::CredentialStore`] trait over `secret-tool`); MCP credentials can opt into it,
+//! model credentials stay in the file until that path is qualified natively.
 
 pub mod config_value;
+pub mod keychain;
 pub mod models_json;
 pub mod oauth;
 pub mod providers;

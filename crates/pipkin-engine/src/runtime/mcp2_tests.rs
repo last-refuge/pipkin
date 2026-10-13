@@ -622,7 +622,7 @@ fn management_calls_edit_settings_test_reconnect_and_switch_tools_off() {
     assert!(test.tools.contains(&"echo".to_owned()));
     assert!(
         test.message
-            .contains("Connected to mcp-fixture 0.0.0 with 8 tool(s)"),
+            .contains("Connected to mcp-fixture 0.0.0 with 9 tool(s)"),
         "{}",
         test.message
     );

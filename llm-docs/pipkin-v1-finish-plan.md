@@ -133,8 +133,10 @@ STATUS-3 (cached Git summary) is optional; take it only if cheap after STATUS-2.
 - [x] Subagents: result artifact references (2026-10-12). A structured parallel group
   stays out: the `subagent` tool with `wait: false` plus `subagent_wait` already runs
   children side by side, and no v1 flow needs a group primitive.
-- [ ] MCP: OS-keychain credential storage behind the existing store trait, legacy HTTP+SSE
-  only if a real server needs it, image/binary content retained as artifacts (plan §4).
+- [x] MCP: OS-keychain credential storage behind the existing store trait
+  (`mcp.credentialStore: "keychain"` over `secret-tool`), image/binary content retained as
+  artifacts (2026-10-12). Legacy HTTP+SSE stays out by decision: no real server needs it
+  ([docs/mcp.md](../docs/mcp.md) boundaries).
 - [ ] Plans: goal linkage and scoped task references to children, a crash fixture at the
   batch/result boundary (plan §8 PLAN-1 note).
 - [ ] Live-provider checks each slice deferred (Brave/SearXNG, a real MCP server, a live model
@@ -198,3 +200,8 @@ above.
 - 2026-10-12 — Subagent result artifacts shipped (protocol 31): inline answers bounded at
   16 KiB with offset and `find` reads through `subagent_result`, and every result listing
   the files the child wrote or edited and the sources it retained.
+- 2026-10-12 — MCP leftovers shipped: `SecretToolStore` (the credential store trait over
+  `secret-tool`, injectable client, warning and file fallback when it is missing) selected
+  by `mcp.credentialStore`, keychain lookups for `secret:` references, and images and blob
+  resources retained under `mcp-artifacts` with the path in the result. Legacy HTTP+SSE
+  recorded as a scope decision.

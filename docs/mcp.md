@@ -60,7 +60,10 @@ a process over stdio (`command`) or a Streamable HTTP endpoint (`url`).
 | `startTimeoutSeconds` | Spawn-and-initialize timeout (default 30) |
 
 The secrets file is `mcp-secrets.json` next to `settings.json` in the engine's
-configuration directory: a flat `{"key": "value"}` object read only at launch. Resolved
+configuration directory: a flat `{"key": "value"}` object read only at launch. With
+`"credentialStore": "keychain"` in the `mcp` section, a key the file lacks is looked up in
+the OS Secret Service through `secret-tool` (an item with the attributes
+`pipkin-store=pipkin-mcp-secrets` and `pipkin-provider=<key>`, its secret the value). Resolved
 values reach the child process and nothing else: views, logs, tool results and the catalog
 cache show `$NAME` or `secret:key`, and an inline literal appears as `…`. A missing reference
 is a start failure naming the reference. Server names are letters, digits, `-`, `_` and `.`,
@@ -119,8 +122,13 @@ server's canonical URL as `resource` (RFC 8707). The page shows the sign-in URL 
 box for the redirect URL when the browser cannot reach the loopback server.
 
 Tokens are stored per server in the engine's private `mcp-auth.json` next to
-`settings.json` (the same private-file store as model credentials; no OS keychain yet) and
-are refreshed before they expire. A refused refresh makes the server **Sign-in needed**
+`settings.json` (the same private-file store as model credentials) or, with
+`"credentialStore": "keychain"`, in the OS Secret Service through `/usr/bin/secret-tool`
+(items under `pipkin-store=pipkin-mcp`, one per server, the credential's JSON as the
+secret). The keychain is used only when the client is installed; otherwise the file stays in
+use and the servers view carries a warning saying so. The two stores are not migrated into
+each other: switching the setting starts from whatever that store holds. Tokens are
+refreshed before they expire. A refused refresh makes the server **Sign-in needed**
 again; nothing is ever sent with a stale token. **Sign out** forgets the tokens. Tokens,
 header literals and environment literals never appear in views, events, logs, tool
 arguments or results.
@@ -131,7 +139,7 @@ arguments or results.
 | --- | --- | --- |
 | `mcp_search` | Matches a query against tool names and descriptions across enabled servers (or one `server`); lists `server/name` with a one-line description. Servers whose start fails are reported beside the results. Starts servers with no cached catalog. | Rerun (pure read) |
 | `mcp_describe` | One tool's description, JSON schema and the server's annotations (shown as unverified hints) by `server/name` | Rerun (pure read) |
-| `mcp_call` | Validates `arguments` against the cached schema, sends one request with the call timeout, forwards cancellation, returns the server's content blocks (text; images as a size note; others as JSON) plus structured content | Never: recorded as interrupted |
+| `mcp_call` | Validates `arguments` against the cached schema, sends one request with the call timeout, forwards cancellation, returns the server's content blocks (text; images retained as artifact files, see below; others as JSON) plus structured content | Never: recorded as interrupted |
 
 Every result carries `details.mcp` (version 1) with the resolved server, tool and catalog
 revision, so policy, usage and traces see the actual operation. Error kinds:
@@ -173,10 +181,18 @@ Children launched with the `worker` profile keep the three tools; `reviewer`, `s
 ## Boundaries
 
 - **Transports.** Stdio and Streamable HTTP. Legacy HTTP+SSE servers are not supported
-  (an import declaring `sse` is converted with a warning).
+  (an import declaring `sse` is converted with a warning). This is a scope decision for
+  v1: every server the plan names speaks Streamable HTTP or stdio, and no real server has
+  asked for the legacy transport; it would be added only for one that does.
 - **Credential storage.** The private file `mcp-auth.json` (mode-restricted like
-  `auth.json`), not an OS keychain. Client-credential and enterprise-managed OAuth grants
-  are not implemented; `secret` prompts from a flow are refused on the page.
+  `auth.json`) or the OS Secret Service through `secret-tool` (`credentialStore`);
+  model credentials stay in the file. The keychain path is exercised against a fake client
+  in tests, not against a live Secret Service. Client-credential and enterprise-managed
+  OAuth grants are not implemented; `secret` prompts from a flow are refused on the page.
+- **Binary content.** Images in tool results and blob resources are retained under
+  `<data_dir>/mcp-artifacts/<server>/<sha256 prefix>.<ext>` (at most 16 MiB each, named by
+  content so repeats share a file) and named by path in the result; images also reach a
+  model with image input as image blocks. Audio and embedded resources are shown as JSON.
 - **Protocol surface.** Tools, resources, prompts and form elicitation. Subscriptions,
   completions, sampling, tasks and apps are not implemented (see the section above).
 - **Not exercised.** Any real third-party server or authorization server; pagination beyond
@@ -194,7 +210,7 @@ tools so the catalog offered to the model stays small:
 | Tool | Does | Replay after a restart |
 | --- | --- | --- |
 | `mcp_resources` | Lists resources and resource templates across enabled servers (or one), filtered by a query; servers that do not offer resources are reported beside the list | Rerun (pure read) |
-| `mcp_read` | Reads one resource by server and URI; text comes back in bounded slices (`offset`/`limit`, default 8,000 and at most 40,000 characters); binary content is reported by type and decoded size only | Rerun (pure read) |
+| `mcp_read` | Reads one resource by server and URI; text comes back in bounded slices (`offset`/`limit`, default 8,000 and at most 40,000 characters); binary content is retained as an artifact file and reported by type, decoded size and path | Rerun (pure read) |
 | `mcp_prompts` | Lists prompt templates with their arguments (`name?` marks optional ones) | Rerun (pure read) |
 | `mcp_prompt` | Renders a template by `server/name` with arguments; required arguments are checked before the request; the messages come back as `[role]` text | Rerun (pure read) |
 

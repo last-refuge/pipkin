@@ -123,6 +123,14 @@ impl Fixture {
         CallToolResult::success(vec![ContentBlock::text("x".repeat(args.bytes))])
     }
 
+    #[tool(name = "picture", description = "Return a tiny PNG beside a caption")]
+    fn picture(&self) -> CallToolResult {
+        CallToolResult::success(vec![
+            ContentBlock::text("a caption"),
+            ContentBlock::image("iVBORw0KGgoAAAANSUhEUg==", "image/png"),
+        ])
+    }
+
     #[tool(
         name = "change_resources",
         description = "Add a resource and notify the client"

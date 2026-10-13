@@ -315,7 +315,7 @@ pub const READ_DEFAULT_CHARS: usize = 8_000;
 pub const READ_MAX_CHARS: usize = 40_000;
 
 pub const RESOURCES_DESCRIPTION: &str = "List the resources (documents, files, data) the configured MCP servers offer, with their URIs; optionally filter by a query or one server. Entries marked as templates take parameters in the URI. Read one with mcp_read.";
-pub const READ_DESCRIPTION: &str = "Read an MCP resource by server and URI. Text comes back in bounded slices (offset/limit in characters); binary content is reported by type and size only.";
+pub const READ_DESCRIPTION: &str = "Read an MCP resource by server and URI. Text comes back in bounded slices (offset/limit in characters); binary content is retained as a file and reported by type, size and path.";
 pub const PROMPTS_DESCRIPTION: &str = "List the prompt templates the configured MCP servers offer, with their arguments; optionally filter by a query or one server. Render one with mcp_prompt.";
 pub const PROMPT_DESCRIPTION: &str = "Render an MCP prompt template by server/name with its arguments. The server's messages come back as text for you to follow or quote.";
 
@@ -516,11 +516,16 @@ impl Tool for McpReadTool {
                         lines.push(slice);
                     }
                     (None, Some(bytes)) => lines.push(format!(
-                        "{} {} — binary content, {bytes} bytes (not shown)",
+                        "{} {} — binary content, {bytes} bytes{}",
                         part.uri,
                         part.mime_type
                             .as_deref()
-                            .unwrap_or("application/octet-stream")
+                            .unwrap_or("application/octet-stream"),
+                        match (&part.blob_path, &part.blob_note) {
+                            (Some(path), _) => format!(", retained at {}", path.display()),
+                            (None, Some(note)) => format!(" (not retained: {note})"),
+                            (None, None) => " (not shown)".to_owned(),
+                        }
                     )),
                     (None, None) => lines.push(format!("{} — empty", part.uri)),
                 }

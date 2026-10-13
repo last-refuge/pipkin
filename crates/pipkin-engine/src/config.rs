@@ -80,6 +80,9 @@ pub struct EngineConfig {
     /// Tests only: let `web_fetch` reach loopback and private addresses (a local fixture
     /// server). The default refuses them.
     pub web_allow_private_hosts: bool,
+    /// The Secret Service client (`secret-tool`) for keychain credential storage; `None`
+    /// uses the default path when it exists. Tests point it at a fake.
+    pub secret_tool: Option<PathBuf>,
 }
 
 pub use pipkin_engine_protocol::ExtensionSpec;
@@ -128,6 +131,7 @@ impl EngineConfig {
             extensions: vec![],
             clear_extensions: false,
             web_allow_private_hosts: false,
+            secret_tool: None,
         }
     }
 

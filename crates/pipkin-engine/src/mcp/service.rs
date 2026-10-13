@@ -24,11 +24,13 @@ use serde_json::{Map, Value};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
+use super::config::CredentialBackend;
 use super::config::{
     McpConfig, McpServerConfig, Transport, read_secrets, resolve_one, resolve_refs,
 };
 use super::http::{EngineHttp, auth_required};
 use super::oauth::{McpFlow, discover, register};
+use crate::auth::keychain::SecretToolStore;
 use crate::auth::oauth::{
     AuthEvent, CANCELLED, Endpoints, FlowCtx, Interaction, InteractionSink, OAuthFlow, Prompt,
 };
@@ -96,14 +98,18 @@ pub struct PromptInfo {
     pub arguments: Vec<PromptArgumentInfo>,
 }
 
-/// One part of a read resource: text, or a binary blob reported by size.
+/// One part of a read resource: text, or a binary blob retained as an artifact file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResourcePart {
     pub uri: String,
     pub mime_type: Option<String>,
     pub text: Option<String>,
-    /// Decoded size of a blob (its bytes are not kept).
+    /// Decoded size of a blob.
     pub blob_bytes: Option<usize>,
+    /// Where the blob was retained (`artifacts`), when it could be.
+    pub blob_path: Option<PathBuf>,
+    /// Why it was not retained (oversized, undecodable).
+    pub blob_note: Option<String>,
 }
 
 /// A rendered prompt: its messages as `(role, text)`.
@@ -448,23 +454,37 @@ pub struct McpService {
     starting: tokio::sync::Mutex<()>,
     /// Catalogs persisted across engine runs, by `name:revision`.
     cache_path: PathBuf,
-    credentials: Arc<dyn CredentialStore>,
+    /// Retained binary content (`artifacts`).
+    data_dir: PathBuf,
+    /// The Secret Service client for the keychain backend (`None`: the default path).
+    secret_tool: Option<PathBuf>,
+    /// Sign-in tokens: the file, or the keychain when settings say so.
+    credentials: Mutex<Arc<dyn CredentialStore>>,
+    credential_backend: Mutex<CredentialBackend>,
     http: Mutex<Option<HttpSource>>,
     listener: Mutex<Option<ChangeListener>>,
     elicitor: Mutex<Option<Arc<dyn Elicitor>>>,
 }
 
 impl McpService {
-    pub fn new(config_dir: PathBuf, data_dir: PathBuf, env: Env) -> Arc<McpService> {
+    pub fn new(
+        config_dir: PathBuf,
+        data_dir: PathBuf,
+        env: Env,
+        secret_tool: Option<PathBuf>,
+    ) -> Arc<McpService> {
         Arc::new_cyclic(|me| McpService {
             me: me.clone(),
-            credentials: Arc::new(FileStore::new(config_dir.join("mcp-auth.json"))),
+            credentials: Mutex::new(Arc::new(FileStore::new(config_dir.join("mcp-auth.json")))),
+            credential_backend: Mutex::new(CredentialBackend::File),
             config_dir,
             env,
             config: Mutex::new(McpConfig::default()),
             servers: Mutex::new(HashMap::new()),
             starting: tokio::sync::Mutex::new(()),
             cache_path: data_dir.join("mcp-catalog.json"),
+            data_dir,
+            secret_tool,
             http: Mutex::new(None),
             listener: Mutex::new(None),
             elicitor: Mutex::new(None),
@@ -505,14 +525,118 @@ impl McpService {
 
     fn has_credential(&self, name: &str) -> bool {
         matches!(
-            self.credentials.read(name),
+            self.credentials().read(name),
             Ok(Some(StoredCredential::OAuth(_)))
         )
     }
 
+    /// The credential store the current settings select.
+    fn credentials(&self) -> Arc<dyn CredentialStore> {
+        self.credentials
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Switch the token store when `mcp.credentialStore` changes. The keychain backend
+    /// needs the client binary; without it the file stays in use and a warning says so.
+    fn select_credential_store(&self, config: &mut McpConfig) {
+        let mut current = self
+            .credential_backend
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let wanted = config.credential_store;
+        if wanted == CredentialBackend::Keychain
+            && SecretToolStore::available(self.secret_tool.as_deref()).is_none()
+        {
+            config.warnings.push(format!(
+                "mcp.credentialStore: the keychain client ({}) is not installed; using the file",
+                self.secret_tool
+                    .as_deref()
+                    .unwrap_or(std::path::Path::new(
+                        crate::auth::keychain::DEFAULT_SECRET_TOOL
+                    ))
+                    .display()
+            ));
+            config.credential_store = CredentialBackend::File;
+        }
+        if *current == config.credential_store {
+            return;
+        }
+        let store: Arc<dyn CredentialStore> = match config.credential_store {
+            CredentialBackend::File => {
+                Arc::new(FileStore::new(self.config_dir.join("mcp-auth.json")))
+            }
+            CredentialBackend::Keychain => Arc::new(SecretToolStore::new(
+                SecretToolStore::available(self.secret_tool.as_deref()).expect("checked above"),
+                "pipkin-mcp",
+            )),
+        };
+        *self.credentials.lock().unwrap_or_else(|e| e.into_inner()) = store;
+        *current = config.credential_store;
+    }
+
+    /// An image block from a tool result: retained as an artifact file and passed to the
+    /// model as an image (models without image input see a placeholder) with a text line
+    /// naming the file; content that cannot be retained is reported by size.
+    fn retain_image(
+        &self,
+        server: &str,
+        image: &rmcp::model::ImageContent,
+    ) -> Vec<pipkin_engine_protocol::Block> {
+        match super::artifacts::retain(&self.data_dir, server, &image.mime_type, &image.data) {
+            Ok(r) => vec![
+                pipkin_engine_protocol::Block::text(format!(
+                    "[image {} ({} bytes) retained at {}]",
+                    image.mime_type,
+                    r.bytes,
+                    r.path.display()
+                )),
+                pipkin_engine_protocol::Block::image(image.mime_type.clone(), image.data.clone()),
+            ],
+            Err(why) => vec![pipkin_engine_protocol::Block::text(format!(
+                "[image {} ({} bytes of base64) not retained: {why}]",
+                image.mime_type,
+                image.data.len()
+            ))],
+        }
+    }
+
+    /// `secret:<key>` values: the private file first, then (keychain backend) the
+    /// `pipkin-mcp-secrets` store for keys the file lacks.
+    fn secrets(&self) -> BTreeMap<String, String> {
+        let mut secrets = read_secrets(&self.config_dir);
+        let keychain = *self
+            .credential_backend
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            == CredentialBackend::Keychain;
+        if !keychain {
+            return secrets;
+        }
+        let Some(binary) = SecretToolStore::available(self.secret_tool.as_deref()) else {
+            return secrets;
+        };
+        let store = SecretToolStore::new(binary, "pipkin-mcp-secrets");
+        let wanted: Vec<String> = self
+            .config()
+            .servers
+            .iter()
+            .flat_map(|s| s.secret_refs())
+            .filter(|k| !secrets.contains_key(k))
+            .collect();
+        for key in wanted {
+            if let Ok(Some(value)) = store.lookup_secret(&key) {
+                secrets.insert(key, value);
+            }
+        }
+        secrets
+    }
+
     /// Apply (merged) settings. Servers whose revision changed, or that disappeared, are
     /// stopped; their catalogs are forgotten. Tool enablement follows without a restart.
-    pub fn apply_config(&self, config: McpConfig) -> Vec<ServerHandle> {
+    pub fn apply_config(&self, mut config: McpConfig) -> Vec<ServerHandle> {
+        self.select_credential_store(&mut config);
         let mut to_stop = Vec::new();
         let mut changed = false;
         {
@@ -677,7 +801,7 @@ impl McpService {
     /// about to expire. `None` when nothing is saved.
     async fn bearer_for(&self, server: &McpServerConfig) -> Result<Option<String>, String> {
         let name = server.name.clone();
-        let store = self.credentials.clone();
+        let store = self.credentials();
         let read = tokio::task::spawn_blocking(move || store.read(&name))
             .await
             .map_err(|e| e.to_string())?
@@ -702,7 +826,7 @@ impl McpService {
     }
 
     async fn save_credential(&self, name: &str, credential: OAuthCredential) -> Result<(), String> {
-        let store = self.credentials.clone();
+        let store = self.credentials();
         let name = name.to_owned();
         tokio::task::spawn_blocking(move || {
             let mut txn = store.begin()?;
@@ -787,7 +911,7 @@ impl McpService {
                 cwd,
                 env,
             } => {
-                let secrets = read_secrets(&self.config_dir);
+                let secrets = self.secrets();
                 let env = match resolve_refs(name, "env", env, &|k| self.env.get(k), &secrets) {
                     Ok(env) => env,
                     Err(reason) => return Err(self.fail(name, reason)),
@@ -820,7 +944,7 @@ impl McpService {
                     .map(|r| r.map_err(|e| (auth_required(&e), e.to_string())))
             }
             Transport::Http { url, headers } => {
-                let secrets = read_secrets(&self.config_dir);
+                let secrets = self.secrets();
                 let headers =
                     match resolve_refs(name, "headers", headers, &|k| self.env.get(k), &secrets) {
                         Ok(h) => h,
@@ -1207,19 +1331,18 @@ impl McpService {
             }
         }
         let result = result?;
+        let server = tool.server.clone();
         let content = result
             .content
             .into_iter()
-            .map(|block| match block {
-                ContentBlock::Text(text) => pipkin_engine_protocol::Block::text(text.text.clone()),
-                ContentBlock::Image(image) => pipkin_engine_protocol::Block::text(format!(
-                    "[image {} ({} bytes of base64)]",
-                    image.mime_type,
-                    image.data.len()
-                )),
-                other => pipkin_engine_protocol::Block::text(
+            .flat_map(|block| match block {
+                ContentBlock::Text(text) => {
+                    vec![pipkin_engine_protocol::Block::text(text.text.clone())]
+                }
+                ContentBlock::Image(image) => self.retain_image(&server, &image),
+                other => vec![pipkin_engine_protocol::Block::text(
                     serde_json::to_string(&other).unwrap_or_else(|_| "[content]".into()),
-                ),
+                )],
             })
             .collect();
         Ok(CallOutcome {
@@ -1365,23 +1488,35 @@ impl McpService {
                     mime_type,
                     text: Some(text),
                     blob_bytes: None,
+                    blob_path: None,
+                    blob_note: None,
                 },
                 ResourceContents::BlobResourceContents {
                     uri,
                     mime_type,
                     blob,
                     ..
-                } => ResourcePart {
-                    uri,
-                    mime_type,
-                    text: None,
-                    blob_bytes: Some(blob.len() * 3 / 4),
-                },
+                } => {
+                    let mime = mime_type
+                        .clone()
+                        .unwrap_or_else(|| "application/octet-stream".into());
+                    let retained = super::artifacts::retain(&self.data_dir, name, &mime, &blob);
+                    ResourcePart {
+                        uri,
+                        mime_type,
+                        text: None,
+                        blob_bytes: Some(retained.as_ref().map_or(blob.len() * 3 / 4, |r| r.bytes)),
+                        blob_path: retained.as_ref().ok().map(|r| r.path.clone()),
+                        blob_note: retained.err(),
+                    }
+                }
                 _ => ResourcePart {
                     uri: uri.to_owned(),
                     mime_type: None,
                     text: Some("[content of a kind this engine does not show]".into()),
                     blob_bytes: None,
+                    blob_path: None,
+                    blob_note: None,
                 },
             })
             .collect())
@@ -1670,7 +1805,7 @@ impl McpService {
         if let Some(handle) = self.stop(name, true) {
             handle.stop().await;
         }
-        let store = self.credentials.clone();
+        let store = self.credentials();
         let n = name.to_owned();
         tokio::task::spawn_blocking(move || {
             let mut txn = store.begin()?;
@@ -1782,7 +1917,7 @@ impl McpService {
         cancel: CancellationToken,
     ) -> Result<(), String> {
         let http = self.http();
-        let secrets = read_secrets(&self.config_dir);
+        let secrets = self.secrets();
         let www_authenticate = match www_authenticate {
             Some(h) => Some(h),
             None => {

@@ -13,6 +13,7 @@
 //! is recorded as interrupted and never re-sent by the engine; the model may call again.
 //! Tool annotations are carried as hints and never treated as proof of idempotency.
 
+pub mod artifacts;
 pub mod config;
 pub mod http;
 pub mod import;

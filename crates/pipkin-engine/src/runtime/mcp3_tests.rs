@@ -140,9 +140,20 @@ fn resources_are_listed_searched_read_in_slices_and_refreshed_on_change() {
     );
     assert!(
         !is_error
-            && text.contains("fixture://logo image/png — binary content, 18 bytes (not shown)"),
+            && text.contains("fixture://logo image/png — binary content, 16 bytes, retained at "),
         "{text}"
     );
+    let retained = text
+        .split("retained at ")
+        .nth(1)
+        .and_then(|rest| rest.lines().next())
+        .unwrap()
+        .to_owned();
+    assert!(
+        retained.contains("/mcp-artifacts/fx/") && retained.ends_with(".png"),
+        "{retained}"
+    );
+    assert_eq!(std::fs::read(&retained).unwrap().len(), 16);
     let (is_error, text, _) = run(
         &mut e,
         &s,
@@ -505,4 +516,138 @@ fn last_result(snap: &SessionSnapshot) -> String {
             _ => None,
         })
         .unwrap()
+}
+
+#[test]
+fn images_in_tool_results_are_retained_as_artifacts_and_shown_to_the_model() {
+    let fx = Fixture::new();
+    write_settings(&fx, json!({"mcp": {"servers": {"fx": server(json!({}))}}}));
+    let provider = Scripted::new(calling_from_prompt());
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    let (is_error, text, details) = run(
+        &mut e,
+        &s,
+        "r1",
+        r#"mcp_call {"tool": "fx/picture", "arguments": {}}"#,
+    );
+    assert!(!is_error, "{text}");
+    // (`text()` joins the blocks; the model receives them as separate blocks.)
+    assert!(
+        text.starts_with("a caption[image image/png (16 bytes) retained at "),
+        "{text}"
+    );
+    assert_eq!(details["outcome"], "call");
+    let path = text
+        .split("retained at ")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .unwrap()
+        .to_owned();
+    assert!(
+        path.contains("/mcp-artifacts/fx/") && path.ends_with(".png"),
+        "{path}"
+    );
+    assert_eq!(std::fs::read(&path).unwrap().len(), 16);
+    // The model's next request carries the image block itself after the text, so a model
+    // with image input sees the picture (others get the usual placeholder).
+    let last = provider.requests().into_iter().last().unwrap();
+    let result = last
+        .messages
+        .iter()
+        .rev()
+        .find(|m| matches!(m, Message::ToolResult { .. }))
+        .unwrap();
+    let Message::ToolResult { content, .. } = result else {
+        unreachable!()
+    };
+    assert!(
+        matches!(&content[2], Block::Image { mime_type, data, .. } if mime_type == "image/png" && data == "iVBORw0KGgoAAAANSUhEUg=="),
+        "{content:?}"
+    );
+    // The same picture again is the same file.
+    let (_, again, _) = run(
+        &mut e,
+        &s,
+        "r2",
+        r#"mcp_call {"tool": "fx/picture", "arguments": {}}"#,
+    );
+    assert!(again.contains(&path), "{again}");
+}
+
+#[test]
+fn the_keychain_backend_serves_secret_references_and_a_missing_client_warns() {
+    use crate::auth::keychain::{SecretToolStore, tests::fake_secret_tool};
+    use crate::auth::store::{CredentialStore, StoredCredential};
+
+    let fx = Fixture::new();
+    let tool = fake_secret_tool(fx.dir.path());
+    // The secret lives in the keychain's `pipkin-mcp-secrets` store, not in the file.
+    let secrets = SecretToolStore::new(&tool, "pipkin-mcp-secrets");
+    let mut txn = secrets.begin().unwrap();
+    txn.set(
+        "greeting",
+        StoredCredential::Unsupported(serde_json::Value::String("from-keychain".into())),
+    );
+    txn.commit().unwrap();
+    // A plain secret is stored verbatim, so write it as the raw value the server expects.
+    std::fs::write(
+        fx.dir
+            .path()
+            .join("items")
+            .join("pipkin-store=pipkin-mcp-secrets;pipkin-provider=greeting;"),
+        "from-keychain",
+    )
+    .unwrap();
+    write_settings(
+        &fx,
+        json!({"mcp": {"credentialStore": "keychain", "servers": {"fx": server(json!({
+            "env": {"GREETING": "secret:greeting", "MCP_FIXTURE_ENV": "GREETING"}
+        }))}}}),
+    );
+    let mut config = fx.config();
+    config.secret_tool = Some(tool.clone());
+    let provider = Scripted::new(calling_from_prompt());
+    let mut e = fx.start_config(&provider, config);
+    let s = e.create(&fx.project, "c");
+    let view = super::mcp_tests::servers(&mut e, &s);
+    assert!(view.warnings.is_empty(), "{:?}", view.warnings);
+    assert_eq!(
+        view.servers[0].env,
+        ["GREETING=secret:greeting", "MCP_FIXTURE_ENV=…"]
+    );
+    let (is_error, text, _) = run(
+        &mut e,
+        &s,
+        "r1",
+        r#"mcp_call {"tool": "fx/echo", "arguments": {"text": "hi"}}"#,
+    );
+    assert!(!is_error && text == "hi env:from-keychain", "{text}");
+    e.handle.shutdown(Duration::from_secs(1));
+    drop(e);
+
+    // Without the client the engine keeps the file, says so, and the reference is missing.
+    let mut config = fx.config();
+    config.secret_tool = Some(fx.dir.path().join("no-such-secret-tool"));
+    let provider = Scripted::new(calling_from_prompt());
+    let mut e = fx.start_config(&provider, config);
+    let s = e.create(&fx.project, "c2");
+    let view = super::mcp_tests::servers(&mut e, &s);
+    assert!(
+        view.warnings
+            .iter()
+            .any(|w| w.contains("keychain client") && w.contains("no-such-secret-tool")),
+        "{:?}",
+        view.warnings
+    );
+    let (is_error, text, _) = run(
+        &mut e,
+        &s,
+        "r1",
+        r#"mcp_call {"tool": "fx/echo", "arguments": {"text": "hi"}}"#,
+    );
+    assert!(
+        is_error && text.contains("secret \"greeting\" is not in mcp-secrets.json"),
+        "{text}"
+    );
 }

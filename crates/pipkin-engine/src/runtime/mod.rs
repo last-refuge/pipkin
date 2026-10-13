@@ -341,6 +341,7 @@ impl EngineHandle {
             config.config_dir.clone(),
             config.data_dir.clone(),
             config.env.clone(),
+            config.secret_tool.clone(),
         );
         let shared = Arc::new_cyclic(|me| Shared {
             me: me.clone(),

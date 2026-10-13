@@ -140,7 +140,19 @@ pub struct McpConfig {
     pub servers: Vec<McpServerConfig>,
     pub call_timeout_secs: u64,
     pub start_timeout_secs: u64,
+    /// Where sign-in tokens and `secret:` values live (`mcp.credentialStore`).
+    pub credential_store: CredentialBackend,
     pub warnings: Vec<String>,
+}
+
+/// `file`: the private `mcp-auth.json` and `mcp-secrets.json`. `keychain`: the OS Secret
+/// Service through `secret-tool` (tokens under the `pipkin-mcp` store; `secret:<key>`
+/// references read `pipkin-mcp-secrets` after the file).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CredentialBackend {
+    #[default]
+    File,
+    Keychain,
 }
 
 impl Default for McpConfig {
@@ -149,6 +161,7 @@ impl Default for McpConfig {
             servers: Vec::new(),
             call_timeout_secs: DEFAULT_CALL_TIMEOUT_SECS,
             start_timeout_secs: DEFAULT_START_TIMEOUT_SECS,
+            credential_store: CredentialBackend::File,
             warnings: Vec::new(),
         }
     }
@@ -381,6 +394,20 @@ impl McpServerConfig {
         }
     }
 
+    /// The `secret:<key>` keys this server's environment or headers reference.
+    pub fn secret_refs(&self) -> Vec<String> {
+        let list = match &self.transport {
+            Transport::Stdio { env, .. } => env,
+            Transport::Http { headers, .. } => headers,
+        };
+        list.iter()
+            .filter_map(|(_, v)| match v {
+                EnvValue::FromSecret(key) => Some(key.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// `NAME=$REF` / `NAME=secret:key` / `NAME=…` for environment (stdio) or headers (HTTP).
     pub fn values_display(&self) -> Vec<String> {
         let list = match &self.transport {
@@ -512,6 +539,13 @@ impl McpConfig {
         };
         config.call_timeout_secs = num("callTimeoutSeconds", DEFAULT_CALL_TIMEOUT_SECS);
         config.start_timeout_secs = num("startTimeoutSeconds", DEFAULT_START_TIMEOUT_SECS);
+        match section.get("credentialStore").and_then(Value::as_str) {
+            None | Some("file") => {}
+            Some("keychain") => config.credential_store = CredentialBackend::Keychain,
+            Some(other) => config.warnings.push(format!(
+                "mcp.credentialStore: {other:?} is not \"file\" or \"keychain\"; using the file"
+            )),
+        }
         let Some(servers) = section.get("servers") else {
             return config;
         };
@@ -612,6 +646,7 @@ mod tests {
     fn servers_parse_with_references_scopes_and_revisions() {
         let s = settings_with(json!({
             "callTimeoutSeconds": 5,
+            "credentialStore": "keychain",
             "servers": {
                 "fs": {"command": "npx", "args": ["-y", "srv"], "env": {"TOKEN": "$TOK", "K": "secret:k", "P": "plain"}, "idleSeconds": 10, "keepAlive": true, "disabledTools": ["rm"]},
                 "web": {"url": "https://mcp.example.com/mcp", "headers": {"Authorization": "$T"}, "oauth": {"clientId": "abc", "scopes": ["read"]}},
@@ -625,6 +660,10 @@ mod tests {
         let c = McpConfig::from_settings(&s);
         assert_eq!(c.call_timeout_secs, 5);
         assert_eq!(c.start_timeout_secs, DEFAULT_START_TIMEOUT_SECS);
+        assert_eq!(c.credential_store, CredentialBackend::Keychain);
+        let odd = McpConfig::from_settings(&settings_with(json!({"credentialStore": "vault"})));
+        assert_eq!(odd.credential_store, CredentialBackend::File);
+        assert!(odd.warnings[0].contains("mcp.credentialStore"));
         assert_eq!(c.servers.len(), 3);
         let fs = c.server("fs").unwrap();
         let Transport::Stdio { args, env, .. } = &fs.transport else {
