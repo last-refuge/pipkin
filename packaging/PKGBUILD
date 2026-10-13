@@ -1,7 +1,7 @@
 # Maintainer: Jason Alexander <jason@greatspark.com>
 # Builds the native Rust app and engine from this checkout: cd packaging && makepkg
 pkgname=pipkin
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc='Native Wayland desktop coding agent with the built-in Rust engine'
 arch=('x86_64')

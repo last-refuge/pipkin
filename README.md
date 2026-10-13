@@ -30,7 +30,7 @@ tool calls you can read at a glance, a view of the project's working-tree change
 with visible save status. It is a real application, not a web view: one Rust binary, GPU-drawn, with its own text
 editing, selection and accessibility tree.
 
-> **1.0.0.** Built and used daily on Arch / Omarchy (Hyprland, Wayland), which is the one supported platform.
+> **1.1.0.** Built and used daily on Arch / Omarchy (Hyprland, Wayland), which is the one supported platform.
 > It runs a built-in Rust engine. macOS builds are experimental, and some of the accessibility and scaling
 > checks that need a person at a machine are still open. See [Status](#status) and the
 > [changelog](CHANGELOG.md) before you rely on it.
@@ -224,7 +224,7 @@ flowchart LR
 | Real read path, first real workflow, daily-use execution and recovery | Built, tested against a real engine |
 | Complete local product (history, search, tool output, offline cache) | Built; native gates partly run |
 | Distributable alpha (bundled engine, package, diagnostics, upgrade / rollback) | Built; checked in a scratch prefix, not on a clean machine |
-| 1.0.0 release (Linux archive, experimental macOS builds, checksums) | Published; nothing but Arch / Omarchy is supported, and releases are not signed |
+| 1.0.0 and 1.1.0 releases (Linux archive, experimental macOS builds, checksums) | Published; nothing but Arch / Omarchy is supported, and releases are not signed |
 
 **Not done or not verified yet:** a screen reader does not yet speak typed characters in the composer; input methods
 are verified with one engine; 150% scale, minimize / suspend / resume, a clean `pacman -U` install and a long soak are
@@ -237,7 +237,7 @@ what each milestone really covers, is in [`docs/rust-desktop-client-plan.md`](do
 | Arch / Omarchy, Wayland (Hyprland) | **Supported (1.0.0)** |
 | X11 / Xwayland | Builds and starts; seen under Xwayland only |
 | GNOME, KDE, other distributions | Unverified |
-| macOS Apple Silicon / Intel | Experimental release builds (ad-hoc signed, not notarized); interactive acceptance partial |
+| macOS Apple Silicon / Intel | Experimental release builds (ad-hoc signed, not notarized); engine tests green in CI on Apple Silicon since 1.1.0, still intermittent on Intel; interactive acceptance partial |
 | Windows | Deferred ([platform status](docs/platforms.md)) |
 
 ## Developing
@@ -280,5 +280,6 @@ provenance is in [`assets/PROVENANCE.md`](assets/PROVENANCE.md).
 
 Pipkin is released under the [MIT License](LICENSE). The bundled fonts, icons and mascot keep their own terms, listed in
 [`assets/PROVENANCE.md`](assets/PROVENANCE.md): Poppins, Lilex and IBM Plex Sans are SIL OFL 1.1, the icons are ISC, and the
-mascot and wordmark are Pipkin's brand artwork, used as approved. The Pi engine bundled in a release is a separate project with
-its own license.
+mascot and wordmark are Pipkin's brand artwork, used as approved. No Pi engine is bundled: the built-in engine ports behavior
+from Pi, and the notices for the ported Pi, Anthropic, minimatch and brace-expansion sources are kept in
+[`packaging/upstream-notices.json`](packaging/upstream-notices.json) and shipped in every archive's license inventory.

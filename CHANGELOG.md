@@ -3,7 +3,12 @@
 Release notes for Pipkin. The newest release is first. The GitHub release body for a version is
 this file's section for it; the publish step in `.github/workflows/release.yml` extracts it.
 
-## Unreleased
+## 1.1.0 (2026-10-13)
+
+A maintenance release on the same engine protocol (31) and store schema (20) as 1.0.0. It
+carries one engine fix that 1.0.0 shipped with, the test and CI work around it, and the
+documentation that caught up with the native engine. Upgrading is "download, verify,
+`./install.sh`" as for 1.0.0; no migration runs.
 
 ### Fixed
 
@@ -22,6 +27,53 @@ this file's section for it; the publish step in `.github/workflows/release.yml` 
   that the accepted one completes the goal); the subagent artifact test no longer writes the
   same file twice within one parallel tool round; the bash progress test now proves
   throttling with a pause followed by a burst instead of per-line sleeps.
+
+### Build and CI
+
+- The release workflow now saves the Rust build cache from its Linux and macOS jobs, and the
+  experimental macOS build workflow gained a best-effort Intel leg, so the Intel release
+  build no longer compiles GPUI and every dependency from scratch (about 36 minutes against
+  about 7 for Apple Silicon in the 1.0.0 runs). Nothing the release publishes changed.
+- The release workflow's staging directories are ignored by git so release builds stamp
+  themselves as clean.
+
+### Documentation
+
+- The Rust engine plan (`llm-docs/pipkin-rust-engine-plan.md`) is rewritten as the completion
+  contract the conversion was held to, with the feature preservation matrix and the
+  Opus to Codex handoff; the GPUI best-practices notes behind the `gpui-desktop-app` skill
+  are added under `llm-docs/`.
+- `docs/goals.md`, `docs/platforms.md` and `docs/macos-first-pass.md` reflect the audit fix,
+  the macOS test status and the Intel build leg.
+
+### Known limits
+
+- Everything in the 1.0.0 known limits still applies except the macOS engine test item, which
+  is now: with the fixes, the Apple Silicon build workflow has been observed green on `main`
+  (runs 38430815306 and 38432999668), but the best-effort Intel leg still failed two engine
+  tests in run 38432999668 (a remote-catalog timing test and the new gated goal audit test),
+  so engine tests on Intel macOS remain intermittent and the Intel archive stays best effort.
+- One Linux native adapter end-to-end test (`workspace_scan_failure_keeps_the_last_diff_and_retry_recovers_without_a_prompt`)
+  failed once on `main` in run 38431008244 and passed in the runs before and after it; it is
+  being treated as intermittent, not as a product defect.
+
+### Downloads and verification
+
+| File | What it is |
+| --- | --- |
+| `pipkin-native-1.1.0-x86_64.tar.zst` | Linux x86_64 archive with `install.sh` at its root |
+| `pipkin-1.1.0-aarch64-apple-darwin-experimental.dmg` / `.zip` | Experimental macOS app, Apple Silicon |
+| `pipkin-1.1.0-x86_64-apple-darwin-experimental.dmg` / `.zip` | Experimental macOS app, Intel (best effort) |
+| `build-info-*.json` | Source revision, binary hash and build inputs for each archive |
+| `SHA256SUMS` | Checksums of every file above |
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
+tar --zstd -xf pipkin-native-1.1.0-x86_64.tar.zst && ./install.sh    # Linux: into ~/.local, no root
+```
+
+The release is **not signed**; `SHA256SUMS` proves only that a download is intact. The macOS
+archives are ad-hoc signed and not notarized, so Gatekeeper warns on first launch.
 
 ## 1.0.0 (2026-10-13)
 
@@ -102,7 +154,7 @@ reactivates the previous version, subject to the schema and backup rules in
   the job is marked interrupted with "the process is gone". Linux stops it.
 - On the macOS CI runner a handful of engine unit tests failed or flaked across runs (the
   structured-goal audit and evidence tests, a subagent artifact re-read, and a timing-based
-  bash progress test). Fixed after 1.0.0 (see Unreleased): three were races the tests
+  bash progress test). Fixed in 1.1.0: three were races the tests
   themselves lost more often on macOS, and one was an engine race in the goal audit that
   could also pause a goal on Linux. The 1.0.0 binaries carry the engine race.
 - The owner-run native gate rows in [docs/native-gate-testing.md](docs/native-gate-testing.md)

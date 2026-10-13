@@ -4506,7 +4506,7 @@ dependencies = [
 
 [[package]]
 name = "pipkin-app"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-channel",
  "base64 0.22.1",
@@ -4527,11 +4527,11 @@ dependencies = [
 
 [[package]]
 name = "pipkin-core"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "pipkin-engine"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -4570,7 +4570,7 @@ dependencies = [
 
 [[package]]
 name = "pipkin-engine-protocol"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4578,7 +4578,7 @@ dependencies = [
 
 [[package]]
 name = "pipkin-ui"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "chrono",
