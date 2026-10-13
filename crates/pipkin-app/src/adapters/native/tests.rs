@@ -65,6 +65,7 @@ fn snapshot(id: &str, entries: Vec<Entry>) -> SessionSnapshot {
         goal: None,
         jobs: Default::default(),
         context: Default::default(),
+        web_sources: vec![],
     }
 }
 

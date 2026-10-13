@@ -79,6 +79,13 @@ pub(super) fn event_bytes(event: &BackendEvent) -> usize {
             EventKind::ContextSynced { context } => {
                 context.model.as_ref().map_or(0, String::capacity) + context.compaction.capacity()
             }
+            EventKind::WebSourcesSynced(sources) => vec_bytes(sources, |s| {
+                s.id.capacity()
+                    + s.url.capacity()
+                    + strings(&s.title)
+                    + s.provider.capacity()
+                    + s.kind.capacity()
+            }),
             EventKind::DiagnosticsSynced { records, .. } => vec_bytes(records, |r| {
                 r.kind.capacity() + r.line.capacity() + strings(&r.call_id)
             }),

@@ -28,6 +28,7 @@ Search is off until a provider is configured in `settings.json` (user level, or 
 | `apiKey` | The Brave key itself |
 | `apiKeyEnv` | The name of an environment variable holding the key (preferred) |
 | `url` | The SearXNG instance's base URL; for Brave, an optional endpoint override |
+| `fallback` | An array of up to three further providers (same keys), tried in order when the one before fails |
 
 Keys never appear in results, snapshots, history or logs. Without a provider,
 `web_search` returns a typed `not_configured` error that names the setting; `web_fetch` and
@@ -108,9 +109,19 @@ content is evidence the model reads, never an instruction the engine acts on.
 - No live provider was exercised; the Brave and SearXNG contracts are pinned from
   documentation and source as noted above and tested against a local mock.
 - No PDF, OCR, screenshots, authenticated pages or browser automation (WEB-2).
-- No citation rendering in the desktop yet: tool results show `[s<n>]` citations and the
-  `WebSources` call lists provenance, but clicking a citation to open its URL is not built.
+- Citations: a session snapshot carries its retained sources (`webSources`, protocol 29)
+  and the engine publishes `WebSourcesChanged` after each search or fetch, so a `[s<n>]`
+  citation in a reply or a tool result opens its page in the desktop. A citation whose
+  source the engine no longer lists stays plain text. The list carried is the newest 500.
 - `web_read` is replay-safe; a search or fetch interrupted by a restart is recorded as
   interrupted (the model may call again), while a completed one keeps its sources under its
   call id.
-- One fetch at a time per call; no batch fetching or fallback provider chain yet.
+- Fallback chain: `web.search.fallback` lists further providers (same shape) tried in order
+  when the one before is down, refusing, rate-limited or answering nonsense; a cancellation
+  stops the chain, and the last failure is the outcome. At most three fallbacks; a
+  misconfigured fallback is skipped with a warning, a misconfigured primary is the error.
+  Results name the provider that answered.
+- Batch fetches: `web_fetch` takes `urls` (up to 5), fetched one after another, each its
+  own source under a call-derived id (so a replay finds the same sources); a page that
+  fails is reported in place and the rest go on; the call is an error only when every page
+  failed.

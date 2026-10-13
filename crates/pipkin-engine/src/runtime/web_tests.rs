@@ -761,3 +761,102 @@ fn web_tools_are_offered_and_only_read_is_recoverable() {
     assert_eq!(welcome.schema, crate::store::SCHEMA_VERSION);
     let _ = Arc::new(());
 }
+
+#[test]
+fn a_failing_primary_provider_hands_over_to_a_configured_fallback() {
+    let server = fixture_server();
+    let fx = Fixture::new();
+    std::fs::create_dir_all(fx.dir.path().join("config")).unwrap();
+    // The primary is a Brave endpoint the fixture does not serve (404 → invalid response);
+    // the fallback is the SearXNG fixture. A misconfigured second fallback is skipped.
+    std::fs::write(
+        fx.dir.path().join("config/settings.json"),
+        json!({"web": {"search": {
+            "provider": "brave", "url": format!("{}/brave", server.mock.url), "apiKey": "k",
+            "fallback": [
+                {"provider": "searxng", "url": server.mock.url},
+                {"provider": "mystery"}
+            ]
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    let provider = Scripted::new(calling_from_prompt());
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    let (is_error, text, details) = run(
+        &mut e,
+        &s,
+        "r1",
+        &format!("web_search {}", json!({"query": "rust"})),
+    );
+    assert!(!is_error, "{text}");
+    assert!(
+        text.starts_with("Search \"rust\" via searxng: 3 result(s)"),
+        "{text}"
+    );
+    assert_eq!(details["provider"], "searxng");
+    let paths: Vec<String> = server.mock.requests().into_iter().map(|r| r.path).collect();
+    assert!(paths.iter().any(|p| p.starts_with("/brave")), "{paths:?}");
+    assert!(paths.iter().any(|p| p.starts_with("/search?")), "{paths:?}");
+    // Every provider failing: the last failure is the outcome.
+    let (is_error, _, details) = run(
+        &mut e,
+        &s,
+        "r2",
+        &format!("web_search {}", json!({"query": "forbidden"})),
+    );
+    assert!(is_error);
+    assert_eq!(details["kind"], "auth");
+}
+
+#[test]
+fn a_batch_fetch_retains_each_page_and_reports_failures_in_place() {
+    let server = fixture_server();
+    let fx = Fixture::new();
+    let provider = Scripted::new(calling_from_prompt());
+    let mut config = fx.config();
+    config.web_allow_private_hosts = true;
+    let mut e = fx.start_config(&provider, config);
+    let s = e.create(&fx.project, "c");
+    let urls = json!([
+        format!("{}/page", server.mock.url),
+        format!("{}/missing", server.mock.url),
+        format!("{}/json", server.mock.url),
+    ]);
+    let (is_error, text, details) = run(
+        &mut e,
+        &s,
+        "r1",
+        &format!("web_fetch {}", json!({"urls": urls})),
+    );
+    assert!(!is_error, "{text}");
+    assert!(text.starts_with("Fetched 2 of 3 page(s)."), "{text}");
+    assert!(text.contains("[s1]") && text.contains("[s2]"), "{text}");
+    assert!(text.contains("/missing: failed (status)"), "{text}");
+    assert_eq!(details["batch"], true);
+    let fetches = details["fetches"].as_array().unwrap();
+    assert_eq!(fetches.len(), 3);
+    assert_eq!(fetches[0]["outcome"], "fetch");
+    assert_eq!(fetches[1]["outcome"], "error");
+    assert_eq!(fetches[2]["source"]["id"], "s2");
+    // Each page is its own source; a replay of the same call returns the same ones.
+    let Ok(Reply::WebSources(sources)) = e.call(Call::WebSources { session: s.clone() }) else {
+        panic!()
+    };
+    assert_eq!(sources.len(), 2);
+    assert!(sources.iter().all(|src| src.kind == "fetch"));
+    // Bounds: too many, or none.
+    let six: Vec<String> = (0..6)
+        .map(|i| format!("{}/page?{i}", server.mock.url))
+        .collect();
+    let (is_error, text, _) = run(
+        &mut e,
+        &s,
+        "r2",
+        &format!("web_fetch {}", json!({"urls": six})),
+    );
+    assert!(is_error && text.contains("at most 5"), "{text}");
+    let (is_error, text, _) = run(&mut e, &s, "r3", "web_fetch {\"urls\": []}");
+    assert!(is_error && text.contains("at least one"), "{text}");
+}

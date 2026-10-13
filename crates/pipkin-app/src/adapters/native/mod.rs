@@ -1161,6 +1161,7 @@ impl Live {
             Touched::Goal => self.emit_goal(worker),
             Touched::Jobs => self.emit_jobs(worker),
             Touched::Context => self.emit_context(worker),
+            Touched::WebSources => self.emit_web_sources(worker),
             Touched::Child(child) => {
                 if current.child == Some(child) {
                     self.load_child(worker, conversation, generation, child);
@@ -1193,6 +1194,17 @@ impl Live {
             let (conversation, generation) = (c.conversation, c.generation);
             self.schedule_changes(worker, conversation, generation);
         }
+    }
+
+    /// The sources the engine retained for the open session (from the snapshot and its
+    /// changes), so citations in the transcript can open them.
+    fn emit_web_sources(&self, worker: &Worker) {
+        let Some(c) = &self.current else { return };
+        worker.emit(
+            c.conversation,
+            c.generation,
+            EventKind::WebSourcesSynced(mapping::web_sources(&c.mirror.web_sources)),
+        );
     }
 
     /// The engine-owned goal of the open session (or none); its arrival disables the
@@ -2975,6 +2987,7 @@ impl Live {
         self.emit_goal(worker);
         self.emit_jobs(worker);
         self.emit_context(worker);
+        self.emit_web_sources(worker);
         self.schedule_changes(worker, conversation, generation);
         true
     }

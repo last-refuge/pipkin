@@ -12,6 +12,9 @@ use crate::tools::Tool;
 use crate::tools::web::{WebFetchTool, WebReadTool, WebSearchTool};
 use crate::web::{WebService, WebSettings};
 
+/// Most sources carried in a snapshot or a change (the newest).
+pub const WEB_SOURCES_IN_VIEW: usize = 500;
+
 impl Shared {
     pub fn web_tools(&self) -> [Arc<dyn Tool>; 3] {
         [
@@ -34,6 +37,33 @@ impl Shared {
             env: Arc::new(move |key| env.get(key)),
             allow_private: self.config.web_allow_private_hosts,
         }
+    }
+
+    /// The newest [`WEB_SOURCES_IN_VIEW`] sources, oldest first, for snapshots and changes.
+    pub fn web_sources_bounded(&self, session: &str) -> Result<Vec<WebSourceView>, ProtoError> {
+        let mut all = self.web_sources_view(session)?;
+        if all.len() > WEB_SOURCES_IN_VIEW {
+            all.drain(..all.len() - WEB_SOURCES_IN_VIEW);
+        }
+        Ok(all)
+    }
+
+    /// Tell clients the session's sources changed (after a search or fetch recorded some).
+    pub fn publish_web_sources(&self, session: &str) {
+        let Ok(sources) = self.web_sources_bounded(session) else {
+            return;
+        };
+        let revision = self
+            .store
+            .session(session)
+            .ok()
+            .flatten()
+            .map_or(0, |s| s.revision);
+        self.publish(Event::Session {
+            session: session.to_owned(),
+            revision,
+            change: SessionChange::WebSourcesChanged { sources },
+        });
     }
 
     pub fn web_sources_view(&self, session: &str) -> Result<Vec<WebSourceView>, ProtoError> {

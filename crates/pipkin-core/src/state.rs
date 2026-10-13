@@ -20,6 +20,8 @@ pub struct ConversationState {
     pub jobs: crate::jobs::JobsState,
     /// The engine's own measurements for this session (OBS-1), fetched on request.
     pub diagnostics: crate::diagnostics::DiagnosticsState,
+    /// Web sources the engine retained for this conversation, by citation id.
+    pub web_sources: Vec<WebSource>,
     /// Context occupancy as the engine reports it (STATUS-2).
     pub context: Option<crate::status::ContextUsage>,
     pub has_older: bool,
@@ -109,6 +111,7 @@ impl ConversationState {
             plan: PlanState::default(),
             jobs: Default::default(),
             diagnostics: Default::default(),
+            web_sources: Vec::new(),
             context: None,
             has_older: false,
             loading_older: false,
@@ -194,6 +197,11 @@ impl ConversationState {
             RunState::Idle => None,
             ref r => Some(r.label()),
         }
+    }
+
+    /// A retained web source by its citation id (`s12`).
+    pub fn web_source(&self, id: &str) -> Option<&WebSource> {
+        self.web_sources.iter().find(|s| s.id == id)
     }
 
     /// The open questionnaire, if the first waiting question is one.
@@ -2608,6 +2616,7 @@ impl AppState {
                 | EventKind::SubagentOlderFailed { .. }
                 | EventKind::SubagentControlDone { .. }
                 | EventKind::SubagentControlFailed { .. }
+                | EventKind::WebSourcesSynced(_)
                 | EventKind::DiagnosticsSynced { .. }
                 | EventKind::DiagnosticsExported { .. }
                 | EventKind::DiagnosticsFailed { .. }
@@ -2712,6 +2721,12 @@ impl AppState {
             EventKind::JobRefused { reason } => {
                 if c.opened {
                     c.jobs.error = Some(reason);
+                    out.notes.push(Note::Other);
+                }
+            }
+            EventKind::WebSourcesSynced(sources) => {
+                if c.opened && c.web_sources != sources {
+                    c.web_sources = sources;
                     out.notes.push(Note::Other);
                 }
             }

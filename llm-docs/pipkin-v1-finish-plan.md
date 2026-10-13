@@ -125,8 +125,8 @@ STATUS-3 (cached Git summary) is optional; take it only if cheap after STATUS-2.
 
 ## 6. Leftovers inside finished slices
 
-- [ ] Web: desktop citation rendering (click to open a retained source), a configured
-  fallback provider chain, bounded batch fetches (plan §5).
+- [x] Web: desktop citation rendering (click to open a retained source), a configured
+  fallback provider chain, bounded batch fetches (plan §5). (2026-10-12)
 - [ ] Goals: cost limits beyond tokens, a pinned auditor model setting; job-event waits once
   JOB-1 lands (plan §8).
 - [ ] Subagents: result artifact references, a small structured parallel group (plan §6).

@@ -740,6 +740,10 @@ pub enum SessionChange {
     ContextChanged {
         context: ContextUsageView,
     },
+    /// A search or fetch retained new sources (the bounded current list).
+    WebSourcesChanged {
+        sources: Vec<WebSourceView>,
+    },
     /// A child session's history changed (the selected child's viewer re-reads its page).
     ChildChanged {
         child: u64,

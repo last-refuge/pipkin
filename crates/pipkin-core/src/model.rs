@@ -246,6 +246,21 @@ pub struct Hunk {
     pub lines: Vec<DiffLine>,
 }
 
+/// A web source the engine retained for a conversation (a search result or a fetched page),
+/// cited in transcripts as `[s<n>]`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WebSource {
+    /// `s<n>`.
+    pub id: String,
+    pub url: String,
+    pub title: Option<String>,
+    pub provider: String,
+    /// `search` or `fetch`.
+    pub kind: String,
+    /// Its retained text has been dropped; the URL still opens.
+    pub expired: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct FileChange {
     pub path: String,

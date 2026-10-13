@@ -637,6 +637,9 @@ pub enum EventKind {
     JobRefused {
         reason: String,
     },
+    /// The web sources the engine retained for the conversation (citations resolve to
+    /// them). Engines without web access never send it.
+    WebSourcesSynced(Vec<WebSource>),
     /// The engine's diagnostics summary and newest records (engine-measured latency).
     DiagnosticsSynced {
         summary: crate::diagnostics::DiagnosticsSummary,

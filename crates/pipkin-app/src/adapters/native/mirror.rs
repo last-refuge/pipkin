@@ -25,6 +25,7 @@ pub enum Touched {
     Goal,
     Jobs,
     Context,
+    WebSources,
     Child(u64),
     HasOlder(bool),
     Model(Option<String>),
@@ -47,6 +48,7 @@ pub struct Mirror {
     pub goal: Option<pipkin_engine_protocol::GoalView>,
     pub jobs: pipkin_engine_protocol::JobsView,
     pub context: pipkin_engine_protocol::ContextUsageView,
+    pub web_sources: Vec<pipkin_engine_protocol::WebSourceView>,
     /// Streamed output of running tool calls, by call id.
     pub progress: HashMap<String, String>,
     /// The snapshot's revision. Committed changes at or below it are already in the snapshot.
@@ -71,6 +73,7 @@ impl Mirror {
             goal: snapshot.goal,
             jobs: snapshot.jobs,
             context: snapshot.context,
+            web_sources: snapshot.web_sources,
             progress: HashMap::new(),
             floor: snapshot.revision,
         }
@@ -197,6 +200,10 @@ impl Mirror {
                 self.context = context;
                 Touched::Context
             }
+            SessionChange::WebSourcesChanged { sources } => {
+                self.web_sources = sources;
+                Touched::WebSources
+            }
             SessionChange::SummaryChanged { .. } => Touched::Nothing,
         }
     }
@@ -283,6 +290,7 @@ mod tests {
             goal: None,
             jobs: Default::default(),
             context: Default::default(),
+            web_sources: vec![],
         }
     }
 

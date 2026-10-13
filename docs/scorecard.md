@@ -1,5 +1,15 @@
 # Scorecard
 
+## Web leftovers: citations, fallback chain, batch fetches (2026-10-12)
+
+- **Measured (automated).** Engine tests: a Brave primary the fixture does not serve hands
+  over to a SearXNG fallback (a misconfigured second fallback is skipped) and the result
+  names the provider that answered; when every provider fails the last failure is the
+  outcome; a batch fetch of three pages retains two sources, reports the failing page in
+  place, refuses more than five or none. A core test keeps retained sources per
+  conversation; a UI test covers the citation parser. The repository gate passed.
+- **Observed.** Nothing native: clicking a citation in a window is unverified.
+
 ## Export configuration, OBS-3 (2026-10-12)
 
 Export is configured through the engine from a Trace export settings page: off by default,

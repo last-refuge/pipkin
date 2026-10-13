@@ -592,6 +592,10 @@ pub struct SessionSnapshot {
     pub thinking: ThinkingView,
     pub ui: UiView,
     pub subagents: Option<SubagentsView>,
+    /// The web sources the engine retained for the session (newest last, bounded), so a
+    /// presentation can resolve `[s<n>]` citations. Empty without web access.
+    #[serde(default)]
+    pub web_sources: Vec<WebSourceView>,
     /// The session's plan (live tasks). Empty when it has none.
     #[serde(default)]
     pub plan: PlanView,
@@ -904,7 +908,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 28);
+        assert_eq!(crate::PROTOCOL_VERSION, 29);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };

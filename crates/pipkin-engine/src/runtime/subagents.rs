@@ -209,9 +209,13 @@ impl ToolHost for Host {
     > {
         Box::pin(async move {
             let service = self.shared.web_service(&self.parent);
-            Ok(service
+            let outcome = service
                 .search(&self.parent, call_id, query, count, cancel)
-                .await)
+                .await;
+            if outcome.is_ok() {
+                self.shared.publish_web_sources(&self.parent);
+            }
+            Ok(outcome)
         })
     }
 
@@ -229,7 +233,11 @@ impl ToolHost for Host {
     > {
         Box::pin(async move {
             let service = self.shared.web_service(&self.parent);
-            Ok(service.fetch(&self.parent, call_id, url, cancel).await)
+            let outcome = service.fetch(&self.parent, call_id, url, cancel).await;
+            if outcome.is_ok() {
+                self.shared.publish_web_sources(&self.parent);
+            }
+            Ok(outcome)
         })
     }
 

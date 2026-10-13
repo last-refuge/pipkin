@@ -69,6 +69,7 @@ impl Shared {
                 .map(|s| s.questions.view())
                 .unwrap_or_default(),
             subagents,
+            web_sources: self.web_sources_bounded(session)?,
             plan: self.store.read(|c| Store::plan_view(c, session, false))?,
             goal: self.store.read(|c| Store::goal_current(c, session))?,
             jobs: self.jobs_view(session)?,

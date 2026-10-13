@@ -281,3 +281,33 @@ fn export_settings_commands_go_to_a_real_engine_one_at_a_time_and_answers_settle
     let mut d = state(Mode::Demo);
     assert!(backend(&d.dispatch(Command::ExportConfigure(config))).is_empty());
 }
+
+#[test]
+fn retained_web_sources_are_kept_per_conversation_for_citations() {
+    let mut s = state(Mode::Real);
+    open(&mut s);
+    let sources = vec![WebSource {
+        id: "s3".into(),
+        url: "https://example.com/a".into(),
+        title: Some("A".into()),
+        provider: "searxng".into(),
+        kind: "search".into(),
+        expired: false,
+    }];
+    let out = s.apply_event(event(&s, EventKind::WebSourcesSynced(sources.clone())));
+    assert!(!out.notes.is_empty());
+    assert_eq!(
+        s.current()
+            .unwrap()
+            .web_source("s3")
+            .map(|w| w.url.as_str()),
+        Some("https://example.com/a")
+    );
+    assert!(s.current().unwrap().web_source("s4").is_none());
+    // The same list again changes nothing.
+    assert!(
+        s.apply_event(event(&s, EventKind::WebSourcesSynced(sources)))
+            .notes
+            .is_empty()
+    );
+}

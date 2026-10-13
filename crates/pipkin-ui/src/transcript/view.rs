@@ -173,6 +173,8 @@ struct RowCtx {
     theme: Theme,
     conv: ConversationId,
     change_paths: Vec<String>,
+    /// Retained web sources as `(citation id, URL)`, so `[s<n>]` opens its page.
+    sources: Vec<(String, String)>,
     expanded: bool,
     /// Set on the latest row of a run of tool steps, which carries the fold control.
     steps: Option<StepsLine>,
@@ -957,6 +959,11 @@ impl TranscriptView {
             theme,
             conv: conv_id,
             change_paths: conv.changes.iter().map(|c| c.path.clone()).collect(),
+            sources: conv
+                .web_sources
+                .iter()
+                .map(|s| (s.id.clone(), s.url.clone()))
+                .collect(),
             expanded: self.is_expanded(conv_id, item.id),
             steps,
         };
@@ -1762,6 +1769,22 @@ impl TranscriptView {
                 }
             }
         }
+        // Citations of retained web sources (`[s12]`) open their page; a citation whose
+        // source the engine no longer lists stays plain text.
+        if !ctx.sources.is_empty() {
+            for (range, id) in citations(&block.text) {
+                if clicks
+                    .iter()
+                    .any(|(r, _)| r.start < range.end && range.start < r.end)
+                {
+                    continue;
+                }
+                if let Some((_, url)) = ctx.sources.iter().find(|(s, _)| *s == id) {
+                    file_refs.push(range.clone());
+                    clicks.push((range, Click::Url(url.clone())));
+                }
+            }
+        }
         let (family, size, line_height, color, weight) = match &block.kind {
             BlockKind::Code { .. } => (
                 theme.mono_font(),
@@ -2253,6 +2276,43 @@ impl Element for FrameProbe {
         self.stats
             .borrow_mut()
             .record(*prepaint_cost + start.elapsed());
+    }
+}
+
+/// The `[s<n>]` citations in `text`, as `(byte range, "s<n>")`, in order.
+pub fn citations(text: &str) -> Vec<(Range<usize>, String)> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 3 < bytes.len() {
+        if bytes[i] == b'[' && bytes[i + 1] == b's' && bytes[i + 2].is_ascii_digit() {
+            let mut j = i + 2;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == b']' && j - (i + 2) <= 9 {
+                out.push((i..j + 1, text[i + 1..j].to_owned()));
+                i = j + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+#[cfg(test)]
+mod citation_tests {
+    use super::citations;
+
+    #[test]
+    fn citations_are_found_exactly_and_never_inside_other_brackets() {
+        let found = citations("See [s1] and [s12], not [sx] or [s] or [s123456789012]; [s7].");
+        let ids: Vec<&str> = found.iter().map(|(_, id)| id.as_str()).collect();
+        assert_eq!(ids, ["s1", "s12", "s7"]);
+        assert_eq!(&"See [s1] and [s12]"[found[0].0.clone()], "[s1]");
+        assert_eq!(&"See [s1] and [s12]"[found[1].0.clone()], "[s12]");
+        assert!(citations("no citations [S1] [s 2]").is_empty());
     }
 }
 

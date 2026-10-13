@@ -1186,6 +1186,25 @@ pub fn diagnostics(
 /// Record lines shown in the dialog.
 pub const MAX_DIAGNOSTIC_LINES: usize = 40;
 
+/// Retained web sources, bounded (the newest keep their citations resolvable).
+pub fn web_sources(views: &[pipkin_engine_protocol::WebSourceView]) -> Vec<pipkin_core::WebSource> {
+    views
+        .iter()
+        .rev()
+        .take(MAX_WEB_SOURCES)
+        .map(|v| pipkin_core::WebSource {
+            id: v.id.clone(),
+            url: v.final_url.clone(),
+            title: v.title.clone().filter(|t| !t.trim().is_empty()),
+            provider: v.provider.clone(),
+            kind: v.kind.clone(),
+            expired: v.expired,
+        })
+        .collect()
+}
+
+pub const MAX_WEB_SOURCES: usize = 2_000;
+
 pub fn export_health(
     view: &pipkin_engine_protocol::ExportHealthView,
 ) -> pipkin_core::diagnostics::ExportHealth {

@@ -164,7 +164,15 @@ pub struct WebSettings {
     pub url: Option<String>,
     pub api_key: Option<String>,
     pub api_key_env: Option<String>,
+    /// Providers tried in order when the one before fails (`web.search.fallback`, an array
+    /// of the same shape). A fallback never has fallbacks of its own.
+    pub fallbacks: Vec<WebSettings>,
 }
+
+/// Most providers in a chain (the primary plus fallbacks).
+pub const MAX_PROVIDER_CHAIN: usize = 4;
+/// The providers to try in order, and warnings about fallbacks that were skipped.
+pub type ProviderChain = (Vec<Arc<dyn SearchProvider>>, Vec<String>);
 
 impl WebSettings {
     pub fn from_settings(settings: &Settings) -> WebSettings {
@@ -174,6 +182,22 @@ impl WebSettings {
             .and_then(|w| w.get("search"))
             .cloned()
             .unwrap_or_default();
+        let mut parsed = Self::from_value(&search);
+        parsed.fallbacks = search
+            .get("fallback")
+            .and_then(serde_json::Value::as_array)
+            .map(|list| {
+                list.iter()
+                    .filter(|v| v.is_object())
+                    .take(MAX_PROVIDER_CHAIN - 1)
+                    .map(Self::from_value)
+                    .collect()
+            })
+            .unwrap_or_default();
+        parsed
+    }
+
+    fn from_value(search: &serde_json::Value) -> WebSettings {
         let s = |k: &str| {
             search
                 .get(k)
@@ -187,7 +211,25 @@ impl WebSettings {
             url: s("url"),
             api_key: s("apiKey"),
             api_key_env: s("apiKeyEnv"),
+            fallbacks: Vec::new(),
         }
+    }
+
+    /// The primary provider followed by each configured fallback. A misconfigured fallback is
+    /// reported as a warning and skipped; a misconfigured primary is the error.
+    pub fn providers(
+        &self,
+        env: impl Fn(&str) -> Option<String>,
+    ) -> Result<ProviderChain, SearchError> {
+        let mut chain = vec![self.provider(&env)?];
+        let mut warnings = Vec::new();
+        for (i, fallback) in self.fallbacks.iter().enumerate() {
+            match fallback.provider(&env) {
+                Ok(p) => chain.push(p),
+                Err(e) => warnings.push(format!("fallback {} skipped: {e}", i + 1)),
+            }
+        }
+        Ok((chain, warnings))
     }
 
     /// Build the configured provider, reading the key from the environment when named.
@@ -537,16 +579,41 @@ impl WebService {
         if query.is_empty() {
             return Err(SearchError::InvalidResponse("the query is empty".into()));
         }
-        let provider = self.settings.provider(|k| (self.env)(k))?;
+        let (chain, warnings) = self.settings.providers(|k| (self.env)(k))?;
+        for warning in &warnings {
+            log::warn!("web search: {warning}");
+        }
         let count = count.clamp(1, MAX_SEARCH_COUNT);
-        let results = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => Err(SearchError::Cancelled),
-            r = tokio::time::timeout(SEARCH_TIMEOUT, provider.search(&self.http, query, count, cancel.clone())) => match r {
-                Ok(r) => r,
-                Err(_) => Err(SearchError::Network("the search timed out".into())),
-            },
-        }?;
+        // The chain: a provider that is down, refusing or rate-limited hands over to the
+        // next; a cancellation or the last failure is the outcome.
+        let mut last = None;
+        let mut used: Option<Arc<dyn SearchProvider>> = None;
+        let mut results = Vec::new();
+        for provider in chain {
+            let attempt = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Err(SearchError::Cancelled),
+                r = tokio::time::timeout(SEARCH_TIMEOUT, provider.search(&self.http, query, count, cancel.clone())) => match r {
+                    Ok(r) => r,
+                    Err(_) => Err(SearchError::Network("the search timed out".into())),
+                },
+            };
+            match attempt {
+                Ok(found) => {
+                    results = found;
+                    used = Some(provider);
+                    break;
+                }
+                Err(SearchError::Cancelled) => return Err(SearchError::Cancelled),
+                Err(e) => {
+                    log::warn!("web search via {} failed: {e}", provider.name());
+                    last = Some(e);
+                }
+            }
+        }
+        let Some(provider) = used else {
+            return Err(last.unwrap_or_else(|| SearchError::NotConfigured("no provider".into())));
+        };
         let now = crate::util::now_ms();
         let name = provider.name().to_owned();
         let records = self

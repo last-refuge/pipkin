@@ -38,6 +38,7 @@ pub use view::*;
 // Version 27 adds the trace exporter: `ExportHealth`, `ExportChanged`.
 // Version 28 adds export configuration: `ExportConfigure`, `ExportSetCredential`,
 // `ExportClearCredential`, `ExportPreview`, and the settings fields on `ExportHealthView`.
-pub const PROTOCOL_VERSION: u32 = 28;
+// Version 29 adds `webSources` to snapshots and `WebSourcesChanged`.
+pub const PROTOCOL_VERSION: u32 = 29;
 
 pub mod delivery;
