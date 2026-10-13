@@ -184,6 +184,7 @@ pub struct Workspace {
     pub(super) inspector_tab: super::subagents::InspectorTab,
     pub(super) subagent_rows: super::subagents::SubagentRows,
     pub(super) plan_rows: super::plan::PlanRows,
+    pub(super) job_rows: super::jobs::JobRows,
     live_nav: Option<f32>,
     live_insp: Option<f32>,
     last_change_sel: Option<(ConversationId, Option<usize>)>,
@@ -320,6 +321,7 @@ impl Workspace {
             inspector_tab: super::subagents::InspectorTab::default(),
             subagent_rows: super::subagents::SubagentRows::default(),
             plan_rows: super::plan::PlanRows::default(),
+            job_rows: super::jobs::JobRows::default(),
             live_nav: None,
             live_insp: None,
             last_change_sel: None,
@@ -374,6 +376,7 @@ impl Workspace {
     fn on_model(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.refresh_subagent_rows(cx);
         self.refresh_plan_rows(cx);
+        self.refresh_job_rows(cx);
         let entry = self.model.read(cx).entry;
         let challenge = self
             .model

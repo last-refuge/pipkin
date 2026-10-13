@@ -36,9 +36,14 @@ pub fn crash_point(point: &str) {
 /// Returns how many were signalled. Linux only; elsewhere nothing is found (the process
 /// tree is not inspected).
 pub fn kill_tool_processes(token: &str) -> usize {
+    kill_marked_env(TOOL_CALL_ENV, token)
+}
+
+/// Kill every process whose environment carries `var=token` (jobs use their own marker).
+pub fn kill_marked_env(var: &str, token: &str) -> usize {
     #[cfg(target_os = "linux")]
     {
-        let needle = format!("{TOOL_CALL_ENV}={token}");
+        let needle = format!("{var}={token}");
         let me = std::process::id();
         let mut killed = 0;
         // A dying shell may still be forking: repeat until a pass finds nothing.
@@ -59,7 +64,7 @@ pub fn kill_tool_processes(token: &str) -> usize {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = token;
+        let _ = (var, token);
         0
     }
 }

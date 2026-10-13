@@ -61,6 +61,8 @@ fn resolve_inside(cwd: &Path, path: &str) -> Result<PathBuf, ToolError> {
 fn walker(root: &Path) -> ignore::Walk {
     ignore::WalkBuilder::new(root)
         .hidden(true)
+        // A project's `.gitignore` applies whether or not the directory is a repository.
+        .require_git(false)
         .git_ignore(true)
         .git_global(true)
         .git_exclude(true)

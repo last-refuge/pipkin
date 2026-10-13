@@ -24,6 +24,7 @@ pub(super) enum InspectorTab {
     Changes,
     Subagents,
     Plan,
+    Jobs,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

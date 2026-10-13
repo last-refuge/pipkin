@@ -1124,6 +1124,7 @@ impl Live {
             Touched::Subagents => self.emit_subagents(worker),
             Touched::Plan => self.emit_plan(worker),
             Touched::Goal => self.emit_goal(worker),
+            Touched::Jobs => self.emit_jobs(worker),
             Touched::Child(child) => {
                 if current.child == Some(child) {
                     self.load_child(worker, conversation, generation, child);
@@ -1183,6 +1184,18 @@ impl Live {
                 tasks,
                 counts,
                 truncated,
+            },
+        );
+    }
+
+    /// The engine's background jobs for the open session, as the core's projection.
+    fn emit_jobs(&self, worker: &Worker) {
+        let Some(c) = &self.current else { return };
+        worker.emit(
+            c.conversation,
+            c.generation,
+            EventKind::JobsSynced {
+                jobs: mapping::jobs(&c.mirror.jobs),
             },
         );
     }
@@ -1702,6 +1715,58 @@ impl Live {
                 generation,
                 entry,
             } => self.cancel_queued(worker, conversation, generation, entry),
+            BackendRequest::JobLog {
+                conversation,
+                generation,
+                id,
+                offset,
+                limit,
+            } => {
+                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
+                    return;
+                };
+                match self.call(Call::JobLog {
+                    session,
+                    id,
+                    offset,
+                    limit: Some(limit),
+                }) {
+                    Ok(Reply::JobLog(view)) => worker.emit(
+                        conversation,
+                        generation,
+                        EventKind::JobLogPage {
+                            tail: mapping::job_log(&view),
+                        },
+                    ),
+                    Ok(_) => {}
+                    Err(error) => worker.emit(
+                        conversation,
+                        generation,
+                        EventKind::JobRefused {
+                            reason: format!("Could not read the job log: {error}"),
+                        },
+                    ),
+                }
+            }
+            BackendRequest::CancelJob {
+                conversation,
+                generation,
+                id,
+            } => {
+                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
+                    return;
+                };
+                match self.call(Call::JobCancel { session, id }) {
+                    Ok(_) => self.emit_jobs(worker),
+                    Err(error) => worker.emit(
+                        conversation,
+                        generation,
+                        EventKind::JobRefused {
+                            reason: format!("Could not stop the job: {error}"),
+                        },
+                    ),
+                }
+            }
             BackendRequest::McpRefresh { conversation } => {
                 let session = self.mcp_session(conversation);
                 self.mcp_call(worker, Call::McpServers { session });
@@ -2701,6 +2766,7 @@ impl Live {
         self.emit_subagents(worker);
         self.emit_plan(worker);
         self.emit_goal(worker);
+        self.emit_jobs(worker);
         self.schedule_changes(worker, conversation, generation);
         true
     }

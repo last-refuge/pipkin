@@ -87,6 +87,7 @@ impl Shared {
             if let Some(runner) = sess.extensions.lock().await.take() {
                 runner.shutdown(Duration::from_secs(2)).await;
             }
+            self.jobs_remove_session(&sess.id).await;
         }
         let mut last_error = None;
         loop {

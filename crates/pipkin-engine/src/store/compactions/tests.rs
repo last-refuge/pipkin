@@ -273,7 +273,7 @@ fn v5_upgrade_preserves_history_and_makes_a_private_backup_before_compaction_jou
                 partial: false,
             },
         )?;
-        c.execute_batch("DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 5;")?;
+        c.execute_batch("DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; PRAGMA user_version = 5;")?;
         Ok(())
     })
     .unwrap();
@@ -312,7 +312,7 @@ fn v6_activation_upgrade_preserves_pending_jobs_and_private_backup() {
     session(&s, "s");
     let job = admit(&s, "pending-at-activation", CompactionScope::Manual);
     s.read(|c| {
-        c.execute_batch("DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP INDEX compactions_recovery; PRAGMA user_version = 6")?;
+        c.execute_batch("DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP INDEX compactions_recovery; PRAGMA user_version = 6")?;
         Ok(())
     })
     .unwrap();

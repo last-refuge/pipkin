@@ -23,6 +23,7 @@ pub enum Touched {
     Subagents,
     Plan,
     Goal,
+    Jobs,
     Child(u64),
     HasOlder(bool),
     Model(Option<String>),
@@ -43,6 +44,7 @@ pub struct Mirror {
     pub subagents: Option<SubagentsView>,
     pub plan: pipkin_engine_protocol::PlanView,
     pub goal: Option<pipkin_engine_protocol::GoalView>,
+    pub jobs: pipkin_engine_protocol::JobsView,
     /// Streamed output of running tool calls, by call id.
     pub progress: HashMap<String, String>,
     /// The snapshot's revision. Committed changes at or below it are already in the snapshot.
@@ -65,6 +67,7 @@ impl Mirror {
             subagents: snapshot.subagents,
             plan: snapshot.plan,
             goal: snapshot.goal,
+            jobs: snapshot.jobs,
             progress: HashMap::new(),
             floor: snapshot.revision,
         }
@@ -183,6 +186,10 @@ impl Mirror {
                 self.goal = goal.map(|g| *g);
                 Touched::Goal
             }
+            SessionChange::JobsChanged { jobs } => {
+                self.jobs = jobs;
+                Touched::Jobs
+            }
             SessionChange::SummaryChanged { .. } => Touched::Nothing,
         }
     }
@@ -267,6 +274,7 @@ mod tests {
             subagents: None,
             plan: pipkin_engine_protocol::PlanView::default(),
             goal: None,
+            jobs: Default::default(),
         }
     }
 

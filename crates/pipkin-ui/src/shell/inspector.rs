@@ -59,6 +59,8 @@ impl Workspace {
     ) -> gpui::AnyElement {
         let agents = self.inspector_tab == InspectorTab::Subagents;
         let plan = self.inspector_tab == InspectorTab::Plan;
+        let jobs = self.inspector_tab == InspectorTab::Jobs;
+        let jobs_available = self.state(cx).current().is_some_and(|c| c.jobs.available);
         if !agents && !plan {
             self.refresh_diff_rows(cx);
         }
@@ -170,6 +172,7 @@ impl Workspace {
         let change_tab = this.clone();
         let agent_tab = this.clone();
         let plan_tab = this.clone();
+        let jobs_tab = this.clone();
         let plan_available = self.state(cx).current().is_some_and(|c| c.plan.available);
         let tabs = div()
             .id("inspector-tabs")
@@ -184,7 +187,7 @@ impl Workspace {
             .child(
                 Btn::new("inspector-changes-tab")
                     .label("Changes")
-                    .selected(!agents && !plan)
+                    .selected(!agents && !plan && !jobs)
                     .aria("Show this session's uncommitted changes")
                     .on_click(move |_, cx| {
                         change_tab.update(cx, |w, cx| {
@@ -208,6 +211,30 @@ impl Workspace {
                         });
                     }),
             )
+            .when(jobs_available, |d| {
+                d.child(
+                    Btn::new("inspector-jobs-tab")
+                        .label(self.job_rows.tab_label())
+                        .selected(jobs)
+                        .aria(format!(
+                            "Show background jobs, {} active, {} finished{}",
+                            self.job_rows.active,
+                            self.job_rows.finished,
+                            if self.job_rows.unseen > 0 {
+                                format!(", {} finished since you looked", self.job_rows.unseen)
+                            } else {
+                                String::new()
+                            }
+                        ))
+                        .on_click(move |_, cx| {
+                            jobs_tab.update(cx, |w, cx| {
+                                w.inspector_tab = InspectorTab::Jobs;
+                                w.dispatch(Command::MarkJobsSeen, cx);
+                                cx.notify();
+                            });
+                        }),
+                )
+            })
             .when(plan_available, |d| {
                 d.child(
                     Btn::new("inspector-plan-tab")
@@ -225,6 +252,21 @@ impl Workspace {
                         }),
                 )
             });
+        if jobs {
+            return div()
+                .id("inspector")
+                .role(Role::Complementary)
+                .aria_label("Jobs inspector")
+                .flex()
+                .flex_col()
+                .size_full()
+                .min_h_0()
+                .bg(c.bg_changes)
+                .child(header)
+                .child(tabs)
+                .child(self.render_jobs_panel(cx))
+                .into_any_element();
+        }
         if plan {
             return div()
                 .id("inspector")

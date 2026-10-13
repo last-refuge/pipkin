@@ -324,6 +324,66 @@ impl ToolHost for Host {
         })
     }
 
+    fn job_start<'a>(
+        &'a self,
+        call_id: &'a str,
+        spec: crate::runtime::jobs::JobSpec,
+    ) -> BoxFuture<'a, Result<JobView, String>> {
+        Box::pin(async move {
+            let run = self
+                .shared
+                .store
+                .tool_call(&self.parent, call_id)
+                .ok()
+                .flatten()
+                .and_then(|c| c.run);
+            self.shared
+                .job_start(&self.parent, "model", Some(call_id), run, spec)
+                .await
+                .map_err(|e| e.message)
+        })
+    }
+
+    fn jobs<'a>(&'a self) -> BoxFuture<'a, Result<JobsView, String>> {
+        Box::pin(async move { self.shared.jobs_view(&self.parent).map_err(|e| e.message) })
+    }
+
+    fn job_log<'a>(
+        &'a self,
+        id: u64,
+        offset: u64,
+        limit: Option<u64>,
+    ) -> BoxFuture<'a, Result<JobLogView, String>> {
+        Box::pin(async move {
+            self.shared
+                .job_log(&self.parent, id, offset, limit)
+                .map_err(|e| e.message)
+        })
+    }
+
+    fn job_wait<'a>(
+        &'a self,
+        id: u64,
+        timeout: std::time::Duration,
+        cancel: CancellationToken,
+    ) -> BoxFuture<'a, Result<JobView, String>> {
+        Box::pin(async move {
+            self.shared
+                .job_wait(&self.parent, id, timeout, &cancel)
+                .await
+                .map_err(|e| e.message)
+        })
+    }
+
+    fn job_cancel<'a>(&'a self, id: u64) -> BoxFuture<'a, Result<JobView, String>> {
+        Box::pin(async move {
+            self.shared
+                .job_cancel(&self.parent, id)
+                .await
+                .map_err(|e| e.message)
+        })
+    }
+
     fn web_source<'a>(
         &'a self,
         id: u64,

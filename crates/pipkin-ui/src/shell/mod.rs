@@ -6,6 +6,7 @@ mod clipboard_image;
 pub mod commands;
 pub mod controls;
 mod inspector;
+mod jobs;
 mod mcp_settings;
 mod nav;
 mod onboarding;

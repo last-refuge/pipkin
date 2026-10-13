@@ -16,6 +16,8 @@ pub struct ConversationState {
     pub subagents: SubagentState,
     /// The engine's plan for this session; the UI projects it and sends edits back.
     pub plan: PlanState,
+    /// Background jobs as the engine reports them.
+    pub jobs: crate::jobs::JobsState,
     pub has_older: bool,
     pub loading_older: bool,
     pub opened: bool,
@@ -96,6 +98,7 @@ impl ConversationState {
             items: Vec::new(),
             subagents: SubagentState::default(),
             plan: PlanState::default(),
+            jobs: Default::default(),
             has_older: false,
             loading_older: false,
             opened: false,
@@ -726,6 +729,12 @@ impl AppState {
             | Command::ReuseSignIn(_)
             | Command::AnswerSignIn { .. }
             | Command::CancelSignIn { .. } => {}
+            Command::ToggleJobHistory
+            | Command::ToggleJob(_)
+            | Command::RefreshJobLog(_)
+            | Command::CancelJob(_)
+            | Command::MarkJobsSeen
+            | Command::DismissJobError => return self.dispatch_jobs(cmd),
             Command::McpRefresh
             | Command::McpAddServer(_)
             | Command::McpRemoveServer(_)
@@ -2266,6 +2275,37 @@ impl AppState {
                     out.notes.push(Note::Other);
                 }
             }
+            EventKind::JobsSynced { jobs } => {
+                if c.opened {
+                    let refetch = c.jobs.sync(jobs);
+                    if refetch
+                        && let Some(id) = c.jobs.expanded
+                        && let Some((offset, limit)) = c.jobs.tail_request(id)
+                    {
+                        c.jobs.pending_log = Some(id);
+                        out.effects.push(Effect::Backend(BackendRequest::JobLog {
+                            conversation: c.id,
+                            generation: c.generation,
+                            id,
+                            offset,
+                            limit,
+                        }));
+                    }
+                    out.notes.push(Note::Other);
+                }
+            }
+            EventKind::JobLogPage { tail } => {
+                if c.opened {
+                    c.jobs.log_received(tail);
+                    out.notes.push(Note::Other);
+                }
+            }
+            EventKind::JobRefused { reason } => {
+                if c.opened {
+                    c.jobs.error = Some(reason);
+                    out.notes.push(Note::Other);
+                }
+            }
             EventKind::GoalSynced { goal } => {
                 if !c.opened {
                     return out;
@@ -3538,5 +3578,88 @@ impl AppState {
         self.mcp.busy = None;
         self.mcp.notice = Some(message);
         Outcome::note(Note::Other)
+    }
+}
+
+// ------------------------------------------------------------------ background jobs
+
+impl AppState {
+    /// Job commands act on the open conversation. Stops go to the engine only from a
+    /// connected real engine; view choices always apply.
+    fn dispatch_jobs(&mut self, cmd: Command) -> Outcome {
+        let mut out = Outcome::default();
+        let real = self.mode == Mode::Real && self.connection.is_ready();
+        let Some(selected) = self.selected else {
+            return out;
+        };
+        let Some(c) = self.conv_mut(selected) else {
+            return out;
+        };
+        let (conversation, generation) = (c.id, c.generation);
+        match cmd {
+            Command::ToggleJobHistory => {
+                c.jobs.history_open = !c.jobs.history_open;
+                out.notes.push(Note::Other);
+            }
+            Command::MarkJobsSeen => {
+                if c.jobs.unseen != 0 {
+                    c.jobs.unseen = 0;
+                    out.notes.push(Note::Other);
+                }
+            }
+            Command::DismissJobError => {
+                c.jobs.error = None;
+                out.notes.push(Note::Other);
+            }
+            Command::ToggleJob(id) => {
+                if c.jobs.expanded == Some(id) {
+                    c.jobs.expanded = None;
+                    c.jobs.log = None;
+                    c.jobs.pending_log = None;
+                } else if c.jobs.job(id).is_some() {
+                    c.jobs.expanded = Some(id);
+                    c.jobs.log = None;
+                    if real && let Some((offset, limit)) = c.jobs.tail_request(id) {
+                        c.jobs.pending_log = Some(id);
+                        out.effects.push(Effect::Backend(BackendRequest::JobLog {
+                            conversation,
+                            generation,
+                            id,
+                            offset,
+                            limit,
+                        }));
+                    }
+                }
+                out.notes.push(Note::Other);
+            }
+            Command::RefreshJobLog(id) => {
+                if real
+                    && c.jobs.expanded == Some(id)
+                    && c.jobs.pending_log.is_none()
+                    && let Some((offset, limit)) = c.jobs.tail_request(id)
+                {
+                    c.jobs.pending_log = Some(id);
+                    out.effects.push(Effect::Backend(BackendRequest::JobLog {
+                        conversation,
+                        generation,
+                        id,
+                        offset,
+                        limit,
+                    }));
+                    out.notes.push(Note::Other);
+                }
+            }
+            Command::CancelJob(id) if real && c.jobs.job(id).is_some_and(|j| j.state.active()) => {
+                c.jobs.error = None;
+                out.effects.push(Effect::Backend(BackendRequest::CancelJob {
+                    conversation,
+                    generation,
+                    id,
+                }));
+                out.notes.push(Note::Other);
+            }
+            _ => {}
+        }
+        out
     }
 }

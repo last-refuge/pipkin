@@ -277,6 +277,37 @@ pub enum Call {
     WebSources {
         session: SessionId,
     },
+    /// The session's background jobs (active first, newest finished next, bounded).
+    Jobs {
+        session: SessionId,
+    },
+    /// A slice of a job's log by byte offset (bounded).
+    JobLog {
+        session: SessionId,
+        id: u64,
+        #[serde(default)]
+        offset: u64,
+        #[serde(default)]
+        limit: Option<u64>,
+    },
+    /// Stop a job (its whole process group). Safe to repeat.
+    JobCancel {
+        session: SessionId,
+        id: u64,
+    },
+    /// Start a job on the person's behalf (notification only, never a model wake). `request`
+    /// makes a retried start idempotent.
+    JobStart {
+        session: SessionId,
+        request: String,
+        command: String,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        cwd: Option<String>,
+        #[serde(default)]
+        timeout_secs: Option<f64>,
+    },
     /// The MCP servers configured for the session's project (user settings merged with the
     /// project's; user settings alone without a session) and their state. Secret values
     /// never appear.
@@ -544,6 +575,9 @@ pub enum Reply {
     WebSources(Vec<WebSourceView>),
     McpServers(McpServersView),
     McpTest(McpTestView),
+    Jobs(JobsView),
+    Job(JobView),
+    JobLog(JobLogView),
     McpImport(McpImportView),
     Goal(Option<GoalView>),
     Goals(Vec<GoalView>),
@@ -614,6 +648,10 @@ pub enum SessionChange {
     /// The current goal changed (set, scheduled, paused, completed, archived).
     GoalChanged {
         goal: Option<Box<GoalView>>,
+    },
+    /// A background job started, progressed (log size), finished or was cancelled.
+    JobsChanged {
+        jobs: JobsView,
     },
     /// A child session's history changed (the selected child's viewer re-reads its page).
     ChildChanged {

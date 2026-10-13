@@ -21,9 +21,11 @@ pub mod edit;
 mod files;
 pub mod goal;
 pub mod inspect;
+pub mod jobs;
 pub mod mcp;
 pub mod path;
 pub mod plan;
+pub mod process;
 pub mod read;
 pub mod schema;
 pub mod text;
@@ -374,6 +376,44 @@ pub trait ToolHost: Send + Sync {
     ) -> BoxFuture<'a, Result<Result<crate::mcp::PromptOutcome, crate::mcp::McpError>, String>>
     {
         Box::pin(async { Err("No MCP service is configured".into()) })
+    }
+
+    /// Start a background job for this session (model origin).
+    fn job_start<'a>(
+        &'a self,
+        _call_id: &'a str,
+        _spec: crate::runtime::jobs::JobSpec,
+    ) -> BoxFuture<'a, Result<pipkin_engine_protocol::JobView, String>> {
+        Box::pin(async { Err("No job service is configured".into()) })
+    }
+
+    fn jobs<'a>(&'a self) -> BoxFuture<'a, Result<pipkin_engine_protocol::JobsView, String>> {
+        Box::pin(async { Err("No job service is configured".into()) })
+    }
+
+    fn job_log<'a>(
+        &'a self,
+        _id: u64,
+        _offset: u64,
+        _limit: Option<u64>,
+    ) -> BoxFuture<'a, Result<pipkin_engine_protocol::JobLogView, String>> {
+        Box::pin(async { Err("No job service is configured".into()) })
+    }
+
+    fn job_wait<'a>(
+        &'a self,
+        _id: u64,
+        _timeout: std::time::Duration,
+        _cancel: CancellationToken,
+    ) -> BoxFuture<'a, Result<pipkin_engine_protocol::JobView, String>> {
+        Box::pin(async { Err("No job service is configured".into()) })
+    }
+
+    fn job_cancel<'a>(
+        &'a self,
+        _id: u64,
+    ) -> BoxFuture<'a, Result<pipkin_engine_protocol::JobView, String>> {
+        Box::pin(async { Err("No job service is configured".into()) })
     }
 
     /// A retained source and its text (None when unknown or expired).

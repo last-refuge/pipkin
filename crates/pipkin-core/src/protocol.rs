@@ -40,6 +40,17 @@ pub enum Command {
     },
     /// Dismiss the message about a refused plan edit.
     DismissPlanError,
+    /// List or hide finished background jobs (a projection, not deletion).
+    ToggleJobHistory,
+    /// Show one job in full with its log tail, or collapse it again.
+    ToggleJob(u64),
+    /// Fetch the expanded job's newest log bytes again.
+    RefreshJobLog(u64),
+    /// Stop a background job through the engine (its whole process tree).
+    CancelJob(u64),
+    /// The person looked at the job list: clear the attention count.
+    MarkJobsSeen,
+    DismissJobError,
     NewConversation,
     RenameConversation(ConversationId, String),
     SetSearch(String),
@@ -365,6 +376,19 @@ pub enum BackendRequest {
         generation: u64,
         level: String,
     },
+    /// A slice of a background job's log (bounded).
+    JobLog {
+        conversation: ConversationId,
+        generation: u64,
+        id: u64,
+        offset: u64,
+        limit: u64,
+    },
+    CancelJob {
+        conversation: ConversationId,
+        generation: u64,
+        id: u64,
+    },
 
     /// MCP management. `conversation` is the open one, whose project may hold its own
     /// entries; `None` reads and writes user settings only.
@@ -511,6 +535,18 @@ pub enum EventKind {
     },
     PlanEditApplied {
         request: RequestId,
+    },
+    /// The session's background jobs as the engine holds them. Engines without jobs never
+    /// send it, so jobs stay unavailable rather than empty.
+    JobsSynced {
+        jobs: crate::jobs::JobsSync,
+    },
+    JobLogPage {
+        tail: crate::jobs::JobLogTail,
+    },
+    /// The engine refused a job command.
+    JobRefused {
+        reason: String,
     },
     PlanEditFailed {
         request: RequestId,

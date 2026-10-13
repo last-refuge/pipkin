@@ -142,8 +142,9 @@ on an audit and records the verdict as `skipped` with the reason "Completed with
 skipped by the person (unreviewed)"; a stopped audit is not skippable.
 
 Verification that needs executing something (tests, builds) is outside the auditor's
-tools by design; it marks such criteria inconclusive rather than guessing. Explicit
-verification jobs arrive with JOB-1.
+tools by design; it marks such criteria inconclusive rather than guessing. Background jobs
+([jobs.md](jobs.md)) let the working agent run those checks and cite their logs as evidence;
+giving the auditor its own verification jobs is still open.
 
 ## Boundaries
 

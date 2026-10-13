@@ -66,6 +66,16 @@ pub(super) fn event_bytes(event: &BackendEvent) -> usize {
                 g.text.capacity() + g.paused.as_ref().map_or(0, String::capacity)
             }),
             EventKind::GoalRefused { reason } => reason.capacity(),
+            EventKind::JobsSynced { jobs } => vec_bytes(&jobs.jobs, |j| {
+                j.name.as_ref().map_or(0, String::capacity)
+                    + j.command.capacity()
+                    + j.cwd.capacity()
+                    + j.reason.as_ref().map_or(0, String::capacity)
+                    + j.call_id.as_ref().map_or(0, String::capacity)
+                    + j.delivery.capacity()
+            }),
+            EventKind::JobLogPage { tail } => tail.text.capacity(),
+            EventKind::JobRefused { reason } => reason.capacity(),
             EventKind::PlanEditApplied { request } => request.0.capacity(),
             EventKind::PlanEditFailed { request, reason } => {
                 request.0.capacity() + reason.capacity()

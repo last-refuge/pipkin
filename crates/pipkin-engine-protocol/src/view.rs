@@ -362,6 +362,9 @@ pub struct SessionSnapshot {
     /// The session's current (unarchived) goal, when the engine owns goals.
     #[serde(default)]
     pub goal: Option<GoalView>,
+    /// Background jobs (active first, newest finished next, bounded).
+    #[serde(default)]
+    pub jobs: JobsView,
 }
 
 /// Credential kinds are distinct identities: an API key never stands in for a subscription.
@@ -662,7 +665,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 21);
+        assert_eq!(crate::PROTOCOL_VERSION, 22);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };
@@ -1021,6 +1024,102 @@ pub struct PlanRejected {
 }
 
 // --------------------------------------------------------------------------- web sources
+
+/// The lifecycle of a background job. `succeeded` means exit code zero, nothing more.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum JobState {
+    #[default]
+    Starting,
+    Running,
+    Cancelling,
+    Succeeded,
+    Failed,
+    TimedOut,
+    Cancelled,
+    /// The engine that supervised it is gone; its process was stopped or is unverified.
+    Interrupted,
+    /// The launch intent was recorded but no receipt: the command may or may not have run.
+    Unknown,
+}
+
+impl JobState {
+    pub fn active(self) -> bool {
+        matches!(
+            self,
+            JobState::Starting | JobState::Running | JobState::Cancelling
+        )
+    }
+
+    pub fn parse(s: &str) -> JobState {
+        match s {
+            "running" => JobState::Running,
+            "cancelling" => JobState::Cancelling,
+            "succeeded" => JobState::Succeeded,
+            "failed" => JobState::Failed,
+            "timed_out" => JobState::TimedOut,
+            "cancelled" => JobState::Cancelled,
+            "interrupted" => JobState::Interrupted,
+            "unknown" => JobState::Unknown,
+            _ => JobState::Starting,
+        }
+    }
+}
+
+/// One background job. Secrets never appear: the command line is shown as written and
+/// environment values are not part of the view.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobView {
+    pub id: u64,
+    pub name: Option<String>,
+    pub command: String,
+    pub cwd: String,
+    /// `model` or `user`.
+    pub origin: String,
+    pub state: JobState,
+    pub exit_code: Option<i32>,
+    pub reason: Option<String>,
+    /// The tool call that started it (model origin).
+    pub call_id: Option<String>,
+    pub run: Option<u64>,
+    /// A plan task the job is linked to.
+    pub task: Option<u64>,
+    pub timeout_secs: Option<f64>,
+    /// Completion wakes the model with a follow-up (model origin only).
+    pub wake: bool,
+    /// `pending`, `notified`, `woken`, `suppressed` or `none`.
+    pub delivery: String,
+    pub log_bytes: u64,
+    pub log_truncated: bool,
+    pub created_at_ms: i64,
+    pub started_at_ms: Option<i64>,
+    pub ended_at_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobsView {
+    pub jobs: Vec<JobView>,
+    pub active: usize,
+    /// Finished jobs exist beyond the listed ones.
+    pub truncated: bool,
+}
+
+/// A slice of a job's log. `text` is the slice decoded as UTF-8 (lossy at the edges).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobLogView {
+    pub id: u64,
+    pub offset: u64,
+    pub text: String,
+    pub next_offset: u64,
+    pub total_bytes: u64,
+    /// The log stopped growing at the quota; later output was dropped.
+    pub truncated: bool,
+    /// The job is finished: the log will not grow.
+    pub done: bool,
+}
 
 /// Which settings file an MCP edit goes to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

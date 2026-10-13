@@ -977,6 +977,65 @@ mod tests {
     }
 }
 
+// ------------------------------------------------------------------ background jobs
+
+pub fn jobs(view: &pipkin_engine_protocol::JobsView) -> pipkin_core::JobsSync {
+    use pipkin_core::{Job, JobOrigin, JobState};
+    pipkin_core::JobsSync {
+        jobs: view
+            .jobs
+            .iter()
+            .map(|j| Job {
+                id: j.id,
+                name: j.name.clone(),
+                command: j.command.clone(),
+                cwd: j.cwd.clone(),
+                origin: if j.origin == "user" {
+                    JobOrigin::User
+                } else {
+                    JobOrigin::Model
+                },
+                state: match j.state {
+                    pipkin_engine_protocol::JobState::Starting => JobState::Starting,
+                    pipkin_engine_protocol::JobState::Running => JobState::Running,
+                    pipkin_engine_protocol::JobState::Cancelling => JobState::Cancelling,
+                    pipkin_engine_protocol::JobState::Succeeded => JobState::Succeeded,
+                    pipkin_engine_protocol::JobState::Failed => JobState::Failed,
+                    pipkin_engine_protocol::JobState::TimedOut => JobState::TimedOut,
+                    pipkin_engine_protocol::JobState::Cancelled => JobState::Cancelled,
+                    pipkin_engine_protocol::JobState::Interrupted => JobState::Interrupted,
+                    pipkin_engine_protocol::JobState::Unknown => JobState::Unknown,
+                },
+                exit_code: j.exit_code,
+                reason: j.reason.clone(),
+                call_id: j.call_id.clone(),
+                task: j.task,
+                wake: j.wake,
+                delivery: j.delivery.clone(),
+                log_bytes: j.log_bytes,
+                log_truncated: j.log_truncated,
+                created_at_ms: j.created_at_ms,
+                started_at_ms: j.started_at_ms,
+                ended_at_ms: j.ended_at_ms,
+            })
+            .collect(),
+        active: view.active,
+        truncated: view.truncated,
+    }
+}
+
+pub fn job_log(view: &pipkin_engine_protocol::JobLogView) -> pipkin_core::JobLogTail {
+    pipkin_core::JobLogTail {
+        id: view.id,
+        offset: view.offset,
+        text: view.text.clone(),
+        next_offset: view.next_offset,
+        total_bytes: view.total_bytes,
+        truncated: view.truncated,
+        done: view.done,
+    }
+}
+
 // ------------------------------------------------------------------ MCP servers
 
 /// The engine's server view as the desktop shows it. Secrets never arrive: the engine

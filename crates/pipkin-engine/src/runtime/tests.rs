@@ -762,7 +762,12 @@ fn the_system_prompt_carries_project_instructions_and_stays_byte_stable() {
             "mcp_resources",
             "mcp_read",
             "mcp_prompts",
-            "mcp_prompt"
+            "mcp_prompt",
+            "job_start",
+            "job_status",
+            "job_log",
+            "job_wait",
+            "job_cancel"
         ]
     );
     assert_eq!(reqs[0].thinking, crate::provider::ThinkingLevel::Medium);

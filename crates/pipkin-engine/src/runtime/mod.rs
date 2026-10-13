@@ -7,6 +7,7 @@ pub mod faults;
 mod glue;
 mod goals;
 mod import;
+pub mod jobs;
 mod lifecycle;
 mod mcp;
 pub mod models;
@@ -53,6 +54,8 @@ pub struct Shared {
     pub tools: Vec<Arc<dyn Tool>>,
     /// Engine-wide MCP servers (see [`crate::mcp`]).
     pub mcp: Arc<crate::mcp::McpService>,
+    /// Supervised background jobs (see [`jobs`]).
+    pub jobs: jobs::JobsRuntime,
     pub generations: Arc<Semaphore>,
     pub processes: Arc<Semaphore>,
     pub locks: Arc<MutationLocks>,
@@ -164,6 +167,13 @@ impl Shared {
         tools.extend(self.plan_tools());
         tools.extend(self.web_tools());
         tools.extend(self.mcp_tools());
+        tools.extend([
+            Arc::new(crate::tools::jobs::JobStartTool) as Arc<dyn Tool>,
+            Arc::new(crate::tools::jobs::JobStatusTool),
+            Arc::new(crate::tools::jobs::JobLogTool),
+            Arc::new(crate::tools::jobs::JobWaitTool),
+            Arc::new(crate::tools::jobs::JobCancelTool),
+        ]);
         // A child is offered what its frozen launch policy allows; a child from before
         // launch records existed keeps the full set, as it always had.
         if row.parent.is_some()
@@ -193,6 +203,11 @@ impl Shared {
             crate::tools::mcp::MCP_READ => Some(Arc::new(crate::tools::mcp::McpReadTool)),
             crate::tools::mcp::MCP_PROMPTS => Some(Arc::new(crate::tools::mcp::McpPromptsTool)),
             crate::tools::mcp::MCP_PROMPT => Some(Arc::new(crate::tools::mcp::McpPromptTool)),
+            // Job reads and the idempotent cancel; `job_start` is deliberately absent.
+            crate::tools::jobs::JOB_STATUS => Some(Arc::new(crate::tools::jobs::JobStatusTool)),
+            crate::tools::jobs::JOB_LOG => Some(Arc::new(crate::tools::jobs::JobLogTool)),
+            crate::tools::jobs::JOB_WAIT => Some(Arc::new(crate::tools::jobs::JobWaitTool)),
+            crate::tools::jobs::JOB_CANCEL => Some(Arc::new(crate::tools::jobs::JobCancelTool)),
             _ => None,
         }
     }
@@ -306,6 +321,7 @@ impl EngineHandle {
         let shared = Arc::new_cyclic(|me| Shared {
             me: me.clone(),
             mcp,
+            jobs: jobs::JobsRuntime::default(),
             generations: Arc::new(Semaphore::new(config.max_active_generations.max(1))),
             processes: Arc::new(Semaphore::new(config.max_tool_processes.max(1))),
             config,
@@ -362,6 +378,7 @@ impl EngineHandle {
         lifecycle::start_reaper(&shared);
         compaction::start_recovery(&shared);
         mcp::attach(&shared);
+        shared.jobs_recover();
         Ok(EngineHandle {
             runtime: Mutex::new(Some(runtime)),
             shared,
@@ -551,6 +568,7 @@ impl EngineHandle {
         {
             let grace = timeout.min(Duration::from_secs(2));
             let mcp = self.shared.mcp.clone();
+            let jobs_done = self.shared.jobs_shutdown();
             let done = rt.spawn(async move {
                 for sess in sessions {
                     sess.questions.dispose();
@@ -558,9 +576,12 @@ impl EngineHandle {
                         runner.shutdown(grace).await;
                     }
                 }
-                // MCP server processes belong to this engine's lifetime.
+                // MCP server processes and background jobs belong to this engine's lifetime.
                 for handle in mcp.drain() {
                     let _ = tokio::time::timeout(grace, handle.stop()).await;
+                }
+                for done in jobs_done {
+                    let _ = tokio::time::timeout(grace, done.notified()).await;
                 }
             });
             let deadline = std::time::Instant::now() + grace + Duration::from_millis(500);
@@ -652,6 +673,7 @@ async fn dispatch_with_cancel(
                     "mcpResources".into(),
                     "mcpPrompts".into(),
                     "mcpElicitation".into(),
+                    "jobs".into(),
                     "compaction".into(),
                     "toolOutput".into(),
                 ],
@@ -844,6 +866,51 @@ async fn dispatch_with_cancel(
             include_archived,
         } => Ok(Reply::Plan(shared.plan_view(&session, include_archived)?)),
         Call::WebSources { session } => Ok(Reply::WebSources(shared.web_sources_view(&session)?)),
+        Call::Jobs { session } => Ok(Reply::Jobs(shared.jobs_view(&session)?)),
+        Call::JobLog {
+            session,
+            id,
+            offset,
+            limit,
+        } => Ok(Reply::JobLog(shared.job_log(&session, id, offset, limit)?)),
+        Call::JobCancel { session, id } => Ok(Reply::Job(shared.job_cancel(&session, id).await?)),
+        Call::JobStart {
+            session,
+            request,
+            command,
+            name,
+            cwd,
+            timeout_secs,
+        } => {
+            let key = format!("job_request:{request}");
+            if let Some(existing) = shared.store.kv_get(&session, &key)? {
+                let id: u64 = existing.parse().unwrap_or(0);
+                return Ok(Reply::Job(shared.job_view(&session, id)?));
+            }
+            let job = shared
+                .job_start(
+                    &session,
+                    "user",
+                    None,
+                    None,
+                    jobs::JobSpec {
+                        command,
+                        name,
+                        cwd,
+                        timeout_secs,
+                        wake: false,
+                        task: None,
+                    },
+                )
+                .await?;
+            let sess = shared.session(&session)?;
+            let id = job.id.to_string();
+            shared.commit(&sess, |tx| {
+                crate::store::Store::kv_set(tx, &session, &key, &id)?;
+                Ok(((), vec![]))
+            })?;
+            Ok(Reply::Job(job))
+        }
         Call::McpServers { session } => Ok(Reply::McpServers(
             shared.mcp_servers_view(session.as_deref())?,
         )),
@@ -1289,6 +1356,8 @@ mod goal2_tests;
 mod goal3_tests;
 #[cfg(test)]
 mod goal_tests;
+#[cfg(test)]
+mod job_tests;
 #[cfg(test)]
 mod mcp2_tests;
 #[cfg(test)]

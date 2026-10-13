@@ -208,7 +208,12 @@ fn the_model_creates_tasks_and_the_next_request_carries_the_plan_section() {
             "mcp_resources",
             "mcp_read",
             "mcp_prompts",
-            "mcp_prompt"
+            "mcp_prompt",
+            "job_start",
+            "job_status",
+            "job_log",
+            "job_wait",
+            "job_cancel"
         ]
     );
 }

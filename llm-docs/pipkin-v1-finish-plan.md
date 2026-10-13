@@ -28,7 +28,7 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done (commit noted)
 Three finished slices wait on this: executable verification for goal audits (GOAL-3),
 job-event waits (GOAL-2), and the delivery foundation for asynchronous children (SUB-3).
 
-- [ ] **JOB-1 supervisor and records.** `runtime/jobs.rs`, `store/jobs.rs`, protocol views
+- [x] **JOB-1 supervisor and records.** (2026-10-12) `runtime/jobs.rs`, `store/jobs.rs`, protocol views
   and calls (start/status/list/read-log/cancel/result). Model tool `job_start` returns
   promptly with a stable id and launch receipt; `job_status`, `job_log`, `job_wait`/result,
   `job_cancel`. Launch intent persisted before spawn, receipt after; a crash between the two
@@ -40,16 +40,16 @@ job-event waits (GOAL-2), and the delivery foundation for asynchronous children 
   one idempotent model follow-up; restart/reconnect never duplicates either. User-started
   jobs default to notification only. Shared process-supervision primitive extracted from
   `bash` with its cancellation guarantees (process group, grandchildren, inherited pipes).
-- [ ] **JOB-2 native management.** Inspector Jobs view: active/finished split, command/cwd,
+- [x] **JOB-2 native management.** (2026-10-12) Inspector Jobs view: active/finished split, command/cwd,
   elapsed, log tail (subscribed, coalesced), errors, Stop; typed links to plan tasks and
   subagents; the Subagents inspector stays as it is.
-- [ ] **Acceptance (automated).** Long build and dev-server fixtures keep the conversation
+- [x] **Acceptance (automated).** Long build and dev-server fixtures keep the conversation
   usable while logs update; output floods cannot block Stop or grow memory/disk; cancellation
   reaches grandchildren without touching unrelated processes; a crash at each launch boundary
   never duplicates a command; reopen shows retained logs and truthful state; duplicate
   completion events produce one delivery; Stop/paused goals suppress automatic continuation
   while keeping results.
-- [ ] Docs: `docs/jobs.md`, scorecard entry, plan progress note.
+- [x] Docs: `docs/jobs.md`, scorecard entry, plan progress note.
 
 JOB-3 (jobs outliving the engine) stays post-1.0.
 
@@ -161,3 +161,6 @@ above.
 
 - 2026-10-12 — Plan created. Baseline: built-in engine default, Pi/Node retired; ASK-1,
   PLAN-1/2, WEB-1, SUB-1, GOAL-1/2/3, MCP-1/2/3 shipped (through `7fa5bab`).
+- 2026-10-12 — JOB-1 / JOB-2 shipped: supervised jobs with durable records, private logs,
+  exactly-once completion delivery, restart reconciliation, five model tools, the client
+  calls and the Jobs inspector tab. Open from §1: nothing (JOB-3 stays post-1.0).

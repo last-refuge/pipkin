@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 16;
+pub const SCHEMA_VERSION: u32 = 17;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -413,8 +413,40 @@ DROP TABLE goals;
 ALTER TABLE goals_v16 RENAME TO goals;
 CREATE UNIQUE INDEX goals_current ON goals(session) WHERE archived = 0;
 "#;
+const V17: &str = r#"
+CREATE TABLE jobs (
+    session TEXT NOT NULL REFERENCES sessions(id),
+    id INTEGER NOT NULL,
+    name TEXT,
+    command TEXT NOT NULL,
+    cwd TEXT NOT NULL,
+    origin TEXT NOT NULL CHECK (origin IN ('model', 'user')),
+    call_id TEXT,
+    run INTEGER,
+    task INTEGER,
+    timeout_secs REAL,
+    wake INTEGER NOT NULL DEFAULT 0 CHECK (wake IN (0, 1)),
+    state TEXT NOT NULL CHECK (state IN ('starting', 'running', 'cancelling', 'succeeded', 'failed',
+        'timed_out', 'cancelled', 'interrupted', 'unknown')),
+    exit_code INTEGER,
+    reason TEXT,
+    engine_epoch INTEGER NOT NULL,
+    pid INTEGER,
+    nonce TEXT NOT NULL,
+    log_path TEXT,
+    log_bytes INTEGER NOT NULL DEFAULT 0,
+    log_truncated INTEGER NOT NULL DEFAULT 0 CHECK (log_truncated IN (0, 1)),
+    delivery TEXT NOT NULL DEFAULT 'pending' CHECK (delivery IN ('pending', 'notified', 'woken', 'suppressed', 'none')),
+    created_at INTEGER NOT NULL,
+    started_at INTEGER,
+    ended_at INTEGER,
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (session, id)
+) STRICT;
+CREATE INDEX jobs_active ON jobs(session, state);
+"#;
 const MIGRATIONS: &[&str] = &[
-    V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16,
+    V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17,
 ];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {

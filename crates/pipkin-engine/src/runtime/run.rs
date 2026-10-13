@@ -1050,7 +1050,7 @@ fn contract_of(tool: &Arc<dyn Tool>) -> Value {
 
 /// Session details exposed to shell commands (reference `PI_*` variables), plus the call's
 /// marker so a restarted engine can reap what an interrupted call left running.
-fn tool_env(
+pub(super) fn tool_env(
     session: &str,
     call_id: &str,
     model: Option<&str>,

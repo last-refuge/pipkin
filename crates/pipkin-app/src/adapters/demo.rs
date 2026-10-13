@@ -601,6 +601,9 @@ impl Worker {
             | BackendRequest::SetGoal { .. }
             | BackendRequest::GoalControl { .. }
             | BackendRequest::MigrateGoal { .. }
+            // The demo runs no background jobs; the inspector says so instead of simulating them.
+            | BackendRequest::JobLog { .. }
+            | BackendRequest::CancelJob { .. }
             // The demo manages no MCP servers; the page says so instead of simulating one.
             | BackendRequest::McpRefresh { .. }
             | BackendRequest::McpUpsert { .. }

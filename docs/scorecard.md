@@ -1,5 +1,31 @@
 # Scorecard
 
+## Background jobs, JOB-1 / JOB-2 (2026-10-12)
+
+Commands run as supervised jobs outside the model turn with durable records, private
+append-only logs read by byte cursor, whole-tree cancellation and exactly-once completion
+delivery; the inspector gains a Jobs tab ([jobs.md](jobs.md)); schema 17, protocol 22,
+capability `jobs`.
+
+- **Measured (automated).** Engine tests: a start returns while the command runs and the
+  turn continues; stdout and stderr land in the log in arrival order and are read by offset
+  with continuation, including the tail form; non-zero exits, timeouts and cancellation are
+  classified and a backgrounded grandchild is gone after cancel; output beyond the quota is
+  dropped with the log marked truncated while the job completes; the per-session cap refuses
+  a ninth job; a model job that asked to be woken gets exactly one follow-up with the tail,
+  and a restart delivers nothing again; user-started jobs never wake the model and repeat a
+  request key idempotently; a job whose run was stopped has its wake suppressed; an orderly
+  shutdown stops a running job; after a simulated dead supervisor the orphan carrying the
+  marker is killed and reported interrupted, a row without a receipt is reported unknown,
+  nothing is relaunched, logs survive; pure reads are recoverable and `job_start` is not; the
+  capability is advertised. Core tests cover syncs, the unseen count, log-tail fetching with
+  coalescing and Stop gating; a UI test covers row projection; an app end-to-end test drives
+  the Jobs tab through the native adapter. The repository gate passed.
+- **Observed.** Nothing native.
+- **Unverified.** The Jobs tab in a window; a real crash (SIGKILL) between intent and receipt
+  rather than a reconstructed row; non-Linux orphan cleanup; JOB-3 (not built). Not a release
+  qualification.
+
 ## MCP resources, prompts and elicitation, MCP-3 (2026-10-12)
 
 Four more compact tools list and read resources (bounded slices, binary by size) and list

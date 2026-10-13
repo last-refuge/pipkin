@@ -3264,3 +3264,86 @@ fn the_mcp_servers_page_manages_servers_through_the_engine() {
     assert!(user_settings["mcp"]["servers"].get("fx").is_none());
     h.stop();
 }
+
+// -------------------------------------------------------------------------------- background jobs
+
+/// The Jobs inspector through the native adapter: a job the model starts appears with its
+/// state, expanding it fetches the log tail, finishing counts as unseen until looked at,
+/// Stop goes through the engine, and the whole process tree is gone afterwards.
+#[test]
+fn the_jobs_inspector_follows_engine_jobs_and_stops_them() {
+    use pipkin_core::JobState;
+    let fx = Fixture::start(|req, _| {
+        let last_user = req
+            .messages
+            .iter()
+            .rev()
+            .find(|m| !matches!(m, Message::System(_)));
+        if matches!(last_user, Some(Message::User { .. })) {
+            Reply::Tools(
+                None,
+                vec![(
+                    "job_start".into(),
+                    json!({"command": "echo hello; sleep 30", "name": "server"}),
+                )],
+            )
+        } else {
+            Reply::Text("started it".into())
+        }
+    });
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.until("jobs are available", |s| {
+        s.current().is_some_and(|c| c.jobs.available)
+    });
+    h.send("start the server");
+    h.until("the job is running", |s| {
+        s.current()
+            .is_some_and(|c| c.jobs.job(1).is_some_and(|j| j.state == JobState::Running))
+    });
+    h.until("the turn answered", is_idle);
+    let job = h.state.current().unwrap().jobs.job(1).cloned().unwrap();
+    assert_eq!(job.name.as_deref(), Some("server"));
+    assert_eq!(job.origin, pipkin_core::JobOrigin::Model);
+    assert!(job.call_id.is_some());
+    h.until("the log grew", |s| {
+        s.current()
+            .is_some_and(|c| c.jobs.job(1).is_some_and(|j| j.log_bytes >= 6))
+    });
+    h.dispatch(Command::ToggleJob(1));
+    h.until("the log tail arrived", |s| {
+        s.current().is_some_and(|c| {
+            c.jobs
+                .log
+                .as_ref()
+                .is_some_and(|l| l.id == 1 && l.text.contains("hello"))
+        })
+    });
+    {
+        let jobs = &h.state.current().unwrap().jobs;
+        assert_eq!(jobs.unseen, 0, "{:?}", jobs.job(1));
+    }
+    h.dispatch(Command::CancelJob(1));
+    h.until("the job stopped", |s| {
+        s.current().is_some_and(|c| {
+            c.jobs
+                .job(1)
+                .is_some_and(|j| j.state == JobState::Cancelled)
+        })
+    });
+    h.until("the log tail is final", |s| {
+        s.current()
+            .is_some_and(|c| c.jobs.log.as_ref().is_some_and(|l| l.id == 1 && l.done))
+    });
+    let jobs = &h.state.current().unwrap().jobs;
+    assert_eq!(
+        jobs.unseen, 1,
+        "a job finishing counts until the person looks"
+    );
+    assert_eq!(jobs.active, 0);
+    h.dispatch(Command::MarkJobsSeen);
+    assert_eq!(h.state.current().unwrap().jobs.unseen, 0);
+    assert!(h.state.notice.is_none() && h.state.current().unwrap().jobs.error.is_none());
+    h.stop();
+}

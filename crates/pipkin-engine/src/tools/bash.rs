@@ -21,11 +21,12 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use serde_json::Value;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use super::path::spawn_error;
+use super::process::{exit_code, kill_group, spawn_reader};
 use super::text::{DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, StreamDecoder, js_number};
 use super::{
     Diagnostic, OutputLimits, Retain, Severity, Tool, ToolCtx, ToolError, ToolOutput,
@@ -40,7 +41,6 @@ const DESCRIPTION: &str = "Execute a bash command in the current working directo
 const MAX_TIMEOUT_SECONDS: f64 = 2_147_483.647;
 /// After the process exits, how long stdio may stay quiet before the call settles.
 pub const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
-const READ_CHUNK: usize = 64 * 1024;
 
 pub struct BashTool;
 
@@ -262,60 +262,6 @@ enum Stop {
     Cancelled,
     TimedOut,
     SpillFailed,
-}
-
-fn spawn_reader<R>(
-    mut pipe: R,
-    stream: usize,
-    tx: mpsc::Sender<(usize, Vec<u8>)>,
-) -> tokio::task::JoinHandle<()>
-where
-    R: AsyncRead + Unpin + Send + 'static,
-{
-    tokio::spawn(async move {
-        let mut buf = vec![0u8; READ_CHUNK];
-        loop {
-            match pipe.read(&mut buf).await {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    if tx.send((stream, buf[..n].to_vec())).await.is_err() {
-                        break;
-                    }
-                }
-            }
-        }
-    })
-}
-
-#[cfg(unix)]
-fn kill_group(child: &mut tokio::process::Child) {
-    if let Some(pid) = child.id() {
-        // SAFETY: plain syscalls on the group (or pid) of a child we have not reaped yet.
-        unsafe {
-            if libc::kill(-(pid as libc::pid_t), libc::SIGKILL) != 0 {
-                libc::kill(pid as libc::pid_t, libc::SIGKILL);
-            }
-        }
-    }
-}
-
-#[cfg(not(unix))]
-fn kill_group(child: &mut tokio::process::Child) {
-    let _ = child.start_kill();
-}
-
-fn exit_code(status: std::process::ExitStatus) -> i32 {
-    if let Some(code) = status.code() {
-        return code;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        if let Some(signal) = status.signal() {
-            return 128 + signal;
-        }
-    }
-    1
 }
 
 async fn exec(command: &str, timeout: Option<f64>, ctx: &ToolCtx) -> Result<ToolOutput, ToolError> {
