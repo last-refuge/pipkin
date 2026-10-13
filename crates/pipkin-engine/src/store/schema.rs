@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 17;
+pub const SCHEMA_VERSION: u32 = 18;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -445,8 +445,16 @@ CREATE TABLE jobs (
 ) STRICT;
 CREATE INDEX jobs_active ON jobs(session, state);
 "#;
+// SUB-2/SUB-3: who launched a child and how its completion is delivered. `inline` children
+// answer their parent's waiting tool call; `notify` and `wake` are asynchronous policies that
+// become `notified`, `woken` or `suppressed` once delivered. `note` records a person's Stop.
+const V18: &str = r#"
+ALTER TABLE subagent_tasks ADD COLUMN origin TEXT NOT NULL DEFAULT 'model';
+ALTER TABLE subagent_tasks ADD COLUMN delivery TEXT NOT NULL DEFAULT 'inline';
+ALTER TABLE subagent_tasks ADD COLUMN note TEXT;
+"#;
 const MIGRATIONS: &[&str] = &[
-    V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17,
+    V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18,
 ];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {

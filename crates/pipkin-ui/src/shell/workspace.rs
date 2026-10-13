@@ -148,6 +148,10 @@ pub struct Workspace {
     pub(super) mcp_values: Entity<ComposerEditor>,
     pub(super) mcp_import: Entity<ComposerEditor>,
     pub(super) mcp_answer: Entity<ComposerEditor>,
+    /// The Subagents inspector's inputs: a steering message for the selected child and a
+    /// task for a new background child.
+    pub(super) subagent_steer: Entity<ComposerEditor>,
+    pub(super) subagent_task: Entity<ComposerEditor>,
     pub(super) mcp_kind: pipkin_core::McpKind,
     pub(super) mcp_scope: pipkin_core::McpScope,
     pub(super) setup_challenge: Option<String>,
@@ -248,6 +252,16 @@ impl Workspace {
             e.set_label("MCP sign-in response", cx);
             e.set_placeholder("Paste the code or redirect URL here");
         });
+        let subagent_steer = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        subagent_steer.update(cx, |e, cx| {
+            e.set_label("Steer the selected subagent", cx);
+            e.set_placeholder("Tell this subagent something\u{2026}");
+        });
+        let subagent_task = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        subagent_task.update(cx, |e, cx| {
+            e.set_label("Task for a new background subagent", cx);
+            e.set_placeholder("Describe a task to run in the background\u{2026}");
+        });
         nav_search.update(cx, |e, cx| {
             e.set_placeholder("Search conversations");
             e.set_label("Search conversations", cx);
@@ -271,6 +285,20 @@ impl Workspace {
             }
         }));
         subs.push(
+            cx.subscribe_in(&subagent_steer, window, |this, _, ev, _, cx| {
+                if matches!(ev, ComposerEvent::Submit) {
+                    this.submit_subagent_steer(cx);
+                }
+            }),
+        );
+        subs.push(
+            cx.subscribe_in(&subagent_task, window, |this, _, ev, _, cx| {
+                if matches!(ev, ComposerEvent::Submit) {
+                    this.submit_subagent_launch(cx);
+                }
+            }),
+        );
+        subs.push(
             cx.observe_window_bounds(window, |this, window, cx| this.on_window_bounds(window, cx)),
         );
         subs.push(cx.observe_in(&model, window, |this, _, window, cx| {
@@ -290,6 +318,8 @@ impl Workspace {
             mcp_values,
             mcp_import,
             mcp_answer,
+            subagent_steer,
+            subagent_task,
             mcp_kind: pipkin_core::McpKind::Stdio,
             mcp_scope: pipkin_core::McpScope::User,
             setup_challenge: None,

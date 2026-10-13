@@ -1212,6 +1212,32 @@ impl Live {
         );
     }
 
+    /// One Stop, Steer or Launch through the engine, answered by the request's settlement;
+    /// the directory itself arrives through the session mirror as usual.
+    fn subagent_control(
+        &mut self,
+        worker: &Worker,
+        conversation: ConversationId,
+        generation: u64,
+        request: pipkin_core::RequestId,
+        call: Call,
+        verb: &str,
+    ) {
+        let kind = match self.call(call) {
+            Ok(_) => EventKind::SubagentControlDone { request },
+            Err(error) => EventKind::SubagentControlFailed {
+                request,
+                reason: match verb {
+                    "stop" => format!("Could not stop the subagent: {error}"),
+                    "steer" => format!("Could not steer the subagent: {error}"),
+                    _ => format!("Could not start the subagent: {error}"),
+                },
+            },
+        };
+        worker.emit(conversation, generation, kind);
+        self.emit_subagents(worker);
+    }
+
     fn emit_subagents(&self, worker: &Worker) {
         let Some(c) = &self.current else { return };
         // No subagent support for this session: say nothing (the core defaults to unavailable).
@@ -1778,6 +1804,58 @@ impl Live {
                         },
                     ),
                 }
+            }
+            BackendRequest::StopSubagent {
+                conversation,
+                generation,
+                request,
+                child,
+            } => {
+                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
+                    return;
+                };
+                let call = Call::StopSubagent {
+                    session,
+                    child,
+                    request: request.0.clone(),
+                };
+                self.subagent_control(worker, conversation, generation, request, call, "stop");
+            }
+            BackendRequest::SteerSubagent {
+                conversation,
+                generation,
+                request,
+                child,
+                text,
+            } => {
+                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
+                    return;
+                };
+                let call = Call::SteerSubagent {
+                    session,
+                    child,
+                    request: request.0.clone(),
+                    text,
+                };
+                self.subagent_control(worker, conversation, generation, request, call, "steer");
+            }
+            BackendRequest::LaunchSubagent {
+                conversation,
+                generation,
+                request,
+                task,
+            } => {
+                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
+                    return;
+                };
+                let call = Call::LaunchSubagent {
+                    session,
+                    request: request.0.clone(),
+                    task,
+                    profile: None,
+                    context: None,
+                };
+                self.subagent_control(worker, conversation, generation, request, call, "launch");
             }
             BackendRequest::McpRefresh { conversation } => {
                 let session = self.mcp_session(conversation);

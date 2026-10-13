@@ -8,7 +8,9 @@ composer away from the main conversation.
 ## Presentation contract
 
 - A flat task directory reflects the actual root-session → child relationship. There is
-  no invented nested tree, percentage, ETA, phase, or individual cancellation control.
+  no invented nested tree, percentage, ETA or phase. Per-child Stop and Steer exist only for
+  the native engine, only for the selected child, and only as engine-authorized requests
+  ([subagent-controls.md](subagent-controls.md)); Pi and the demo have none.
 - Titles are UI-derived from a short first task sentence (including an initial `You are`
   instruction), with a stable `Subagent <id>` fallback. They are not engine-authored agent
   names. The engine currently provides only a bounded task excerpt, not a complete prompt.
@@ -189,3 +191,32 @@ are covered by pure presentation tests, not claimed as real-engine/native intera
 
 **Not verified:** no native window, screen reader, or visual check of the new controls was
 run for this change; directories larger than the engine's 4,096-row bound are not pageable.
+
+### Controls and background children — 2026-10-12
+
+SUB-2/SUB-3 ([subagent-controls.md](subagent-controls.md)): the selected child's header
+gains **Stop** and a **Steer** input (shown only while the child is active and no Stop is on
+record; the engine's note, e.g. `Stopped by the person · stopping`, is shown as status); the
+directory gains a **Delegate a task** row that launches a background child on the person's
+behalf; rows say **Started by you** and **Background** from engine fields. Controls are
+disabled while one request is in flight; a refusal is shown as the directory error.
+
+**Automated (measured in tests, not natively observed):**
+- Engine (`runtime/subagent2_tests.rs`): a person's Stop leaves its note, settles the child
+  as `aborted` and the waiting parent's tool result says it was stopped by the person; the
+  number is refused from another session and a finished child cannot be steered; a steer under
+  one request key reaches the running child once; a background launch returns a receipt, the
+  parent gets exactly one follow-up (also after a restart that interrupted the child), the
+  lookup tools read the row; a notify-only child is waited for and never wakes the model; a
+  person-launched child never asks the parent's model and repeats its request idempotently;
+  stopping the launching run suppresses the wake and keeps the result.
+- Core (`pipkin-core/tests/subagent_controls.rs`): Stop and Steer only for the selected,
+  active, not-stopping child, one request at a time, only from a connected real engine;
+  Launch needs a task; settlement and refusal of the pending request.
+- UI (`shell/subagents/tests.rs`): launch facts and the note come from engine fields only;
+  controllability follows status and note.
+- End to end (`adapters/native/e2e.rs`): the inspector stops a held child (the parent is
+  told), then launches a background child that finishes as `notified` without a follow-up
+  and without waking the model.
+
+**Not verified:** no native window, screen reader, keyboard or visual check of the controls.

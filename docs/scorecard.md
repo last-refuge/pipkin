@@ -1,5 +1,33 @@
 # Scorecard
 
+## Subagent controls and background children, SUB-2 / SUB-3 (2026-10-12)
+
+A person can Stop or Steer one child from the inspector through engine-authorized requests,
+and a `subagent` call can return at once while the child runs in the background with its
+completion delivered exactly once ([subagent-controls.md](subagent-controls.md)); schema 18,
+protocol 24, capability `subagentControls`.
+
+- **Measured (automated).** Engine tests: a Stop records its note before the child's own
+  Stop, the task settles as `aborted` through the child's run and the waiting parent's tool
+  result says the child was stopped by the person; a child number from another session is
+  refused and a finished child cannot be steered; a steer under one request key reaches the
+  running child exactly once at its next step; `wait: false` returns a receipt, the parent
+  gets exactly one follow-up under `subagent:<child>:done` and a restart delivers nothing
+  again; a restart that interrupted the running child re-attaches the watcher and delivers
+  once; a notify-only child is waited for with `subagent_wait` and never wakes the model;
+  a person-launched child never asks the parent's model and repeats its request idempotently;
+  stopping the launching run suppresses the wake while the result stays readable; the lookup
+  tools read the durable row. Core tests cover selection-bound authorization, one request at
+  a time, real-engine gating, settlement and refusal. A UI test covers the row projection. An
+  app end-to-end test drives Stop and a person's launch through the native adapter. The
+  existing restart, parent-stop, paging and profile regressions pass. The repository gate
+  passed.
+- **Observed.** Nothing native.
+- **Unverified.** The controls in a window (keyboard, both themes, narrow width); a real
+  crash between the note and the child's Stop rather than the ordering argument; thousands
+  of background children (the directory bound is unchanged at 4,096 rows). Not a release
+  qualification.
+
 ## Status line and context usage, STATUS-1 / STATUS-2 (2026-10-12)
 
 The composer toolbar gains a compact status line derived from core state, and the engine

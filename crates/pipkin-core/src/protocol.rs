@@ -29,6 +29,16 @@ pub enum Command {
     ShowMoreSubagentHistory,
     /// Read the page of child activity before the oldest shown entry (paged engines only).
     LoadOlderSubagent,
+    /// Stop the selected child through the engine (SUB-2). The number must be the selected
+    /// child's: a stale selection cannot stop a sibling.
+    StopSubagent(u64),
+    /// Give the selected running child a steering message through the engine.
+    SteerSubagent {
+        child: u64,
+        text: String,
+    },
+    /// Launch a background child with this task on the person's behalf (SUB-3).
+    LaunchSubagent(String),
     /// Show one plan task in full, or collapse it again.
     TogglePlanTask(u64),
     /// List or hide the plan's finished tasks (a projection, not deletion).
@@ -272,6 +282,29 @@ pub enum BackendRequest {
         reason: Option<String>,
         expected_revision: u64,
     },
+    /// Stop one child, under a fresh idempotency key. Answered by `SubagentControlDone` or
+    /// `SubagentControlFailed` naming the request; the directory arrives as usual.
+    StopSubagent {
+        conversation: ConversationId,
+        generation: u64,
+        request: RequestId,
+        child: u64,
+    },
+    /// A steering message for one running child, under a fresh idempotency key.
+    SteerSubagent {
+        conversation: ConversationId,
+        generation: u64,
+        request: RequestId,
+        child: u64,
+        text: String,
+    },
+    /// Launch a background child on the person's behalf (notification only).
+    LaunchSubagent {
+        conversation: ConversationId,
+        generation: u64,
+        request: RequestId,
+        task: String,
+    },
     /// The bounded page of `child`'s history strictly before the item `before`. Answered by
     /// `SubagentOlderPage` or `SubagentOlderFailed` naming the same child and cursor.
     LoadOlderSubagent {
@@ -514,6 +547,15 @@ pub enum EventKind {
     SubagentOlderFailed {
         child: u64,
         before: ItemId,
+        reason: String,
+    },
+    /// The engine accepted a Stop, Steer or Launch request.
+    SubagentControlDone {
+        request: RequestId,
+    },
+    /// The engine refused (or could not reach) a Stop, Steer or Launch request.
+    SubagentControlFailed {
+        request: RequestId,
         reason: String,
     },
     /// The engine's goal for the session (`None` when it has none). Only engines that own

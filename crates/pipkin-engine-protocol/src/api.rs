@@ -416,6 +416,38 @@ pub enum Call {
         session: SessionId,
         enabled: bool,
     },
+    /// Stop one child of `session` (SUB-2). `child` is the directory number the engine
+    /// published for this session; a number from another session is refused. `request` makes
+    /// a retry idempotent. The reply is the child's row after the Stop was recorded.
+    StopSubagent {
+        session: SessionId,
+        child: u64,
+        request: String,
+    },
+    /// Give a running child a steering message under the durable key `steer:<request>`.
+    SteerSubagent {
+        session: SessionId,
+        child: u64,
+        request: String,
+        text: String,
+    },
+    /// Launch a background child on the person's behalf (SUB-3): it runs as a child session
+    /// of `session`, its completion is a notification only (never a model wake), and the same
+    /// `request` never launches twice.
+    LaunchSubagent {
+        session: SessionId,
+        request: String,
+        task: String,
+        #[serde(default)]
+        profile: Option<String>,
+        #[serde(default)]
+        context: Option<String>,
+    },
+    /// One child's recorded result.
+    SubagentResult {
+        session: SessionId,
+        child: u64,
+    },
     AuthState,
     AuthStart {
         provider: String,
@@ -570,6 +602,8 @@ pub enum Reply {
     Models(ModelsView),
     ToolOutput(ToolOutputView),
     Subagents(SubagentsView),
+    Subagent(SubagentRow),
+    SubagentResult(SubagentResultView),
     Plan(PlanView),
     PlanUpdated(PlanReceipt),
     WebSources(Vec<WebSourceView>),

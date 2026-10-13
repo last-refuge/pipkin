@@ -96,6 +96,7 @@ fn counts_context_and_usage_come_from_engine_state() {
                     task: "a".into(),
                     status: "running".into(),
                     profile: None,
+                    ..SubagentInfo::default()
                 },
                 SubagentInfo {
                     id: 2,
@@ -104,6 +105,7 @@ fn counts_context_and_usage_come_from_engine_state() {
                     task: "b".into(),
                     status: "done".into(),
                     profile: None,
+                    ..SubagentInfo::default()
                 },
             ],
         },

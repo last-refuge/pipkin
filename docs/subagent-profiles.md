@@ -95,7 +95,7 @@ record; nothing is re-resolved.
 
 ## Boundaries
 
-- No per-child Stop or Steer controls (SUB-2) and no asynchronous children (SUB-3).
+- Per-child Stop and Steer and background children are in [subagent-controls.md](subagent-controls.md) (SUB-2/SUB-3, 2026-10-12).
 - No structured parallel groups: the model may issue several `subagent` calls in one round
   and the concurrency cap bounds them, but there is no group result.
 - Result artifacts: a child's answer is the parent's tool result, retained like any tool

@@ -712,6 +712,7 @@ mod removal_tests {
             task: "Review Rust tests.".into(),
             status: "done".into(),
             profile: None,
+            ..SubagentInfo::default()
         }];
         let commands = build(&state, None);
         assert!(matches!(
@@ -737,6 +738,7 @@ mod removal_tests {
                 task: format!("Task {id}."),
                 status: if id == 7 { "running" } else { "done" }.into(),
                 profile: None,
+                ..SubagentInfo::default()
             })
             .collect();
         // Pi (unpaged): no paging entries, first 100 tasks only.

@@ -484,6 +484,33 @@ impl Worker {
                 };
                 self.ctx.emit(conversation, generation, None, kind);
             }
+            // The simulated agent has no per-child controls: say so, never pretend.
+            BackendRequest::StopSubagent {
+                conversation,
+                generation,
+                request,
+                ..
+            }
+            | BackendRequest::SteerSubagent {
+                conversation,
+                generation,
+                request,
+                ..
+            }
+            | BackendRequest::LaunchSubagent {
+                conversation,
+                generation,
+                request,
+                ..
+            } => self.ctx.emit(
+                conversation,
+                generation,
+                None,
+                EventKind::SubagentControlFailed {
+                    request,
+                    reason: "Demo · simulated agent: subagent controls are not available.".into(),
+                },
+            ),
             // Demo child views are frozen, unpaged snapshots.
             BackendRequest::LoadOlderSubagent {
                 conversation,
@@ -771,6 +798,7 @@ fn demo_subagent_directory() -> Vec<SubagentInfo> {
         task: format!("{label} · simulated: count from 1 to 5"),
         status: status.into(),
         profile: None,
+        ..SubagentInfo::default()
     })
     .collect()
 }

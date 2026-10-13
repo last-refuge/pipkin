@@ -8,8 +8,22 @@
 //! tool result. The tool is replay-safe: after a restart the call reruns, finds the same child
 //! and the same admission, and waits for its settlement. Stopping the parent call stops the
 //! child.
+//!
+//! SUB-2: a person can Stop or Steer one child from the inspector. Both are authorized by the
+//! `(root, child)` pair the engine published, recorded durably (the note, the steer key) and
+//! settled through the child's own run; a waiting parent is told the child was stopped by the
+//! person rather than merely "aborted".
+//!
+//! SUB-3: `wait: false` makes the call return a launch receipt while the child runs in the
+//! background. A detached watcher records the child's settlement on its task row and delivers
+//! the completion once: clients see `SubagentsChanged`; a model-origin child launched with
+//! `wake` gets one follow-up under the fixed key `subagent:<child>:done` (idempotent across
+//! restarts), suppressed when the run that launched it was stopped by the person. Children
+//! launched by the person (`LaunchSubagent`) are notification-only. Restart re-attaches
+//! watchers to background children and finishes interrupted deliveries.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use pipkin_engine_protocol::limits::SUBAGENT_TASK_EXCERPT_CHARS;
 use pipkin_engine_protocol::*;
@@ -17,13 +31,23 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::Shared;
+use super::session::SessionRt;
 use crate::profiles::{self, ContextMode, LaunchRecord};
 use crate::provider::{BoxFuture, ToolSpec};
-use crate::store::{Store, TaskRow};
+use crate::store::{RequestState, Store, TaskRow};
 use crate::tools::{SubagentLaunch, Tool, ToolCtx, ToolError, ToolHost, ToolOutput};
 use crate::util::now_ms;
 
-pub const SUBAGENT_DESCRIPTION: &str = "Delegate a self-contained task to a subagent and get its answer back. Give it everything it needs to know: by default it starts without this conversation (context \"fresh\"); context \"inherit\" adds a bounded excerpt of recent messages. Profiles: \"worker\" (default: every tool a child can have), \"reviewer\" (read-only: read, plan_read, web_read), \"scout\" (reads plus web search and fetch; cannot change the workspace), or a profile defined in settings. A child never delegates further or asks the person.";
+pub const SUBAGENT_DESCRIPTION: &str = "Delegate a self-contained task to a subagent and get its answer back. Give it everything it needs to know: by default it starts without this conversation (context \"fresh\"); context \"inherit\" adds a bounded excerpt of recent messages. Profiles: \"worker\" (default: every tool a child can have), \"reviewer\" (read-only: read, plan_read, web_read), \"scout\" (reads plus web search and fetch; cannot change the workspace), or a profile defined in settings. A child never delegates further or asks the person. Set wait to false to keep working while the child runs in the background: the call returns its child number at once; by default you get a follow-up message when it finishes (wake), and subagent_status, subagent_wait and subagent_result report on it.";
+
+/// The note a person's Stop leaves on the task row (shown to the parent and the inspector).
+pub const STOPPED_BY_PERSON: &str = "Stopped by the person";
+/// Longest a single `subagent_wait` blocks.
+pub const MAX_WAIT_SECS: u64 = 600;
+/// Answer text included in a completion follow-up; the rest is read with `subagent_result`.
+const WAKE_ANSWER_CHARS: usize = 4096;
+/// Largest task a person may launch from the inspector.
+const MAX_LAUNCH_TASK_BYTES: usize = 64 * 1024;
 
 pub struct SubagentTool;
 
@@ -38,7 +62,9 @@ impl Tool for SubagentTool {
                 "properties": {
                     "task": {"type": "string", "description": "What the subagent should do"},
                     "profile": {"type": "string", "description": "worker (default), reviewer, scout, or a settings-defined profile"},
-                    "context": {"type": "string", "description": "fresh (default) or inherit: whether the child sees a bounded excerpt of this conversation"}
+                    "context": {"type": "string", "description": "fresh (default) or inherit: whether the child sees a bounded excerpt of this conversation"},
+                    "wait": {"type": "boolean", "description": "true (default): wait for the answer. false: return at once with the child number and keep working while it runs"},
+                    "wake": {"type": "boolean", "description": "Background children only: send a follow-up message when the child finishes (default true); false records the result for subagent_result without interrupting"}
                 },
                 "required": ["task"]
             }),
@@ -73,10 +99,14 @@ impl Tool for SubagentTool {
             let Some(host) = &ctx.host else {
                 return Err(ToolError::new("No execution host is configured"));
             };
+            let wait = args.get("wait").and_then(Value::as_bool).unwrap_or(true);
+            let wake = args.get("wake").and_then(Value::as_bool).unwrap_or(true);
             let launch = SubagentLaunch {
                 task: task.to_owned(),
                 profile,
                 context,
+                wait,
+                wake,
             };
             match host
                 .subagent(&ctx.call_id, launch, ctx.cancel.clone())
@@ -384,6 +414,39 @@ impl ToolHost for Host {
         })
     }
 
+    fn subagent_status<'a>(&'a self) -> BoxFuture<'a, Result<SubagentsView, String>> {
+        Box::pin(async move {
+            self.shared
+                .subagents_view(&self.parent)
+                .map_err(|e| e.message)
+        })
+    }
+
+    fn subagent_result<'a>(
+        &'a self,
+        child: u64,
+    ) -> BoxFuture<'a, Result<SubagentResultView, String>> {
+        Box::pin(async move {
+            self.shared
+                .subagent_result(&self.parent, child)
+                .map_err(|e| e.message)
+        })
+    }
+
+    fn subagent_wait<'a>(
+        &'a self,
+        child: u64,
+        timeout: Duration,
+        cancel: CancellationToken,
+    ) -> BoxFuture<'a, Result<SubagentResultView, String>> {
+        Box::pin(async move {
+            self.shared
+                .subagent_wait(&self.parent, child, timeout, &cancel)
+                .await
+                .map_err(|e| e.message)
+        })
+    }
+
     fn web_source<'a>(
         &'a self,
         id: u64,
@@ -444,6 +507,55 @@ impl Shared {
         launch: SubagentLaunch,
         cancel: CancellationToken,
     ) -> Result<(String, Value), String> {
+        let delivery = match (launch.wait, launch.wake) {
+            (true, _) => "inline",
+            (false, true) => "wake",
+            (false, false) => "notify",
+        };
+        let (task_row, created) = self.create_child(parent, call_id, launch, "model", delivery)?;
+        if created {
+            self.publish_subagents(&task_row.root);
+        }
+        let details = json!({"conversationId": task_row.child_session, "child": task_row.child});
+        let parent_session = self.session(parent).map_err(|e| e.message)?;
+        let sess = self.admit_child(&parent_session, &task_row).await?;
+        // The row, not the arguments, says whether this call waits: a replay keeps the
+        // policy the child was launched with.
+        if task_row.background() {
+            self.watch_child(task_row.clone());
+            let policy = if task_row.delivery == "wake" {
+                "You will get a follow-up message when it finishes; subagent_status and subagent_wait also report on it."
+            } else {
+                "It will not interrupt you: check subagent_status, wait with subagent_wait, and read its answer with subagent_result."
+            };
+            return Ok((
+                format!(
+                    "Subagent #{} started in the background. {policy}",
+                    task_row.child
+                ),
+                details,
+            ));
+        }
+        let outcome = self
+            .await_child(&parent_session, &sess, &task_row, cancel)
+            .await?;
+        match self.record_outcome(&task_row, &outcome) {
+            ChildEnd::Answered(answer) => Ok((answer, details)),
+            ChildEnd::Unanswered(message) => Err(message),
+        }
+    }
+
+    /// Create (or, on replay, find) the child session and task row for `(parent, call_id)`.
+    /// Resolves the profile, model, context and caps against the parent's settings for a new
+    /// child; an existing child keeps the policy it was launched with.
+    fn create_child(
+        self: &Arc<Self>,
+        parent: &str,
+        call_id: &str,
+        launch: SubagentLaunch,
+        origin: &str,
+        delivery: &str,
+    ) -> Result<(TaskRow, bool), String> {
         let parent_row = self
             .store
             .session(parent)
@@ -451,194 +563,202 @@ impl Shared {
             .ok_or("The parent session no longer exists")?;
         let root = parent_row.root.clone().unwrap_or_else(|| parent.to_owned());
         let child_id = format!("{parent}:{call_id}");
-        // An existing child (replay) keeps the policy it was launched with: nothing below
-        // is re-resolved for it.
         let existing = self
             .store
             .read(|c| Store::task_for_call(c, parent, call_id))
             .map_err(|e| e.to_string())?;
-        let (task_row, created): (TaskRow, bool) = match existing {
-            Some(row) => (row, false),
-            None => {
-                // Resolve the profile, model, context and caps against the parent's settings.
-                let settings = self.settings_for(parent);
-                let offerable = self.child_offerable_tools();
-                let profiles = profiles::profiles_from_settings(&settings, &offerable)
-                    .map_err(|e| format!("Subagent profiles are misconfigured: {e}"))?;
-                let caps = profiles::caps_from_settings(&settings);
-                let name = launch
-                    .profile
-                    .clone()
-                    .unwrap_or_else(|| profiles::DEFAULT_PROFILE.to_owned());
-                let profile = profiles.iter().find(|p| p.name == name).ok_or_else(|| {
-                    format!(
-                        "Unknown subagent profile {name:?} (available: {})",
-                        profiles
-                            .iter()
-                            .map(|p| p.name.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
-                })?;
-                let model = profile.model.clone().or_else(|| parent_row.model.clone());
-                if let Some(key) = &model {
-                    let catalog = self.auth.catalog();
-                    let found = catalog.find(key).cloned();
-                    match found {
-                        None => {
-                            return Err(format!(
-                                "Model {key} (profile {name:?}) is not available; no other model is substituted"
-                            ));
-                        }
-                        Some(m) => {
-                            if let Err(crate::auth::AuthError::Unavailable(why)) =
-                                self.auth.availability(&m)
-                            {
-                                return Err(format!(
-                                    "Model {key} (profile {name:?}) is not available: {why}"
-                                ));
-                            }
-                        }
-                    }
-                }
-                let thinking = profile
-                    .thinking
-                    .clone()
-                    .or_else(|| parent_row.thinking.clone());
-                if let Some(level) = &thinking
-                    && crate::provider::ThinkingLevel::parse(level).is_none()
-                {
+        if let Some(row) = existing {
+            return Ok((row, false));
+        }
+        let settings = self.settings_for(parent);
+        let offerable = self.child_offerable_tools();
+        let profiles = profiles::profiles_from_settings(&settings, &offerable)
+            .map_err(|e| format!("Subagent profiles are misconfigured: {e}"))?;
+        let caps = profiles::caps_from_settings(&settings);
+        let name = launch
+            .profile
+            .clone()
+            .unwrap_or_else(|| profiles::DEFAULT_PROFILE.to_owned());
+        let profile = profiles.iter().find(|p| p.name == name).ok_or_else(|| {
+            format!(
+                "Unknown subagent profile {name:?} (available: {})",
+                profiles
+                    .iter()
+                    .map(|p| p.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
+        let model = profile.model.clone().or_else(|| parent_row.model.clone());
+        if let Some(key) = &model {
+            let catalog = self.auth.catalog();
+            let found = catalog.find(key).cloned();
+            match found {
+                None => {
                     return Err(format!(
-                        "Thinking level {level:?} (profile {name:?}) is not valid"
+                        "Model {key} (profile {name:?}) is not available; no other model is substituted"
                     ));
                 }
-                let context = launch.context.unwrap_or(profile.context);
-                let (excerpt, omitted, parent_revision) = if context == ContextMode::Inherit {
-                    let (entries, _) = self.store.page(parent, None, 50).unwrap_or_default();
-                    let (excerpt, omitted) = profiles::context_excerpt(&entries);
-                    (excerpt, omitted, Some(parent_row.revision))
-                } else {
-                    (Vec::new(), 0, None)
-                };
-                let prompt = profiles::compose_prompt(
-                    &launch.task,
-                    &excerpt,
-                    omitted,
-                    parent_revision.unwrap_or(0),
-                );
-                let record = LaunchRecord {
-                    version: profiles::PROFILE_VERSION,
-                    profile: profile.name.clone(),
-                    instructions: profile.instructions.clone(),
-                    tools: match &profile.tools {
-                        profiles::ToolPolicy::All => None,
-                        profiles::ToolPolicy::Only(list) => Some(list.clone()),
-                    },
-                    model: model.clone(),
-                    thinking: thinking.clone(),
-                    context,
-                    parent_revision,
-                    context_messages: excerpt.len(),
-                    context_omitted: omitted,
-                    created_at_ms: now_ms(),
-                };
-                let launch_json = record.to_json();
-                // Create the child and its task mapping atomically, under the caps.
-                let outcome: Result<Result<TaskRow, String>, _> = tokio::task::block_in_place(
-                    || {
-                        self.store.tx(|tx| {
-                        Store::assert_session_live(tx, parent)?;
-                        if let Some(existing) = Store::task_for_call(tx, parent, call_id)? {
-                            return Ok(Ok(existing));
-                        }
-                        let (live, total) = Store::child_counts(tx, &root)?;
-                        if total >= caps.max_total {
-                            return Ok(Err(format!(
-                                "This conversation already has {total} subagents (the limit is {}); no more can be started",
-                                caps.max_total
-                            )));
-                        }
-                        if live >= caps.max_concurrent {
-                            return Ok(Err(format!(
-                                "{live} subagent(s) are already running (the limit is {}); wait for one to finish",
-                                caps.max_concurrent
-                            )));
-                        }
-                        let now = now_ms();
-                        tx.execute(
-                            "INSERT INTO sessions(id, cwd, title, created_at, updated_at, origin, model,
-                                thinking, subagents_enabled, parent, root, create_key, revision)
-                             VALUES (?1, ?2, NULL, ?3, ?3, ?4, ?5, ?6, 0, ?7, ?8, NULL, 0)",
-                            rusqlite::params![
-                                child_id,
-                                parent_row.cwd,
-                                now,
-                                serde_json::to_string(&Origin::Native).expect("serializes"),
-                                model,
-                                thinking,
-                                parent,
-                                root
-                            ],
-                        )?;
-                        let (row, _) = Store::create_task(
-                            tx, &root, parent, call_id, &child_id, &prompt, now,
-                        )?;
-                        Store::set_task_launch(tx, &child_id, &launch_json)?;
-                        Store::bump(tx, &root, now)?;
-                        Ok(Ok(Store::task_by_session(tx, &child_id)?.unwrap_or(row)))
-                    })
-                    },
-                );
-                match outcome.map_err(|e| e.to_string())? {
-                    Ok(row) => (row, true),
-                    Err(refused) => return Err(refused),
+                Some(m) => {
+                    if let Err(crate::auth::AuthError::Unavailable(why)) =
+                        self.auth.availability(&m)
+                    {
+                        return Err(format!(
+                            "Model {key} (profile {name:?}) is not available: {why}"
+                        ));
+                    }
                 }
             }
-        };
-        if created {
-            self.publish_subagents(&root);
         }
-        let task = task_row.task.as_str();
-        let child = task_row.child_session.clone();
-        let details = json!({"conversationId": child});
-        let key = format!("subagent:{call_id}");
-        let parent_session = self.session(parent).map_err(|e| e.message)?;
-        let sess = self.session(&child).map_err(|e| e.message)?;
-        let mut settled = sess.settled.subscribe();
+        let thinking = profile
+            .thinking
+            .clone()
+            .or_else(|| parent_row.thinking.clone());
+        if let Some(level) = &thinking
+            && crate::provider::ThinkingLevel::parse(level).is_none()
+        {
+            return Err(format!(
+                "Thinking level {level:?} (profile {name:?}) is not valid"
+            ));
+        }
+        let context = launch.context.unwrap_or(profile.context);
+        let (excerpt, omitted, parent_revision) = if context == ContextMode::Inherit {
+            let (entries, _) = self.store.page(parent, None, 50).unwrap_or_default();
+            let (excerpt, omitted) = profiles::context_excerpt(&entries);
+            (excerpt, omitted, Some(parent_row.revision))
+        } else {
+            (Vec::new(), 0, None)
+        };
+        let prompt = profiles::compose_prompt(
+            &launch.task,
+            &excerpt,
+            omitted,
+            parent_revision.unwrap_or(0),
+        );
+        let record = LaunchRecord {
+            version: profiles::PROFILE_VERSION,
+            profile: profile.name.clone(),
+            instructions: profile.instructions.clone(),
+            tools: match &profile.tools {
+                profiles::ToolPolicy::All => None,
+                profiles::ToolPolicy::Only(list) => Some(list.clone()),
+            },
+            model: model.clone(),
+            thinking: thinking.clone(),
+            context,
+            parent_revision,
+            context_messages: excerpt.len(),
+            context_omitted: omitted,
+            created_at_ms: now_ms(),
+        };
+        let launch_json = record.to_json();
+        // Create the child and its task mapping atomically, under the caps.
+        let outcome: Result<Result<TaskRow, String>, _> = tokio::task::block_in_place(|| {
+            self.store.tx(|tx| {
+                Store::assert_session_live(tx, parent)?;
+                if let Some(existing) = Store::task_for_call(tx, parent, call_id)? {
+                    return Ok(Ok(existing));
+                }
+                let (live, total) = Store::child_counts(tx, &root)?;
+                if total >= caps.max_total {
+                    return Ok(Err(format!(
+                        "This conversation already has {total} subagents (the limit is {}); no more can be started",
+                        caps.max_total
+                    )));
+                }
+                if live >= caps.max_concurrent {
+                    return Ok(Err(format!(
+                        "{live} subagent(s) are already running (the limit is {}); wait for one to finish",
+                        caps.max_concurrent
+                    )));
+                }
+                let now = now_ms();
+                tx.execute(
+                    "INSERT INTO sessions(id, cwd, title, created_at, updated_at, origin, model,
+                        thinking, subagents_enabled, parent, root, create_key, revision)
+                     VALUES (?1, ?2, NULL, ?3, ?3, ?4, ?5, ?6, 0, ?7, ?8, NULL, 0)",
+                    rusqlite::params![
+                        child_id,
+                        parent_row.cwd,
+                        now,
+                        serde_json::to_string(&Origin::Native).expect("serializes"),
+                        model,
+                        thinking,
+                        parent,
+                        root
+                    ],
+                )?;
+                let (row, _) = Store::create_task_with(
+                    tx, &root, parent, call_id, &child_id, &prompt, origin, delivery, now,
+                )?;
+                Store::set_task_launch(tx, &child_id, &launch_json)?;
+                Store::bump(tx, &root, now)?;
+                Ok(Ok(Store::task_by_session(tx, &child_id)?.unwrap_or(row)))
+            })
+        });
+        match outcome.map_err(|e| e.to_string())? {
+            Ok(row) => Ok((row, true)),
+            Err(refused) => Err(refused),
+        }
+    }
+
+    /// Reopen the child and admit its task prompt (idempotent: a replay finds the original),
+    /// marking the task running.
+    async fn admit_child(
+        self: &Arc<Self>,
+        parent_session: &Arc<SessionRt>,
+        task_row: &TaskRow,
+    ) -> Result<Arc<SessionRt>, String> {
+        let child = task_row.child_session.as_str();
+        let key = format!("subagent:{}", task_row.parent_call);
+        let sess = self.session(child).map_err(|e| e.message)?;
         // Reopening the parent also reopens its existing durable child. After an in-process
         // storage failure, admission alone only finds the old key; it does not resume it.
-        if let Err(error) = self.recover_session(&child) {
+        if let Err(error) = self.recover_session(child) {
             if error.code == ErrorCode::Storage {
-                self.storage_failure(&parent_session, &error.message);
+                self.storage_failure(parent_session, &error.message);
             }
             return Err(error.message);
         }
-        // Idempotent admission: a replay finds the original.
-        match self.prompt(&child, &key, task, &[]).await {
+        match self.prompt(child, &key, &task_row.task, &[]).await {
             Ok(_) => {}
             Err(e) if e.code == ErrorCode::Busy => {}
             Err(e) => {
                 if e.code == ErrorCode::Storage {
                     // Recovery may still be waiting for the preceding child execution to
                     // unwind. Do not turn that unresolved call into a final error result.
-                    self.storage_failure(&parent_session, &e.message);
+                    self.storage_failure(parent_session, &e.message);
                 }
                 return Err(format!("Subagent {} failed: {}", task_row.child, e.message));
             }
         }
-        self.set_task_status(&root, &child, "running", None);
-        // Wait for this key's settlement (it may already be settled).
-        let outcome = loop {
-            if let Ok(Some(req)) = self.store.request(&child, &key)
-                && let Some(outcome) = req.outcome.clone()
-                && req.state == crate::store::RequestState::Settled
-            {
-                break outcome;
+        if !task_row.finished() {
+            self.set_task_status(&task_row.root, child, "running", None);
+        }
+        Ok(sess)
+    }
+
+    /// Wait for the child's task key to settle (it may already be settled), stopping the
+    /// child when the parent call is cancelled.
+    async fn await_child(
+        self: &Arc<Self>,
+        parent_session: &Arc<SessionRt>,
+        sess: &Arc<SessionRt>,
+        task_row: &TaskRow,
+        cancel: CancellationToken,
+    ) -> Result<RunOutcome, String> {
+        let root = task_row.root.as_str();
+        let child = task_row.child_session.as_str();
+        let key = format!("subagent:{}", task_row.parent_call);
+        let mut settled = sess.settled.subscribe();
+        loop {
+            if let Some(outcome) = self.child_outcome(child, &key) {
+                return Ok(outcome);
             }
             if let Some(why) = sess.failure() {
                 // A failed child cannot publish settlement. Keep the parent's replay-safe
                 // call open too, so explicit recovery can resume the same child and result.
-                self.storage_failure(&parent_session, &format!("subagent storage error: {why}"));
+                self.storage_failure(parent_session, &format!("subagent storage error: {why}"));
                 return Err(format!(
                     "Subagent {} stopped after a storage error",
                     task_row.child
@@ -647,14 +767,14 @@ impl Shared {
             tokio::select! {
                 _ = cancel.cancelled() => {
                     if sess.removed.is_cancelled() { return Err("The conversation was removed".into()); }
-                    if let Err(error) = self.stop(&child).await {
+                    if let Err(error) = self.stop(child).await {
                         // A failed Stop commit cancels execution through storage_failure,
                         // but cannot produce a durable settlement. Wait for execution to
                         // unwind, not for a settlement that storage cannot record. In
                         // particular, do not label this still-open child "aborted".
-                        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                        let _ = tokio::time::timeout(Duration::from_secs(10), async {
                             while sess.active_run().is_some() {
-                                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                                tokio::time::sleep(Duration::from_millis(10)).await;
                             }
                         }).await;
                         return Err(format!("Subagent {} could not confirm Stop: {}", task_row.child, error.message));
@@ -662,9 +782,9 @@ impl Shared {
                     // Wait briefly for the child to settle as stopped.
                     tokio::select! {
                         _ = sess.removed.cancelled() => return Err("The conversation was removed".into()),
-                        _ = tokio::time::timeout(std::time::Duration::from_secs(10), settled.recv()) => {}
+                        _ = tokio::time::timeout(Duration::from_secs(10), settled.recv()) => {}
                     }
-                    self.set_task_status(&root, &child, "aborted", None);
+                    self.set_task_status(root, child, "aborted", None);
                     return Err(format!("Subagent {} failed: aborted", task_row.child));
                 }
                 r = settled.recv() => {
@@ -672,28 +792,456 @@ impl Shared {
                         settled = sess.settled.subscribe();
                     }
                 }
-                _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
+                _ = tokio::time::sleep(Duration::from_millis(500)) => {}
             }
-        };
-        let status = status_for(&outcome);
-        if outcome != RunOutcome::Completed {
-            self.set_task_status(&root, &child, status, None);
-            return Err(format!(
-                "Subagent {} failed: {}",
-                task_row.child,
-                match &outcome {
-                    RunOutcome::Aborted => "aborted".to_owned(),
-                    RunOutcome::ModelError { detail }
-                    | RunOutcome::NoModel { detail }
-                    | RunOutcome::Interrupted { detail }
-                    | RunOutcome::Failed { detail } => format!("unanswered ({detail})"),
-                    RunOutcome::Completed => unreachable!(),
+        }
+    }
+
+    /// The settled (or withdrawn: stopped before it ran) outcome of the child's task key.
+    fn child_outcome(&self, child: &str, key: &str) -> Option<RunOutcome> {
+        let req = self.store.request(child, key).ok().flatten()?;
+        match req.state {
+            RequestState::Settled | RequestState::Withdrawn => req.outcome,
+            _ => None,
+        }
+    }
+
+    /// Record how the child ended on its task row (once: a row already finished keeps its
+    /// status) and say what the parent should hear.
+    fn record_outcome(&self, task_row: &TaskRow, outcome: &RunOutcome) -> ChildEnd {
+        let root = task_row.root.as_str();
+        let child = task_row.child_session.as_str();
+        let current = self
+            .store
+            .read(|c| Store::task_by_session(c, child))
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| task_row.clone());
+        let n = task_row.child;
+        if *outcome == RunOutcome::Completed {
+            let answer = match current.finished() {
+                true => current.result.clone().unwrap_or_default(),
+                false => {
+                    let answer = self.answer_text(child);
+                    self.set_task_status(root, child, "done", Some(&answer));
+                    answer
                 }
+            };
+            return ChildEnd::Answered(answer);
+        }
+        let status = status_for(outcome);
+        if !current.finished() {
+            self.set_task_status(root, child, status, None);
+        }
+        let message = match outcome {
+            RunOutcome::Aborted => match &current.note {
+                Some(note) => format!(
+                    "Subagent {n} was stopped before it answered ({note}). Its result will not arrive; do not start it again unless asked."
+                ),
+                None => format!("Subagent {n} failed: aborted"),
+            },
+            RunOutcome::ModelError { detail }
+            | RunOutcome::NoModel { detail }
+            | RunOutcome::Interrupted { detail }
+            | RunOutcome::Failed { detail } => {
+                format!("Subagent {n} failed: unanswered ({detail})")
+            }
+            RunOutcome::Completed => unreachable!(),
+        };
+        ChildEnd::Unanswered(message)
+    }
+
+    // ------------------------------------------------------------------ background children
+
+    /// Attach (once) a watcher that records the child's settlement and delivers it.
+    fn watch_child(self: &Arc<Self>, task: TaskRow) {
+        {
+            let mut watchers = self
+                .subagent_watchers
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if !watchers.insert(task.child_session.clone()) {
+                return;
+            }
+        }
+        let shared = self.clone();
+        self.spawn(async move {
+            shared.watch_child_run(&task).await;
+            shared
+                .subagent_watchers
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&task.child_session);
+        });
+    }
+
+    async fn watch_child_run(self: &Arc<Self>, task: &TaskRow) {
+        let child = task.child_session.as_str();
+        let key = format!("subagent:{}", task.parent_call);
+        let Ok(sess) = self.session(child) else {
+            return;
+        };
+        if !task.finished() {
+            // After a restart the child's run is resumed by startup recovery; this is the
+            // same idempotent step, in case the watcher gets there first.
+            if let Err(e) = self.recover_session(child) {
+                log::warn!(
+                    "subagent {child}: cannot recover for watching: {}",
+                    e.message
+                );
+                return;
+            }
+            let mut settled = sess.settled.subscribe();
+            let outcome = loop {
+                if let Some(outcome) = self.child_outcome(child, &key) {
+                    break outcome;
+                }
+                if sess.failure().is_some() {
+                    // Storage failed; explicit recovery re-attaches a watcher later.
+                    return;
+                }
+                tokio::select! {
+                    _ = sess.removed.cancelled() => return,
+                    _ = self.stopping.cancelled() => return,
+                    r = settled.recv() => {
+                        if r.is_err() {
+                            settled = sess.settled.subscribe();
+                        }
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(500)) => {}
+                }
+            };
+            let _ = self.record_outcome(task, &outcome);
+        }
+        self.subagent_deliver(child).await;
+    }
+
+    /// Deliver a finished background child's completion once: clients already saw
+    /// `SubagentsChanged`; a model-origin child launched with `wake` gets one follow-up unless
+    /// the run that launched it was stopped by the person (`suppressed`).
+    async fn subagent_deliver(self: &Arc<Self>, child_session: &str) {
+        let Ok(Some(task)) = self
+            .store
+            .read(|c| Store::task_by_session(c, child_session))
+        else {
+            return;
+        };
+        if !task.finished() || !task.delivery_pending() {
+            return;
+        }
+        let stopped = task.origin == "model"
+            && self
+                .store
+                .tool_call(&task.parent_session, &task.parent_call)
+                .ok()
+                .flatten()
+                .and_then(|c| c.run)
+                .and_then(|run| {
+                    self.store
+                        .read(|c| Store::run_outcome(c, run))
+                        .ok()
+                        .flatten()
+                })
+                .is_some_and(|outcome| outcome.contains("aborted"));
+        let delivery = if task.delivery != "wake" || task.origin != "model" {
+            "notified"
+        } else if stopped {
+            "suppressed"
+        } else {
+            "woken"
+        };
+        if delivery == "woken" {
+            let key = format!("subagent:{}:done", task.child);
+            let text = self.subagent_wake_text(&task);
+            match self
+                .enqueue(&task.parent_session, &key, InputMode::FollowUp, &text, &[])
+                .await
+            {
+                Ok(_) => {}
+                Err(e) if e.code == ErrorCode::Conflict => {}
+                Err(e) => {
+                    log::warn!(
+                        "subagent {}/{}: completion could not wake the model: {}",
+                        task.root,
+                        task.child,
+                        e.message
+                    );
+                    self.set_task_delivery(&task, "notified");
+                    return;
+                }
+            }
+        }
+        self.set_task_delivery(&task, delivery);
+    }
+
+    fn set_task_delivery(&self, task: &TaskRow, delivery: &str) {
+        let _ = tokio::task::block_in_place(|| {
+            self.store.tx(|tx| {
+                Store::set_task_delivery(tx, &task.child_session, delivery, now_ms())?;
+                Store::bump(tx, &task.root, now_ms())
+            })
+        });
+        self.publish_subagents(&task.root);
+    }
+
+    fn subagent_wake_text(&self, task: &TaskRow) -> String {
+        let excerpt: String = task
+            .task
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .chars()
+            .take(80)
+            .collect();
+        let mut text = match task.status.as_str() {
+            "done" => format!("Background subagent #{} ({excerpt}) finished.", task.child),
+            "aborted" => format!(
+                "Background subagent #{} ({excerpt}) was stopped{}.",
+                task.child,
+                match &task.note {
+                    Some(note) => format!(" ({note})"),
+                    None => String::new(),
+                }
+            ),
+            _ => format!(
+                "Background subagent #{} ({excerpt}) failed without an answer.",
+                task.child
+            ),
+        };
+        if let Some(answer) = task.result.as_deref().filter(|a| !a.trim().is_empty()) {
+            let shown: String = answer.chars().take(WAKE_ANSWER_CHARS).collect();
+            let cut = answer.chars().count() > WAKE_ANSWER_CHARS;
+            text.push_str(&format!(
+                "\nAnswer{}:\n{}",
+                if cut { " (beginning)" } else { "" },
+                shown.trim_end()
+            ));
+            if cut {
+                text.push_str(&format!(
+                    "\nUse subagent_result with child {} for the full answer.",
+                    task.child
+                ));
+            }
+        }
+        text
+    }
+
+    /// Startup: re-attach watchers to background children and finish cut-off deliveries.
+    pub(super) fn subagents_recover(self: &Arc<Self>) {
+        let Ok(rows) = self.store.tasks_background() else {
+            return;
+        };
+        for task in rows {
+            self.watch_child(task);
+        }
+    }
+
+    // ---------------------------------------------------------------------- person controls
+
+    /// The task row for `(root, child)`, refusing a number from any other session.
+    fn authorized_child(&self, root: &str, child: u64) -> Result<TaskRow, ProtoError> {
+        self.store
+            .session(root)?
+            .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "Unknown session"))?;
+        self.store
+            .read(|c| Store::task_by_child(c, root, child))?
+            .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "Not a subagent of this session"))
+    }
+
+    fn subagent_row(&self, root: &str, child: u64) -> Result<SubagentRow, ProtoError> {
+        Ok(row_view(&self.authorized_child(root, child)?))
+    }
+
+    /// Stop one child on the person's behalf. The note is durable before the child's own
+    /// Stop; the task settles through the child's run (its waiting parent or watcher
+    /// records `aborted`), except for a child with nothing running, which is settled here.
+    pub async fn stop_subagent(
+        self: &Arc<Self>,
+        root: &str,
+        child: u64,
+        _request: &str,
+    ) -> Result<SubagentRow, ProtoError> {
+        let task = self.authorized_child(root, child)?;
+        if task.finished() {
+            return Ok(row_view(&task));
+        }
+        let session = task.child_session.clone();
+        self.store.tx(|tx| {
+            Store::set_task_note(tx, &session, STOPPED_BY_PERSON, now_ms())?;
+            Store::bump(tx, root, now_ms())
+        })?;
+        self.publish_subagents(root);
+        match self.stop(&session).await? {
+            Reply::Stopping { run: None } => {
+                self.set_task_status(root, &session, "aborted", None);
+                let shared = self.clone();
+                self.spawn(async move { shared.subagent_deliver(&session).await });
+            }
+            _ => {
+                // Settlement is recorded by whoever waits on the child. Nobody may be
+                // (an inline child whose parent has not replayed yet): make sure of it.
+                let shared = self.clone();
+                self.spawn(async move { shared.settle_stopped_child(&session).await });
+            }
+        }
+        self.subagent_row(root, child)
+    }
+
+    /// After a person's Stop: once the child's key settles, record it if nobody else did.
+    async fn settle_stopped_child(self: &Arc<Self>, child_session: &str) {
+        let Ok(Some(task)) = self
+            .store
+            .read(|c| Store::task_by_session(c, child_session))
+        else {
+            return;
+        };
+        let key = format!("subagent:{}", task.parent_call);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Ok(Some(now)) = self
+                .store
+                .read(|c| Store::task_by_session(c, child_session))
+                && now.finished()
+            {
+                break;
+            }
+            if let Some(outcome) = self.child_outcome(child_session, &key) {
+                let _ = self.record_outcome(&task, &outcome);
+                break;
+            }
+            if tokio::time::Instant::now() >= deadline || self.stopping.is_cancelled() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        if task.background() {
+            self.subagent_deliver(child_session).await;
+        }
+    }
+
+    /// Give a running child a steering message under the durable key `steer:<request>`.
+    pub async fn steer_subagent(
+        self: &Arc<Self>,
+        root: &str,
+        child: u64,
+        request: &str,
+        text: &str,
+    ) -> Result<SubagentRow, ProtoError> {
+        let task = self.authorized_child(root, child)?;
+        if task.finished() {
+            return Err(ProtoError::new(
+                ErrorCode::Invalid,
+                format!("Subagent {child} has already finished"),
             ));
         }
-        let answer = self.answer_text(&child);
-        self.set_task_status(&root, &child, status, Some(&answer));
-        Ok((answer, details))
+        if task.note.is_some() {
+            return Err(ProtoError::new(
+                ErrorCode::Invalid,
+                format!("Subagent {child} is being stopped"),
+            ));
+        }
+        if text.trim().is_empty() {
+            return Err(ProtoError::new(
+                ErrorCode::Invalid,
+                "The steering message is empty",
+            ));
+        }
+        self.enqueue(
+            &task.child_session,
+            &format!("steer:{request}"),
+            InputMode::Steer,
+            text,
+            &[],
+        )
+        .await?;
+        self.subagent_row(root, child)
+    }
+
+    /// Launch a background child on the person's behalf: notification-only, idempotent per
+    /// `request` (the child's call id is `user:<request>`).
+    pub async fn launch_subagent(
+        self: &Arc<Self>,
+        session: &str,
+        request: &str,
+        task: String,
+        profile: Option<String>,
+        context: Option<String>,
+    ) -> Result<SubagentRow, ProtoError> {
+        let invalid = |m: String| ProtoError::new(ErrorCode::Invalid, m);
+        if request.is_empty() || request.len() > 256 {
+            return Err(invalid("The request key is missing or too long.".into()));
+        }
+        if task.trim().is_empty() {
+            return Err(invalid("The task is empty.".into()));
+        }
+        if task.len() > MAX_LAUNCH_TASK_BYTES {
+            return Err(ProtoError::new(
+                ErrorCode::TooLarge,
+                "The task is too long for a subagent.",
+            ));
+        }
+        let context = match context.as_deref().map(str::trim) {
+            None | Some("") => None,
+            Some(mode) => Some(ContextMode::parse(mode).ok_or_else(|| {
+                invalid(format!(
+                    "context must be \"fresh\" or \"inherit\", not {mode:?}"
+                ))
+            })?),
+        };
+        let parent_session = self.session(session)?;
+        let launch = SubagentLaunch {
+            task,
+            profile: profile
+                .map(|p| p.trim().to_owned())
+                .filter(|p| !p.is_empty()),
+            context,
+            wait: false,
+            wake: false,
+        };
+        let call_id = format!("user:{request}");
+        let (row, created) = self
+            .create_child(session, &call_id, launch, "user", "notify")
+            .map_err(invalid)?;
+        if created {
+            self.publish_subagents(&row.root);
+        }
+        self.admit_child(&parent_session, &row)
+            .await
+            .map_err(invalid)?;
+        self.watch_child(row.clone());
+        self.subagent_row(&row.root, row.child)
+    }
+
+    pub fn subagent_result(
+        &self,
+        root: &str,
+        child: u64,
+    ) -> Result<SubagentResultView, ProtoError> {
+        Ok(result_view(&self.authorized_child(root, child)?))
+    }
+
+    /// Wait (bounded) for a child to finish, then its result; a still-running child is
+    /// reported as it is at the deadline or on cancellation.
+    pub async fn subagent_wait(
+        &self,
+        root: &str,
+        child: u64,
+        timeout: Duration,
+        cancel: &CancellationToken,
+    ) -> Result<SubagentResultView, ProtoError> {
+        let deadline =
+            tokio::time::Instant::now() + timeout.min(Duration::from_secs(MAX_WAIT_SECS));
+        loop {
+            let task = self.authorized_child(root, child)?;
+            if task.finished() {
+                return Ok(result_view(&task));
+            }
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(250)) => {}
+                _ = tokio::time::sleep_until(deadline) => return Ok(result_view(&task)),
+                _ = cancel.cancelled() => return Ok(result_view(&task)),
+            }
+        }
     }
 
     /// Concatenated text blocks of the child's final assistant reply.
@@ -826,22 +1374,7 @@ impl Shared {
             .map_err(ProtoError::from)?;
         Ok(SubagentsView {
             enabled: row.subagents_enabled,
-            children: tasks
-                .into_iter()
-                .map(|t| SubagentRow {
-                    child: t.child,
-                    task_id: t.child,
-                    call_id: t.parent_call,
-                    task: t.task.chars().take(SUBAGENT_TASK_EXCERPT_CHARS).collect(),
-                    status: t.status,
-                    session: t.child_session,
-                    profile: t
-                        .launch
-                        .as_deref()
-                        .and_then(LaunchRecord::from_json)
-                        .map(|l| l.profile),
-                })
-                .collect(),
+            children: tasks.iter().map(row_view).collect(),
             truncated,
         })
     }
@@ -894,4 +1427,51 @@ impl Shared {
 
 fn limits_rows() -> u32 {
     pipkin_engine_protocol::limits::MAX_SUBAGENT_ROWS
+}
+
+/// What the parent hears when its child ends.
+enum ChildEnd {
+    Answered(String),
+    Unanswered(String),
+}
+
+fn excerpt(task: &str) -> String {
+    task.chars().take(SUBAGENT_TASK_EXCERPT_CHARS).collect()
+}
+
+pub(super) fn row_view(t: &TaskRow) -> SubagentRow {
+    SubagentRow {
+        child: t.child,
+        task_id: t.child,
+        call_id: t.parent_call.clone(),
+        task: excerpt(&t.task),
+        status: t.status.clone(),
+        session: t.child_session.clone(),
+        profile: t
+            .launch
+            .as_deref()
+            .and_then(LaunchRecord::from_json)
+            .map(|l| l.profile),
+        origin: t.origin.clone(),
+        background: t.background(),
+        delivery: t.delivery.clone(),
+        note: t.note.clone(),
+        has_result: t.status == "done" && t.result.is_some(),
+    }
+}
+
+fn result_view(t: &TaskRow) -> SubagentResultView {
+    SubagentResultView {
+        child: t.child,
+        status: t.status.clone(),
+        task: excerpt(&t.task),
+        result: match t.status.as_str() {
+            "done" => t.result.clone(),
+            _ => None,
+        },
+        note: t.note.clone(),
+        origin: t.origin.clone(),
+        delivery: t.delivery.clone(),
+        session: t.child_session.clone(),
+    }
 }

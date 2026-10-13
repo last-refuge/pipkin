@@ -761,6 +761,11 @@ fn child_history_pages_by_cursor_and_the_selected_child_refreshes_live() {
                     status: "done".into(),
                     session: "s1:call-3".into(),
                     profile: None,
+                    origin: "model".into(),
+                    background: false,
+                    delivery: "inline".into(),
+                    note: None,
+                    has_result: true,
                 }],
                 truncated: true,
             });

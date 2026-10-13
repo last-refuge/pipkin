@@ -329,8 +329,30 @@ pub struct TaskRow {
     pub result: Option<String>,
     pub result_delivered: bool,
     pub created_at_ms: i64,
+    pub updated_at_ms: i64,
     /// The launch policy (JSON `LaunchRecord`); `None` for children launched before it existed.
     pub launch: Option<String>,
+    /// `model` (a `subagent` call) or `user` (launched from the inspector).
+    pub origin: String,
+    /// `inline` (answers the parent's waiting call), or an asynchronous policy: `notify` /
+    /// `wake` while pending, then `notified`, `woken` or `suppressed`.
+    pub delivery: String,
+    /// How the child was ended from outside (a person's Stop), shown to the parent.
+    pub note: Option<String>,
+}
+
+impl TaskRow {
+    pub fn finished(&self) -> bool {
+        matches!(self.status.as_str(), "done" | "failed" | "aborted")
+    }
+    /// Launched without a waiting parent call (SUB-3).
+    pub fn background(&self) -> bool {
+        self.delivery != "inline"
+    }
+    /// An asynchronous completion not yet delivered.
+    pub fn delivery_pending(&self) -> bool {
+        matches!(self.delivery.as_str(), "notify" | "wake")
+    }
 }
 
 fn now_ms() -> i64 {
@@ -1679,7 +1701,11 @@ impl Store {
             result: r.get("result")?,
             result_delivered: r.get::<_, i64>("result_delivered")? != 0,
             created_at_ms: r.get("created_at")?,
+            updated_at_ms: r.get("updated_at")?,
             launch: r.get("launch")?,
+            origin: r.get("origin")?,
+            delivery: r.get("delivery")?,
+            note: r.get("note")?,
         })
     }
 
@@ -1726,6 +1752,34 @@ impl Store {
         task: &str,
         now: i64,
     ) -> Result<(TaskRow, bool)> {
+        Self::create_task_with(
+            tx,
+            root,
+            parent_session,
+            parent_call,
+            child_session,
+            task,
+            "model",
+            "inline",
+            now,
+        )
+    }
+
+    /// Create the task row for `(parent_session, parent_call)` unless it exists (the existing
+    /// row is returned with `false`). `origin` is `model` or `user`; `delivery` is `inline`,
+    /// `notify` or `wake`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_task_with(
+        tx: &Connection,
+        root: &str,
+        parent_session: &str,
+        parent_call: &str,
+        child_session: &str,
+        task: &str,
+        origin: &str,
+        delivery: &str,
+        now: i64,
+    ) -> Result<(TaskRow, bool)> {
         if let Some(existing) = Self::task_for_call(tx, parent_session, parent_call)? {
             return Ok((existing, false));
         }
@@ -1736,8 +1790,8 @@ impl Store {
         )?;
         tx.execute(
             "INSERT INTO subagent_tasks(root, child, parent_session, parent_call, child_session,
-                task, status, result, result_delivered, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', NULL, 0, ?7, ?7)",
+                task, status, result, result_delivered, created_at, updated_at, origin, delivery)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', NULL, 0, ?7, ?7, ?8, ?9)",
             params![
                 root,
                 next,
@@ -1745,7 +1799,9 @@ impl Store {
                 parent_call,
                 child_session,
                 task,
-                now
+                now,
+                origin,
+                delivery
             ],
         )?;
         Ok((
@@ -1790,6 +1846,44 @@ impl Store {
     }
 
     /// Mark the result delivered to the parent; false if it already was (dedup).
+    /// Record why a child ended from outside; the first note stands.
+    pub fn set_task_note(tx: &Connection, child_session: &str, note: &str, now: i64) -> Result<()> {
+        tx.execute(
+            "UPDATE subagent_tasks SET note = COALESCE(note, ?2), updated_at = ?3
+             WHERE child_session = ?1",
+            params![child_session, note, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_task_delivery(
+        tx: &Connection,
+        child_session: &str,
+        delivery: &str,
+        now: i64,
+    ) -> Result<()> {
+        tx.execute(
+            "UPDATE subagent_tasks SET delivery = ?2, updated_at = ?3 WHERE child_session = ?1",
+            params![child_session, delivery, now],
+        )?;
+        Ok(())
+    }
+
+    /// Asynchronous children (every root) that are still running, or finished with their
+    /// completion not yet delivered: what a restart has to re-attach to.
+    pub fn tasks_background(&self) -> Result<Vec<TaskRow>> {
+        self.read(|c| {
+            let mut stmt = c.prepare(
+                "SELECT * FROM subagent_tasks WHERE delivery IN ('notify', 'wake')
+                 ORDER BY root, child",
+            )?;
+            let rows = stmt
+                .query_map([], Self::task_from_row)?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
+        })
+    }
+
     pub fn mark_task_delivered(tx: &Connection, child_session: &str) -> Result<bool> {
         let n = tx.execute(
             "UPDATE subagent_tasks SET result_delivered = 1

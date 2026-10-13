@@ -46,7 +46,13 @@ pub const AUDITOR_TOOLS: &[&str] = &["read", "list_files", "search_files", "plan
 /// The auditor must end its reply with this JSON object (and nothing after it).
 pub const AUDITOR_VERDICT_HINT: &str = r#"{"verdict": "approved" | "changes_requested" | "inconclusive", "findings": [{"criterion": <id>, "ok": true | false, "note": "<what you checked and found>"}]}"#;
 /// Tools that never reach a child regardless of profile.
-pub const NEVER_FOR_CHILDREN: &[&str] = &["subagent", "ask_user_question"];
+pub const NEVER_FOR_CHILDREN: &[&str] = &[
+    "subagent",
+    "subagent_status",
+    "subagent_result",
+    "subagent_wait",
+    "ask_user_question",
+];
 /// Bounds of an inherited context excerpt.
 pub const CONTEXT_MAX_MESSAGES: usize = 20;
 pub const CONTEXT_MAX_CHARS: usize = 16 * 1024;

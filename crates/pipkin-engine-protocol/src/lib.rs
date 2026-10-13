@@ -30,6 +30,8 @@ pub use view::*;
 // Version 21 adds MCP resources, prompts and declared capabilities to the server view.
 // Version 22 adds background jobs: `jobs` in snapshots, `JobsChanged`, the job calls.
 // Version 23 adds `context` (current context occupancy) to snapshots and `ContextChanged`.
-pub const PROTOCOL_VERSION: u32 = 23;
+// Version 24 adds subagent controls: `StopSubagent`, `SteerSubagent`, `LaunchSubagent`,
+// `SubagentResult`, and the origin/background/delivery/note fields on `SubagentRow`.
+pub const PROTOCOL_VERSION: u32 = 24;
 
 pub mod delivery;

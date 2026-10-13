@@ -73,18 +73,20 @@ STATUS-3 (cached Git summary) is optional; take it only if cheap after STATUS-2.
 
 ## 3. Subagent controls — SUB-2 / SUB-3 (plan §6)
 
-- [ ] **SUB-2 individual controls.** Engine-authoritative Stop child and Steer child with
+- [x] **SUB-2 individual controls.** (2026-10-12) Engine-authoritative Stop child and Steer child with
   typed child authorization, durable request ids and settlement; the inspector offers them for
   the selected authorized child only (stale selection cannot stop a sibling); the parent is
   told how a stopped/failed child affects its wait.
-- [ ] **SUB-3 asynchronous children.** Launch receipt, result/status lookup and durable
+- [x] **SUB-3 asynchronous children.** (2026-10-12) Launch receipt, result/status lookup and durable
   completion delivery on the job notification infrastructure; a child stays a child session;
   user-origin launches do not authorize a model wake; model-origin launches use an explicit
   delivery policy.
-- [ ] **Acceptance.** Existing restart, parent-stop and paging regressions pass; parallel
-  calls cannot duplicate children after crash/replay; partial failures keep completed results;
-  large outputs stay retrievable; inspector performance bounded for thousands of rows.
-- [ ] Docs and scorecard entry.
+- [x] **Acceptance.** Existing restart, parent-stop and paging regressions pass; parallel
+  calls cannot duplicate children after crash/replay (one task row per call id, launches
+  idempotent per request); partial failures keep completed results (a suppressed wake keeps
+  the answer); large outputs stay retrievable (`subagent_result` reads the full answer); the
+  inspector's row bound is unchanged (not re-measured for background rows).
+- [x] Docs (`docs/subagent-controls.md`) and scorecard entry.
 
 ## 4. Questionnaire contract — ASK-2 (plan §7)
 
@@ -167,3 +169,7 @@ above.
 - 2026-10-12 — STATUS-1 / STATUS-2 shipped: engine context occupancy with reported and
   estimated sources, the derived status line and the usage dialog's context section. Open
   from §2: nothing required (STATUS-3 optional).
+- 2026-10-12 — SUB-2 / SUB-3 shipped: per-child Stop and Steer with engine-side
+  authorization and settlement, background children with exactly-once completion delivery
+  on the jobs rules, person-launched children, the lookup tools and the inspector controls.
+  Open from §3: nothing (parallel groups and result artifacts stay in §6 leftovers).

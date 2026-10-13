@@ -1016,6 +1016,8 @@ impl Shared {
             task: goals::audit_prompt(&goal, round, &summary),
             profile: Some("auditor".into()),
             context: Some(crate::profiles::ContextMode::Fresh),
+            wait: true,
+            wake: false,
         };
         let outcome = self
             .run_subagent(session, &call_id, launch, CancellationToken::new())

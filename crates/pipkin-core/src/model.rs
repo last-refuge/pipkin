@@ -60,8 +60,18 @@ impl SessionUsage {
     }
 }
 
+/// Who launched a child.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum SubagentOrigin {
+    /// A `subagent` tool call of the model.
+    #[default]
+    Model,
+    /// The person, from the inspector.
+    User,
+}
+
 /// A durable child of a subagent tool call in one Pi session, never a top-level conversation.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SubagentInfo {
     pub id: u64,
     pub task_id: u64,
@@ -70,6 +80,28 @@ pub struct SubagentInfo {
     pub status: String,
     /// The engine-reported launch profile, shown as given.
     pub profile: Option<String>,
+    pub origin: SubagentOrigin,
+    /// Runs without a parent call waiting on it (launched with `wait: false`, or by the
+    /// person).
+    pub background: bool,
+    /// The engine's delivery word for a background child (`notify`, `wake`, `notified`,
+    /// `woken`, `suppressed`); `inline` otherwise.
+    pub delivery: String,
+    /// How the child was ended from outside (the engine's words, e.g. stopped by the person).
+    pub note: Option<String>,
+    /// A completed answer is on record.
+    pub has_result: bool,
+}
+
+impl SubagentInfo {
+    /// The child is still running, pending or waiting (its status is not terminal).
+    pub fn active(&self) -> bool {
+        !crate::subagents::subagent_finished(&self.status)
+    }
+    /// A person's Stop is recorded but the engine has not settled the child yet.
+    pub fn stopping(&self) -> bool {
+        self.active() && self.note.is_some()
+    }
 }
 
 /// Bounded, plain-text child entry prepared outside GPUI rendering.
@@ -113,6 +145,8 @@ pub struct SubagentState {
     /// Cursor of the one in-flight older-activity page: its answer must name it.
     pub loading_older: Option<ItemId>,
     pub older_error: Option<String>,
+    /// One Stop, Steer or Launch request in flight; its answer clears it.
+    pub control_pending: Option<RequestId>,
     /// Source of `SubagentPreview::rev`.
     pub preview_rev: u64,
 }

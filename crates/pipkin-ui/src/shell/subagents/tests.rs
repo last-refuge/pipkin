@@ -16,6 +16,7 @@ fn task(id: u64, text: &str, status: &str) -> SubagentInfo {
         task: text.into(),
         status: status.into(),
         profile: None,
+        ..SubagentInfo::default()
     }
 }
 
@@ -62,6 +63,32 @@ fn labels_are_readable_unicode_safe_and_do_not_claim_engine_names() {
     );
     let row = task_row(&task(8, &"🦀".repeat(160), "waiting"));
     assert_eq!(row.summary.chars().count(), 121);
+}
+
+#[test]
+fn launch_facts_and_the_stop_note_come_from_engine_fields_only() {
+    let mut info = task(3, "Survey the crate.", "running");
+    assert_eq!(task_row(&info).summary, "");
+    assert!(task_row(&info).controllable());
+    info.background = true;
+    info.origin = SubagentOrigin::User;
+    let row = task_row(&info);
+    assert_eq!(row.summary, "Started by you · Background");
+    assert!(row.background && row.controllable());
+    info.profile = Some("scout".into());
+    info.task = "You are Scout. Survey the crate thoroughly.".into();
+    assert_eq!(
+        task_row(&info).summary,
+        "Started by you · Background · Profile: scout · Survey the crate thoroughly."
+    );
+    // A person's Stop on record: no further controls, the note is shown.
+    info.note = Some("Stopped by the person".into());
+    let row = task_row(&info);
+    assert!(row.stopping && !row.controllable());
+    assert_eq!(row.note.as_deref(), Some("Stopped by the person"));
+    info.status = "aborted".into();
+    let row = task_row(&info);
+    assert!(!row.stopping && !row.controllable());
 }
 
 #[test]

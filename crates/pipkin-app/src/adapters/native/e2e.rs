@@ -3384,3 +3384,120 @@ fn context_usage_reaches_the_status_line_after_a_reply() {
     );
     h.stop();
 }
+
+// ------------------------------------------------------------------------ subagent controls
+
+/// The inspector stops a child through the engine (the parent is told), then launches a
+/// background child on the person's behalf that finishes without waking the model.
+#[test]
+fn the_subagent_inspector_stops_a_child_and_launches_a_background_task() {
+    let gate = Gate::new();
+    let held = gate.clone();
+    let fx = Fixture::start(move |request, _| {
+        let parent = request.tools.iter().any(|t| t.name == "subagent");
+        if parent {
+            return if tool_results(request) == 0 {
+                Reply::Tools(
+                    Some("Delegating.".into()),
+                    vec![("subagent".into(), json!({"task": "HOLD until stopped."}))],
+                )
+            } else {
+                let heard = request
+                    .messages
+                    .iter()
+                    .rev()
+                    .find_map(|m| match m {
+                        Message::ToolResult { .. } => Some(m.text()),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                Reply::Text(format!("Parent heard: {heard}"))
+            };
+        }
+        let task = user_texts(request).first().cloned().unwrap_or_default();
+        if task.starts_with("HOLD") {
+            Reply::Gated(
+                held.clone(),
+                Box::new(Reply::Text("held child done".into())),
+            )
+        } else {
+            Reply::Text(format!("short child done: {task}"))
+        }
+    });
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("Delegate and hold.");
+    h.until("the child is running", |s| {
+        let sub = &s.current().unwrap().subagents;
+        sub.paged
+            && sub
+                .children
+                .iter()
+                .any(|c| c.id == 1 && c.status == "running")
+    });
+    // Stop is for the selected child only.
+    h.dispatch(Command::StopSubagent(1));
+    assert!(
+        h.state
+            .current()
+            .unwrap()
+            .subagents
+            .control_pending
+            .is_none()
+    );
+    h.dispatch(Command::SelectSubagent(Some(1)));
+    h.dispatch(Command::StopSubagent(1));
+    h.until("the child is stopped with the note", |s| {
+        let sub = &s.current().unwrap().subagents;
+        sub.control_pending.is_none()
+            && sub.children.iter().any(|c| {
+                c.id == 1
+                    && c.status == "aborted"
+                    && c.note.as_deref() == Some("Stopped by the person")
+            })
+    });
+    h.until("the parent was told", |s| {
+        is_idle(s)
+            && assistant_texts(s)
+                .last()
+                .is_some_and(|t| t.contains("stopped before it answered"))
+    });
+    assert!(h.state.current().unwrap().subagents.error.is_none());
+    let parent_asks = fx
+        .requests()
+        .iter()
+        .filter(|r| r.tools.iter().any(|t| t.name == "subagent"))
+        .count();
+    // A background child on the person's behalf: notification only.
+    h.dispatch(Command::SelectSubagent(None));
+    h.dispatch(Command::LaunchSubagent("Short survey of the crate.".into()));
+    h.until("the person's child finished", |s| {
+        let sub = &s.current().unwrap().subagents;
+        sub.control_pending.is_none()
+            && sub.children.iter().any(|c| {
+                c.id == 2
+                    && c.origin == pipkin_core::SubagentOrigin::User
+                    && c.background
+                    && c.status == "done"
+                    && c.delivery == "notified"
+                    && c.has_result
+            })
+    });
+    assert_eq!(
+        h.user_messages().len(),
+        1,
+        "no follow-up reached the conversation"
+    );
+    assert_eq!(
+        fx.requests()
+            .iter()
+            .filter(|r| r.tools.iter().any(|t| t.name == "subagent"))
+            .count(),
+        parent_asks,
+        "the model was not woken"
+    );
+    assert!(h.state.current().unwrap().subagents.error.is_none());
+    gate.open();
+    h.stop();
+}

@@ -901,6 +901,94 @@ impl AppState {
                 }
             }
             Command::LoadOlderSubagent => {}
+            Command::StopSubagent(_)
+            | Command::SteerSubagent { .. }
+            | Command::LaunchSubagent(_)
+                if self.mode == Mode::Real && self.connection.is_ready() =>
+            {
+                let Some(c) = self.selected.and_then(|id| self.conv_mut(id)) else {
+                    return out;
+                };
+                if !c.opened
+                    || c.subagents.enabled.is_none()
+                    || c.subagents.control_pending.is_some()
+                {
+                    return out;
+                }
+                let (conversation, generation) = (c.id, c.generation);
+                // Only the selected child can be acted on: the number in the command must
+                // be the one the person is looking at.
+                let selected_active = |c: &ConversationState, child: u64| {
+                    c.subagents.selected == Some(child)
+                        && c.subagents
+                            .children
+                            .iter()
+                            .any(|row| row.id == child && row.active() && row.note.is_none())
+                };
+                let request = match &cmd {
+                    Command::StopSubagent(child) if selected_active(c, *child) => {
+                        BackendRequest::StopSubagent {
+                            conversation,
+                            generation,
+                            request: RequestId(String::new()),
+                            child: *child,
+                        }
+                    }
+                    Command::SteerSubagent { child, text }
+                        if selected_active(c, *child) && !text.trim().is_empty() =>
+                    {
+                        BackendRequest::SteerSubagent {
+                            conversation,
+                            generation,
+                            request: RequestId(String::new()),
+                            child: *child,
+                            text: text.trim().to_owned(),
+                        }
+                    }
+                    Command::LaunchSubagent(task) if !task.trim().is_empty() => {
+                        BackendRequest::LaunchSubagent {
+                            conversation,
+                            generation,
+                            request: RequestId(String::new()),
+                            task: task.trim().to_owned(),
+                        }
+                    }
+                    _ => return out,
+                };
+                let id = self.alloc_request();
+                let c = self.conv_mut(conversation).expect("selected");
+                c.subagents.control_pending = Some(id.clone());
+                c.subagents.error = None;
+                let request = match request {
+                    BackendRequest::StopSubagent { child, .. } => BackendRequest::StopSubagent {
+                        conversation,
+                        generation,
+                        request: id,
+                        child,
+                    },
+                    BackendRequest::SteerSubagent { child, text, .. } => {
+                        BackendRequest::SteerSubagent {
+                            conversation,
+                            generation,
+                            request: id,
+                            child,
+                            text,
+                        }
+                    }
+                    BackendRequest::LaunchSubagent { task, .. } => BackendRequest::LaunchSubagent {
+                        conversation,
+                        generation,
+                        request: id,
+                        task,
+                    },
+                    _ => unreachable!(),
+                };
+                out.effects.push(Effect::Backend(request));
+                out.notes.push(Note::Other);
+            }
+            Command::StopSubagent(_)
+            | Command::SteerSubagent { .. }
+            | Command::LaunchSubagent(_) => {}
             Command::TogglePlanTask(task) => {
                 if let Some(c) = self.selected.and_then(|id| self.conv_mut(id))
                     && c.plan.available
@@ -2218,6 +2306,8 @@ impl AppState {
                 | EventKind::SubagentPage { .. }
                 | EventKind::SubagentOlderPage { .. }
                 | EventKind::SubagentOlderFailed { .. }
+                | EventKind::SubagentControlDone { .. }
+                | EventKind::SubagentControlFailed { .. }
                 | EventKind::PlanSynced { .. }
                 | EventKind::PlanEditApplied { .. }
                 | EventKind::PlanEditFailed { .. }
@@ -2266,6 +2356,19 @@ impl AppState {
                         }));
                 }
                 out.notes.push(Note::Other);
+            }
+            EventKind::SubagentControlDone { request } => {
+                if c.subagents.control_pending.as_ref() == Some(&request) {
+                    c.subagents.control_pending = None;
+                    out.notes.push(Note::Other);
+                }
+            }
+            EventKind::SubagentControlFailed { request, reason } => {
+                if c.subagents.control_pending.as_ref() == Some(&request) {
+                    c.subagents.control_pending = None;
+                    c.subagents.error = Some(reason);
+                    out.notes.push(Note::Other);
+                }
             }
             EventKind::PlanSynced {
                 revision,

@@ -7,8 +7,9 @@ use std::collections::{BTreeSet, HashMap};
 use pipkin_core::onboarding::{SignInChallenge, SignInProvider, SignInSnapshot, SignInStatus};
 use pipkin_core::{
     Bootstrap, ConversationId, EventKind, Goal, GoalState, ModelInfo, PlanCounts, PlanEvidence,
-    PlanTask, PlanTaskStatus, Project, ProjectId, SubagentInfo, UiAnswer, UiNotice, UiNoticeLevel,
-    UiRequest, UiRequestItem, UiRequestKind, project_id_for_path, project_name_for_path,
+    PlanTask, PlanTaskStatus, Project, ProjectId, SubagentInfo, SubagentOrigin, UiAnswer, UiNotice,
+    UiNoticeLevel, UiRequest, UiRequestItem, UiRequestKind, project_id_for_path,
+    project_name_for_path,
 };
 use pipkin_engine_protocol::{
     Answer, AuthSnapshot, AuthStatus, Block, CredentialKind, Entry, EntryKind, ErrorCode, GoalView,
@@ -443,6 +444,13 @@ pub fn subagents(view: &SubagentsView) -> Result<Vec<SubagentInfo>, String> {
                     );
                 }
             };
+            let origin = match row.origin.as_str() {
+                "model" => SubagentOrigin::Model,
+                "user" => SubagentOrigin::User,
+                _ => {
+                    return Err("The engine returned an invalid subagent: Invalid origin.".into());
+                }
+            };
             Ok(SubagentInfo {
                 id: row.child,
                 task_id: row.task_id,
@@ -453,6 +461,15 @@ pub fn subagents(view: &SubagentsView) -> Result<Vec<SubagentInfo>, String> {
                     .profile
                     .clone()
                     .filter(|p| !p.is_empty() && p.len() <= 64),
+                origin,
+                background: row.background,
+                delivery: row.delivery.chars().take(32).collect(),
+                note: row
+                    .note
+                    .clone()
+                    .filter(|n| !n.trim().is_empty())
+                    .map(|n| n.chars().take(200).collect()),
+                has_result: row.has_result,
             })
         })
         .collect()
@@ -850,6 +867,11 @@ mod tests {
             status: status.into(),
             session: "s".into(),
             profile: None,
+            origin: "model".into(),
+            background: false,
+            delivery: "inline".into(),
+            note: None,
+            has_result: false,
         }
     }
 

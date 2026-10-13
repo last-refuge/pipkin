@@ -327,6 +327,46 @@ pub struct SubagentRow {
     /// settings-defined name); `None` for children launched before profiles existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    /// `model` (a `subagent` call) or `user` (launched from the inspector).
+    #[serde(default = "default_model_origin")]
+    pub origin: String,
+    /// The child runs without a parent call waiting on it (SUB-3).
+    #[serde(default)]
+    pub background: bool,
+    /// `inline`, or for a background child its completion delivery: `notify` or `wake`
+    /// while pending, then `notified`, `woken` or `suppressed`.
+    #[serde(default = "default_inline_delivery")]
+    pub delivery: String,
+    /// How the child was ended from outside, e.g. stopped by the person.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// A completed answer is on record (read it with `SubagentResult` / `subagent_result`).
+    #[serde(default)]
+    pub has_result: bool,
+}
+
+fn default_model_origin() -> String {
+    "model".into()
+}
+
+fn default_inline_delivery() -> String {
+    "inline".into()
+}
+
+/// One child's recorded outcome, read on request (never pushed).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentResultView {
+    pub child: u64,
+    pub status: String,
+    /// Bounded task excerpt.
+    pub task: String,
+    /// The child's final answer, when it completed.
+    pub result: Option<String>,
+    pub note: Option<String>,
+    pub origin: String,
+    pub delivery: String,
+    pub session: SessionId,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -668,7 +708,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 23);
+        assert_eq!(crate::PROTOCOL_VERSION, 24);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };

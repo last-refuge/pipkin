@@ -90,6 +90,20 @@ pub(super) struct TaskRow {
     pub task: String,
     pub summary: String,
     status: TaskStatus,
+    /// Runs without a parent call waiting on it.
+    pub background: bool,
+    /// The engine's note on how the child was ended from outside.
+    pub note: Option<String>,
+    /// A person's Stop is recorded; the engine has not settled the child yet.
+    pub stopping: bool,
+    pub has_result: bool,
+}
+
+impl TaskRow {
+    /// Stop and Steer apply: the child is active and no Stop is pending.
+    pub fn controllable(&self) -> bool {
+        self.status.active() && !self.stopping
+    }
 }
 
 /// One row of the virtualized directory, in display order.
@@ -373,12 +387,32 @@ fn task_row(child: &SubagentInfo) -> TaskRow {
             format!("Profile: {profile} · {summary}")
         };
     }
+    // Launch facts the engine recorded, ahead of the excerpt.
+    let mut facts: Vec<&str> = Vec::new();
+    if child.origin == pipkin_core::SubagentOrigin::User {
+        facts.push("Started by you");
+    }
+    if child.background {
+        facts.push("Background");
+    }
+    if !facts.is_empty() {
+        let facts = facts.join(" · ");
+        summary = if summary.is_empty() {
+            facts
+        } else {
+            format!("{facts} · {summary}")
+        };
+    }
     TaskRow {
         id: child.id,
         title,
         task: child.task.clone(),
         summary,
         status: TaskStatus::from_engine(&child.status),
+        background: child.background,
+        note: child.note.clone(),
+        stopping: child.stopping(),
+        has_result: child.has_result,
     }
 }
 
@@ -742,6 +776,139 @@ impl Workspace {
         header.into_any_element()
     }
 
+    /// Stop and Steer for the selected child only (engine-authorized by its number).
+    fn render_subagent_controls(
+        &self,
+        child: u64,
+        state: &SubagentState,
+        cx: &Context<Self>,
+    ) -> gpui::AnyElement {
+        let t = cx.theme().clone();
+        let c = &t.colors;
+        let model = self.model.read(cx);
+        let real = model.state.mode == pipkin_core::Mode::Real && model.state.connection.is_ready();
+        let busy = state.control_pending.is_some();
+        let stop = cx.entity();
+        let steer = cx.entity();
+        div()
+            .id("subagent-controls")
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .child(
+                div().flex().items_center().gap(px(8.0)).child(
+                    Btn::new("subagent-stop")
+                        .icon("square")
+                        .label("Stop")
+                        .kind(BtnKind::Subtle)
+                        .compact()
+                        .disabled(!real || busy)
+                        .aria(format!("Stop subagent {child}"))
+                        .on_click(move |_, cx| {
+                            stop.update(cx, |w, cx| w.dispatch(Command::StopSubagent(child), cx));
+                        }),
+                ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap(px(8.0))
+                    .min_w_0()
+                    .child(div().flex_1().min_w_0().child(self.subagent_steer.clone()))
+                    .child(
+                        Btn::new("subagent-steer-send")
+                            .label("Steer")
+                            .kind(BtnKind::Subtle)
+                            .compact()
+                            .disabled(!real || busy)
+                            .aria(format!("Send the steering message to subagent {child}"))
+                            .on_click(move |_, cx| {
+                                steer.update(cx, |w, cx| w.submit_subagent_steer(cx));
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .text_size(t.small_size())
+                    .text_color(c.text_muted)
+                    .child("Steering reaches this subagent at its next step; Stop ends it and tells the conversation."),
+            )
+            .into_any_element()
+    }
+
+    /// A task the person launches as a background child (notification only).
+    fn render_subagent_launch(
+        &self,
+        state: &SubagentState,
+        cx: &Context<Self>,
+    ) -> gpui::AnyElement {
+        let t = cx.theme().clone();
+        let c = &t.colors;
+        let model = self.model.read(cx);
+        let real = model.state.mode == pipkin_core::Mode::Real && model.state.connection.is_ready();
+        let busy = state.control_pending.is_some();
+        let this = cx.entity();
+        div()
+            .id("subagent-launch")
+            .flex_none()
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .px(px(16.0))
+            .py(px(12.0))
+            .border_t_1()
+            .border_color(c.border)
+            .child(
+                div()
+                    .text_size(t.small_size())
+                    .text_color(c.text_muted)
+                    .child("Delegate a task to a background subagent. You are told when it finishes; the model is not interrupted."),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap(px(8.0))
+                    .min_w_0()
+                    .child(div().flex_1().min_w_0().child(self.subagent_task.clone()))
+                    .child(
+                        Btn::new("subagent-launch-start")
+                            .icon("play")
+                            .label("Start")
+                            .kind(BtnKind::Subtle)
+                            .compact()
+                            .disabled(!real || busy)
+                            .aria("Start a background subagent with this task")
+                            .on_click(move |_, cx| {
+                                this.update(cx, |w, cx| w.submit_subagent_launch(cx));
+                            }),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    pub(super) fn submit_subagent_steer(&mut self, cx: &mut Context<Self>) {
+        let text = self.subagent_steer.read(cx).text();
+        if text.trim().is_empty() {
+            return;
+        }
+        let Some(child) = self.state(cx).current().and_then(|c| c.subagents.selected) else {
+            return;
+        };
+        self.dispatch(Command::SteerSubagent { child, text }, cx);
+        self.subagent_steer.update(cx, |e, cx| e.set_text("", cx));
+    }
+
+    pub(super) fn submit_subagent_launch(&mut self, cx: &mut Context<Self>) {
+        let text = self.subagent_task.read(cx).text();
+        if text.trim().is_empty() {
+            return;
+        }
+        self.dispatch(Command::LaunchSubagent(text), cx);
+        self.subagent_task.update(cx, |e, cx| e.set_text("", cx));
+    }
+
     pub(super) fn render_subagent_panel(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         self.subagent_rows.mounted.set(0);
         self.subagent_rows.mounted_tasks.borrow_mut().clear();
@@ -841,6 +1008,23 @@ impl Workspace {
                 );
             if let Some(row) = row {
                 header = header.child(self.task_status(row.status, cx));
+                if let Some(note) = &row.note {
+                    header = header.child(
+                        div()
+                            .id("subagent-note")
+                            .role(Role::Status)
+                            .text_size(t.small_size())
+                            .text_color(c.text_muted)
+                            .child(if row.stopping {
+                                format!("{note} · stopping")
+                            } else {
+                                note.clone()
+                            }),
+                    );
+                }
+                if row.controllable() {
+                    header = header.child(self.render_subagent_controls(selected, state, cx));
+                }
             }
             header = header.child(
                 div()
@@ -903,6 +1087,9 @@ impl Workspace {
                         .size_full(),
                     ),
             );
+            if model.state.mode == pipkin_core::Mode::Real {
+                panel = panel.child(self.render_subagent_launch(state, cx));
+            }
         }
         panel
             .child(

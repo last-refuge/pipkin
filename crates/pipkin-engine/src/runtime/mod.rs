@@ -17,7 +17,7 @@ mod plugins;
 mod removal;
 mod run;
 mod session;
-mod subagents;
+pub mod subagents;
 mod views;
 mod wait;
 mod web;
@@ -57,6 +57,8 @@ pub struct Shared {
     pub mcp: Arc<crate::mcp::McpService>,
     /// Supervised background jobs (see [`jobs`]).
     pub jobs: jobs::JobsRuntime,
+    /// Child sessions a background watcher is attached to (see [`subagents`]).
+    pub(super) subagent_watchers: Mutex<std::collections::HashSet<String>>,
     pub generations: Arc<Semaphore>,
     pub processes: Arc<Semaphore>,
     pub locks: Arc<MutationLocks>,
@@ -158,6 +160,13 @@ impl Shared {
                 tools.push(self.subagent_tool());
             }
             tools.push(self.ask_tool());
+            if row.subagents_enabled {
+                tools.extend([
+                    Arc::new(crate::tools::subagents::SubagentStatusTool) as Arc<dyn Tool>,
+                    Arc::new(crate::tools::subagents::SubagentResultTool),
+                    Arc::new(crate::tools::subagents::SubagentWaitTool),
+                ]);
+            }
             tools.extend([
                 Arc::new(crate::tools::goal::GetGoalTool) as Arc<dyn Tool>,
                 Arc::new(crate::tools::goal::UpdateGoalTool),
@@ -191,6 +200,16 @@ impl Shared {
     pub fn recoverable_tool(&self, name: &str) -> Option<Arc<dyn Tool>> {
         match name {
             "subagent" => Some(self.subagent_tool()),
+            // Child lookups and the bounded wait are pure reads of durable task rows.
+            crate::tools::subagents::SUBAGENT_STATUS => {
+                Some(Arc::new(crate::tools::subagents::SubagentStatusTool))
+            }
+            crate::tools::subagents::SUBAGENT_RESULT => {
+                Some(Arc::new(crate::tools::subagents::SubagentResultTool))
+            }
+            crate::tools::subagents::SUBAGENT_WAIT => {
+                Some(Arc::new(crate::tools::subagents::SubagentWaitTool))
+            }
             crate::tools::ask::ASK_USER_QUESTION => Some(self.ask_tool()),
             // Receipts by call id make a rerun return the recorded outcome; reads are pure.
             crate::tools::plan::PLAN_UPDATE => Some(Arc::new(crate::tools::plan::PlanUpdateTool)),
@@ -323,6 +342,7 @@ impl EngineHandle {
             me: me.clone(),
             mcp,
             jobs: jobs::JobsRuntime::default(),
+            subagent_watchers: Mutex::new(std::collections::HashSet::new()),
             generations: Arc::new(Semaphore::new(config.max_active_generations.max(1))),
             processes: Arc::new(Semaphore::new(config.max_tool_processes.max(1))),
             config,
@@ -380,6 +400,7 @@ impl EngineHandle {
         compaction::start_recovery(&shared);
         mcp::attach(&shared);
         shared.jobs_recover();
+        shared.subagents_recover();
         Ok(EngineHandle {
             runtime: Mutex::new(Some(runtime)),
             shared,
@@ -664,6 +685,7 @@ async fn dispatch_with_cancel(
                     "cycleThinking".into(),
                     "removeSession".into(),
                     "subagents".into(),
+                    "subagentControls".into(),
                     "questions".into(),
                     "askUserQuestion".into(),
                     "plans".into(),
@@ -1067,6 +1089,37 @@ async fn dispatch_with_cancel(
             shared.publish_subagents(&session);
             Ok(Reply::Ok)
         }
+        Call::StopSubagent {
+            session,
+            child,
+            request,
+        } => Ok(Reply::Subagent(
+            shared.stop_subagent(&session, child, &request).await?,
+        )),
+        Call::SteerSubagent {
+            session,
+            child,
+            request,
+            text,
+        } => Ok(Reply::Subagent(
+            shared
+                .steer_subagent(&session, child, &request, &text)
+                .await?,
+        )),
+        Call::LaunchSubagent {
+            session,
+            request,
+            task,
+            profile,
+            context,
+        } => Ok(Reply::Subagent(
+            shared
+                .launch_subagent(&session, &request, task, profile, context)
+                .await?,
+        )),
+        Call::SubagentResult { session, child } => Ok(Reply::SubagentResult(
+            shared.subagent_result(&session, child)?,
+        )),
         Call::AuthState => Ok(Reply::Auth(shared.auth.snapshot(client))),
         Call::AuthStart { provider } => {
             if let Some(error) = shared.refresh_net_async().await?.validation_error {
@@ -1380,6 +1433,8 @@ mod queue_reference_tests;
 mod settings_tests;
 #[cfg(test)]
 mod status_tests;
+#[cfg(test)]
+mod subagent2_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

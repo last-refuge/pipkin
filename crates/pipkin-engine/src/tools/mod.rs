@@ -28,6 +28,7 @@ pub mod plan;
 pub mod process;
 pub mod read;
 pub mod schema;
+pub mod subagents;
 pub mod text;
 pub mod web;
 pub mod write;
@@ -416,6 +417,31 @@ pub trait ToolHost: Send + Sync {
         Box::pin(async { Err("No job service is configured".into()) })
     }
 
+    /// The session's child directory (SUB-3 lookups).
+    fn subagent_status<'a>(
+        &'a self,
+    ) -> BoxFuture<'a, Result<pipkin_engine_protocol::SubagentsView, String>> {
+        Box::pin(async { Err("No subagent service is configured".into()) })
+    }
+
+    /// One child's recorded result.
+    fn subagent_result<'a>(
+        &'a self,
+        _child: u64,
+    ) -> BoxFuture<'a, Result<pipkin_engine_protocol::SubagentResultView, String>> {
+        Box::pin(async { Err("No subagent service is configured".into()) })
+    }
+
+    /// Wait (bounded) for a child to finish, then its recorded result.
+    fn subagent_wait<'a>(
+        &'a self,
+        _child: u64,
+        _timeout: std::time::Duration,
+        _cancel: CancellationToken,
+    ) -> BoxFuture<'a, Result<pipkin_engine_protocol::SubagentResultView, String>> {
+        Box::pin(async { Err("No subagent service is configured".into()) })
+    }
+
     /// A retained source and its text (None when unknown or expired).
     #[allow(clippy::type_complexity)]
     fn web_source<'a>(
@@ -432,6 +458,12 @@ pub struct SubagentLaunch {
     pub task: String,
     pub profile: Option<String>,
     pub context: Option<crate::profiles::ContextMode>,
+    /// `true`: the call waits for the answer (the child is `inline`). `false`: the call
+    /// returns a launch receipt and the child runs in the background (SUB-3).
+    pub wait: bool,
+    /// Background children only: follow up in this session when the child finishes
+    /// (`wake`), or just record and notify (`notify`).
+    pub wake: bool,
 }
 
 /// Serializes writes/edits to the same canonical path across sessions in this process.

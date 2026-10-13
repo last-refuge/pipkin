@@ -45,6 +45,7 @@ fn child() -> SubagentInfo {
         task: "Investigate".into(),
         status: "running".into(),
         profile: None,
+        ..SubagentInfo::default()
     }
 }
 
@@ -352,6 +353,7 @@ fn rows(n: u64, status: &str) -> Vec<SubagentInfo> {
             task: format!("Task {id}"),
             status: status.into(),
             profile: None,
+            ..SubagentInfo::default()
         })
         .collect()
 }
