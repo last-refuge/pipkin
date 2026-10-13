@@ -1,6 +1,6 @@
 use gpui::{
-    Context, InteractiveElement, IntoElement, ParentElement, Role, StatefulInteractiveElement,
-    Styled, Window, div, prelude::*, px,
+    App, Context, Div, InteractiveElement, IntoElement, ParentElement, Role,
+    StatefulInteractiveElement, Styled, Window, div, prelude::*, px,
 };
 use pipkin_core::*;
 
@@ -104,6 +104,7 @@ impl Workspace {
                     UiRequestKind::Select => q.items.len(),
                     UiRequestKind::Confirm => 2,
                     UiRequestKind::Input => 0,
+                    UiRequestKind::Form => form_options(&q).len(),
                 },
                 None => 0,
             },
@@ -173,6 +174,13 @@ impl Workspace {
                     UiRequestKind::Confirm => Some(UiAnswer::Confirm(sel == 0)),
                     UiRequestKind::Input => {
                         Some(UiAnswer::Text(self.overlay_input.read(cx).text()))
+                    }
+                    // Enter toggles the highlighted option; only the Answer button submits.
+                    UiRequestKind::Form => {
+                        if let Some((question, option)) = form_options(&q).get(sel).cloned() {
+                            self.dispatch(Command::ToggleFormOption { question, option }, cx);
+                        }
+                        None
                     }
                 };
                 if let Some(answer) = answer {
@@ -404,6 +412,9 @@ impl Workspace {
                 .id("question")
                 .child("This question is no longer open.");
         };
+        if let Some(form) = q.form.clone().filter(|_| q.kind == UiRequestKind::Form) {
+            return self.render_form(&q, &form, cx);
+        }
         let (answering, error, now_ms) = {
             let s = self.state(cx);
             let conv = s.current();
@@ -421,7 +432,7 @@ impl Workspace {
                 .map(|i| (i.label.clone(), i.description.clone()))
                 .collect(),
             UiRequestKind::Confirm => vec![("Yes".into(), None), ("No".into(), None)],
-            UiRequestKind::Input => vec![],
+            UiRequestKind::Input | UiRequestKind::Form => vec![],
         };
         let time_left = q.deadline.map(|d| {
             let secs = ((d - now_ms) / 1000).max(0);
@@ -558,6 +569,244 @@ impl Workspace {
                                 }),
                         )
                     }),
+            )
+    }
+
+    /// A questionnaire (ASK-2): every question with its options, text fields and notes, a
+    /// bounded Markdown preview where the asker gave one, and one explicit submission. The
+    /// selections live in the core's draft; nothing reaches the engine until Answer.
+    fn render_form(
+        &mut self,
+        q: &UiRequest,
+        form: &UiForm,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let t = cx.theme().clone();
+        let c = &t.colors;
+        let this = cx.entity();
+        let sel = self.overlay_sel;
+        let (answering, error, selections) = {
+            let s = self.state(cx);
+            let conv = s.current();
+            (
+                conv.is_some_and(|c| c.ui_answering.contains(&q.id)),
+                conv.and_then(|c| c.ui_error.clone()),
+                conv.and_then(|c| c.form_draft.clone()).unwrap_or_default(),
+            )
+        };
+        let selected_of = |question: &str| -> Vec<String> {
+            selections
+                .selections
+                .iter()
+                .find(|(id, _)| id == question)
+                .map(|(_, s)| s.clone())
+                .unwrap_or_default()
+        };
+        let mut flat = 0usize;
+        let mut body = div()
+            .id("form-body")
+            .flex()
+            .flex_col()
+            .gap(px(16.0))
+            .max_h(px(460.0 * t.scale.max(1.0)))
+            .overflow_y_scroll()
+            .pr(px(4.0));
+        for (qi, question) in form.questions.iter().enumerate() {
+            let selected = selected_of(&question.id);
+            let mut block = div()
+                .id(("form-question", qi))
+                .role(Role::Group)
+                .aria_label(question.prompt.clone())
+                .flex()
+                .flex_col()
+                .gap(px(6.0))
+                .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child(format!(
+                    "{}. {}",
+                    qi + 1,
+                    question.prompt
+                )));
+            if let Some(d) = &question.description {
+                block = block.child(
+                    div()
+                        .text_size(t.small_size())
+                        .text_color(c.text_muted)
+                        .child(d.clone()),
+                );
+            }
+            if let Some(preview) = &question.preview {
+                block = block.child(preview_blocks(preview, &t));
+            }
+            for option in &question.options {
+                let i = flat;
+                flat += 1;
+                let on = selected.iter().any(|s| s == &option.id);
+                let (qid, oid) = (question.id.clone(), option.id.clone());
+                let this = this.clone();
+                let multiple = question.kind == UiFormKind::Multiple;
+                let marker = div()
+                    .flex_none()
+                    .size(px(14.0))
+                    .border_1()
+                    .border_color(if on { c.accent } else { c.border_strong })
+                    .rounded(if multiple { px(3.0) } else { px(7.0) })
+                    .when(on, |d| d.bg(c.accent_fill));
+                let mut row = menu_row(("form-option", i), i == sel, cx)
+                    .role(if multiple {
+                        Role::CheckBox
+                    } else {
+                        Role::RadioButton
+                    })
+                    .aria_label(option.label.clone())
+                    .aria_selected(on)
+                    .items_start()
+                    .py(px(6.0))
+                    .on_click(move |_, _, cx| {
+                        this.update(cx, |t, cx| {
+                            t.overlay_sel = i;
+                            t.dispatch(
+                                Command::ToggleFormOption {
+                                    question: qid.clone(),
+                                    option: oid.clone(),
+                                },
+                                cx,
+                            );
+                        })
+                    })
+                    .child(div().pt(px(3.0)).child(marker));
+                let mut text = div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(div().child(option.label.clone()));
+                if let Some(d) = &option.description {
+                    text = text.child(
+                        div()
+                            .text_size(t.small_size())
+                            .text_color(c.text_faint)
+                            .child(d.clone()),
+                    );
+                }
+                if let Some(preview) = &option.preview {
+                    text = text.child(preview_blocks(preview, &t));
+                }
+                row = row.child(text);
+                block = block.child(row);
+            }
+            if let Some(editor) = self.form_editor(&question.id, "text") {
+                block = block.child(field_box(editor.clone(), cx));
+            }
+            if let Some(editor) = self.form_editor(&question.id, "note") {
+                block = block.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_size(t.small_size())
+                                .text_color(c.text_muted)
+                                .child("Note"),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .child(field_box(editor.clone(), cx)),
+                        ),
+                );
+            }
+            body = body.child(block);
+        }
+        if let Some(editor) = self.form_editor("", "note") {
+            body = body.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.0))
+                    .child(
+                        div()
+                            .text_size(t.small_size())
+                            .text_color(c.text_muted)
+                            .child("A note about these questions"),
+                    )
+                    .child(field_box(editor.clone(), cx)),
+            );
+        }
+        let decline = {
+            let this = this.clone();
+            let id = q.id.clone();
+            Btn::new("question-decline")
+                .label("Decline")
+                .kind(BtnKind::Subtle)
+                .compact()
+                .on_click(move |window, cx| {
+                    this.update(cx, |t, cx| {
+                        t.dispatch(Command::CancelUiRequest(id.clone()), cx);
+                        t.close_overlay(window, cx);
+                    })
+                })
+        };
+        let submit = {
+            let this = this.clone();
+            Btn::new("question-send")
+                .label("Answer")
+                .kind(BtnKind::Primary)
+                .compact()
+                .disabled(answering)
+                .aria("Send these answers")
+                .on_click(move |window, cx| this.update(cx, |t, cx| t.submit_form(window, cx)))
+        };
+        elevated(cx)
+            .id("question")
+            .key_context("Overlay")
+            .track_focus(&self.menu_focus)
+            .role(Role::Dialog)
+            .aria_label(format!("Questions: {}", q.title))
+            .w(px(640.0 * t.scale.max(1.0)))
+            .max_w_full()
+            .p(px(14.0))
+            .flex()
+            .flex_col()
+            .gap(px(10.0))
+            .occlude()
+            .child(
+                div()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(q.title.clone()),
+            )
+            .children(q.message.clone().map(|m| {
+                div()
+                    .text_size(t.small_size())
+                    .text_color(c.text_muted)
+                    .child(m)
+            }))
+            .child(body)
+            .children(error.map(|e| {
+                div()
+                    .text_size(t.small_size())
+                    .text_color(c.danger)
+                    .child(format!("Not accepted: {e}"))
+            }))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_size(t.small_size())
+                            .text_color(c.text_faint)
+                            .child(if answering {
+                                "Sending your answers…"
+                            } else {
+                                "Nothing is sent until you answer; questions you leave blank stay unanswered."
+                            }),
+                    )
+                    .child(decline)
+                    .child(submit),
             )
     }
 
@@ -1178,6 +1427,167 @@ impl Workspace {
                         }),
                 ),
             )
+    }
+}
+
+/// The questionnaire's options in display order, as `(question id, option id)`, for the
+/// keyboard's single highlighted row.
+pub(super) fn form_options(q: &UiRequest) -> Vec<(String, String)> {
+    q.form
+        .as_ref()
+        .map(|form| {
+            form.questions
+                .iter()
+                .flat_map(|question| {
+                    question
+                        .options
+                        .iter()
+                        .map(move |o| (question.id.clone(), o.id.clone()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A bordered text field inside a dialog.
+fn field_box(editor: gpui::Entity<crate::text::ComposerEditor>, cx: &App) -> Div {
+    let c = &cx.theme().colors;
+    div()
+        .px(px(10.0))
+        .py(px(6.0))
+        .min_h(px(34.0))
+        .flex()
+        .items_center()
+        .rounded(px(6.0))
+        .bg(c.bg_input)
+        .border_1()
+        .border_color(c.border_strong)
+        .child(div().flex_1().min_w_0().child(editor))
+}
+
+/// A bounded Markdown preview as blocks: headings, paragraphs, list items and code, in the
+/// transcript's parser. Inline styles are not drawn; the text is shown as given.
+fn preview_blocks(markdown: &str, t: &crate::theme::Theme) -> Div {
+    use crate::transcript::markdown::{BlockKind, parse};
+    let c = &t.colors;
+    let mut out = div()
+        .flex()
+        .flex_col()
+        .gap(px(4.0))
+        .py(px(4.0))
+        .text_size(t.small_size());
+    for block in parse(markdown) {
+        out = out.child(match block.kind {
+            BlockKind::Rule => div().my(px(4.0)).h(px(1.0)).w_full().bg(c.border_strong),
+            BlockKind::Code { .. } => div()
+                .px(px(8.0))
+                .py(px(6.0))
+                .rounded(px(4.0))
+                .bg(c.bg_input)
+                .font_family(t.mono_font())
+                .child(block.text),
+            BlockKind::Heading(_) => div()
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .child(block.text),
+            BlockKind::ListItem => div()
+                .pl(px(10.0 * (block.indent as f32 + 1.0)))
+                .child(block.text),
+            BlockKind::Paragraph => div()
+                .when(block.quote, |d| d.text_color(c.text_muted))
+                .child(block.text),
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod form_tests {
+    use super::*;
+
+    #[test]
+    fn the_keyboard_row_order_follows_the_questionnaire() {
+        let q = UiRequest {
+            id: "q1".into(),
+            kind: UiRequestKind::Form,
+            title: "t".into(),
+            message: None,
+            items: vec![],
+            placeholder: None,
+            default_value: None,
+            deadline: None,
+            source: None,
+            form: Some(UiForm {
+                allow_note: false,
+                questions: vec![
+                    UiFormQuestion {
+                        id: "a".into(),
+                        kind: UiFormKind::Single,
+                        prompt: "A?".into(),
+                        description: None,
+                        preview: None,
+                        options: vec![
+                            UiFormOption {
+                                id: "x".into(),
+                                label: "X".into(),
+                                description: None,
+                                preview: None,
+                            },
+                            UiFormOption {
+                                id: "y".into(),
+                                label: "Y".into(),
+                                description: None,
+                                preview: None,
+                            },
+                        ],
+                        allow_other: false,
+                        allow_note: false,
+                        default: vec![],
+                        placeholder: None,
+                    },
+                    UiFormQuestion {
+                        id: "b".into(),
+                        kind: UiFormKind::Text,
+                        prompt: "B?".into(),
+                        description: None,
+                        preview: None,
+                        options: vec![],
+                        allow_other: false,
+                        allow_note: false,
+                        default: vec![],
+                        placeholder: None,
+                    },
+                    UiFormQuestion {
+                        id: "c".into(),
+                        kind: UiFormKind::Multiple,
+                        prompt: "C?".into(),
+                        description: None,
+                        preview: None,
+                        options: vec![UiFormOption {
+                            id: "z".into(),
+                            label: "Z".into(),
+                            description: None,
+                            preview: None,
+                        }],
+                        allow_other: false,
+                        allow_note: false,
+                        default: vec![],
+                        placeholder: None,
+                    },
+                ],
+            }),
+        };
+        let rows = form_options(&q);
+        assert_eq!(
+            rows,
+            [
+                ("a".to_owned(), "x".to_owned()),
+                ("a".to_owned(), "y".to_owned()),
+                ("c".to_owned(), "z".to_owned())
+            ]
+        );
+        let mut plain = q.clone();
+        plain.form = None;
+        assert!(form_options(&plain).is_empty());
     }
 }
 

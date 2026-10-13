@@ -7,14 +7,14 @@ use std::collections::{BTreeSet, HashMap};
 use pipkin_core::onboarding::{SignInChallenge, SignInProvider, SignInSnapshot, SignInStatus};
 use pipkin_core::{
     Bootstrap, ConversationId, EventKind, Goal, GoalState, ModelInfo, PlanCounts, PlanEvidence,
-    PlanTask, PlanTaskStatus, Project, ProjectId, SubagentInfo, SubagentOrigin, UiAnswer, UiNotice,
-    UiNoticeLevel, UiRequest, UiRequestItem, UiRequestKind, project_id_for_path,
-    project_name_for_path,
+    PlanTask, PlanTaskStatus, Project, ProjectId, SubagentInfo, SubagentOrigin, UiAnswer, UiForm,
+    UiFormKind, UiFormOption, UiFormQuestion, UiNotice, UiNoticeLevel, UiRequest, UiRequestItem,
+    UiRequestKind, project_id_for_path, project_name_for_path,
 };
 use pipkin_engine_protocol::{
-    Answer, AuthSnapshot, AuthStatus, Block, CredentialKind, Entry, EntryKind, ErrorCode, GoalView,
-    Message, ModelsView, Origin, PlanView, QuestionKind, RunOutcome, SessionSummary, SubagentsView,
-    UiView,
+    Answer, AuthSnapshot, AuthStatus, Block, CredentialKind, Entry, EntryKind, ErrorCode,
+    FormAnswer, FormKind, FormView, GoalView, Message, ModelsView, Origin, PlanView, QuestionKind,
+    RunOutcome, SessionSummary, SubagentsView, UiView,
 };
 
 use crate::adapters::session::{self, Session};
@@ -258,7 +258,14 @@ pub fn ui_state(
                 QuestionKind::Select => UiRequestKind::Select,
                 QuestionKind::Confirm => UiRequestKind::Confirm,
                 QuestionKind::Input => UiRequestKind::Input,
+                QuestionKind::Form => UiRequestKind::Form,
             },
+            form: q
+                .form
+                .as_ref()
+                .filter(|_| q.kind == QuestionKind::Form)
+                .map(form),
+            source: q.source.clone(),
             title: q.title.clone(),
             message: q.message.clone(),
             items: q
@@ -293,11 +300,60 @@ pub fn ui_state(
     (requests, status, notices)
 }
 
+/// A questionnaire as the engine published it; ids are carried as given.
+fn form(view: &FormView) -> UiForm {
+    UiForm {
+        allow_note: view.allow_note,
+        questions: view
+            .questions
+            .iter()
+            .map(|q| UiFormQuestion {
+                id: q.id.clone(),
+                kind: match q.kind {
+                    FormKind::Single => UiFormKind::Single,
+                    FormKind::Multiple => UiFormKind::Multiple,
+                    FormKind::Text => UiFormKind::Text,
+                },
+                prompt: q.prompt.clone(),
+                description: q.description.clone(),
+                preview: q.preview.clone(),
+                options: q
+                    .options
+                    .iter()
+                    .map(|o| UiFormOption {
+                        id: o.id.clone(),
+                        label: o.label.clone(),
+                        description: o.description.clone(),
+                        preview: o.preview.clone(),
+                    })
+                    .collect(),
+                allow_other: q.allow_other,
+                allow_note: q.allow_note,
+                default: q.default.clone(),
+                placeholder: q.placeholder.clone(),
+            })
+            .collect(),
+    }
+}
+
 pub fn answer(answer: UiAnswer) -> Answer {
     match answer {
         UiAnswer::Choice(value) => Answer::Choice { value },
         UiAnswer::Confirm(value) => Answer::Confirm { value },
         UiAnswer::Text(value) => Answer::Text { value },
+        UiAnswer::Form(form) => Answer::Form {
+            answers: form
+                .answers
+                .into_iter()
+                .map(|a| FormAnswer {
+                    question: a.question,
+                    selected: a.selected,
+                    text: a.text,
+                    note: a.note,
+                })
+                .collect(),
+            note: form.note,
+        },
     }
 }
 
@@ -838,6 +894,8 @@ mod tests {
                 placeholder: None,
                 default_value: None,
                 deadline_ms: Some(5),
+                form: None,
+                source: None,
             }],
             status: vec![("z".into(), "2".into()), ("a".into(), "1".into())],
             notices: vec![NoticeView {

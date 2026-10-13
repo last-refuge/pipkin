@@ -90,15 +90,17 @@ STATUS-3 (cached Git summary) is optional; take it only if cheap after STATUS-2.
 
 ## 4. Questionnaire contract — ASK-2 (plan §7)
 
-- [ ] Versioned questionnaire: stable question/option ids, 1–4 questions, single/multiple/
+- [x] (2026-10-12) Versioned questionnaire: stable question/option ids, 1–4 questions, single/multiple/
   free-text kinds, optional bounded Markdown previews, per-answer notes and a global note;
   bounds validated in the engine; option labels are presentation, not identifiers; a default
   is never an answer until submitted; a note does not imply acceptance of unanswered
   questions; partial answers and cancellation stay distinct.
-- [ ] Native presentation of grouped questions, multi-select and previews; a
-  background-conversation attention badge; question durability beyond intent-level re-ask.
-- [ ] Acceptance: bounds, ids, partial/decline/cancel outcomes, restart re-ask, children
-  excluded; docs and scorecard entry.
+- [x] (2026-10-12) Native presentation of grouped questions, multi-select and previews; a
+  background-conversation attention badge; question durability beyond intent-level re-ask
+  (the desktop keeps the draft across the engine's re-ask by the asker's stable call id;
+  the engine's own durability stays the documented intent-level re-ask).
+- [x] (2026-10-12) Acceptance: bounds, ids, partial/decline/cancel outcomes, restart re-ask, children
+  excluded (unchanged ASK-1 test); docs and scorecard entry.
 
 ## 5. Observability — OBS-1, then OBS-2 / OBS-3 (plan §12)
 
@@ -173,3 +175,6 @@ above.
   authorization and settlement, background children with exactly-once completion delivery
   on the jobs rules, person-launched children, the lookup tools and the inspector controls.
   Open from §3: nothing (parallel groups and result artifacts stay in §6 leftovers).
+- 2026-10-12 — ASK-2 shipped: the questionnaire contract (protocol 25), engine-side
+  validation, the version-2 result, the desktop dialog with a kept draft, and the
+  *Needs your answer* mark. Open from §4: nothing.

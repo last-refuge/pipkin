@@ -1161,6 +1161,13 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                     LifecycleEvent::McpFailed(message) => {
                         m.mutate(|state| state.mcp_failed(message), cx)
                     }
+                    LifecycleEvent::QuestionWaiting {
+                        conversation,
+                        waiting,
+                    } => m.mutate(
+                        |state| state.set_question_waiting(conversation, waiting),
+                        cx,
+                    ),
                 });
                 if alive.is_err() {
                     break;

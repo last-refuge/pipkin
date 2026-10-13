@@ -197,6 +197,8 @@ fn ready_for(command: &Command, owner: bool) -> AppState {
                         placeholder: None,
                         default_value: None,
                         deadline: None,
+                        form: None,
+                        source: None,
                     }],
                     status: vec![],
                     notices: vec![],

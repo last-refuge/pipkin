@@ -688,6 +688,7 @@ async fn dispatch_with_cancel(
                     "subagentControls".into(),
                     "questions".into(),
                     "askUserQuestion".into(),
+                    "questionnaires".into(),
                     "plans".into(),
                     "web".into(),
                     "goals".into(),
@@ -1403,6 +1404,8 @@ pub fn registry_with(extra: Arc<dyn ApiAdapter>) -> Registry {
     r
 }
 
+#[cfg(test)]
+mod ask2_tests;
 #[cfg(test)]
 mod ask_tests;
 #[cfg(test)]

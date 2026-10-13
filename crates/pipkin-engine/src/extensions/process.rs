@@ -704,12 +704,18 @@ async fn handle(
                 options: p.options,
                 placeholder: p.placeholder,
                 default_value: p.default_value,
+                // Extensions ask single questions; questionnaires are the model tool's.
+                form: None,
+                source: None,
             };
             let timeout = p.timeout_ms.map(Duration::from_millis);
             Ok(match host.ask(question, timeout, cancel).await {
                 None => Value::Null,
                 Some(Answer::Confirm { value }) => Value::Bool(value),
                 Some(Answer::Choice { value } | Answer::Text { value }) => Value::String(value),
+                Some(form @ Answer::Form { .. }) => {
+                    serde_json::to_value(form).unwrap_or(Value::Null)
+                }
             })
         }
         "prompt" | "steer" | "followUp" => {

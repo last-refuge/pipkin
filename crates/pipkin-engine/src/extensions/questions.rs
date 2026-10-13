@@ -25,7 +25,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use pipkin_engine_protocol::{
-    Answer, NoticeLevel, NoticeView, QuestionKind, QuestionOption, QuestionView, UiView,
+    Answer, FormAnswer, FormKind, FormView, NoticeLevel, NoticeView, QuestionKind, QuestionOption,
+    QuestionView, UiView,
 };
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -48,6 +49,8 @@ pub const UI_MAX_NOTICE_CHARS: usize = 500;
 pub const UI_MAX_STATUS_KEY_CHARS: usize = 80;
 /// Status texts are cut to this length.
 pub const UI_MAX_STATUS_TEXT_CHARS: usize = 300;
+/// Longest accepted questionnaire note (per answer, and for the whole).
+pub const UI_MAX_NOTE_CHARS: usize = 2_000;
 /// How much of a title a notice quotes.
 const NOTICE_TITLE_CHARS: usize = 80;
 
@@ -55,6 +58,8 @@ pub const REFUSE_CONFIRM: &str = "A confirmation needs yes or no.";
 pub const REFUSE_NOT_TEXT: &str = "An answer must be text.";
 pub const REFUSE_NOT_A_CHOICE: &str = "That is not one of the choices.";
 pub const REFUSE_NOT_OPEN: &str = "That question is no longer open.";
+pub const REFUSE_NEEDS_FORM: &str = "This questionnaire needs its answers as a whole.";
+pub const REFUSE_NOT_A_FORM: &str = "That question is not a questionnaire.";
 
 /// Receives every new [`UiView`] after a change (to publish `SessionChange::UiChanged`).
 ///
@@ -75,6 +80,11 @@ pub struct Question {
     pub options: Vec<QuestionOption>,
     pub placeholder: Option<String>,
     pub default_value: Option<String>,
+    /// The questionnaire of a `form`.
+    pub form: Option<FormView>,
+    /// What asked (`call:<call id>` for a model's tool call); shown to presentations so a
+    /// re-asked question can be recognized.
+    pub source: Option<String>,
 }
 
 impl Question {
@@ -86,6 +96,8 @@ impl Question {
             options,
             placeholder: None,
             default_value: None,
+            form: None,
+            source: None,
         }
     }
 
@@ -97,6 +109,8 @@ impl Question {
             options: Vec::new(),
             placeholder: None,
             default_value: None,
+            form: None,
+            source: None,
         }
     }
 
@@ -108,7 +122,29 @@ impl Question {
             options: Vec::new(),
             placeholder: None,
             default_value: None,
+            form: None,
+            source: None,
         }
+    }
+
+    /// A questionnaire. Its bounds are the asker's to enforce; the host validates answers
+    /// against it.
+    pub fn form(title: impl Into<String>, form: FormView) -> Question {
+        Question {
+            kind: QuestionKind::Form,
+            title: title.into(),
+            message: None,
+            options: Vec::new(),
+            placeholder: None,
+            default_value: None,
+            form: Some(form),
+            source: None,
+        }
+    }
+
+    pub fn with_source(mut self, source: impl Into<String>) -> Question {
+        self.source = Some(source.into());
+        self
     }
 
     pub fn with_message(mut self, message: impl Into<String>) -> Question {
@@ -378,6 +414,17 @@ impl QuestionHost {
             let answer = match (view.kind, answer) {
                 (QuestionKind::Confirm, Answer::Confirm { value }) => Answer::Confirm { value },
                 (QuestionKind::Confirm, _) => return (Err(REFUSE_CONFIRM.to_string()), false),
+                (QuestionKind::Form, Answer::Form { answers, note }) => {
+                    let Some(form) = &view.form else {
+                        return (Err(REFUSE_NOT_A_FORM.to_string()), false);
+                    };
+                    match validate_form_answer(form, answers, note) {
+                        Ok(answer) => answer,
+                        Err(reason) => return (Err(reason), false),
+                    }
+                }
+                (QuestionKind::Form, _) => return (Err(REFUSE_NEEDS_FORM.to_string()), false),
+                (_, Answer::Form { .. }) => return (Err(REFUSE_NOT_A_FORM.to_string()), false),
                 (_, Answer::Confirm { .. }) => return (Err(REFUSE_NOT_TEXT.to_string()), false),
                 (QuestionKind::Select, Answer::Choice { value } | Answer::Text { value }) => {
                     if !view.options.iter().any(|o| o.value == value) {
@@ -447,6 +494,90 @@ impl QuestionHost {
     }
 }
 
+/// Check a questionnaire's submitted answers against the questionnaire the person saw:
+/// every question named exists (once), selections are offered option ids, a single-choice
+/// question has at most one, a text question takes text, free text only where allowed,
+/// notes only where allowed, and lengths are bounded. Texts are trimmed; blank texts and
+/// notes are dropped, so a submission that selects nothing and writes nothing leaves the
+/// question unanswered. Returns the normalized answer.
+pub fn validate_form_answer(
+    form: &FormView,
+    answers: Vec<FormAnswer>,
+    note: Option<String>,
+) -> Result<Answer, String> {
+    let clean = |text: Option<String>, max: usize, what: &str| -> Result<Option<String>, String> {
+        let Some(text) = text else { return Ok(None) };
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(None);
+        }
+        if text.encode_utf16().count() > max {
+            return Err(format!("{what} can be at most {max} characters."));
+        }
+        Ok(Some(text.to_owned()))
+    };
+    let mut seen: Vec<&str> = Vec::new();
+    let mut out = Vec::with_capacity(answers.len());
+    for answer in &answers {
+        let Some(question) = form.questions.iter().find(|q| q.id == answer.question) else {
+            return Err(format!(
+                "\"{}\" is not one of the questions.",
+                answer.question
+            ));
+        };
+        if seen.contains(&question.id.as_str()) {
+            return Err(format!("Question \"{}\" was answered twice.", question.id));
+        }
+        seen.push(&question.id);
+        if question.kind == FormKind::Text && !answer.selected.is_empty() {
+            return Err(format!(
+                "Question \"{}\" takes text, not a choice.",
+                question.id
+            ));
+        }
+        let mut selected: Vec<String> = Vec::new();
+        for id in &answer.selected {
+            if !question.options.iter().any(|o| &o.id == id) {
+                return Err(REFUSE_NOT_A_CHOICE.to_string());
+            }
+            if !selected.contains(id) {
+                selected.push(id.clone());
+            }
+        }
+        match question.kind {
+            FormKind::Single if selected.len() > 1 => {
+                return Err(format!("Question \"{}\" takes one choice.", question.id));
+            }
+            _ => {}
+        }
+        let text = clean(answer.text.clone(), UI_MAX_INPUT_CHARS, "An answer")?;
+        if text.is_some() && question.kind != FormKind::Text && !question.allow_other {
+            return Err(format!(
+                "Question \"{}\" does not take a typed answer.",
+                question.id
+            ));
+        }
+        let note = clean(answer.note.clone(), UI_MAX_NOTE_CHARS, "A note")?;
+        if note.is_some() && !question.allow_note {
+            return Err(format!(
+                "Question \"{}\" does not take a note.",
+                question.id
+            ));
+        }
+        out.push(FormAnswer {
+            question: question.id.clone(),
+            selected,
+            text,
+            note,
+        });
+    }
+    let note = clean(note, UI_MAX_NOTE_CHARS, "A note")?;
+    if note.is_some() && !form.allow_note {
+        return Err("This questionnaire does not take a note.".to_string());
+    }
+    Ok(Answer::Form { answers: out, note })
+}
+
 /// Register a question; `None` when it is refused.
 fn open(
     shared: &Arc<Shared>,
@@ -488,6 +619,10 @@ fn open(
             placeholder: question.placeholder,
             default_value: question.default_value,
             deadline_ms,
+            form: question
+                .form
+                .filter(|_| question.kind == QuestionKind::Form),
+            source: question.source,
         };
         let (settle, settled) = oneshot::channel();
         state.pending.push(Pending { view, settle });

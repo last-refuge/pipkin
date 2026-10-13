@@ -32,6 +32,8 @@ pub use view::*;
 // Version 23 adds `context` (current context occupancy) to snapshots and `ContextChanged`.
 // Version 24 adds subagent controls: `StopSubagent`, `SteerSubagent`, `LaunchSubagent`,
 // `SubagentResult`, and the origin/background/delivery/note fields on `SubagentRow`.
-pub const PROTOCOL_VERSION: u32 = 24;
+// Version 25 adds questionnaires: `QuestionKind::Form`, `QuestionView::form` / `source`,
+// `Answer::Form`.
+pub const PROTOCOL_VERSION: u32 = 25;
 
 pub mod delivery;

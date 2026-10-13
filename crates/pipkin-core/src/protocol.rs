@@ -97,6 +97,12 @@ pub enum Command {
     },
     /// Decline to answer a question an extension asked.
     CancelUiRequest(String),
+    /// Select (single) or toggle (multiple) an option in the open questionnaire's draft.
+    /// Drafts are not answers: nothing reaches the engine until `AnswerUiRequest`.
+    ToggleFormOption {
+        question: String,
+        option: String,
+    },
     /// Dismiss the notices extensions have posted.
     DismissUiNotices,
     /// Show where a search hit is: open its conversation and scroll to the message.

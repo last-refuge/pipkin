@@ -1,5 +1,37 @@
 # Scorecard
 
+## Questionnaires, ASK-2 (2026-10-12)
+
+`ask_user_question` asks up to four related questions at once, with stable ids, single /
+multiple / text kinds, bounded Markdown previews, per-answer and whole notes, engine-side
+validation and a version-2 result that keeps partial answers, empty submissions and declines
+distinct ([ask-user-question.md](ask-user-question.md)); protocol 25, capability
+`questionnaires`; the desktop dialog, a draft kept across re-asks, and a *Needs your answer*
+mark on any conversation.
+
+- **Measured (automated).** Engine tests: the questionnaire is published with the model's
+  ids (and `q1..`/`o1..` defaults), its source call and no deadline; unknown ids, duplicate
+  answers, two choices for a single, a choice for a text, typed text where not allowed, a
+  note where not allowed and an over-long text are refused with the questionnaire left open;
+  a partial submission with an "other" text, two choices and notes is reported question by
+  question with the right outcome and text; an empty submission with a default in place is
+  unanswered-but-submitted (the default is not an answer), a decline is unanswered and not
+  submitted; eleven argument bounds are refused before anything is shown; a restart re-asks
+  the same questionnaire with the same ids and source under a new runtime id and the answer
+  settles the original call without a new model turn; the single-question contract (ASK-1)
+  and the extension question host's tests pass unchanged. Core tests cover the draft (seeded
+  from defaults, per-kind toggles, unknown ids ignored, kept across a re-ask by the same
+  asker, dropped otherwise), building the submission with blanks dropped and texts read only
+  where allowed, one send per answer, and the attention flag for open and background
+  conversations. A UI test covers the keyboard row order. An app end-to-end test has the
+  model ask while another conversation is open, sees the mark, returns, edits the draft,
+  submits a typed answer and a note, and the model receives exactly that. The repository gate
+  passed.
+- **Observed.** Nothing native.
+- **Unverified.** The dialog in a window (mouse, keyboard, IME in its fields, both themes,
+  narrow width, screen reader); preview rendering beyond the parser's blocks. Not a release
+  qualification.
+
 ## Subagent controls and background children, SUB-2 / SUB-3 (2026-10-12)
 
 A person can Stop or Steer one child from the inspector through engine-authorized requests,

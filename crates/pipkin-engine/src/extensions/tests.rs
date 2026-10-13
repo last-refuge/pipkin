@@ -79,6 +79,7 @@ pub(crate) fn mint_yes(name: &'static str) -> impl Fn(&QuestionView) -> Option<A
             },
             QuestionKind::Confirm => Answer::Confirm { value: true },
             QuestionKind::Input => Answer::Text { value: name.into() },
+            QuestionKind::Form => return None,
         })
     }
 }
@@ -112,6 +113,7 @@ async fn the_questions_example_reports_declined_and_negative_answers() {
         QuestionKind::Input => Some(Answer::Text {
             value: q.default_value.clone().unwrap(),
         }),
+        QuestionKind::Form => None,
     })
     .await;
     assert_eq!(

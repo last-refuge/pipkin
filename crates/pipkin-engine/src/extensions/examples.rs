@@ -95,7 +95,7 @@ async fn ask_three_questions(ui: Arc<dyn ExtensionHost>) {
 fn text_of(answer: Answer) -> Option<String> {
     match answer {
         Answer::Choice { value } | Answer::Text { value } => Some(value),
-        Answer::Confirm { .. } => None,
+        Answer::Confirm { .. } | Answer::Form { .. } => None,
     }
 }
 

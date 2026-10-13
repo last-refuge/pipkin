@@ -1,3 +1,4 @@
+use crate::ids::ConversationId;
 use crate::model::Connection;
 use crate::onboarding::SignInSnapshot;
 use crate::protocol::BackendRequest;
@@ -25,6 +26,12 @@ pub enum LifecycleEvent {
     McpImport(crate::mcp::McpImportPreview),
     /// A management action was refused; shown on the page, not as an app notice.
     McpFailed(String),
+    /// A conversation (open or not) has, or no longer has, a question waiting for the
+    /// person. Not tied to an attachment generation.
+    QuestionWaiting {
+        conversation: ConversationId,
+        waiting: bool,
+    },
 }
 
 pub type LifecycleSink = Box<dyn Fn(LifecycleEvent) + Send + Sync>;

@@ -117,6 +117,8 @@ fn payload_accounting_includes_spare_capacity_nested_text_and_vector_storage() {
             placeholder: Some("p".into()),
             default_value: Some("x".into()),
             deadline: None,
+            form: None,
+            source: None,
         }],
         status: vec![("key".into(), "value".into())],
         notices: vec![UiNotice {

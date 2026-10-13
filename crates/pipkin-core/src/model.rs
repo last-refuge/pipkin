@@ -526,6 +526,61 @@ pub enum UiRequestKind {
     Select,
     Confirm,
     Input,
+    /// A questionnaire answered as a whole (see [`UiRequest::form`]).
+    Form,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UiFormKind {
+    Single,
+    Multiple,
+    Text,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiFormOption {
+    pub id: String,
+    pub label: String,
+    pub description: Option<String>,
+    /// Bounded Markdown, shown as given.
+    pub preview: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiFormQuestion {
+    pub id: String,
+    pub kind: UiFormKind,
+    pub prompt: String,
+    pub description: Option<String>,
+    pub preview: Option<String>,
+    pub options: Vec<UiFormOption>,
+    pub allow_other: bool,
+    pub allow_note: bool,
+    /// Preselected option ids: a draft, never an answer until submitted.
+    pub default: Vec<String>,
+    pub placeholder: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiForm {
+    pub questions: Vec<UiFormQuestion>,
+    pub allow_note: bool,
+}
+
+/// One submitted questionnaire answer; a question with nothing selected and no text is
+/// unanswered (a note alone does not answer it).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UiFormAnswer {
+    pub question: String,
+    pub selected: Vec<String>,
+    pub text: Option<String>,
+    pub note: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UiFormAnswers {
+    pub answers: Vec<UiFormAnswer>,
+    pub note: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -548,6 +603,18 @@ pub struct UiRequest {
     pub default_value: Option<String>,
     /// Epoch milliseconds after which the engine cancels the question.
     pub deadline: Option<i64>,
+    /// The questionnaire of a `Form` request.
+    pub form: Option<UiForm>,
+    /// What asked (`call:<id>` for a model's tool call): stable across the engine's re-ask
+    /// after a restart, unlike `id`, so a draft can be kept.
+    pub source: Option<String>,
+}
+
+impl UiRequest {
+    /// What a draft is keyed by: the asker when known, else the runtime id.
+    pub fn draft_key(&self) -> &str {
+        self.source.as_deref().unwrap_or(&self.id)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -570,6 +637,7 @@ pub enum UiAnswer {
     Choice(String),
     Confirm(bool),
     Text(String),
+    Form(UiFormAnswers),
 }
 
 /// A message found by searching saved history.

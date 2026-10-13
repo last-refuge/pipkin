@@ -494,6 +494,8 @@ fn question(id: &str, kind: UiRequestKind) -> UiRequest {
         placeholder: None,
         default_value: None,
         deadline: None,
+        form: None,
+        source: None,
     }
 }
 

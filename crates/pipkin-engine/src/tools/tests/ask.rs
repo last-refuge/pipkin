@@ -384,5 +384,11 @@ fn the_tool_is_replay_safe_and_named_for_the_catalog() {
     assert_eq!(spec.name, ASK_USER_QUESTION);
     assert!(AskUserQuestionTool.replay_safe());
     assert!(!AskUserQuestionTool.sequential());
-    assert_eq!(spec.parameters["required"], json!(["question"]));
+    // Either `question` or `questions` asks; the parser, not the schema, insists on one.
+    assert_eq!(spec.parameters["required"], Value::Null);
+    assert!(spec.parameters["properties"]["question"].is_object());
+    assert_eq!(
+        spec.parameters["properties"]["questions"]["items"]["required"],
+        json!(["prompt"])
+    );
 }

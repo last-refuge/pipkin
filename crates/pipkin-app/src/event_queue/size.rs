@@ -136,6 +136,21 @@ pub(super) fn event_bytes(event: &BackendEvent) -> usize {
                         + strings(&r.message)
                         + strings(&r.placeholder)
                         + strings(&r.default_value)
+                        + strings(&r.source)
+                        + r.form.as_ref().map_or(0, |f| {
+                            vec_bytes(&f.questions, |q| {
+                                q.id.capacity()
+                                    + q.prompt.capacity()
+                                    + strings(&q.description)
+                                    + strings(&q.preview)
+                                    + vec_bytes(&q.options, |o| {
+                                        o.id.capacity()
+                                            + o.label.capacity()
+                                            + strings(&o.description)
+                                            + strings(&o.preview)
+                                    })
+                            })
+                        })
                         + vec_bytes(&r.items, |i| {
                             i.value.capacity() + i.label.capacity() + strings(&i.description)
                         })

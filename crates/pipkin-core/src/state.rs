@@ -63,6 +63,11 @@ pub struct ConversationState {
     pub ui_notices: Vec<UiNotice>,
     /// Why the engine refused the last answer.
     pub ui_error: Option<String>,
+    /// The person's selections in the open questionnaire, kept while it stays open (also
+    /// across a re-ask with the same source). Not an answer until submitted.
+    pub form_draft: Option<FormDraft>,
+    /// A question is waiting for the person (reported for every conversation, open or not).
+    pub waiting_question: bool,
     /// A complete tool output has been asked for and is on its way.
     pub pending_output: Option<(String, OutputUse)>,
     pub draft: Draft,
@@ -125,6 +130,8 @@ impl ConversationState {
             older_error: None,
             ui_requests: Vec::new(),
             ui_answering: Vec::new(),
+            form_draft: None,
+            waiting_question: false,
             ui_status: Vec::new(),
             ui_notices: Vec::new(),
             ui_error: None,
@@ -176,12 +183,97 @@ impl ConversationState {
 
     /// Short activity label for the navigation list.
     pub fn activity(&self) -> Option<&'static str> {
+        if self.waiting_question || !self.ui_requests.is_empty() {
+            return Some("Needs your answer");
+        }
         match self.run {
             RunState::Idle if self.unseen_completion => Some("Done!"),
             RunState::Idle => None,
             ref r => Some(r.label()),
         }
     }
+
+    /// The open questionnaire, if the first waiting question is one.
+    pub fn open_form(&self) -> Option<(&UiRequest, &UiForm)> {
+        let request = self.ui_requests.first()?;
+        request.form.as_ref().map(|form| (request, form))
+    }
+
+    /// The draft selections of one questionnaire question.
+    pub fn form_selected(&self, question: &str) -> &[String] {
+        self.form_draft
+            .as_ref()
+            .and_then(|d| d.selections.iter().find(|(q, _)| q == question))
+            .map_or(&[], |(_, s)| s.as_slice())
+    }
+
+    /// The answers to submit for the open questionnaire: the draft's selections plus the
+    /// texts the presentation holds. `text_of(question id, field)` returns the field's text,
+    /// `field` being `text` (a typed answer) or `note`; the questionnaire's own note is
+    /// `text_of("", "note")`. Blank texts are dropped, so a question with nothing selected
+    /// and nothing typed is submitted unanswered.
+    pub fn form_answers(
+        &self,
+        text_of: impl Fn(&str, &str) -> Option<String>,
+    ) -> Option<(String, UiFormAnswers)> {
+        let (request, form) = self.open_form()?;
+        let clean = |t: Option<String>| t.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+        let answers = form
+            .questions
+            .iter()
+            .map(|q| UiFormAnswer {
+                question: q.id.clone(),
+                selected: self.form_selected(&q.id).to_vec(),
+                text: if q.kind == UiFormKind::Text || q.allow_other {
+                    clean(text_of(&q.id, "text"))
+                } else {
+                    None
+                },
+                note: if q.allow_note {
+                    clean(text_of(&q.id, "note"))
+                } else {
+                    None
+                },
+            })
+            .collect();
+        let note = if form.allow_note {
+            clean(text_of("", "note"))
+        } else {
+            None
+        };
+        Some((request.id.clone(), UiFormAnswers { answers, note }))
+    }
+
+    /// Keep the draft for the questionnaire now open: a draft keyed by the same asker
+    /// survives a re-ask; otherwise the engine's defaults seed a new one.
+    fn sync_form_draft(&mut self) {
+        let Some((request, form)) = self.open_form() else {
+            self.form_draft = None;
+            return;
+        };
+        let key = request.draft_key().to_owned();
+        if self.form_draft.as_ref().is_some_and(|d| d.key == key) {
+            return;
+        }
+        self.form_draft = Some(FormDraft {
+            key,
+            selections: form
+                .questions
+                .iter()
+                .filter(|q| !q.default.is_empty())
+                .map(|q| (q.id.clone(), q.default.clone()))
+                .collect(),
+        });
+    }
+}
+
+/// The person's selections in the open questionnaire.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FormDraft {
+    /// The questionnaire's draft key (its source, else its runtime id).
+    pub key: String,
+    /// Selected option ids per question id.
+    pub selections: Vec<(String, Vec<String>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -422,6 +514,19 @@ impl AppState {
     }
 
     /// Show a failure that has no conversation to attach to, and stop waiting on anything it ended.
+    /// A backend's word on whether `conversation` has a question waiting (any conversation,
+    /// attached or not). The open conversation's own `UiState` keeps the same flag.
+    pub fn set_question_waiting(&mut self, conversation: ConversationId, waiting: bool) -> Outcome {
+        let mut out = Outcome::default();
+        if let Some(c) = self.conv_mut(conversation)
+            && c.waiting_question != waiting
+        {
+            c.waiting_question = waiting;
+            out.notes.push(Note::Other);
+        }
+        out
+    }
+
     pub fn set_notice(&mut self, message: String) -> Outcome {
         self.pending_create = None;
         self.notice = Some(message);
@@ -1262,6 +1367,39 @@ impl AppState {
                         }));
                     }
                 }
+            }
+            Command::ToggleFormOption { question, option } => {
+                let Some(c) = self.selected.and_then(|id| self.conv_mut(id)) else {
+                    return out;
+                };
+                let Some((_, form)) = c.open_form() else {
+                    return out;
+                };
+                let Some(q) = form.questions.iter().find(|q| q.id == question) else {
+                    return out;
+                };
+                if !q.options.iter().any(|o| o.id == option) {
+                    return out;
+                }
+                let single = q.kind == UiFormKind::Single;
+                c.sync_form_draft();
+                let draft = c.form_draft.as_mut().expect("a draft for the open form");
+                let at = draft.selections.iter().position(|(id, _)| *id == question);
+                let selected = match at {
+                    Some(at) => &mut draft.selections[at].1,
+                    None => {
+                        draft.selections.push((question.clone(), Vec::new()));
+                        &mut draft.selections.last_mut().expect("just pushed").1
+                    }
+                };
+                if let Some(at) = selected.iter().position(|o| *o == option) {
+                    selected.remove(at);
+                } else if single {
+                    *selected = vec![option];
+                } else {
+                    selected.push(option);
+                }
+                out.notes.push(Note::Other);
             }
             Command::DismissUiNotices => {
                 if let Some(conv) = self.selected {
@@ -2705,9 +2843,11 @@ impl AppState {
             } => {
                 c.ui_answering
                     .retain(|a| requests.iter().any(|r| &r.id == a));
+                c.waiting_question = !requests.is_empty();
                 c.ui_requests = requests;
                 c.ui_status = status;
                 c.ui_notices = notices;
+                c.sync_form_draft();
                 out.notes.push(Note::Other);
             }
             EventKind::UiRespondRefused {

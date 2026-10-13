@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use pipkin_core::{
     AppState, Backend, Bootstrap, ChangesState, Command, Connection, ConversationId, Delivery,
     Effect, ImportFlow, ImportKind, ItemKind, LifecycleEvent, Mode, Outcome, PlanEdit,
-    PlanTaskStatus, QueueMode, RequestId, RunState, describe_attachment,
+    PlanTaskStatus, QueueMode, RequestId, RunState, UiAnswer, UiRequestKind, describe_attachment,
 };
 use pipkin_engine::config::{EngineConfig, Env};
 use pipkin_engine::provider::ProviderRequest;
@@ -529,6 +529,10 @@ impl Harness {
                 LifecycleEvent::McpTest(result) => self.state.mcp_test_result(result),
                 LifecycleEvent::McpImport(preview) => self.state.mcp_import_previewed(preview),
                 LifecycleEvent::McpFailed(message) => self.state.mcp_failed(message),
+                LifecycleEvent::QuestionWaiting {
+                    conversation,
+                    waiting,
+                } => self.state.set_question_waiting(conversation, waiting),
             };
             self.exec(outcome);
         }
@@ -3499,5 +3503,134 @@ fn the_subagent_inspector_stops_a_child_and_launches_a_background_task() {
     );
     assert!(h.state.current().unwrap().subagents.error.is_none());
     gate.open();
+    h.stop();
+}
+
+// ---------------------------------------------------------------------------- questionnaires
+
+/// The model asks a questionnaire while another conversation is open: the asking
+/// conversation is marked for attention, the person returns, picks options through the
+/// draft and submits with a typed answer and a note, and the model receives exactly that.
+#[test]
+fn a_questionnaire_marks_its_conversation_and_is_answered_through_the_draft() {
+    let fx = Fixture::start(|request, _| {
+        let last_user = request
+            .messages
+            .iter()
+            .rev()
+            .find(|m| !matches!(m, Message::System(_)));
+        if matches!(last_user, Some(Message::User { .. })) {
+            Reply::Tools(
+                None,
+                vec![(
+                    "ask_user_question".into(),
+                    json!({
+                        "title": "Before I start",
+                        "note": true,
+                        "questions": [
+                            {"id": "approach", "prompt": "Which approach?", "options": [
+                                {"id": "rewrite", "label": "Rewrite"}, {"id": "patch", "label": "Patch"}
+                            ], "default": "rewrite"},
+                            {"id": "scope", "prompt": "Which parts?", "kind": "multiple", "options": [
+                                {"id": "tests", "label": "Tests"}, {"id": "docs", "label": "Docs"}
+                            ]},
+                            {"id": "name", "prompt": "Name?"}
+                        ]
+                    }),
+                )],
+            )
+        } else {
+            let heard = request
+                .messages
+                .iter()
+                .rev()
+                .find_map(|m| match m {
+                    Message::ToolResult { .. } => Some(m.text()),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            Reply::Text(format!("Heard: {heard}"))
+        }
+    });
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let asking = h.state.current().unwrap().id;
+    h.send("Plan it.");
+    // Move on before the question arrives: it must mark the other conversation.
+    h.dispatch(Command::NewConversation);
+    h.until("the second conversation is open", |s| {
+        s.current().is_some_and(|c| c.opened && c.id != asking)
+    });
+    h.until("the asking conversation needs an answer", |s| {
+        s.conversation(asking)
+            .is_some_and(|c| c.activity() == Some("Needs your answer"))
+    });
+    assert!(h.state.current().unwrap().activity().is_none());
+    // Back to it: the questionnaire is in the snapshot with its draft seeded from defaults.
+    h.dispatch(Command::SelectConversation(asking));
+    h.until("the questionnaire is shown", |s| {
+        s.current()
+            .is_some_and(|c| c.id == asking && c.opened && c.open_form().is_some())
+    });
+    {
+        let c = h.state.current().unwrap();
+        let (request, form) = c.open_form().unwrap();
+        assert_eq!(request.kind, UiRequestKind::Form);
+        assert_eq!(request.title, "Before I start");
+        assert!(
+            request
+                .source
+                .as_deref()
+                .is_some_and(|s| s.starts_with("call:"))
+        );
+        assert_eq!(form.questions.len(), 3);
+        assert_eq!(c.form_selected("approach"), ["rewrite"]);
+    }
+    h.dispatch(Command::ToggleFormOption {
+        question: "approach".into(),
+        option: "patch".into(),
+    });
+    h.dispatch(Command::ToggleFormOption {
+        question: "scope".into(),
+        option: "tests".into(),
+    });
+    h.dispatch(Command::ToggleFormOption {
+        question: "scope".into(),
+        option: "docs".into(),
+    });
+    h.dispatch(Command::ToggleFormOption {
+        question: "scope".into(),
+        option: "tests".into(),
+    });
+    let (id, answers) = h
+        .state
+        .current()
+        .unwrap()
+        .form_answers(|q, field| match (q, field) {
+            ("name", "text") => Some("Pipkin".into()),
+            ("", "note") => Some("go slowly".into()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(answers.answers[0].selected, ["patch"]);
+    assert_eq!(answers.answers[1].selected, ["docs"]);
+    h.dispatch(Command::AnswerUiRequest {
+        id,
+        answer: UiAnswer::Form(answers),
+    });
+    h.until("the model heard the answers", |s| {
+        is_idle(s)
+            && assistant_texts(s).last().is_some_and(|t| {
+                t.contains("answered 3 of 3")
+                    && t.contains("approach (Which approach?): Patch")
+                    && t.contains("scope (Which parts?): Docs")
+                    && t.contains("name (Name?): Pipkin")
+                    && t.contains("Note from the person: go slowly")
+            })
+    });
+    let c = h.state.current().unwrap();
+    assert!(c.ui_requests.is_empty() && !c.waiting_question && c.form_draft.is_none());
+    assert!(c.activity().is_none());
     h.stop();
 }

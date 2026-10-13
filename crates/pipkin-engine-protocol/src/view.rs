@@ -256,6 +256,85 @@ pub enum QuestionKind {
     Select,
     Confirm,
     Input,
+    /// A questionnaire (ASK-2): see [`QuestionView::form`].
+    Form,
+}
+
+/// What one questionnaire question takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FormKind {
+    /// At most one option (plus free text when `allow_other`).
+    Single,
+    /// Any number of options (plus free text when `allow_other`).
+    Multiple,
+    /// Free text only.
+    Text,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormOptionView {
+    /// Stable within the questionnaire; what an answer names. Labels are presentation.
+    pub id: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Bounded Markdown shown when the option is examined.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormQuestionView {
+    /// Stable within the questionnaire; what an answer names.
+    pub id: String,
+    pub kind: FormKind,
+    pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Bounded Markdown shown under the prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+    #[serde(default)]
+    pub options: Vec<FormOptionView>,
+    /// The person may type a free-text alternative to the options.
+    #[serde(default)]
+    pub allow_other: bool,
+    /// The person may attach a note to their answer.
+    #[serde(default)]
+    pub allow_note: bool,
+    /// Options the presentation preselects. Never an answer until submitted.
+    #[serde(default)]
+    pub default: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
+}
+
+/// A versioned questionnaire of one to four questions, answered as a whole.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormView {
+    pub version: u32,
+    pub questions: Vec<FormQuestionView>,
+    /// The person may attach one note to the whole questionnaire.
+    #[serde(default)]
+    pub allow_note: bool,
+}
+
+/// One question's submitted answer. A question left out, or submitted with nothing selected
+/// and no text, is unanswered; a note alone does not answer it.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormAnswer {
+    pub question: String,
+    #[serde(default)]
+    pub selected: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -284,6 +363,13 @@ pub struct QuestionView {
     /// Unix milliseconds after which the engine cancels the question.
     #[serde(default)]
     pub deadline_ms: Option<i64>,
+    /// The questionnaire of a `form` question.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form: Option<FormView>,
+    /// What asked: `call:<call id>` for a model's tool call. Stable across a restart's
+    /// re-ask (the runtime `id` is not), so a presentation can keep a draft.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -305,9 +391,21 @@ pub struct UiView {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Answer {
-    Choice { value: String },
-    Confirm { value: bool },
-    Text { value: String },
+    Choice {
+        value: String,
+    },
+    Confirm {
+        value: bool,
+    },
+    Text {
+        value: String,
+    },
+    /// A questionnaire's answers, possibly partial, with an optional note for the whole.
+    Form {
+        answers: Vec<FormAnswer>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
 }
 
 /// One durable child task of a session's subagent tool calls.
@@ -708,7 +806,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 24);
+        assert_eq!(crate::PROTOCOL_VERSION, 25);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };

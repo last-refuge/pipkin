@@ -70,6 +70,10 @@ fn docked_nav_width(total: f32, preferred: f32, inspector_open: bool) -> f32 {
     }
 }
 
+pub(super) fn form_field_key(question: &str, field: &str) -> String {
+    format!("{question}\u{1f}{field}")
+}
+
 fn docked_inspector_width(total: f32, nav: f32, preferred: f32) -> Option<f32> {
     let room = total - nav - 2.0 * DIVIDER_WIDTH - MIN_CENTER;
     (room >= MIN_INSPECTOR).then(|| preferred.clamp(MIN_INSPECTOR, room))
@@ -152,6 +156,11 @@ pub struct Workspace {
     /// task for a new background child.
     pub(super) subagent_steer: Entity<ComposerEditor>,
     pub(super) subagent_task: Entity<ComposerEditor>,
+    /// Text fields of the open questionnaire, keyed `<question id>\u{1f}<field>` (`text`
+    /// or `note`; the questionnaire's own note has an empty question id). Built for one
+    /// draft key and kept, with their text, while that questionnaire stays open.
+    pub(super) form_editors: Vec<(String, Entity<ComposerEditor>)>,
+    pub(super) form_editors_key: Option<String>,
     pub(super) mcp_kind: pipkin_core::McpKind,
     pub(super) mcp_scope: pipkin_core::McpScope,
     pub(super) setup_challenge: Option<String>,
@@ -320,6 +329,8 @@ impl Workspace {
             mcp_answer,
             subagent_steer,
             subagent_task,
+            form_editors: Vec::new(),
+            form_editors_key: None,
             mcp_kind: pipkin_core::McpKind::Stdio,
             mcp_scope: pipkin_core::McpScope::User,
             setup_challenge: None,
@@ -407,6 +418,7 @@ impl Workspace {
         self.refresh_subagent_rows(cx);
         self.refresh_plan_rows(cx);
         self.refresh_job_rows(cx);
+        self.ensure_form_editors(window, cx);
         let entry = self.model.read(cx).entry;
         let challenge = self
             .model
@@ -902,6 +914,7 @@ impl Workspace {
             | Overlay::Session
             | Overlay::About => window.focus(&self.menu_focus, cx),
             Overlay::Question => {
+                self.ensure_form_editors(window, cx);
                 let question = self.waiting_question(cx, true);
                 match question {
                     Some(q) if q.kind == UiRequestKind::Input => {
@@ -934,6 +947,97 @@ impl Workspace {
                 .find(|q| including_dismissed || !self.question_dismissed.contains(&q.id))
                 .cloned()
         })
+    }
+
+    /// The text fields the open questionnaire needs, created once per draft key so what the
+    /// person typed survives collapsing the dialog, other updates and a re-ask by the same
+    /// asker; dropped when the questionnaire goes away.
+    pub(super) fn ensure_form_editors(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let form = self
+            .state(cx)
+            .current()
+            .and_then(|c| c.open_form())
+            .map(|(request, form)| (request.draft_key().to_owned(), form.clone()));
+        let Some((key, form)) = form else {
+            if self.form_editors_key.take().is_some() {
+                self.form_editors.clear();
+                cx.notify();
+            }
+            return;
+        };
+        if self.form_editors_key.as_deref() == Some(&key) {
+            return;
+        }
+        self.form_editors.clear();
+        for q in &form.questions {
+            if q.kind == UiFormKind::Text || q.allow_other {
+                let editor = cx.new(|cx| ComposerEditor::new(window, cx));
+                editor.update(cx, |e, cx| {
+                    e.set_label(format!("Answer: {}", q.prompt), cx);
+                    e.set_placeholder(q.placeholder.as_deref().unwrap_or(
+                        if q.kind == UiFormKind::Text {
+                            "Your answer"
+                        } else {
+                            "Or type your own answer"
+                        },
+                    ));
+                });
+                self.form_editors
+                    .push((form_field_key(&q.id, "text"), editor));
+            }
+            if q.allow_note {
+                let editor = cx.new(|cx| ComposerEditor::single_line(window, cx));
+                editor.update(cx, |e, cx| {
+                    e.set_label(format!("Note on: {}", q.prompt), cx);
+                    e.set_placeholder("Add a note (optional)");
+                });
+                self.form_editors
+                    .push((form_field_key(&q.id, "note"), editor));
+            }
+        }
+        if form.allow_note {
+            let editor = cx.new(|cx| ComposerEditor::new(window, cx));
+            editor.update(cx, |e, cx| {
+                e.set_label("Note about these questions", cx);
+                e.set_placeholder("Anything else the assistant should know (optional)");
+            });
+            self.form_editors.push((form_field_key("", "note"), editor));
+        }
+        self.form_editors_key = Some(key);
+        cx.notify();
+    }
+
+    pub(super) fn form_editor(
+        &self,
+        question: &str,
+        field: &str,
+    ) -> Option<&Entity<ComposerEditor>> {
+        let key = form_field_key(question, field);
+        self.form_editors
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, e)| e)
+    }
+
+    /// Submit the open questionnaire as the person left it: selections from the core's
+    /// draft, texts from the fields. Nothing was sent before this.
+    pub(super) fn submit_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let built = self.state(cx).current().and_then(|c| {
+            c.form_answers(|question, field| {
+                self.form_editor(question, field).map(|e| e.read(cx).text())
+            })
+        });
+        let Some((id, answers)) = built else {
+            return;
+        };
+        self.dispatch(
+            Command::AnswerUiRequest {
+                id,
+                answer: UiAnswer::Form(answers),
+            },
+            cx,
+        );
+        self.close_overlay(window, cx);
     }
 
     /// Offer a waiting question without being asked, once.

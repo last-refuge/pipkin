@@ -1002,6 +1002,16 @@ impl Live {
         change: SessionChange,
     ) {
         self.mark_child(&session, &change);
+        // A waiting question is attention for its conversation whether or not it is open:
+        // the badge is a lifecycle fact, not an attachment-scoped event.
+        if let SessionChange::UiChanged { ui } = &change
+            && let Some(conversation) = self.conversation_of(&session)
+        {
+            (worker.sink)(LifecycleEvent::QuestionWaiting {
+                conversation,
+                waiting: !ui.questions.is_empty(),
+            });
+        }
         match change {
             SessionChange::RunSettled {
                 request, outcome, ..
