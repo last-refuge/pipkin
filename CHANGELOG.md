@@ -80,9 +80,10 @@ reactivates the previous version, subject to the schema and backup rules in
   past 1.0.
 - On macOS the engine cannot find and stop a background job's process after it restarts;
   the job is marked interrupted with "the process is gone". Linux stops it.
-- On the macOS CI runner five engine unit tests fail (two structured-goal evidence tests, a
-  subagent artifact re-read, and two timing-based progress tests). They are macOS issues to
-  investigate and do not affect the Linux build, whose full suite passes in CI.
+- On the macOS CI runner a handful of engine unit tests fail or flake across runs (the
+  structured-goal audit and evidence tests, a subagent artifact re-read, and a timing-based
+  bash progress test). They are macOS issues to investigate and do not affect the Linux
+  build, whose full suite passes in CI.
 - The owner-run native gate rows in [docs/native-gate-testing.md](docs/native-gate-testing.md)
   keep their recorded status; soak and performance qualification happen after 1.0.
 - Detailed diagnostics (`pipkin --diagnose`) can include sensitive log text; review before
