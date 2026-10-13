@@ -16,7 +16,8 @@ launch flags, runtime layouts and setup instructions do not apply to current Pip
 # macOS: experimental first pass
 
 The `Experimental macOS build` GitHub Actions workflow builds the actual GPUI app on a macOS 15
-runner. First observed green run: [37482847877](https://github.com/last-refuge/pipkin/actions/runs/37482847877),
+Apple Silicon runner, plus a best-effort Intel leg that may fail without blocking it and mainly keeps the
+x86_64 build cache warm for the release workflow. First observed green run: [37482847877](https://github.com/last-refuge/pipkin/actions/runs/37482847877),
 clean app `f52e8c254488c4524c4cb986530eee7048b4f138`, **Apple Silicon/aarch64**. Intel/universal builds
 have not been produced or qualified. Download the artifact identified by its app revision and runner architecture, unzip its
 experimental app archive, and retain `build-info.json` and `SHA256SUMS`. This is a native single-

@@ -16,7 +16,21 @@ concurrency:
 jobs:
   native-engine:
     # Experimental platform evidence: this does not qualify macOS desktop UX or Gatekeeper acceptance.
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            optional: false
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            optional: true
+    # The Intel leg exists mainly to keep the x86_64 Rust build cache warm for the release
+    # workflow, which is the only other place that target is built. It is best effort: no Intel
+    # build has been checked on a Mac, and a failure there must not block the Apple Silicon leg.
+    continue-on-error: ${{ matrix.optional }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     env:
       CARGO_BUILD_JOBS: "3"
@@ -70,10 +84,13 @@ jobs:
           cargo test -p pipkin-app --locked adapters::native:: 2>&1 | tee qualification-logs/native-adapter.log
           test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
       - name: Build and verify the native macOS app and ZIP
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           set -o pipefail
           python3 scripts/test-package-macos.py
           target=$(rustc -vV | awk '/^host:/ {print $2}')
+          test "$target" = "$TARGET" || { echo "runner builds $target, expected $TARGET" >&2; exit 1; }
           cargo fetch --locked --target "$target" 2>&1 | tee qualification-logs/notice-inputs.log
           PIPKIN_REVISION="$(git rev-parse HEAD)" cargo build -p pipkin-app --release --locked 2>&1 | tee qualification-logs/build.log
           python3 scripts/write-license-inventory.py dist/macos-notices "$target" 2>&1 | tee qualification-logs/notices.log
