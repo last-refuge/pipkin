@@ -11,14 +11,14 @@ still open. Do not treat automated socket/installer checks as proof of a clean d
 | `<data dir>/pipkin.sqlite3.bak-vN` | Pre-migration backup for schema N | Same sensitivity as the database; does not include later drafts |
 | `<data dir>/engine` | Native durable sessions and artifacts | Private; back up the complete directory |
 | `~/.config/pipkin/engine` (or explicit data directory) | Native authentication/configuration | `auth.json` may contain API keys/OAuth tokens; never upload it |
-| `<agent dir>/experimental/sessions/<session ID>/` | Authoritative experimental Pi sessions: `meta.json` and worker-owned `session.sqlite` | Private; preserve this directory for session recovery, not just the server sockets/profile |
+| `<agent dir>/experimental/sessions/<session ID>/` | Authoritative legacy experimental sessions: `meta.json` and worker-owned `session.sqlite` | Private; preserve this directory for session recovery, not just the server sockets/profile |
 | Installation prefix / version directories | App with built-in engine, public build identity and notices | Not your draft/session storage |
 | Project directory | Actual files changed by tools or other programs | Changes survive Stop, quit and uninstall |
 
 Pipkin data-directory precedence is `--data-dir`, `PIPKIN_DATA`, `XDG_DATA_HOME/pipkin`, then
 `~/.local/share/pipkin`. Explicit `--data-dir` / `PIPKIN_DATA` also isolates the native engine's
 configuration and credentials under that directory. Use a separate project for destructive tests.
-Historical Pi directories are import sources only; `--pi-agent-dir` selects that source explicitly.
+Legacy profile directories are import sources only; `--pi-agent-dir` selects that source explicitly.
 
 Draft attachments are saved as file references/metadata, not a promise that the original file will exist forever.
 Do not delete originals before checking the restored draft. Keep backups private and include both app and engine
@@ -26,33 +26,33 @@ state if you need full recovery; a desktop-cache or server-coordination-profile 
 backup. An externally started server may use an explicit session-directory override; verify its configuration rather
 than assuming the defaults.
 
-### Native engine and Pi import
+### Native engine and legacy profile import
 
 `pipkin --engine native --pi-agent-dir /absolute/pi/profile` selects the source for both
-Pi conversation imports and provider settings/credential imports. It overrides the engine's
+legacy conversation imports and provider settings/credential imports. It overrides the engine's
 `PI_CODING_AGENT_DIR` / `~/.pi/agent` discovery default; it does not change native storage or
 import anything at startup. Imports still require their normal confirmation. With
 `--engine-attach`, this source path is read by the attached engine. Omit the flag to use the
-engine's default source. Pi coordination profiles are read only when importing historical plugin metadata.
+engine's default source. Legacy coordination profiles are read only when importing historical plugin metadata.
 
 For an independently owned native server shared by multiple desktops, see
 [Native engine attachment](native-attachment.md).
 
 Pipkin runs its built-in engine by default; `--engine native` is an optional alias. Its sessions live in `<data dir>/engine/`
 (`engine.sqlite` and artifacts) and its configuration and credentials in `~/.config/pipkin/engine/`
-(`auth.json` is `0600`; with `--data-dir`/`PIPKIN_DATA` both move under that directory). It never reads Pi's
+(`auth.json` is `0600`; with `--data-dir`/`PIPKIN_DATA` both move under that directory). It never reads legacy profile
 directories on its own, and nothing is imported at startup.
 
-Importing from Pi is explicit, from the command palette, and only in native mode:
+Importing from legacy profiles is explicit, from the command palette, and only in native mode:
 
-- **Import conversations from Pi…** reads the selected Pi agent directory (`--pi-agent-dir`, else
-  `$PI_CODING_AGENT_DIR` in the engine's environment, else `~/.pi/agent`), shows what can be imported and what cannot (sessions in use by a running Pi,
+- The conversation import action reads the selected legacy agent directory (`--pi-agent-dir`, else
+  `$PI_CODING_AGENT_DIR` in the engine's environment, else `~/.pi/agent`), shows what can be imported and what cannot (sessions in use by a running legacy engine,
   sessions that cannot be represented without guessing, with reasons), and imports only after you choose
-  **Confirm: import…**. Each Pi session is copied consistently into `<data dir>/engine/imports/<UTC time>/<session>/`
+  **Confirm: import…**. Each legacy session is copied consistently into `<data dir>/engine/imports/<UTC time>/<session>/`
   first and read only from that copy. The desktop drafts, prompt history, unresolved requests and saved transcript
-  copies of the imported conversations are copied (not moved) from the Pi namespace of `pipkin.sqlite3`. Running it
+  copies of the imported conversations are copied (not moved) from the legacy namespace of `pipkin.sqlite3`. Running it
   again is safe: already imported sessions are skipped.
-- **Import Pi provider settings and credentials…** is a separate confirmation that lists provider ids only (values
+- The provider settings and credentials import action is a separate confirmation that lists provider ids only (values
   are never shown or logged). It copies `models.json` and `models-store.json` when present and merges the selected `auth.json` entries into the native
   credential store without overwriting anything already set up there. Supported Anthropic subscription (OAuth)
   credentials retain their credential kind; they never become API keys.
@@ -81,38 +81,38 @@ HTTP is allowed for local development). Explicit API keys, bearer tokens, subscr
 credentials and configured auth headers keep their existing precedence. Federation tokens
 are cached in memory, independently of Claude subscription sign-in.
 
-Conversation import preserves Pi's plugin selections from `$PI_SERVER_DIR`, or `~/.pi/server` by default.
+Conversation import preserves legacy profiles' plugin selections from `$PI_SERVER_DIR`, or `~/.pi/server` by default.
 For a custom coordination directory, launch native Pipkin with `PI_SERVER_DIR=/absolute/path`; protocol clients
 can supply `serverDir` on both import discovery and import execution. The agent directory alone does not contain
-these selections. Pi extensions are not supported or activated by migration. Profiles from every server identity,
+these selections. Legacy extensions are not supported or activated by migration. Profiles from every server identity,
 including old paths and unknown formats, are retained byte for byte (base64 plus SHA-256) in the native import
 manifest. Conversation history and source database state are preserved separately in the SQLite backup.
 Imported conversations start with an empty native extension profile, regardless of native server defaults.
 Unreadable or oversized profile files, or profiles changing during the copy, still block import to protect source
-state. Close Pi before importing. Pipkin never changes source profiles or executes their package paths.
+state. Close the legacy engine before importing. Pipkin never changes source profiles or executes their package paths.
 
-Pi forked histories import with the inherited history visible at each branch's cutoff.
+Legacy forked histories import with the inherited history visible at each branch's cutoff.
 An ownerless branch becomes an independent native conversation; subagent branches retain
-their task ownership. Settings already copied by Pi at the fork point remain branch-specific.
+their task ownership. Settings already copied by the legacy engine at the fork point remain branch-specific.
 The import manifest retains the original ancestry, source entry counts and materialized
 native entry counts. The original database and documents remain in the backup. Import
 does not add a command to create new forks in Pipkin.
 
 Ownership: a conversation is written by exactly one engine. When an import finishes, Pipkin records in its own
-database (`pipkin.sqlite3`, table `conversation_owners`; never in the Pi profile or the engine's data) that the
+database (`pipkin.sqlite3`, table `conversation_owners`; never in the legacy profile or the engine's data) that the
 built-in engine now owns each conversation it imported, in the same transaction as the desktop-data copy. Sessions
-that were reported but not imported (in use by a running Pi, or not representable) are not recorded and stay Pi's.
+that were reported but not imported (in use by a running legacy engine, or not representable) are not recorded and remain owned by that engine.
 Conversations imported in an earlier run are not recorded again.
 
-Current Pipkin writes imported conversations with the native engine. The Pi runtime and `--engine pi`
+Current Pipkin writes imported conversations with the native engine. The legacy runtime and `--engine pi`
 are retired. Ownership records remain for safe rollback to an older Pipkin installation. Those older
-versions can display imported conversations read-only and offer their explicit release-back-to-Pi
-confirmation. No current command migrates native history back into Pi.
+versions can display imported conversations read-only and offer their explicit ownership-release
+confirmation. No current command migrates native history back into legacy profiles.
 
-Rollback never changes the preserved Pi source. To use it again, explicitly reactivate a retained older
+Rollback never changes the preserved legacy source. To use it again, explicitly reactivate a retained older
 installation and follow its ownership-release procedure. Keep complete native backups first.
 History written in an imported conversation after the import exists only in the native engine; it is not written
-back to Pi. Native transcript rows display **Native-only history · not in the Pi copy** for that work;
+back to the legacy profile. Native transcript rows mark that work as native-only history, absent from the legacy copy;
 subagent previews carry the same distinction. Imported rows retain their original text and item IDs.
 The labels also survive newly saved offline copies. Older saved copies have no provenance label until
 refreshed from the native engine. These labels are presentation metadata, never added to model prompts.
@@ -126,7 +126,7 @@ Rolling back does not undo changes made to project files.
 Make the archive private (for example, set `umask 077` before creating it), and preserve directory/file
 permissions when restoring a trusted archive (`tar --extract --preserve-permissions`). Keep the current
 directories aside until the restored profile opens successfully. Restore to the same locations: saved
-projects, imported-source references and some artifact links use absolute paths. Project files and Pi
+projects, imported-source references and some artifact links use absolute paths. Project files and legacy profile
 source directories need their own backups. Temporary bash spill paths can expire independently; the
 native database retains complete tool output up to the displayed retention limit, available through the
 tool-output copy/save action. Archiving the engine does not preserve arbitrary files under `/tmp`.

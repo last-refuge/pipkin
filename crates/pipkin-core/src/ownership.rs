@@ -28,14 +28,15 @@ pub enum ConversationOwner {
 pub const NATIVE_OWNED_NOTICE: &str = "This conversation now continues in the built-in engine (Pipkin --engine native). It is read-only here; the copy shown is the history as of the import.";
 
 /// The palette entry that starts releasing a conversation (Pi mode, owned conversations only).
-pub const RELEASE_TITLE: &str = "Release this conversation back to Pi\u{2026}";
+pub const RELEASE_TITLE: &str = "Release this conversation back to the legacy engine\u{2026}";
 /// The palette entry that releases it.
-pub const RELEASE_CONFIRM_TITLE: &str = "Confirm: release this conversation back to Pi";
+pub const RELEASE_CONFIRM_TITLE: &str =
+    "Confirm: release this conversation back to the legacy engine";
 /// The palette entry that keeps it with the built-in engine.
 pub const RELEASE_CANCEL_TITLE: &str = "Keep this conversation in the built-in engine";
 
 /// What releasing does, shown before the confirmation.
-pub const RELEASE_WARNING: &str = "Release this conversation back to Pi? Pi can then continue it from the history it had at the import. Anything written in the built-in engine after the import is not in the Pi copy and will not appear here. Nothing is copied or deleted in either engine: only Pipkin's record that the built-in engine owns this conversation is removed. The built-in engine keeps its own copy, so continuing in both makes them differ.\n\nTo go ahead, open the command palette (Ctrl+K) and choose \u{201c}Confirm: release this conversation back to Pi\u{201d}; \u{201c}Keep this conversation in the built-in engine\u{201d} changes nothing.";
+pub const RELEASE_WARNING: &str = "Release this conversation back to the legacy engine? The legacy engine can then continue it from the history it had at the import. Anything written in the built-in engine after the import is not in the legacy copy and will not appear here. Nothing is copied or deleted in either engine: only Pipkin's record that the built-in engine owns this conversation is removed. The built-in engine keeps its own copy, so continuing in both makes them differ.\n\nTo go ahead, open the command palette (Ctrl+K) and choose \u{201c}Confirm: release this conversation back to the legacy engine\u{201d}; \u{201c}Keep this conversation in the built-in engine\u{201d} changes nothing.";
 
 /// Where releasing a conversation is.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -116,7 +117,7 @@ impl AppState {
             return out;
         }
         self.release = ReleaseFlow::Releasing(id);
-        self.notice = Some("Releasing the conversation back to Pi\u{2026}".into());
+        self.notice = Some("Releasing the conversation back to the legacy engine\u{2026}".into());
         out.effects
             .push(Effect::ReleaseOwnership { conversation: id });
         out.notes.push(Note::Other);
@@ -152,7 +153,7 @@ impl AppState {
             Ok(()) => {
                 self.owners.remove(&id);
                 self.notice = Some(
-                    "Released: Pi can continue this conversation again. Native-only history \
+                    "Released: the legacy engine can continue this conversation again. Native-only history \
                      after the import is not in this copy."
                         .into(),
                 );

@@ -80,7 +80,7 @@ forbidden=$(cd "$stage" && find . \( -path ./usr/lib/pipkin/engine -o -path ./us
   -o -name node -o -name npm -o -name npx -o -name node_modules -o -name pi-test.sh \
   -o -name package.json -o -name package-lock.json -o -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \
   -o -name '*.ts' -o -name '*.node' \) -print)
-[ -z "$forbidden" ] || { echo "native package contains Node/Pi payload:" >&2; echo "$forbidden" >&2; exit 1; }
+[ -z "$forbidden" ] || { echo "native package contains legacy runtime payload:" >&2; echo "$forbidden" >&2; exit 1; }
 grep -q '"ecosystem": "npm"' "$stage/usr/share/doc/pipkin/third-party/inventory.json" &&
   { echo 'native license inventory lists npm packages' >&2; exit 1; }
 

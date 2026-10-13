@@ -21,7 +21,7 @@ const IMPORT_TIMEOUT: Duration = Duration::from_secs(300);
 const LISTED: usize = 8;
 
 /// What the rollback and ownership rules are, said before and after a conversation import.
-pub const OWNERSHIP: &str = "The Pi copies are not changed: they keep working with --engine pi. \
+pub const OWNERSHIP: &str = "The original legacy profile is unchanged and retained as a backup. \
      Anything added to an imported conversation here is kept by the built-in engine only.";
 
 /// The answer to one import step.
@@ -90,16 +90,23 @@ pub fn conversations_offer(report: &ImportReport) -> ImportOffer {
         }
     }
     let mut lines = vec![if report.sessions.is_empty() {
-        format!("No Pi conversations were found in {}.", report.agent_dir)
+        format!(
+            "No legacy conversations were found in {}.",
+            report.agent_dir
+        )
     } else if sessions.is_empty() {
         format!(
-            "No Pi conversation in {} can be imported now.",
+            "No legacy conversation in {} can be imported now.",
             report.agent_dir
         )
     } else {
         format!(
             "{} from {} can be imported into the built-in engine.",
-            plural(sessions.len(), "Pi conversation", "Pi conversations"),
+            plural(
+                sessions.len(),
+                "legacy conversation",
+                "legacy conversations"
+            ),
             report.agent_dir
         )
     }];
@@ -111,7 +118,7 @@ pub fn conversations_offer(report: &ImportReport) -> ImportOffer {
     }
     if !locked.is_empty() {
         lines.push(format!(
-            "In use by a running Pi (close it and try again): {}.",
+            "In use by a running legacy engine (close it and try again): {}.",
             listed(&locked)
         ));
     }
@@ -152,7 +159,7 @@ pub fn credentials_offer(report: &ImportReport) -> ImportOffer {
     let mut lines = Vec::new();
     if providers.is_empty() && config.is_empty() {
         lines.push(format!(
-            "There are no Pi provider settings or credentials in {} to import.",
+            "There are no legacy provider settings or credentials in {} to import.",
             report.agent_dir
         ));
     } else {
@@ -177,16 +184,18 @@ pub fn credentials_offer(report: &ImportReport) -> ImportOffer {
     }
     if !reserved.is_empty() {
         lines.push(format!(
-            "Kept in the Pi profile for a later integration, not imported: {}.",
+            "Kept in the legacy profile for a later integration, not imported: {}.",
             reserved.join(", ")
         ));
     }
     if let Some(e) = &report.credentials_error {
-        lines.push(format!("Pi's saved credentials could not be read: {e}."));
+        lines.push(format!(
+            "The legacy profile's saved credentials could not be read: {e}."
+        ));
     }
     if !providers.is_empty() || !config.is_empty() {
         lines.push(
-            "Existing settings here are never overwritten, and the Pi profile is not changed."
+            "Existing settings here are never overwritten, and the legacy profile is not changed."
                 .into(),
         );
     }
@@ -240,7 +249,7 @@ pub fn conversations_result(
         }
     }
     let mut lines = vec![format!(
-        "Imported {} from Pi.",
+        "Imported {} from the legacy profile.",
         plural(imported.len(), "conversation", "conversations")
     )];
     if !existing.is_empty() {
@@ -251,7 +260,7 @@ pub fn conversations_result(
     }
     if !locked.is_empty() {
         lines.push(format!(
-            "In use by a running Pi, not imported: {}.",
+            "In use by a running legacy engine, not imported: {}.",
             listed(&locked)
         ));
     }
@@ -290,7 +299,7 @@ impl Live {
         }) {
             Ok(Reply::ImportReport(report)) => Ok(report),
             Ok(other) => Err(format!("unexpected reply {other:?}")),
-            Err(e) => Err(call_failed("The Pi profile could not be read", &e)),
+            Err(e) => Err(call_failed("The legacy profile could not be read", &e)),
         }
     }
 
@@ -415,12 +424,15 @@ impl Live {
                     }
                     if !reserved.is_empty() {
                         lines.push(format!(
-                            "Kept in the Pi profile for a later integration: {}.",
+                            "Kept in the legacy profile for a later integration: {}.",
                             reserved.join(", ")
                         ));
                     }
                     if !missing.is_empty() {
-                        lines.push(format!("No longer saved in Pi: {}.", missing.join(", ")));
+                        lines.push(format!(
+                            "No longer saved in the legacy profile: {}.",
+                            missing.join(", ")
+                        ));
                     }
                 }
                 Ok(other) => lines.push(format!("Unexpected reply {other:?}")),
@@ -430,9 +442,9 @@ impl Live {
         self.refresh_models(worker, None);
         (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
         if lines.is_empty() {
-            lines.push("Nothing was imported from Pi.".into());
+            lines.push("Nothing was imported from the legacy profile.".into());
         }
-        lines.push("The Pi profile was not changed.".into());
+        lines.push("The legacy profile was not changed.".into());
         ImportResult::Finished {
             message: lines.join("\n"),
             imported: vec![],
@@ -484,19 +496,23 @@ mod tests {
         let offer = conversations_offer(&report);
         assert_eq!(offer.sessions, vec!["a"]);
         assert!(offer.has_work());
+        assert!(!offer.summary.contains("--engine pi"));
         for part in [
-            "1 Pi conversation from /home/u/.pi/agent can be imported",
+            "1 legacy conversation from /home/u/.pi/agent can be imported",
             "1 conversation was imported earlier",
             "c (lock refreshed 3 ms ago)",
             "d: a fork",
-            "keep working with --engine pi",
+            "original legacy profile is unchanged and retained as a backup",
             "built-in engine only",
         ] {
             assert!(offer.summary.contains(part), "{part}: {}", offer.summary);
         }
         let none = conversations_offer(&ImportReport::default());
         assert!(!none.has_work());
-        assert!(none.summary.starts_with("No Pi conversations were found"));
+        assert!(
+            none.summary
+                .starts_with("No legacy conversations were found")
+        );
     }
 
     #[test]
@@ -590,13 +606,14 @@ mod tests {
         };
         let (message, imported, existing) = conversations_result(&view, Some(&after));
         assert_eq!((imported, existing), (vec!["a".into()], vec!["b".into()]));
+        assert!(!message.contains("--engine pi"));
         for part in [
-            "Imported 1 conversation from Pi.",
+            "Imported 1 conversation from the legacy profile.",
             "1 conversation was imported earlier.",
             "not imported: f; c (busy)",
             "Cannot be imported: g: never opened; d: a fork",
             "Failed: e: io",
-            "--engine pi",
+            "original legacy profile is unchanged and retained as a backup",
         ] {
             assert!(message.contains(part), "{part}: {message}");
         }

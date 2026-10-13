@@ -18,7 +18,7 @@ pub(super) struct Snapshot {
 
 fn blocked(path: &Path, why: &str) -> ImportError {
     ImportError::Blocked(vec![format!(
-        "Pi plugin profile {} {why}; source profiles must be preserved before migration",
+        "Legacy plugin profile {} {why}; source profiles must be preserved before migration",
         path.display()
     )])
 }
@@ -76,7 +76,7 @@ impl Snapshot {
 
     pub(super) fn unchanged(&self) -> Result<(), ImportError> {
         if Self::read(&self.directory)? != *self {
-            return Err(ImportError::Blocked(vec!["Pi plugin profiles changed during import; nothing was activated. Close Pi and try again".into()]));
+            return Err(ImportError::Blocked(vec!["Legacy plugin profiles changed during import; nothing was activated. Close the source application and try again".into()]));
         }
         Ok(())
     }

@@ -39,7 +39,7 @@ recorded in [native gates](native-gate-testing.md); do not read that historical 
   previous claim here that these native backends were not enabled was incorrect.
 - **Engine transport** (`crates/pi-client/src/unix.rs`): Linux uses `SO_PEERCRED`; macOS now uses kernel
   `getpeereid`, retaining owner-only directory/socket and server-id checks. Windows still needs an
-  authenticated transport on both the Rust client and pinned Pi server sides.
+  authenticated transport on both the Rust client and legacy server sides.
 - **Engine lifecycle** (`engine.rs`, `macos_processes.rs`): Linux retains `/proc` discovery; macOS uses
   kernel uid/argument-environment inspection with exact environment identity. Native runner ownership
   and engine startup/shutdown tests passed; interactive application cleanup remains unobserved. Windows ownership remains unimplemented.
@@ -53,11 +53,13 @@ recorded in [native gates](native-gate-testing.md); do not read that historical 
 
 ## Engine compatibility and runtime requirements
 
-Packages pair the app with the exact Pi revision in `packaging/pi-engine-revision`; current protocol is **8** and
-app database schema is **7**. An external server must satisfy the app's compatibility checks; arbitrary/latest
-Pi revisions are not promised compatible. Requalify any changed pair, and do not bypass a protocol/schema refusal.
+Current packages include the built-in Rust engine in the app binary. An external native server must satisfy
+the app's compatibility checks. Requalify any changed pair, and do not bypass a protocol/schema refusal.
+Historical legacy-engine packages pinned their engine revision in `packaging/pi-engine-revision`.
 
-For the current Linux package, the Pi engine uses a paired private Node 22.23.3 runtime. A system Node is not required to run Pipkin; building from source still requires Node/npm. Runtime requirements include Git, a working Vulkan-capable graphics setup and desktop libraries listed in [PKGBUILD](../packaging/PKGBUILD). The bundled runtime does not provide a GPU driver.
+The current Linux package does not require Node/npm to run or build. Runtime requirements include Git,
+a working Vulkan-capable graphics setup and desktop libraries listed in [PKGBUILD](../packaging/PKGBUILD).
+The package does not provide a GPU driver.
 Inspect the artifact's [native/runtime inventory](bundled-licenses.md#native-runtime-inspection) for direct ELF
 library/ABI references. It is not a complete static/dlopen dependency audit or portability guarantee. Optional
 native VM/sandbox components and foreign source-tree artifacts remain provenance/runtime review findings; their
@@ -65,10 +67,12 @@ presence does not extend platform support or promise a sandbox.
 
 ## Credentials and tool discovery
 
-Pipkin does not provide its own credential store. Its logs/caches can still contain sensitive provider/tool/error
-text and must not be assumed credential-free. Pi's own mechanism (login, API keys, `models.json` under `~/.pi/agent`) is used
-by the engine; Pipkin shows status and offers a refresh. The installed engine uses its private Node and `git` from `PATH`; `pipkin --diagnose` reports the Node runtime and engine.
+The built-in engine stores credentials and configuration in `~/.config/pipkin/engine` by default;
+explicit data-directory overrides also isolate engine configuration. Legacy profiles under `~/.pi/agent`
+are explicit import sources, not the current credential store. Logs/caches can still contain sensitive
+provider/tool/error text and must not be assumed credential-free. Pipkin offers provider sign-in and
+model refresh. The engine uses `git` from `PATH`; `pipkin --diagnose` reports engine identity and directories.
 
 ## Isolation
 
-Tools run with the engine's permissions (as in Pi itself). Pipkin does not sandbox them and does not claim to.
+Tools run with the engine's permissions. Pipkin does not sandbox them and does not claim to.

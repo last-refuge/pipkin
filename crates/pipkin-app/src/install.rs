@@ -130,7 +130,7 @@ pub fn native_report(input: &NativeReportInput) -> String {
         "engine: native (built into this binary) {} (protocol {}, schema {})",
         id.version, id.protocol, id.schema
     ));
-    line("engine runtime: `pipkin --engine-worker`; no Node, npm or Pi engine is used".into());
+    line("engine runtime: `pipkin --engine-worker`; no Node, npm or legacy engine is used".into());
     line(format!(
         "installed as: {}",
         input.marker.as_deref().map_or_else(
@@ -165,10 +165,10 @@ pub fn native_report(input: &NativeReportInput) -> String {
         if input.isolated {
             "everything under the explicit data directory (--data-dir or PIPKIN_DATA)"
         } else {
-            "default per-user directories, separate from Pi's ~/.pi"
+            "default per-user directories, separate from the legacy profile at ~/.pi"
         }
     ));
-    line("note: history written by the native engine is native-only; Pi does not read it.".into());
+    line("note: history written by the native engine is native-only; the legacy engine does not read it.".into());
     for text in display_lines(input.wayland_display, &input.display_vars) {
         line(text);
     }
@@ -527,7 +527,7 @@ mod tests {
         )));
         assert!(text.contains("engine data directory: ~/.local/share/pipkin/engine"));
         assert!(text.contains("engine config directory: ~/.config/pipkin/engine"));
-        assert!(text.contains("no Node, npm or Pi engine is used"));
+        assert!(text.contains("no Node, npm or legacy engine is used"));
         assert!(text.contains("native-only"));
         assert!(text.contains("no installed marker"));
         assert!(text.contains("engine probe: OK (fine)"));

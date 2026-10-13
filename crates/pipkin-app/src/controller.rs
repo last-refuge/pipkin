@@ -151,13 +151,13 @@ impl Options {
                 "--project" => options.projects.push(PathBuf::from(value("--project")?)),
                 "--pi-dir" | "--pi-repo" | "--pi-server-id" | "--pi-extension" => {
                     return Err(format!(
-                        "{flag} belonged to the retired Pi runtime; use the built-in engine, --engine-attach for a native server, or --pi-agent-dir for migration"
+                        "{flag} belonged to the retired legacy runtime; use the built-in engine, --engine-attach for a native server, or --pi-agent-dir for migration"
                     ));
                 }
                 "--engine" => {
                     explicit_engine = true;
                     options.engine = match value("--engine")?.as_str() {
-                        "pi" => return Err("The Pi runtime has been retired; Pipkin uses its built-in engine. Use Import from Pi to bring over existing conversations.".into()),
+                        "pi" => return Err("The legacy runtime has been retired; Pipkin uses its built-in engine. Use Import legacy conversations to bring over existing conversations.".into()),
                         "native" => EngineKind::Native,
                         other => {
                             return Err(format!("unknown engine {other:?}; choose native"));
@@ -349,12 +349,14 @@ fn import_notice(message: String, imported: usize, copied: Result<CopyReport, St
         Ok(r) => {
             let mut notice = message;
             if r.drafts + r.journal + r.caches + r.goals > 0 {
-                notice.push_str("\nDrafts, prompt history and saved copies came along from Pi.");
+                notice.push_str(
+                    "\nDrafts, prompt history and saved copies came along from the legacy profile.",
+                );
             }
             if imported > 0 {
                 notice.push_str(
                     "\nThe imported conversations now continue in the built-in engine; \
-                     the original Pi profile remains unchanged for backup or an older Pipkin installation.",
+                     the original legacy profile remains unchanged and retained as a backup.",
                 );
             }
             notice
@@ -833,7 +835,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                         Some(native) => native.import(step, done),
                         None => done(crate::adapters::native::import_unavailable(
                             &step,
-                            "this engine cannot import a Pi profile",
+                            "this engine cannot import a legacy profile",
                         )),
                     }
                 }

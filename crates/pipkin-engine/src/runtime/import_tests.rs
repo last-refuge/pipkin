@@ -927,13 +927,17 @@ fn the_agent_directory_defaults_like_the_reference() {
     );
     let abs = env(&[("PI_CODING_AGENT_DIR", "/srv/agent")]);
     assert_eq!(agent_dir(&abs, None).unwrap(), PathBuf::from("/srv/agent"));
+    let missing = agent_dir(&env(&[]), None).unwrap_err();
+    assert_eq!(missing.code, ErrorCode::Invalid);
     assert_eq!(
-        agent_dir(&env(&[]), None).unwrap_err().code,
-        ErrorCode::Invalid
+        missing.message,
+        "The legacy agent directory is unknown: set PI_CODING_AGENT_DIR or HOME"
     );
+    let relative = agent_dir(&home, Some("relative".into())).unwrap_err();
+    assert_eq!(relative.code, ErrorCode::Invalid);
     assert_eq!(
-        agent_dir(&home, Some("relative".into())).unwrap_err().code,
-        ErrorCode::Invalid
+        relative.message,
+        "The legacy agent directory must be an absolute path, not relative"
     );
 }
 
@@ -958,8 +962,18 @@ fn plugin_profile_directory_is_explicit_or_comes_from_the_engine_environment() {
         server_dir(&env, Some("/explicit".into())).unwrap(),
         PathBuf::from("/explicit")
     );
-    assert!(server_dir(&Env::isolated(Default::default()), None).is_err());
-    assert!(server_dir(&env, Some("relative".into())).is_err());
+    assert_eq!(
+        server_dir(&Env::isolated(Default::default()), None)
+            .unwrap_err()
+            .message,
+        "The legacy server directory is unknown: set PI_SERVER_DIR or supply serverDir before importing conversations"
+    );
+    assert_eq!(
+        server_dir(&env, Some("relative".into()))
+            .unwrap_err()
+            .message,
+        "The legacy server directory must be an absolute path"
+    );
 }
 
 #[test]

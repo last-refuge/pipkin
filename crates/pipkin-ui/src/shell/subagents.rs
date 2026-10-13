@@ -504,7 +504,7 @@ impl Workspace {
                                 .child("No delegated tasks yet"),
                         )
                         .child(div().text_size(t.small_size()).text_color(c.text_muted).child(
-                            "When Pi delegates work, follow each task here. Ask it to use subagents for independent work.",
+                            "When Pipkin delegates work, follow each task here. Ask it to use subagents for independent work.",
                         )),
                 )
                 .into_any_element(),
@@ -676,8 +676,7 @@ impl Workspace {
                                 .text_size(t.small_size())
                                 .font_weight(gpui::FontWeight::SEMIBOLD)
                                 .text_color(c.text_muted)
-                                .child(entry.speaker)
-                                .when(entry.native_only, |d| d.child(" · Native-only history")),
+                                .child(entry.speaker),
                         )
                         .child(
                             div()

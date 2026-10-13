@@ -1707,7 +1707,7 @@ fn assert_plugin_blocked(agent: &Agent, store: &Store) {
     let report = discover(&agent.root, &agent.root.join("server"), store);
     let row = report.sessions.iter().find(|s| s.id == ROOT).unwrap();
     assert!(
-        matches!(&row.status, SessionStatus::Blocked { reasons } if reasons.iter().any(|r| r.contains("plugin profile"))),
+        matches!(&row.status, SessionStatus::Blocked { reasons } if reasons.iter().any(|r| r.contains("Legacy plugin profile "))),
         "{:?}",
         row.status
     );
@@ -1855,7 +1855,15 @@ fn plugin_snapshot_changes_refuse_but_changes_before_import_are_preserved() {
     let server = agent.root.join("server");
     let before = plugins::Snapshot::read(&server).unwrap();
     plugin_profile(&agent, "new-server", None, json!(["/plugins/new"]));
-    assert!(matches!(before.unchanged(), Err(ImportError::Blocked(_))));
+    let Err(ImportError::Blocked(reasons)) = before.unchanged() else {
+        panic!("changed profiles must block import");
+    };
+    assert_eq!(
+        reasons,
+        vec![
+            "Legacy plugin profiles changed during import; nothing was activated. Close the source application and try again"
+        ]
+    );
     assert_profiles_preserved(&agent, &store);
 }
 

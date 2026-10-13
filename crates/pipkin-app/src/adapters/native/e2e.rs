@@ -2210,11 +2210,11 @@ fn pi_conversations_are_imported_on_confirmation_with_their_desktop_data() {
     assert_eq!(o.sessions, vec!["a-text-multiturn", "b-tools-diff"]);
     let notice = h.state.notice.clone().unwrap();
     for part in [
-        "2 Pi conversations from",
-        "In use by a running Pi",
+        "2 legacy conversations from",
+        "In use by a running legacy engine",
         "c-stop-then-p",
         "Cannot be imported: never-opened",
-        "keep working with --engine pi",
+        "original legacy profile is unchanged and retained as a backup",
         "Confirm: import",
     ] {
         assert!(notice.contains(part), "{part}: {notice}");
@@ -2225,7 +2225,7 @@ fn pi_conversations_are_imported_on_confirmation_with_their_desktop_data() {
     h.until("the import finished", |s| s.import == ImportFlow::Idle);
     let notice = h.state.notice.clone().unwrap();
     assert!(
-        notice.contains("Imported 2 conversations from Pi."),
+        notice.contains("Imported 2 conversations from the legacy profile."),
         "{notice}"
     );
     assert!(notice.contains("not imported: c-stop-then-p"), "{notice}");

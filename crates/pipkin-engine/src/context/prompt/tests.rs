@@ -194,6 +194,18 @@ fn cwd_backslashes_render_as_slashes() {
 }
 
 #[test]
+fn built_in_reference_uses_product_neutral_legacy_text() {
+    assert!(ENGINE_REFERENCE.contains("Legacy conversation and credential imports"));
+    assert!(
+        !ENGINE_REFERENCE
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|word| word == "Pi")
+    );
+    assert!(ENGINE_REFERENCE.contains(".pi/skills"));
+    assert!(ENGINE_REFERENCE.contains(".pi/prompts"));
+}
+
+#[test]
 fn section_keys_match_the_durable_server() {
     assert_eq!(
         SECTION_KEYS,

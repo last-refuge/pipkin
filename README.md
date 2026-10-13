@@ -32,7 +32,7 @@ curl -fsSL https://github.com/last-refuge/pipkin/releases/latest/download/instal
 ```
 
 It downloads the prebuilt archive of the latest release, checks it against the release's `SHA256SUMS`, and
-installs it into `~/.local`. No root, no build, no Node, no Pi. On Omarchy, press <kbd>Super</kbd>+<kbd>Space</kbd>
+installs it into `~/.local`. No root, no build, no external runtime. On Omarchy, press <kbd>Super</kbd>+<kbd>Space</kbd>
 and type "Pipkin". Run the same line again to upgrade. Everything else, including macOS, installing by hand and
 building from source, is under [Install](#install).
 
@@ -61,7 +61,7 @@ editing, selection and accessibility tree.
 - Attach files by picker or by dropping them on the window; choose the model from the engine's catalog.
 - Native subagents are included by default, with child status and transcript previews. Preferences → Allow
   subagents blocks new calls without cancelling ongoing work.
-- Pi extensions are outside Pipkin's scope. Historical extension metadata is preserved during import without
+- Legacy profile extensions are outside Pipkin's scope. Historical extension metadata is preserved during import without
   loading extension code; see [compatibility](docs/extensions.md).
 
 **See what changed**
@@ -170,7 +170,7 @@ git clone https://github.com/last-refuge/pipkin.git && cd pipkin
 scripts/setup.sh --run       # build the native app/engine, check, launch
 ```
 
-**No manual Pi checkout, patches, npm install or server startup. Subagents are included by default.**
+**No external engine checkout, patches, npm install or server startup. Subagents are included by default.**
 The launcher selects this checkout as the project so you can use Pipkin to build Pipkin.
 
 ```sh
@@ -187,7 +187,7 @@ build while the old app runs; **Quit and relaunch to use the new build**. See th
 
 ### Advanced external engine
 
-Native credentials and configuration live separately from Pi; `--pi-agent-dir DIR` selects an import source.
+Native credentials and configuration live separately from legacy profiles; `--pi-agent-dir DIR` selects an import source.
 The built-in engine supports explicitly managed native hosts; see [native attachment](docs/native-attachment.md).
 Legacy `--pi-repo`, `--pi-dir`, `--pi-server-id` and `--pi-extension` flags are retired.
 
@@ -299,7 +299,7 @@ docs/                the plan, architecture, packaging, platforms, beta and gate
 
 Useful reading: [`docs/architecture.md`](docs/architecture.md), [`docs/packaging.md`](docs/packaging.md),
 [`docs/platforms.md`](docs/platforms.md), [`docs/beta.md`](docs/beta.md), [`docs/extensions.md`](docs/extensions.md),
-[`docs/scorecard.md`](docs/scorecard.md). The Pi-to-native-engine conversion is tracked in
+[`docs/scorecard.md`](docs/scorecard.md). The built-in engine conversion is tracked in
 [`llm-docs/pipkin-rust-engine-plan.md`](llm-docs/pipkin-rust-engine-plan.md); the built-in engine is now the default.
 `AGENTS.md` lists the project's non-negotiables, including the safe way to
 drive the real window in native tests (`scripts/guard.sh`).

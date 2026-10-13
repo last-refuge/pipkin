@@ -59,7 +59,7 @@ impl ImportOffer {
     pub fn confirm_title(&self) -> String {
         match self.kind {
             ImportKind::Conversations => format!(
-                "Confirm: import {} conversation{} from Pi",
+                "Confirm: import {} conversation{} from the legacy profile",
                 self.sessions.len(),
                 if self.sessions.len() == 1 { "" } else { "s" }
             ),
@@ -71,7 +71,10 @@ impl ImportOffer {
                 if !self.config.is_empty() {
                     parts.push(self.config.join(", "));
                 }
-                format!("Confirm: import {} from Pi", parts.join(" and "))
+                format!(
+                    "Confirm: import {} from the legacy profile",
+                    parts.join(" and ")
+                )
             }
         }
     }
@@ -89,7 +92,7 @@ pub enum ImportFlow {
 }
 
 /// How to reach the confirmation without a pointer.
-pub const CONFIRM_HINT: &str = "To go ahead, open the command palette (Ctrl+K) and choose the \u{201c}Confirm: import\u{2026}\u{201d} entry; \u{201c}Cancel the Pi import\u{201d} leaves everything as it is.";
+pub const CONFIRM_HINT: &str = "To go ahead, open the command palette (Ctrl+K) and choose the \u{201c}Confirm: import\u{2026}\u{201d} entry; \u{201c}Cancel the legacy import\u{201d} leaves everything as it is.";
 
 impl AppState {
     /// Whether an import can be started now.
@@ -127,7 +130,7 @@ impl AppState {
             },
         };
         self.import = ImportFlow::Importing(offer.kind);
-        self.notice = Some("Importing from Pi\u{2026}".into());
+        self.notice = Some("Importing from the legacy profile\u{2026}".into());
         out.effects.push(Effect::Import(step));
         out.notes.push(Note::Other);
         out
@@ -137,7 +140,7 @@ impl AppState {
         let mut out = Outcome::default();
         if matches!(self.import, ImportFlow::Offered(_)) {
             self.import = ImportFlow::Idle;
-            self.notice = Some("Nothing was imported from Pi.".into());
+            self.notice = Some("Nothing was imported from the legacy profile.".into());
             out.notes.push(Note::Other);
         }
         out
@@ -162,7 +165,7 @@ impl AppState {
                 self.import = ImportFlow::Idle;
             }
             Err(reason) => {
-                self.notice = Some(format!("Could not read the Pi profile: {reason}"));
+                self.notice = Some(format!("Could not read the legacy profile: {reason}"));
                 self.import = ImportFlow::Idle;
             }
         }
@@ -239,6 +242,11 @@ mod tests {
         s.import_discovered(Ok(offer(&["a", "b"])));
         assert!(matches!(s.import, ImportFlow::Offered(_)));
         let notice = s.notice.clone().unwrap();
+        assert_eq!(
+            offer(&["a", "b"]).confirm_title(),
+            "Confirm: import 2 conversations from the legacy profile"
+        );
+        assert!(notice.contains("Cancel the legacy import"));
         assert!(notice.starts_with("2 conversations can be imported."));
         assert!(notice.contains("Confirm: import"));
         let out = s.dispatch(Command::ConfirmImport);
@@ -254,11 +262,11 @@ mod tests {
             s.dispatch(Command::ConfirmImport).effects.is_empty(),
             "once"
         );
-        s.import_finished("Imported 2 conversations from Pi.".into());
+        s.import_finished("Imported 2 conversations from the legacy profile.".into());
         assert_eq!(s.import, ImportFlow::Idle);
         assert_eq!(
             s.notice.as_deref(),
-            Some("Imported 2 conversations from Pi.")
+            Some("Imported 2 conversations from the legacy profile.")
         );
     }
 
@@ -269,6 +277,10 @@ mod tests {
         s.import_discovered(Ok(offer(&["a"])));
         assert!(s.dispatch(Command::CancelImport).effects.is_empty());
         assert_eq!(s.import, ImportFlow::Idle);
+        assert_eq!(
+            s.notice.as_deref(),
+            Some("Nothing was imported from the legacy profile.")
+        );
         assert!(s.dispatch(Command::ConfirmImport).effects.is_empty());
 
         s.dispatch(Command::ImportFromPi(ImportKind::Conversations));
@@ -309,7 +321,7 @@ mod tests {
         };
         assert_eq!(
             offer.confirm_title(),
-            "Confirm: import credentials for openrouter and models.json from Pi"
+            "Confirm: import credentials for openrouter and models.json from the legacy profile"
         );
         s.import_discovered(Ok(offer));
         assert_eq!(

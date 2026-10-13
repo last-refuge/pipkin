@@ -179,17 +179,17 @@ impl Fixtures {
         vec![
             m(
                 "pi-sonnet",
-                "Pi Sonnet",
+                "Sonnet",
                 "Balanced default for everyday coding (fixture)",
             ),
             m(
                 "pi-opus",
-                "Pi Opus",
+                "Opus",
                 "Deeper reasoning, slower and costlier (fixture)",
             ),
             m(
                 "pi-haiku",
-                "Pi Haiku",
+                "Haiku",
                 "Fast and light for quick edits (fixture)",
             ),
             m(

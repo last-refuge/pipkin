@@ -17,7 +17,7 @@ while (($#)); do
     -h|--help)
       printf '%s\n' 'Usage: ./install.sh [--prefix DIR] [--keep N] [--list | --rollback | --uninstall]' \
         'Run from the extracted x86_64 Linux archive. Default prefix: ~/.local.' \
-        'The built-in Rust engine needs no Pi or Node; provider setup happens in the app.'
+        'The built-in Rust engine needs no external runtime; provider setup happens in the app.'
       exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -116,7 +116,7 @@ verify_rollback_target() {
   if [[ -f "$root/usr/lib/pipkin/native-engine.json" ]]; then
     native=1
     [[ ! -e "$root/usr/lib/pipkin/engine" && ! -e "$root/usr/lib/pipkin/runtime" ]] ||
-      die 'The native rollback package also carries a Pi engine or Node runtime. The current version is unchanged.'
+      die 'The native rollback package also carries a legacy engine or Node runtime. The current version is unchanged.'
   else
     # Explicit rollback may reactivate an intact, previously installed historical Pi build.
     # New installs never ship or provision this retired runtime.
@@ -138,8 +138,8 @@ case "$action" in
       command -v "$tool" >/dev/null || die "Missing basic system tool: $tool. Install coreutils and retry."
     done
     native=1
-    [[ -f "$here/usr/lib/pipkin/native-engine.json" && -x "$here/usr/bin/pipkin" ]] || die 'Run this from a complete native Pipkin archive. Installing new Pi runtime packages is retired.'
-    [[ ! -e "$here/usr/lib/pipkin/engine" && ! -e "$here/usr/lib/pipkin/runtime" ]] || die 'A native-engine archive must not also carry a Pi engine or Node runtime.'
+    [[ -f "$here/usr/lib/pipkin/native-engine.json" && -x "$here/usr/bin/pipkin" ]] || die 'Run this from a complete native Pipkin archive. Installing new legacy runtime packages is retired.'
+    [[ ! -e "$here/usr/lib/pipkin/engine" && ! -e "$here/usr/lib/pipkin/runtime" ]] || die 'A native-engine archive must not also carry a legacy engine or Node runtime.'
     [[ ! -L "$versions" ]] || die 'Refusing a symlinked installation versions directory.'
     guard_links
     command -v git >/dev/null || die 'Git is required for project tools. Install it with your distribution package manager (Arch: sudo pacman -S git), then retry.'

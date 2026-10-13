@@ -1,7 +1,7 @@
 # Pipkin built-in engine reference
 
 Use this reference when the user asks about Pipkin. It is compiled into the native
-engine and is available without a Pi installation or network access.
+engine and is available without an external runtime or network access.
 
 - Pipkin is a desktop coding assistant. The built-in Rust engine manages conversations,
   provider requests, tools, subagents, history and recovery. It executes tools in the
@@ -46,8 +46,8 @@ engine and is available without a Pi installation or network access.
 - Compaction summarizes earlier context while preserving browsable history. Model and
   thinking selections are conversation-specific. Usage includes provider-reported tokens;
   estimates and missing provider fields are not exact billing records.
-- Pi conversation and credential imports are explicit. Original data and backups are
-  preserved; historical extension selections do not activate extensions. Pi extension
+- Legacy conversation and credential imports are explicit. Original data and backups are
+  preserved; historical extension selections do not activate extensions. Legacy extension
   compatibility is not required for Pipkin.
 - The Changes inspector reports Git state. A path mention references a path; it does not
   attach file contents. Read the relevant file before relying on it.

@@ -43,7 +43,7 @@ impl SettingsSection {
     fn subtitle(self) -> &'static str {
         match self {
             Self::Appearance => "Make the workspace comfortable to read and use.",
-            Self::Session => "Choose what Pi may do in this session.",
+            Self::Session => "Choose what Pipkin may do in this session.",
             Self::Connections => "Manage the accounts Pipkin uses for models.",
             Self::Servers => "Connect tool servers the model can search and call.",
             Self::Export => "Send the engine's traces to a collector you choose. Off by default.",
@@ -305,9 +305,9 @@ impl Workspace {
                 let detail = if s.mode == Mode::Demo {
                     "Not available in the simulated demo."
                 } else if !ready {
-                    "Reconnect to Pi to change this session's setting."
+                    "Reconnect to change this session's setting."
                 } else if current.is_none() {
-                    "Open a Pi session to choose whether it can delegate work."
+                    "Open a conversation to choose whether it can delegate work."
                 } else if enabled.is_none() {
                     "This session's subagent service is not available."
                 } else {
@@ -344,7 +344,7 @@ impl Workspace {
                         div().flex().items_center().gap(px(8.0)).px(px(16.0)).py(px(12.0))
                             .child(icon("circle-help", px(14.0), c.text_muted))
                             .child(div().text_size(t.small_size()).text_color(c.text_muted)
-                                .child("This choice belongs to the current Pi session, not all projects.")),
+                                .child("This choice belongs to the current conversation, not all projects.")),
                     )
                     .into_any_element()
             }
@@ -357,7 +357,7 @@ impl Workspace {
                     .bg(c.bg_surface)
                     .child(setting_row(
                         "Model connections",
-                        "Connect Claude or ChatGPT subscriptions through Pi.",
+                        "Connect Claude or ChatGPT subscriptions to Pipkin.",
                         vec![Btn::new("prefs-connections")
                             .label("Manage…")
                             .trailing_icon("chevron-right")

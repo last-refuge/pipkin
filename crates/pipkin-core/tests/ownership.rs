@@ -373,7 +373,7 @@ fn releasing_is_explicit_confirmed_and_only_then_makes_the_conversation_writable
     assert_eq!(s.release, ReleaseFlow::Confirming(ONE));
     let notice = s.notice.clone().unwrap();
     assert!(
-        notice.contains("after the import is not in the Pi copy"),
+        notice.contains("after the import is not in the legacy copy"),
         "{notice}"
     );
     assert!(notice.contains(RELEASE_CONFIRM_TITLE), "{notice}");
@@ -413,7 +413,7 @@ fn releasing_is_explicit_confirmed_and_only_then_makes_the_conversation_writable
     assert!(!s.owned_elsewhere(ONE));
     assert_eq!(s.read_only_reason(ONE), None);
     assert!(!s.can_release());
-    type_draft(&mut s, "continue in Pi");
+    type_draft(&mut s, "continue in the legacy engine");
     assert!(s.availability().submit);
     assert_eq!(journaled(&s.dispatch(Command::Submit)).len(), 1);
 }

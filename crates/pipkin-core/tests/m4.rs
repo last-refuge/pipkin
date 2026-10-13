@@ -183,7 +183,7 @@ fn when_the_engine_cannot_be_reached_the_saved_copy_stays_with_the_reason() {
     apply(
         &mut s,
         EventKind::OpenFailed {
-            message: "Not connected to the Pi engine.".into(),
+            message: "Not connected to the engine.".into(),
         },
     );
     let c = s.current().unwrap();
@@ -194,7 +194,7 @@ fn when_the_engine_cannot_be_reached_the_saved_copy_stays_with_the_reason() {
     );
     assert_eq!(
         c.stale_reason.as_deref(),
-        Some("Not connected to the Pi engine.")
+        Some("Not connected to the engine.")
     );
     assert_eq!(c.cached_at, Some(5));
 
@@ -984,7 +984,7 @@ fn a_saved_copy_that_arrives_after_the_engines_refusal_replaces_the_notice_and_k
     apply(
         &mut s,
         EventKind::OpenFailed {
-            message: "Not connected to the Pi engine.".into(),
+            message: "Not connected to the engine.".into(),
         },
     );
     assert!(matches!(
@@ -998,7 +998,7 @@ fn a_saved_copy_that_arrives_after_the_engines_refusal_replaces_the_notice_and_k
     assert_eq!(c.cached_at, Some(9));
     assert_eq!(
         c.stale_reason.as_deref(),
-        Some("Not connected to the Pi engine.")
+        Some("Not connected to the engine.")
     );
 
     // Anything the conversation has of its own is never replaced.

@@ -619,7 +619,7 @@ fn finished_history_pages_only_for_paged_engines_and_collapses_on_scope_change()
     assert_eq!(
         sub.previews.len(),
         80,
-        "Pi keeps its bounded preview window"
+        "The legacy engine keeps its bounded preview window"
     );
     assert_eq!(sub.previews[0].id, ItemId(220));
     assert!(!sub.can_load_older());

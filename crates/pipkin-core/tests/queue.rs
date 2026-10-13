@@ -239,7 +239,7 @@ fn a_refused_request_returns_its_text_to_an_empty_draft_and_says_why() {
         &mut s,
         EventKind::QueueRefused {
             request,
-            reason: "The session is not open on the Pi server.".into(),
+            reason: "The session is not open on the engine server.".into(),
         },
     );
     assert_eq!(journal_states(&out), [JournalState::Rejected]);

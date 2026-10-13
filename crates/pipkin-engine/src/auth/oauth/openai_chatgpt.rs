@@ -169,7 +169,7 @@ async fn login(ctx: &FlowCtx, io: &Interaction) -> Result<OAuthCredential, Strin
     .map_err(|e| {
         if e.kind() == std::io::ErrorKind::AddrInUse {
             format!(
-                "Port {port} is in use, probably by an unfinished login in another pi session or by the Codex CLI. Cancel that login and try again."
+                "Port {port} is in use, probably by an unfinished login in another Pipkin session or by the Codex CLI. Cancel that login and try again."
             )
         } else {
             e.to_string()

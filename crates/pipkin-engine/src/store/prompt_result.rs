@@ -56,14 +56,16 @@ impl Store {
                     .optional()?;
                 if let Some(raw) = raw {
                     let submissions: Vec<Value> = serde_json::from_str(&raw)
-                        .map_err(|e| StoreError::Corrupt(format!("Pi submissions: {e}")))?;
+                        .map_err(|e| StoreError::Corrupt(format!("Imported submissions: {e}")))?;
                     if let Some(submission) = submissions
                         .iter()
                         .find(|s| s["requestId"].as_str() == Some(request) && s["type"] == "input")
                     {
                         if submission["status"] == "unanswered" {
                             let reason = submission["reason"].as_str().ok_or_else(|| {
-                                StoreError::Corrupt("Unanswered Pi input has no reason".into())
+                                StoreError::Corrupt(
+                                    "Unanswered imported input has no reason".into(),
+                                )
                             })?;
                             return Ok(PromptState::Settled(unanswered(reason)));
                         }

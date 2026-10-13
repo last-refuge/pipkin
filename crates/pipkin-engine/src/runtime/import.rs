@@ -29,7 +29,7 @@ use crate::import as legacy;
 
 /// What a reserved credential's import reports.
 pub const RESERVED_KEPT: &str =
-    "kept in the Pi profile for a later integration; not imported as usable here";
+    "kept in the source profile for a later integration; not imported as usable here";
 
 /// One import (of any kind) at a time, so two clients cannot race on the same source.
 static IMPORTS: Mutex<()> = Mutex::new(());
@@ -60,7 +60,7 @@ async fn blocking<T: Send + 'static>(
 pub fn agent_dir(env: &crate::config::Env, given: Option<String>) -> Result<PathBuf, ProtoError> {
     let home = || {
         env.get("HOME").map(PathBuf::from).ok_or_else(|| {
-            invalid("The Pi agent directory is unknown: set PI_CODING_AGENT_DIR or HOME")
+            invalid("The legacy agent directory is unknown: set PI_CODING_AGENT_DIR or HOME")
         })
     };
     let raw = given
@@ -76,7 +76,7 @@ pub fn agent_dir(env: &crate::config::Env, given: Option<String>) -> Result<Path
     };
     if !path.is_absolute() {
         return Err(invalid(format!(
-            "The Pi agent directory must be an absolute path, not {}",
+            "The legacy agent directory must be an absolute path, not {}",
             path.display()
         )));
     }
@@ -88,7 +88,7 @@ pub fn server_dir(env: &crate::config::Env, given: Option<String>) -> Result<Pat
     let raw = given.or_else(|| env.get("PI_SERVER_DIR"));
     let home = || {
         env.get("HOME").map(PathBuf::from).ok_or_else(|| invalid(
-        "The Pi server directory is unknown: set PI_SERVER_DIR or supply serverDir before importing conversations"
+        "The legacy server directory is unknown: set PI_SERVER_DIR or supply serverDir before importing conversations"
     ))
     };
     let path = match raw.as_deref() {
@@ -98,7 +98,9 @@ pub fn server_dir(env: &crate::config::Env, given: Option<String>) -> Result<Pat
         Some(raw) => PathBuf::from(raw),
     };
     if !path.is_absolute() {
-        return Err(invalid("The Pi server directory must be an absolute path"));
+        return Err(invalid(
+            "The legacy server directory must be an absolute path",
+        ));
     }
     Ok(path)
 }
@@ -423,7 +425,7 @@ fn import_credentials(
     providers: &[String],
 ) -> Result<CredentialsImportView, ProtoError> {
     let entries = legacy::credential_entries(dir)
-        .map_err(|why| invalid(format!("The Pi credentials could not be read: {why}")))?;
+        .map_err(|why| invalid(format!("The source credentials could not be read: {why}")))?;
     let store = FileStore::new(shared.config.auth_path());
     let mut txn = store
         .begin()

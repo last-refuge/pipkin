@@ -14,7 +14,7 @@ Do not assume an unsolicited email address, public comment or ordinary issue is 
 
 Provide the minimum evidence needed:
 
-- Pipkin version/full revision and clean/dirty state; paired Pi engine revision and protocol, if known.
+- Pipkin version/full revision and clean/dirty state; engine revision and protocol, if known.
 - Whether this is a packaged build, development checkout or externally started engine.
 - Affected platform, impact and reproducible steps using synthetic data in a disposable profile/project.
 - The trust boundary crossed (for example unauthorized dispatch, credential exposure, untrusted content gaining

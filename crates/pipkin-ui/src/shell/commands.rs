@@ -280,14 +280,14 @@ pub fn build(state: &AppState, demo: Option<&DemoControls>) -> Vec<Cmd> {
     if state.import_available {
         let can = state.can_start_import();
         v.push(cmd(
-            "Import conversations from Pi\u{2026}",
+            "Import legacy conversations\u{2026}",
             "Import",
             None,
             can,
             Run::Dispatch(Command::ImportFromPi(ImportKind::Conversations)),
         ));
         v.push(cmd(
-            "Import Pi provider settings and credentials\u{2026}",
+            "Import legacy provider settings and credentials\u{2026}",
             "Import",
             None,
             can,
@@ -302,7 +302,7 @@ pub fn build(state: &AppState, demo: Option<&DemoControls>) -> Vec<Cmd> {
                 Run::Dispatch(Command::ConfirmImport),
             ));
             v.push(cmd(
-                "Cancel the Pi import",
+                "Cancel the legacy import",
                 "Import",
                 None,
                 true,
@@ -824,17 +824,17 @@ mod removal_tests {
                 .map(|c| c.title)
                 .collect()
         };
-        assert!(titles(&state).is_empty(), "the Pi engine offers no import");
+        assert!(titles(&state).is_empty(), "this engine offers no import");
         state.import_available = true;
         assert_eq!(
             titles(&state),
             vec![
-                "Import conversations from Pi\u{2026}",
-                "Import Pi provider settings and credentials\u{2026}"
+                "Import legacy conversations\u{2026}",
+                "Import legacy provider settings and credentials\u{2026}"
             ]
         );
         let commands = build(&state, None);
-        let start = find(&commands, "Import conversations from Pi\u{2026}");
+        let start = find(&commands, "Import legacy conversations\u{2026}");
         assert!(start.enabled);
         assert!(matches!(
             start.run,
@@ -843,7 +843,7 @@ mod removal_tests {
         assert!(matches!(
             find(
                 &commands,
-                "Import Pi provider settings and credentials\u{2026}"
+                "Import legacy provider settings and credentials\u{2026}"
             )
             .run,
             Run::Dispatch(Command::ImportFromPi(ImportKind::Credentials))
@@ -851,7 +851,7 @@ mod removal_tests {
 
         state.dispatch(Command::ImportFromPi(ImportKind::Conversations));
         assert!(
-            !find(&build(&state, None), "Import conversations from Pi\u{2026}").enabled,
+            !find(&build(&state, None), "Import legacy conversations\u{2026}").enabled,
             "one import at a time"
         );
         state.import_discovered(Ok(ImportOffer {
@@ -863,17 +863,34 @@ mod removal_tests {
         }));
         let commands = build(&state, None);
         assert!(matches!(
-            find(&commands, "Confirm: import 1 conversation from Pi").run,
+            find(
+                &commands,
+                "Confirm: import 1 conversation from the legacy profile"
+            )
+            .run,
             Run::Dispatch(Command::ConfirmImport)
         ));
         assert!(matches!(
-            find(&commands, "Cancel the Pi import").run,
+            find(&commands, "Cancel the legacy import").run,
             Run::Dispatch(Command::CancelImport)
         ));
         state.connection = Connection::Offline("x".into());
         let commands = build(&state, None);
-        assert!(!find(&commands, "Import conversations from Pi\u{2026}").enabled);
-        assert!(!find(&commands, "Confirm: import 1 conversation from Pi").enabled);
+        assert!(!find(&commands, "Import legacy conversations\u{2026}").enabled);
+        assert!(
+            !find(
+                &commands,
+                "Confirm: import 1 conversation from the legacy profile"
+            )
+            .enabled
+        );
+    }
+
+    #[test]
+    fn transcripts_do_not_render_legacy_history_badges() {
+        // Provenance remains in the model for imports, not repeated above every entry.
+        assert!(!include_str!("../transcript/view.rs").contains("Native-only history"));
+        assert!(!include_str!("subagents.rs").contains("Native-only history"));
     }
 
     #[test]
@@ -883,7 +900,9 @@ mod removal_tests {
         let release = |s: &AppState| -> Vec<String> {
             build(s, None)
                 .into_iter()
-                .filter(|c| c.title.contains("back to Pi") || c.title == RELEASE_CANCEL_TITLE)
+                .filter(|c| {
+                    c.title.contains("back to the legacy engine") || c.title == RELEASE_CANCEL_TITLE
+                })
                 .map(|c| c.title)
                 .collect()
         };
