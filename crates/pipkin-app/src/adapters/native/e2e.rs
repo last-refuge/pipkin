@@ -3347,3 +3347,40 @@ fn the_jobs_inspector_follows_engine_jobs_and_stops_them() {
     assert!(h.state.notice.is_none() && h.state.current().unwrap().jobs.error.is_none());
     h.stop();
 }
+
+// -------------------------------------------------------------------------------- context usage
+
+/// The engine's context figure reaches the desktop after a reply, reported from that reply's
+/// usage, and feeds the status line.
+#[test]
+fn context_usage_reaches_the_status_line_after_a_reply() {
+    use pipkin_core::ContextSource;
+    let fx = Fixture::start(|_, _| Reply::Text("a reply".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    assert!(
+        h.state.current().unwrap().context.is_none()
+            || !h.state.current().unwrap().context.as_ref().unwrap().known()
+    );
+    h.send("hello");
+    h.until("the reply settled", is_idle);
+    h.until("context reported", |s| {
+        s.current().is_some_and(|c| {
+            c.context
+                .as_ref()
+                .is_some_and(|x| x.source == ContextSource::Reported && x.tokens == Some(15))
+        })
+    });
+    let line = h.state.status_line().unwrap();
+    let context = line.context.as_ref().unwrap();
+    assert!(context.known());
+    assert_eq!(context.model.as_deref(), Some("scripted/scripted"));
+    assert!(!context.stale);
+    assert!(
+        line.accessible().contains("context"),
+        "{}",
+        line.accessible()
+    );
+    h.stop();
+}

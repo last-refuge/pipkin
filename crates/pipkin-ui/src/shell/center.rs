@@ -991,6 +991,13 @@ impl Workspace {
                         .size_full(),
                     )
             })
+            .when_some(
+                self.render_status_line(
+                    _window.viewport_size().width < px(760.0 * t.scale.max(1.0)),
+                    cx,
+                ),
+                |d, line| d.child(line),
+            )
             .child(div().flex_1())
             .when(!running && !real, |d| {
                 d.child(

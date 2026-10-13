@@ -681,6 +681,7 @@ impl Shared {
             changes.push(SessionChange::RunChanged { run: None });
             Ok((Some(row.request), changes))
         })?;
+        self.publish_context(&session);
         if let Some(request) = request {
             self.goal_after_settlement(&session, request.clone(), outcome.clone());
             let _ = sess.settled.send(Settled {

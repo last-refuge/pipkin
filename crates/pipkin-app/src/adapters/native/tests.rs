@@ -64,6 +64,7 @@ fn snapshot(id: &str, entries: Vec<Entry>) -> SessionSnapshot {
         plan: PlanView::default(),
         goal: None,
         jobs: Default::default(),
+        context: Default::default(),
     }
 }
 

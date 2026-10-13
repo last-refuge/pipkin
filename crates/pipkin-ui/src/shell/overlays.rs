@@ -954,6 +954,7 @@ impl Workspace {
         let t = cx.theme().clone();
         let c = &t.colors;
         let usage = self.state(cx).current().and_then(|cv| cv.usage.clone());
+        let context = self.state(cx).current().and_then(|cv| cv.context.clone());
         let demo = self.state(cx).mode == Mode::Demo;
         let this = cx.entity();
         let row = |label: String, value: String| {
@@ -1042,6 +1043,49 @@ impl Workspace {
                         format_tokens(total.total_tokens),
                     ))
                     .child(row("Reported cost".into(), format_cost(total.cost_usd)))
+            })
+            .when_some(context.filter(|x| x.known()), |d, context| {
+                let tokens = context.tokens.unwrap_or(0);
+                d.child(div().h(px(1.0)).bg(c.border))
+                    .child(
+                        div()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .child("Context for the next request"),
+                    )
+                    .child(row(
+                        format!("In use ({})", context.source.label()),
+                        match (context.capacity, context.percent()) {
+                            (Some(capacity), Some(percent)) => format!(
+                                "{} of {} · {percent}%",
+                                format_tokens(tokens),
+                                format_tokens(capacity)
+                            ),
+                            _ => format!("{} · window unknown", format_tokens(tokens)),
+                        },
+                    ))
+                    .when_some(context.reserve, |d, reserve| {
+                        d.child(row(
+                            "Kept free for compaction".into(),
+                            format_tokens(reserve),
+                        ))
+                    })
+                    .when_some(context.remaining, |d, remaining| {
+                        d.child(row("Remaining".into(), format_tokens(remaining)))
+                    })
+                    .child(row(
+                        "Compaction".into(),
+                        match context.compaction.as_str() {
+                            "background" => "summarizing alongside work".into(),
+                            "blocking" => "before the next request".into(),
+                            "off" => "off".into(),
+                            _ => "idle".into(),
+                        },
+                    ))
+                    .when(context.stale, |d| {
+                        d.child(div().text_size(t.small_size()).text_color(c.warning).child(
+                            "Measured with a different model; the next response will refresh it.",
+                        ))
+                    })
             })
             .when_some(usage, |d, usage| {
                 let buckets = usage.models.into_iter().chain(

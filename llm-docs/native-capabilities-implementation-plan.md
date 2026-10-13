@@ -377,6 +377,8 @@ Pipkin already has model/thinking controls, run status, a goal strip, subagent c
 
 **STATUS-2.** Publish `ContextUsageView` from the engine's existing estimation/compaction path: tokens used, model capacity, remaining/output reserve where known, source (`reported`/`estimated`), measured revision and compaction state. Update after model responses, model switch and compaction. Mark stale/unavailable values explicitly. Never calculate context percentage from cumulative usage.
 
+**Progress (2026-10-12).** STATUS-1 and STATUS-2 done: `runtime/context_usage.rs` (occupancy from the compaction estimator with reported/estimated/unavailable sources, capacity, reserve, remaining, staleness and compaction state; published after settlement, compaction and model switch; protocol 23, capability `contextUsage`), the core `StatusLine` derived from state with an accessible sentence, the GPUI status line in the composer toolbar with narrow-width collapsing, and a context section in the Session usage dialog. See [docs/status.md](../docs/status.md). Not done: STATUS-3, subscription quotas, native verification.
+
 **STATUS-3.** Show cached Git branch/dirty summary from the existing workspace-change machinery after confirming its ownership and refresh policy. No Git subprocess during render. Treat subscription balance/quota as a separate provider capability; reported API-equivalent cost is not necessarily the user's invoice.
 
 Do not adopt animated rainbow indicators, generated loading messages, a duplicate queue, or a second managed shell merely to match a terminal package. Composer stash/delayed send are separate optional UX proposals and need evidence of user benefit.

@@ -365,6 +365,9 @@ pub struct SessionSnapshot {
     /// Background jobs (active first, newest finished next, bounded).
     #[serde(default)]
     pub jobs: JobsView,
+    /// How full the model context is, as best the engine knows.
+    #[serde(default)]
+    pub context: ContextUsageView,
 }
 
 /// Credential kinds are distinct identities: an API key never stands in for a subscription.
@@ -665,7 +668,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 22);
+        assert_eq!(crate::PROTOCOL_VERSION, 23);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };
@@ -1024,6 +1027,37 @@ pub struct PlanRejected {
 }
 
 // --------------------------------------------------------------------------- web sources
+
+/// Current context occupancy for the next request, from the engine's estimation path: the
+/// newest reported assistant usage in the live context plus estimates of what came after it.
+/// Never derived from cumulative session usage.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextUsageView {
+    /// Tokens the next request would carry, when known.
+    pub tokens: Option<u64>,
+    /// `reported` (the last response's usage, nothing added since), `estimated` (reported
+    /// base plus estimates, or estimates alone) or `unavailable`.
+    pub source: String,
+    /// The selected model's context window, when the catalog says.
+    pub capacity: Option<u64>,
+    /// Tokens compaction keeps free (the `reserveTokens` setting), when compaction is on.
+    pub reserve: Option<u64>,
+    /// `capacity - reserve - tokens`, saturating, when both are known.
+    pub remaining: Option<u64>,
+    /// The selected model (`provider/modelId`).
+    pub model: Option<String>,
+    /// The entry whose reported usage the figure rests on.
+    pub measured_entry: Option<u64>,
+    /// The model that reported it; the figure is stale when it differs from `model`.
+    pub measured_model: Option<String>,
+    pub stale: bool,
+    /// `idle`, `background` (a summary is being prepared alongside work), `blocking`
+    /// (compacting before the next request) or `off` (compaction disabled).
+    pub compaction: String,
+    /// Session revision the figure was computed at.
+    pub revision: u64,
+}
 
 /// The lifecycle of a background job. `succeeded` means exit code zero, nothing more.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]

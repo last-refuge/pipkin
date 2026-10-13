@@ -18,6 +18,8 @@ pub struct ConversationState {
     pub plan: PlanState,
     /// Background jobs as the engine reports them.
     pub jobs: crate::jobs::JobsState,
+    /// Context occupancy as the engine reports it (STATUS-2).
+    pub context: Option<crate::status::ContextUsage>,
     pub has_older: bool,
     pub loading_older: bool,
     pub opened: bool,
@@ -99,6 +101,7 @@ impl ConversationState {
             subagents: SubagentState::default(),
             plan: PlanState::default(),
             jobs: Default::default(),
+            context: None,
             has_older: false,
             loading_older: false,
             opened: false,
@@ -2303,6 +2306,12 @@ impl AppState {
             EventKind::JobRefused { reason } => {
                 if c.opened {
                     c.jobs.error = Some(reason);
+                    out.notes.push(Note::Other);
+                }
+            }
+            EventKind::ContextSynced { context } => {
+                if c.opened {
+                    c.context = Some(context);
                     out.notes.push(Note::Other);
                 }
             }

@@ -24,6 +24,7 @@ pub enum Touched {
     Plan,
     Goal,
     Jobs,
+    Context,
     Child(u64),
     HasOlder(bool),
     Model(Option<String>),
@@ -45,6 +46,7 @@ pub struct Mirror {
     pub plan: pipkin_engine_protocol::PlanView,
     pub goal: Option<pipkin_engine_protocol::GoalView>,
     pub jobs: pipkin_engine_protocol::JobsView,
+    pub context: pipkin_engine_protocol::ContextUsageView,
     /// Streamed output of running tool calls, by call id.
     pub progress: HashMap<String, String>,
     /// The snapshot's revision. Committed changes at or below it are already in the snapshot.
@@ -68,6 +70,7 @@ impl Mirror {
             plan: snapshot.plan,
             goal: snapshot.goal,
             jobs: snapshot.jobs,
+            context: snapshot.context,
             progress: HashMap::new(),
             floor: snapshot.revision,
         }
@@ -190,6 +193,10 @@ impl Mirror {
                 self.jobs = jobs;
                 Touched::Jobs
             }
+            SessionChange::ContextChanged { context } => {
+                self.context = context;
+                Touched::Context
+            }
             SessionChange::SummaryChanged { .. } => Touched::Nothing,
         }
     }
@@ -275,6 +282,7 @@ mod tests {
             plan: pipkin_engine_protocol::PlanView::default(),
             goal: None,
             jobs: Default::default(),
+            context: Default::default(),
         }
     }
 

@@ -1125,6 +1125,7 @@ impl Live {
             Touched::Plan => self.emit_plan(worker),
             Touched::Goal => self.emit_goal(worker),
             Touched::Jobs => self.emit_jobs(worker),
+            Touched::Context => self.emit_context(worker),
             Touched::Child(child) => {
                 if current.child == Some(child) {
                     self.load_child(worker, conversation, generation, child);
@@ -1184,6 +1185,17 @@ impl Live {
                 tasks,
                 counts,
                 truncated,
+            },
+        );
+    }
+
+    fn emit_context(&self, worker: &Worker) {
+        let Some(c) = &self.current else { return };
+        worker.emit(
+            c.conversation,
+            c.generation,
+            EventKind::ContextSynced {
+                context: mapping::context(&c.mirror.context),
             },
         );
     }
@@ -2767,6 +2779,7 @@ impl Live {
         self.emit_plan(worker);
         self.emit_goal(worker);
         self.emit_jobs(worker);
+        self.emit_context(worker);
         self.schedule_changes(worker, conversation, generation);
         true
     }

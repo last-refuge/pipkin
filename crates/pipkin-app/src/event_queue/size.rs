@@ -76,6 +76,9 @@ pub(super) fn event_bytes(event: &BackendEvent) -> usize {
             }),
             EventKind::JobLogPage { tail } => tail.text.capacity(),
             EventKind::JobRefused { reason } => reason.capacity(),
+            EventKind::ContextSynced { context } => {
+                context.model.as_ref().map_or(0, String::capacity) + context.compaction.capacity()
+            }
             EventKind::PlanEditApplied { request } => request.0.capacity(),
             EventKind::PlanEditFailed { request, reason } => {
                 request.0.capacity() + reason.capacity()

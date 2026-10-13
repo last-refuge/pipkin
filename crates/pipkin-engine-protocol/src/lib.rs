@@ -29,6 +29,7 @@ pub use view::*;
 // Version 20 adds MCP management: server edits, tests, sign-in, import, `McpChanged`.
 // Version 21 adds MCP resources, prompts and declared capabilities to the server view.
 // Version 22 adds background jobs: `jobs` in snapshots, `JobsChanged`, the job calls.
-pub const PROTOCOL_VERSION: u32 = 22;
+// Version 23 adds `context` (current context occupancy) to snapshots and `ContextChanged`.
+pub const PROTOCOL_VERSION: u32 = 23;
 
 pub mod delivery;

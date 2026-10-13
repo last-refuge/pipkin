@@ -977,6 +977,27 @@ mod tests {
     }
 }
 
+// ------------------------------------------------------------------ context usage
+
+pub fn context(view: &pipkin_engine_protocol::ContextUsageView) -> pipkin_core::ContextUsage {
+    use pipkin_core::ContextSource;
+    pipkin_core::ContextUsage {
+        tokens: view.tokens,
+        source: match view.source.as_str() {
+            "reported" => ContextSource::Reported,
+            "estimated" => ContextSource::Estimated,
+            _ => ContextSource::Unavailable,
+        },
+        capacity: view.capacity,
+        reserve: view.reserve,
+        remaining: view.remaining,
+        model: view.model.clone(),
+        stale: view.stale,
+        compaction: view.compaction.clone(),
+        revision: view.revision,
+    }
+}
+
 // ------------------------------------------------------------------ background jobs
 
 pub fn jobs(view: &pipkin_engine_protocol::JobsView) -> pipkin_core::JobsSync {

@@ -1,5 +1,25 @@
 # Scorecard
 
+## Status line and context usage, STATUS-1 / STATUS-2 (2026-10-12)
+
+The composer toolbar gains a compact status line derived from core state, and the engine
+reports context occupancy from its own estimator ([status.md](status.md)); protocol 23,
+capability `contextUsage`.
+
+- **Measured (automated).** Engine tests: the figure is unavailable before any turn,
+  reported with the scripted provider's request size after a turn and keyed by provider and
+  model id, published as `ContextChanged` after settlement, and estimated again after a manual
+  compaction; a pure-computation test covers reported versus estimated, the system prompt
+  counted only when nothing was measured, staleness on a model switch, saturating remaining
+  and retired entries. Core tests cover the derived line: empty segments omitted, counts from
+  engine state (finished children excluded), context percent only from occupancy and
+  capacity, unknown context unspoken. A UI test covers the compact labels. An app
+  end-to-end test sees the reported figure reach the status line after a reply. The
+  repository gate passed.
+- **Observed.** Nothing native.
+- **Unverified.** The line in a window at narrow widths, large text and both themes; the
+  keyboard pass; STATUS-3 (not built). Not a release qualification.
+
 ## Background jobs, JOB-1 / JOB-2 (2026-10-12)
 
 Commands run as supervised jobs outside the model turn with durable records, private

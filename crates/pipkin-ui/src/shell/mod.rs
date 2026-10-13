@@ -13,6 +13,7 @@ mod onboarding;
 mod overlays;
 mod plan;
 mod settings;
+mod status;
 mod subagents;
 mod workspace;
 

@@ -3,6 +3,7 @@
 
 mod ask;
 mod compaction;
+mod context_usage;
 pub mod faults;
 mod glue;
 mod goals;
@@ -674,6 +675,7 @@ async fn dispatch_with_cancel(
                     "mcpPrompts".into(),
                     "mcpElicitation".into(),
                     "jobs".into(),
+                    "contextUsage".into(),
                     "compaction".into(),
                     "toolOutput".into(),
                 ],
@@ -781,7 +783,11 @@ async fn dispatch_with_cancel(
             .map(Reply::PromptResult),
         Call::CancelQueued { session, entry } => shared.cancel_queued(&session, entry).await,
         Call::Stop { session } => shared.stop(&session).await,
-        Call::SetModel { session, model } => shared.set_model(&session, &model),
+        Call::SetModel { session, model } => {
+            let reply = shared.set_model(&session, &model)?;
+            shared.publish_context(&session);
+            Ok(reply)
+        }
         Call::SetThinking { session, level } => shared.set_thinking(&session, Some(&level)),
         Call::CycleThinking { session } => shared.set_thinking(&session, None),
         Call::Models { session } => {
@@ -1372,6 +1378,8 @@ mod profile_tests;
 mod queue_reference_tests;
 #[cfg(test)]
 mod settings_tests;
+#[cfg(test)]
+mod status_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

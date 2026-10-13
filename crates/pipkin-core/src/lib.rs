@@ -14,6 +14,7 @@ pub mod ownership;
 pub mod prompt_history;
 pub mod protocol;
 pub mod state;
+pub mod status;
 pub mod subagents;
 
 pub use attach::*;
@@ -26,4 +27,5 @@ pub use model::*;
 pub use ownership::*;
 pub use protocol::*;
 pub use state::*;
+pub use status::*;
 pub use subagents::*;

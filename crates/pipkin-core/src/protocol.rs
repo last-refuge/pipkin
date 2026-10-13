@@ -548,6 +548,11 @@ pub enum EventKind {
     JobRefused {
         reason: String,
     },
+    /// Context occupancy as the engine estimates it (after responses, model switches and
+    /// compactions). Engines without it never send it.
+    ContextSynced {
+        context: crate::status::ContextUsage,
+    },
     PlanEditFailed {
         request: RequestId,
         reason: String,

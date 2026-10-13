@@ -72,6 +72,7 @@ impl Shared {
             plan: self.store.read(|c| Store::plan_view(c, session, false))?,
             goal: self.store.read(|c| Store::goal_current(c, session))?,
             jobs: self.jobs_view(session)?,
+            context: self.context_usage(session)?,
         })
     }
 }

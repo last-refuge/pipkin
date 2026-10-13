@@ -55,19 +55,19 @@ JOB-3 (jobs outliving the engine) stays post-1.0.
 
 ## 2. Native status — STATUS-1 / STATUS-2 (plan §11)
 
-- [ ] **STATUS-1.** Compact status model derived on state changes: selected model/thinking,
+- [x] **STATUS-1.** (2026-10-12) Compact status model derived on state changes: selected model/thinking,
   execution/waiting state, active jobs/children, usage summary that opens the existing
   dialog. Empty segments hidden; secondary detail collapses at narrow widths; keyboard
   reachable without noisy announcements.
-- [ ] **STATUS-2.** `ContextUsageView` from the engine's estimation/compaction path: tokens
+- [x] **STATUS-2.** (2026-10-12) `ContextUsageView` from the engine's estimation/compaction path: tokens
   used, model capacity, remaining/output reserve where known, source (reported/estimated),
   measured revision, compaction state; updated after responses, model switch and compaction;
   stale/unavailable marked explicitly; never a percentage of cumulative usage.
-- [ ] **Acceptance.** Missing price stays unknown, not zero; reasoning/cache subsets not
+- [x] **Acceptance.** Missing price stays unknown, not zero; reasoning/cache subsets not
   double-counted; child attribution does not inflate the root; context changes correctly after
   compaction and model switch; counts come from engine state, not mounted rows; coalescing
   keeps typing and scrolling smooth.
-- [ ] Docs and scorecard entry.
+- [x] Docs and scorecard entry.
 
 STATUS-3 (cached Git summary) is optional; take it only if cheap after STATUS-2.
 
@@ -164,3 +164,6 @@ above.
 - 2026-10-12 — JOB-1 / JOB-2 shipped: supervised jobs with durable records, private logs,
   exactly-once completion delivery, restart reconciliation, five model tools, the client
   calls and the Jobs inspector tab. Open from §1: nothing (JOB-3 stays post-1.0).
+- 2026-10-12 — STATUS-1 / STATUS-2 shipped: engine context occupancy with reported and
+  estimated sources, the derived status line and the usage dialog's context section. Open
+  from §2: nothing required (STATUS-3 optional).

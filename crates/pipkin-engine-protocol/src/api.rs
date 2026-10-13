@@ -653,6 +653,10 @@ pub enum SessionChange {
     JobsChanged {
         jobs: JobsView,
     },
+    /// The context occupancy changed (a response settled, the model switched, a compaction).
+    ContextChanged {
+        context: ContextUsageView,
+    },
     /// A child session's history changed (the selected child's viewer re-reads its page).
     ChildChanged {
         child: u64,

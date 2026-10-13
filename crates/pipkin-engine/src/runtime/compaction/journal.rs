@@ -170,7 +170,10 @@ impl Shared {
             let job = self.compaction_job(sess, id)?;
             if let CompactionProgress::Terminal { result } = &job.progress {
                 return match result {
-                    Outcome::Done { entry } => Ok(Compacted::Done(*entry)),
+                    Outcome::Done { entry } => {
+                        self.publish_context(&sess.id);
+                        Ok(Compacted::Done(*entry))
+                    }
                     Outcome::Submitted { submission } => {
                         self.next_from_queue(sess).await;
                         Ok(Compacted::Submitted(*submission))
