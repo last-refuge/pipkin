@@ -7,7 +7,7 @@
 **A faster way to AI, for developers.**<br>
 A native desktop coding agent with a built-in Rust engine and GPUI interface.
 
-![status](https://img.shields.io/badge/status-alpha-F59E0B?style=flat-square)
+![release](https://img.shields.io/badge/release-1.1.0-F59E0B?style=flat-square)
 ![platform](https://img.shields.io/badge/Arch%20%2F%20Omarchy-Wayland-1F2937?style=flat-square)
 ![rust](https://img.shields.io/badge/Rust-GPUI-374151?style=flat-square)
 ![engine](https://img.shields.io/badge/engine-Rust%20(built--in)-080F1A?style=flat-square)
@@ -22,6 +22,19 @@ A native desktop coding agent with a built-in Rust engine and GPUI interface.
 </div>
 
 <br>
+
+## Install in one line
+
+On Linux x86_64 (Arch / Omarchy and other distributions), this is the simple way to get Pipkin:
+
+```bash
+curl -fsSL https://github.com/last-refuge/pipkin/releases/latest/download/install.sh | bash
+```
+
+It downloads the prebuilt archive of the latest release, checks it against the release's `SHA256SUMS`, and
+installs it into `~/.local`. No root, no build, no Node, no Pi. On Omarchy, press <kbd>Super</kbd>+<kbd>Space</kbd>
+and type "Pipkin". Run the same line again to upgrade. Everything else, including macOS, installing by hand and
+building from source, is under [Install](#install).
 
 ## Why Pipkin
 
@@ -90,38 +103,62 @@ editing, selection and accessibility tree.
 
 ## Install
 
-The supported platform is **x86_64 Arch/Omarchy, Hyprland/Wayland** with a Vulkan-capable GPU driver.
-The package contains the app and engine in one Rust binary. Building and running it requires no Pi checkout,
-Node or npm. Git and the libraries in [`packaging/PKGBUILD`](packaging/PKGBUILD) remain required.
-Other desktops/distributions and X11 remain experimental; native ABI compatibility depends on build inputs.
-Native credentials and configuration live separately from Pi; `--pi-agent-dir DIR` selects an import source.
+The one-line installer is the recommended way on Linux x86_64. The sections below cover what it does, installing
+by hand, macOS, building from source and managing an installed Pipkin.
 
-### Download a release
-
-**Linux x86_64 (Arch / Omarchy and others).** One command:
+### The one-line installer (Linux x86_64)
 
 ```bash
 curl -fsSL https://github.com/last-refuge/pipkin/releases/latest/download/install.sh | bash
 ```
 
-It downloads the prebuilt archive for the latest release, checks it against the release's `SHA256SUMS`,
-and installs it into `~/.local` with the archive's own installer: no root, no build, no Node, no Pi. It never
-compiles anything. On Omarchy, press <kbd>Super</kbd>+<kbd>Space</kbd> and type "Pipkin". Re-run it to
-upgrade; add `--rollback`, `--uninstall` or `--list` to manage the versioned install, `--version 1.1.0` to
-pin a release, or `--dry-run` to see what it would do. The script is short and is also [in this
-repository](install.sh).
+The script downloads the prebuilt archive named in the latest release's `SHA256SUMS`, verifies the checksum,
+unpacks it and runs the archive's own installer into `~/.local`. It never compiles anything: on a Mac, another
+architecture or a release without a Linux archive it stops and says what to do instead. It needs `curl`, `tar`,
+`zstd` and `sha256sum`, asks for no password and sends no credentials. The script is short and lives
+[in this repository](install.sh); read it first if you like, or run it with `--dry-run`.
 
-By hand: release archives are on [GitHub Releases](https://github.com/last-refuge/pipkin/releases): the Linux
-x86_64 archive with its installer, the experimental macOS DMG/ZIP for Apple Silicon and Intel,
-`build-info-*.json` and one `SHA256SUMS`. Check the checksum before installing; releases carry no signature yet.
+| Option | Effect |
+| --- | --- |
+| `--version 1.1.0` | install that release instead of the latest |
+| `--prefix DIR` | install somewhere other than `~/.local` |
+| `--dry-run` | show what would happen and change nothing |
+| `--list` | list the installed versions |
+| `--rollback` | reactivate the previous version in one step |
+| `--uninstall` | remove Pipkin; your data in `~/.local/share/pipkin` stays |
+
+Pass options after `bash -s --`, for example:
+
+```bash
+curl -fsSL https://github.com/last-refuge/pipkin/releases/latest/download/install.sh | bash -s -- --dry-run
+```
+
+The supported platform is **x86_64 Arch/Omarchy, Hyprland/Wayland** with a Vulkan-capable GPU driver. Other
+desktops, distributions and X11 are experimental, and native ABI compatibility follows the release's build inputs.
+The installed package is the app and engine in one Rust binary; it keeps versioned binaries, performs an offline
+engine handshake before activating a version, and preserves application data across upgrades and rollbacks.
+Releases are checksummed but not signed. Database rollback needs compatible schemas or the documented backup
+restoration; see [packaging](docs/packaging.md).
+
+### By hand
+
+Release archives are on [GitHub Releases](https://github.com/last-refuge/pipkin/releases): the Linux x86_64
+archive with its installer, the experimental macOS DMG/ZIP for Apple Silicon and Intel, `build-info-*.json`,
+`install.sh` and one `SHA256SUMS`. Check the checksum before installing.
 
 ```sh
 sha256sum --check --ignore-missing SHA256SUMS
 tar --zstd -xf pipkin-native-<version>-x86_64.tar.zst && ./install.sh     # Linux: into ~/.local, no root needed
 ```
 
-On a Mac, open the DMG and drag Pipkin to Applications; the app is ad-hoc signed and not notarized, so
-Gatekeeper warns on first launch. See [macOS notes](docs/macos-first-pass.md).
+For a pacman-managed Arch package instead of the per-user installer, see the advanced instructions in
+[getting started](docs/getting-started.md).
+
+### macOS (experimental)
+
+Download the DMG for your Mac, open it and drag Pipkin to Applications. The app is ad-hoc signed and not
+notarized, so Gatekeeper warns on first launch, and no interactive acceptance has been run on a Mac.
+See [macOS notes](docs/macos-first-pass.md).
 
 ### Build and use it from source (Mac or Linux)
 
@@ -148,23 +185,9 @@ runs sudo or installs Node/npm. Each rebuild stages an immutable native binary, 
 build while the old app runs; **Quit and relaunch to use the new build**. See the
 [complete source setup and self-development guide](docs/source-setup.md).
 
-For a pacman-managed Arch package instead of the per-user installer, see the advanced instructions in
-[getting started](docs/getting-started.md).
-
-### The generic Linux installer
-
-```sh
-./install.sh --list            # installed versions
-./install.sh --rollback        # go back to the previous version in one step
-./install.sh --uninstall       # remove the installed versions; your data stays
-```
-
-The installer checks native libraries and performs an isolated offline worker handshake. It keeps versioned
-binaries and preserves application data. Releases are checksummed but not signed. Database rollback requires
-compatible schemas or the documented backup restoration; see [packaging](docs/packaging.md).
-
 ### Advanced external engine
 
+Native credentials and configuration live separately from Pi; `--pi-agent-dir DIR` selects an import source.
 The built-in engine supports explicitly managed native hosts; see [native attachment](docs/native-attachment.md).
 Legacy `--pi-repo`, `--pi-dir`, `--pi-server-id` and `--pi-extension` flags are retired.
 
