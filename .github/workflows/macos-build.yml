@@ -76,13 +76,6 @@ jobs:
             chmod +x "$RUNNER_TEMP/native-shims/$tool"
           done
           echo "$RUNNER_TEMP/native-shims" >> "$GITHUB_PATH"
-      - name: Native engine, protocol and actual app worker checks
-        run: |
-          set -o pipefail
-          cargo test -p pipkin-engine -p pipkin-engine-protocol --locked 2>&1 | tee qualification-logs/native-engine.log
-          cargo test -p pipkin-app --locked --test engine_worker --test native_diagnose 2>&1 | tee qualification-logs/native-worker.log
-          cargo test -p pipkin-app --locked adapters::native:: 2>&1 | tee qualification-logs/native-adapter.log
-          test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
       - name: Build and verify the native macOS app and ZIP
         env:
           TARGET: ${{ matrix.target }}
@@ -107,6 +100,16 @@ jobs:
             dist/macos/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
+      # The build runs before the tests so that the cache this job saves under the commit's
+      # key (shared with the release workflow) carries the release-profile artifacts even when
+      # an engine test loses a race; the release job at the same commit then gets an exact hit.
+      - name: Native engine, protocol and actual app worker checks
+        run: |
+          set -o pipefail
+          cargo test -p pipkin-engine -p pipkin-engine-protocol --locked 2>&1 | tee qualification-logs/native-engine.log
+          cargo test -p pipkin-app --locked --test engine_worker --test native_diagnose 2>&1 | tee qualification-logs/native-worker.log
+          cargo test -p pipkin-app --locked adapters::native:: 2>&1 | tee qualification-logs/native-adapter.log
+          test ! -e "$RUNNER_TEMP/native-forbidden-invocations"
       - name: Save native Rust build cache even after failed qualification
         if: always() && steps.native-cache.outputs.cache-primary-key != '' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4

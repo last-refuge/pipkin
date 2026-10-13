@@ -49,10 +49,13 @@ documentation that caught up with the native engine. Upgrading is "download, ver
 ### Known limits
 
 - Everything in the 1.0.0 known limits still applies except the macOS engine test item, which
-  is now: with the fixes, the Apple Silicon build workflow has been observed green on `main`
-  (runs 38430815306 and 38432999668), but the best-effort Intel leg still failed two engine
-  tests in run 38432999668 (a remote-catalog timing test and the new gated goal audit test),
-  so engine tests on Intel macOS remain intermittent and the Intel archive stays best effort.
+  is now: with the fixes, the macOS build workflow has been observed green on Apple Silicon
+  (runs 38430815306 and 38432999668) but not consistently. On the 1.1.0 commit itself (run
+  38443588228) both legs failed again, one or two engine tests each (the goal2 structured
+  evidence test, the goal3 stop-and-restart audit test, a publication sequence test and a
+  remote-catalog timing test), every one of which passes in other runs. Engine tests on the
+  macOS CI runners remain intermittent. The release archives are built and verified without
+  running them, and the Intel archive stays best effort.
 - One Linux native adapter end-to-end test (`workspace_scan_failure_keeps_the_last_diff_and_retry_recovers_without_a_prompt`)
   failed once on `main` in run 38431008244 and passed in the runs before and after it; it is
   being treated as intermittent, not as a product defect.

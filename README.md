@@ -237,7 +237,7 @@ what each milestone really covers, is in [`docs/rust-desktop-client-plan.md`](do
 | Arch / Omarchy, Wayland (Hyprland) | **Supported (1.0.0)** |
 | X11 / Xwayland | Builds and starts; seen under Xwayland only |
 | GNOME, KDE, other distributions | Unverified |
-| macOS Apple Silicon / Intel | Experimental release builds (ad-hoc signed, not notarized); engine tests green in CI on Apple Silicon since 1.1.0, still intermittent on Intel; interactive acceptance partial |
+| macOS Apple Silicon / Intel | Experimental release builds (ad-hoc signed, not notarized); engine tests still intermittent on the macOS CI runners; interactive acceptance partial |
 | Windows | Deferred ([platform status](docs/platforms.md)) |
 
 ## Developing
