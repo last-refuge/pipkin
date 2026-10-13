@@ -3634,3 +3634,84 @@ fn a_questionnaire_marks_its_conversation_and_is_answered_through_the_draft() {
     assert!(c.activity().is_none());
     h.stop();
 }
+
+// -------------------------------------------------------------------------------- diagnostics
+
+/// The session dialog's diagnostics come from the engine's own records: after a turn with
+/// a tool call the summary counts it, the newest records are worded, and an export names a
+/// file inside the engine's data directory.
+#[test]
+fn engine_diagnostics_reach_the_session_dialog_and_export_to_a_file() {
+    let fx = Fixture::start(|request, _| {
+        let last_user = request
+            .messages
+            .iter()
+            .rev()
+            .find(|m| !matches!(m, Message::System(_)));
+        if matches!(last_user, Some(Message::User { .. })) {
+            Reply::Tools(
+                None,
+                vec![("bash".into(), json!({"command": "echo measured"}))],
+            )
+        } else {
+            Reply::Text("done".into())
+        }
+    });
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.send("measure");
+    h.until("the turn answered", |s| {
+        is_idle(s) && assistant_texts(s).last().is_some_and(|t| t == "done")
+    });
+    h.dispatch(Command::RefreshDiagnostics);
+    assert!(
+        h.state.current().unwrap().diagnostics.loading,
+        "the fetch was sent"
+    );
+    h.until("the diagnostics were answered", |s| {
+        s.current().is_some_and(|c| !c.diagnostics.loading)
+    });
+    {
+        let d = &h.state.current().unwrap().diagnostics;
+        assert!(d.available && d.error.is_none(), "{d:?}");
+        let summary = d.summary.as_ref().unwrap();
+        assert_eq!((summary.tool_calls, summary.runs), (1, 1), "{d:?}");
+        let summary = d.summary.as_ref().unwrap();
+        assert_eq!(summary.provider_requests, 2);
+        assert!(summary.provider_p50_ms.is_some());
+        assert!(summary.tool_p50_ms.is_some());
+        assert_eq!(d.records.len(), 5, "{:?}", d.records);
+        assert!(
+            d.records[0].line.starts_with("run.end · completed"),
+            "{}",
+            d.records[0].line
+        );
+        assert!(
+            d.records
+                .iter()
+                .any(|r| r.line.starts_with("tool.call · bash")),
+            "{:?}",
+            d.records
+        );
+        assert!(d.error.is_none());
+    }
+    h.dispatch(Command::ExportDiagnostics);
+    h.until("the export was written", |s| {
+        s.current()
+            .is_some_and(|c| !c.diagnostics.exporting && c.diagnostics.exported.is_some())
+    });
+    let exported = h
+        .state
+        .current()
+        .unwrap()
+        .diagnostics
+        .exported
+        .clone()
+        .unwrap();
+    assert!(exported.ends_with("(5 records)"), "{exported}");
+    let path = exported.split(" (").next().unwrap();
+    assert!(path.starts_with(fx.root.to_str().unwrap()), "{path}");
+    assert_eq!(std::fs::read_to_string(path).unwrap().lines().count(), 5);
+    h.stop();
+}

@@ -631,6 +631,8 @@ impl Worker {
             // The demo runs no background jobs; the inspector says so instead of simulating them.
             | BackendRequest::JobLog { .. }
             | BackendRequest::CancelJob { .. }
+            | BackendRequest::Diagnostics { .. }
+            | BackendRequest::ExportDiagnostics { .. }
             // The demo manages no MCP servers; the page says so instead of simulating one.
             | BackendRequest::McpRefresh { .. }
             | BackendRequest::McpUpsert { .. }

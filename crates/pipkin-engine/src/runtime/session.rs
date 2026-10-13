@@ -342,6 +342,7 @@ impl Shared {
             }
             let mut changes = Self::flush_summary_writes(tx, session)?;
             let run = Store::start_run(tx, session, Some(key), now)?;
+            Self::diag_run_start(tx, session, run, &row, 1, now)?;
             let entry = Store::append_entry(tx, session, now, Some(run), &user_entry(&row))?;
             let view = Store::run_in(tx, run)?.and_then(|r| r.view());
             changes.extend([
@@ -673,6 +674,34 @@ impl Shared {
             for req in Store::requests_of_run(tx, run)? {
                 Store::settle_request(tx, &session, &req.key, &outcome, now)?;
             }
+            {
+                use rusqlite::OptionalExtension;
+                let stop_at: Option<i64> = tx
+                    .query_row(
+                        "SELECT stop_requested_at FROM runs WHERE id = ?1",
+                        [run as i64],
+                        |r| r.get(0),
+                    )
+                    .optional()?
+                    .flatten();
+                let (name, detail) = super::diagnostics::outcome_name(&outcome);
+                Store::diag_append(
+                    tx,
+                    &session,
+                    now,
+                    "run.end",
+                    Some(run),
+                    row.request.as_deref(),
+                    None,
+                    &serde_json::json!({
+                        "outcome": name,
+                        "detail": detail,
+                        "durationMs": now.saturating_sub(row.started_at_ms).max(0),
+                        "stopRequested": row.stop_requested,
+                        "stopLatencyMs": stop_at.map(|t| now.saturating_sub(t).max(0)),
+                    }),
+                )?;
+            }
             changes.push(SessionChange::RunSettled {
                 run,
                 request: row.request.clone(),
@@ -773,6 +802,14 @@ impl Shared {
                 ToolState::Interrupted,
             )?;
         }
+        self.diag(
+            session,
+            "run.resumed",
+            Some(run.id),
+            run.request.as_deref(),
+            None,
+            serde_json::json!({ "reason": "restart" }),
+        );
         self.spawn_run(sess, run.id);
         Ok(())
     }

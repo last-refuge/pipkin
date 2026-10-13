@@ -476,6 +476,60 @@ pub struct SubagentsView {
     pub truncated: bool,
 }
 
+/// One engine-recorded diagnostic fact (OBS-1). `data` is the kind's own fields, bounded:
+/// never a prompt, tool body, credential or source text.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticRecord {
+    pub seq: u64,
+    pub at_ms: i64,
+    /// `run.start`, `run.end`, `run.resumed`, `provider.request`, `provider.retry`,
+    /// `tool.call`.
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call_id: Option<String>,
+    pub data: serde_json::Value,
+}
+
+/// Figures over the retained records of one session (engine-measured; never UI frame or
+/// display latency).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticsSummary {
+    pub records: u64,
+    pub runs: u64,
+    pub provider_requests: u64,
+    pub provider_errors: u64,
+    pub retries: u64,
+    pub cancellations: u64,
+    pub tool_calls: u64,
+    pub tool_errors: u64,
+    /// Provider request wall time, milliseconds.
+    pub provider_p50_ms: Option<u64>,
+    pub provider_p95_ms: Option<u64>,
+    /// Time to the first streamed token, milliseconds.
+    pub first_token_p50_ms: Option<u64>,
+    pub tool_p50_ms: Option<u64>,
+    pub tool_p95_ms: Option<u64>,
+    pub queue_wait_max_ms: Option<u64>,
+    /// Stop requested to settlement, milliseconds (the largest seen).
+    pub stop_latency_max_ms: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticsView {
+    pub session: SessionId,
+    pub summary: DiagnosticsSummary,
+    /// Newest first.
+    pub records: Vec<DiagnosticRecord>,
+    pub has_older: bool,
+}
+
 /// Everything needed to show an opened session, read atomically at one revision.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -806,7 +860,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 25);
+        assert_eq!(crate::PROTOCOL_VERSION, 26);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };

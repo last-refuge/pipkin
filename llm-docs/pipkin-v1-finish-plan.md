@@ -104,7 +104,7 @@ STATUS-3 (cached Git summary) is optional; take it only if cheap after STATUS-2.
 
 ## 5. Observability — OBS-1, then OBS-2 / OBS-3 (plan §12)
 
-- [ ] **OBS-1 correlation and local diagnostics.** Engine identities reused; provider request
+- [x] **OBS-1 correlation and local diagnostics.** (2026-10-12) Engine identities reused; provider request
   timing, first-token timing, retries, tool duration, cancellation, queue wait and terminal
   outcome recorded as bounded structured records with provenance; model latency kept distinct
   from UI frame latency.
@@ -178,3 +178,6 @@ above.
 - 2026-10-12 — ASK-2 shipped: the questionnaire contract (protocol 25), engine-side
   validation, the version-2 result, the desktop dialog with a kept draft, and the
   *Needs your answer* mark. Open from §4: nothing.
+- 2026-10-12 — OBS-1 shipped: per-session diagnostics records with the engine's identities
+  and timings, the summary/paging/export calls and the session dialog's section. Open from
+  §5: OBS-2 and OBS-3.

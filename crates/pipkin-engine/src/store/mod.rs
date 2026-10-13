@@ -13,6 +13,7 @@
 //! everything, then commit in one short transaction.
 
 pub mod compactions;
+pub mod diagnostics;
 mod generation;
 mod goals;
 pub mod jobs;

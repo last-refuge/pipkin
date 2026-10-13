@@ -1,5 +1,32 @@
 # Scorecard
 
+## Engine diagnostics, OBS-1 (2026-10-12)
+
+The engine records bounded structured facts per session (run start with queue wait,
+provider request timing with first-token time and attempt, retries, tool durations, Stop
+latency, settlement, resumed runs), keyed by its own identities with parent/call for
+children, read by cursor with a summary and exported as JSON lines
+([diagnostics.md](diagnostics.md)); schema 19, protocol 26, capability `diagnostics`; the
+session dialog gains an Engine diagnostics section.
+
+- **Measured (automated).** Engine tests: a turn with a tool call leaves `run.start`,
+  two `provider.request`, `tool.call` and `run.end` records that all name the run, with
+  timings, token counts and the request key; paging by cursor and the export file (one line
+  per record with provenance) hold; an unknown session is refused; a retried provider error
+  records the error, the retry with its delay and the second attempt; a Stop records a
+  cancelled request and an aborted run with its Stop latency; a child's `run.start` names
+  its parent and the parent's call while the parent's figures exclude the child; records
+  survive a restart, the resumed run is recorded, the interrupted exchange is not invented,
+  the 2,000-row bound holds and the capability is advertised. Core tests cover one fetch and
+  one export in flight at a time, real-engine gating, the answers, a refusal and the reset on
+  disconnect. An app end-to-end test reads the summary and records through the dialog's
+  commands and exports to a file under the engine's data directory. The repository gate
+  passed.
+- **Observed.** Nothing native.
+- **Unverified.** The section in a window; first-token timing against a streaming adapter
+  (the scripted provider does not stream); OBS-2/OBS-3 (not built). Not a release
+  qualification.
+
 ## Questionnaires, ASK-2 (2026-10-12)
 
 `ask_user_question` asks up to four related questions at once, with stable ids, single /

@@ -242,8 +242,25 @@ impl Shared {
             );
             at_ms.saturating_add(i64::try_from(delay).unwrap_or(i64::MAX))
         });
+        let session = sess.id.clone();
         self.commit(sess, |tx| {
             Store::save_generation_state(tx, run, &state)?;
+            if let Some(until) = state.retry_until {
+                Store::diag_append(
+                    tx,
+                    &session,
+                    now_ms(),
+                    "provider.retry",
+                    Some(run),
+                    None,
+                    None,
+                    &serde_json::json!({
+                        "attempt": state.failures,
+                        "delayMs": until.saturating_sub(at_ms).max(0),
+                        "overflow": overflow,
+                    }),
+                )?;
+            }
             Ok(((), vec![]))
         })?;
         super::faults::crash_point("after_retry_checkpoint");
@@ -382,11 +399,27 @@ impl Shared {
             model.clone(),
             cancel.clone(),
         );
+        // Diagnostics: wall time and time to the first streamed token, by this engine's
+        // clock, around the adapter's whole exchange.
+        let attempt =
+            tokio::task::block_in_place(|| self.store.read(|c| Store::generation_state(c, run)))
+                .map(|g| g.failures + 1)
+                .unwrap_or(1);
+        let started = std::time::Instant::now();
+        let first_token: Arc<std::sync::OnceLock<std::time::Instant>> = Arc::default();
+        let sink = {
+            let inner = progress.sink();
+            let first_token = first_token.clone();
+            crate::provider::StreamSink::new(move |event| {
+                let _ = first_token.get_or_init(std::time::Instant::now);
+                inner.send(event);
+            })
+        };
         let fut = adapter.stream(StreamCtx {
             net: Some(&net),
             req: &req,
             http: &http,
-            events: Some(progress.sink()),
+            events: Some(sink),
             cancel: cancel.clone(),
         });
         tokio::pin!(fut);
@@ -399,6 +432,10 @@ impl Shared {
             }
         };
         let partial = progress.finish();
+        let duration_ms = started.elapsed().as_millis() as u64;
+        let first_token_ms = first_token
+            .get()
+            .map(|t| t.duration_since(started).as_millis() as u64);
         if sess.failure().is_some() {
             return Err(None);
         }
@@ -412,6 +449,38 @@ impl Shared {
                 ..
             }
         );
+        let diag = {
+            let (outcome, error) = match &message {
+                _ if cancel.is_cancelled() => ("cancelled", None),
+                Message::Assistant {
+                    stop_reason: StopReason::Error,
+                    error_message,
+                    ..
+                } => (
+                    "error",
+                    error_message
+                        .as_deref()
+                        .map(super::diagnostics::bounded_text),
+                ),
+                _ => ("completed", None),
+            };
+            let tokens = match &message {
+                Message::Assistant { usage, .. } => serde_json::json!({
+                    "input": usage.input, "output": usage.output,
+                    "cacheRead": usage.cache_read, "cacheWrite": usage.cache_write,
+                }),
+                _ => Value::Null,
+            };
+            serde_json::json!({
+                "model": usage_key,
+                "attempt": attempt,
+                "durationMs": duration_ms,
+                "firstTokenMs": first_token_ms,
+                "outcome": outcome,
+                "error": error,
+                "tokens": tokens,
+            })
+        };
         let usage = match &message {
             Message::Assistant { usage, .. }
                 if usage.total_tokens > 0 || usage.cost.total > 0.0 =>
@@ -460,6 +529,7 @@ impl Shared {
         });
         match committed {
             Ok(()) => {
+                self.diag(&sess.id, "provider.request", Some(run), None, None, diag);
                 super::faults::crash_point("after_generation_result");
                 Ok(())
             }
@@ -820,6 +890,16 @@ impl Shared {
         }) else {
             let result = tools::unavailable(name);
             self.record_tool_result(sess, run, call_id, name, &result, ToolState::Done)?;
+            self.diag_tool(
+                &session,
+                run,
+                call_id,
+                name,
+                "unavailable",
+                0,
+                &result,
+                false,
+            );
             return Ok(());
         };
         if let Some(prior) = &prior
@@ -830,6 +910,16 @@ impl Shared {
                 .read(|c| Store::tool_progress(c, &session, call_id))?;
             let result = tools::recovered_output(name, &output, false);
             self.record_tool_result(sess, run, call_id, name, &result, ToolState::Interrupted)?;
+            self.diag_tool(
+                &session,
+                run,
+                call_id,
+                name,
+                "interrupted",
+                0,
+                &result,
+                false,
+            );
             return Ok(());
         }
         if prior.is_none() {
@@ -873,9 +963,57 @@ impl Shared {
                 parent: session.clone(),
             })),
         };
+        let started = std::time::Instant::now();
         let result = tools::run(tool.as_ref(), args, &ctx).await;
+        let duration_ms = started.elapsed().as_millis() as u64;
         self.record_tool_result(sess, run, call_id, name, &result, ToolState::Done)?;
+        let outcome = if cancel.is_cancelled() {
+            "cancelled"
+        } else if result.is_error {
+            "error"
+        } else {
+            "ok"
+        };
+        self.diag_tool(
+            &session,
+            run,
+            call_id,
+            name,
+            outcome,
+            duration_ms,
+            &result,
+            tool.replay_safe(),
+        );
         Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn diag_tool(
+        &self,
+        session: &str,
+        run: u64,
+        call_id: &str,
+        name: &str,
+        outcome: &str,
+        duration_ms: u64,
+        result: &crate::tools::ToolResult,
+        replay_safe: bool,
+    ) {
+        self.diag(
+            session,
+            "tool.call",
+            Some(run),
+            None,
+            Some(call_id),
+            serde_json::json!({
+                "name": name,
+                "outcome": outcome,
+                "durationMs": duration_ms,
+                "retainedBytes": result.retained.len(),
+                "droppedBytes": result.dropped_bytes,
+                "replaySafe": replay_safe,
+            }),
+        );
     }
 
     /// Recovery authority for a replay-safe call: the tool must be one that recovers its own
@@ -989,6 +1127,7 @@ impl Shared {
         let mut changes = Self::flush_summary_writes(tx, session)?;
         let now = now_ms();
         let run = Store::start_run(tx, session, Some(&first.key), now)?;
+        Self::diag_run_start(tx, session, run, first, chosen.len(), now)?;
         let keys: Vec<_> = chosen.iter().map(|r| r.key.clone()).collect();
         Store::consume_queued(tx, session, &keys, run)?;
         for row in &chosen {

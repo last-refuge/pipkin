@@ -18,6 +18,8 @@ pub struct ConversationState {
     pub plan: PlanState,
     /// Background jobs as the engine reports them.
     pub jobs: crate::jobs::JobsState,
+    /// The engine's own measurements for this session (OBS-1), fetched on request.
+    pub diagnostics: crate::diagnostics::DiagnosticsState,
     /// Context occupancy as the engine reports it (STATUS-2).
     pub context: Option<crate::status::ContextUsage>,
     pub has_older: bool,
@@ -106,6 +108,7 @@ impl ConversationState {
             subagents: SubagentState::default(),
             plan: PlanState::default(),
             jobs: Default::default(),
+            diagnostics: Default::default(),
             context: None,
             has_older: false,
             loading_older: false,
@@ -576,6 +579,7 @@ impl AppState {
                 for c in &mut self.conversations {
                     c.ui_requests.clear();
                     c.ui_answering.clear();
+                    c.diagnostics.reset();
                     c.subagents = SubagentState::default();
                     if self.mode == Mode::Real && was_ready && c.run.op().is_some() {
                         c.recovery_notice = true;
@@ -843,6 +847,40 @@ impl AppState {
             | Command::CancelJob(_)
             | Command::MarkJobsSeen
             | Command::DismissJobError => return self.dispatch_jobs(cmd),
+            Command::RefreshDiagnostics | Command::ExportDiagnostics => {
+                let real = self.mode == Mode::Real && self.connection.is_ready();
+                let Some(c) = self.selected.and_then(|id| self.conv_mut(id)) else {
+                    return out;
+                };
+                if !real || !c.opened {
+                    return out;
+                }
+                let (conversation, generation) = (c.id, c.generation);
+                match cmd {
+                    Command::RefreshDiagnostics if !c.diagnostics.loading => {
+                        c.diagnostics.loading = true;
+                        c.diagnostics.error = None;
+                        out.effects
+                            .push(Effect::Backend(BackendRequest::Diagnostics {
+                                conversation,
+                                generation,
+                            }));
+                        out.notes.push(Note::Other);
+                    }
+                    Command::ExportDiagnostics if !c.diagnostics.exporting => {
+                        c.diagnostics.exporting = true;
+                        c.diagnostics.error = None;
+                        c.diagnostics.exported = None;
+                        out.effects
+                            .push(Effect::Backend(BackendRequest::ExportDiagnostics {
+                                conversation,
+                                generation,
+                            }));
+                        out.notes.push(Note::Other);
+                    }
+                    _ => {}
+                }
+            }
             Command::McpRefresh
             | Command::McpAddServer(_)
             | Command::McpRemoveServer(_)
@@ -2446,6 +2484,9 @@ impl AppState {
                 | EventKind::SubagentOlderFailed { .. }
                 | EventKind::SubagentControlDone { .. }
                 | EventKind::SubagentControlFailed { .. }
+                | EventKind::DiagnosticsSynced { .. }
+                | EventKind::DiagnosticsExported { .. }
+                | EventKind::DiagnosticsFailed { .. }
                 | EventKind::PlanSynced { .. }
                 | EventKind::PlanEditApplied { .. }
                 | EventKind::PlanEditFailed { .. }
@@ -2547,6 +2588,35 @@ impl AppState {
             EventKind::JobRefused { reason } => {
                 if c.opened {
                     c.jobs.error = Some(reason);
+                    out.notes.push(Note::Other);
+                }
+            }
+            EventKind::DiagnosticsSynced { summary, records } => {
+                if c.opened {
+                    let d = &mut c.diagnostics;
+                    d.available = true;
+                    d.loading = false;
+                    d.error = None;
+                    d.summary = Some(summary);
+                    d.records = records;
+                    out.notes.push(Note::Other);
+                }
+            }
+            EventKind::DiagnosticsExported { path, records } => {
+                if c.opened {
+                    let d = &mut c.diagnostics;
+                    d.exporting = false;
+                    d.error = None;
+                    d.exported = Some(format!("{path} ({records} records)"));
+                    out.notes.push(Note::Other);
+                }
+            }
+            EventKind::DiagnosticsFailed { reason } => {
+                if c.opened {
+                    let d = &mut c.diagnostics;
+                    d.loading = false;
+                    d.exporting = false;
+                    d.error = Some(reason);
                     out.notes.push(Note::Other);
                 }
             }

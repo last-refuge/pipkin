@@ -34,6 +34,7 @@ pub use view::*;
 // `SubagentResult`, and the origin/background/delivery/note fields on `SubagentRow`.
 // Version 25 adds questionnaires: `QuestionKind::Form`, `QuestionView::form` / `source`,
 // `Answer::Form`.
-pub const PROTOCOL_VERSION: u32 = 25;
+// Version 26 adds engine diagnostics: `Diagnostics`, `ExportDiagnostics`, `DiagnosticsView`.
+pub const PROTOCOL_VERSION: u32 = 26;
 
 pub mod delivery;

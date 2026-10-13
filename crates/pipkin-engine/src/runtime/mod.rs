@@ -4,6 +4,7 @@
 mod ask;
 mod compaction;
 mod context_usage;
+pub mod diagnostics;
 pub mod faults;
 mod glue;
 mod goals;
@@ -689,6 +690,7 @@ async fn dispatch_with_cancel(
                     "questions".into(),
                     "askUserQuestion".into(),
                     "questionnaires".into(),
+                    "diagnostics".into(),
                     "plans".into(),
                     "web".into(),
                     "goals".into(),
@@ -1121,6 +1123,20 @@ async fn dispatch_with_cancel(
         Call::SubagentResult { session, child } => Ok(Reply::SubagentResult(
             shared.subagent_result(&session, child)?,
         )),
+        Call::Diagnostics {
+            session,
+            before,
+            limit,
+        } => Ok(Reply::Diagnostics(
+            shared.diagnostics_view(&session, before, limit)?,
+        )),
+        Call::ExportDiagnostics { session } => {
+            let (path, records) = shared.export_diagnostics(&session)?;
+            Ok(Reply::DiagnosticsExported {
+                path: path.display().to_string(),
+                records,
+            })
+        }
         Call::AuthState => Ok(Reply::Auth(shared.auth.snapshot(client))),
         Call::AuthStart { provider } => {
             if let Some(error) = shared.refresh_net_async().await?.validation_error {
@@ -1426,6 +1442,8 @@ mod mcp2_tests;
 mod mcp3_tests;
 #[cfg(test)]
 mod mcp_tests;
+#[cfg(test)]
+mod obs_tests;
 #[cfg(test)]
 mod plan_tests;
 #[cfg(test)]

@@ -61,6 +61,10 @@ pub enum Command {
     /// The person looked at the job list: clear the attention count.
     MarkJobsSeen,
     DismissJobError,
+    /// Fetch the engine's diagnostics summary and newest records for the open conversation.
+    RefreshDiagnostics,
+    /// Ask the engine to write the conversation's retained diagnostics as a file.
+    ExportDiagnostics,
     NewConversation,
     RenameConversation(ConversationId, String),
     SetSearch(String),
@@ -428,6 +432,18 @@ pub enum BackendRequest {
         generation: u64,
         id: u64,
     },
+    /// The engine's diagnostics for the conversation, answered by `DiagnosticsSynced` or
+    /// `DiagnosticsFailed`.
+    Diagnostics {
+        conversation: ConversationId,
+        generation: u64,
+    },
+    /// Write the retained diagnostics to a file, answered by `DiagnosticsExported` or
+    /// `DiagnosticsFailed`.
+    ExportDiagnostics {
+        conversation: ConversationId,
+        generation: u64,
+    },
 
     /// MCP management. `conversation` is the open one, whose project may hold its own
     /// entries; `None` reads and writes user settings only.
@@ -594,6 +610,18 @@ pub enum EventKind {
     },
     /// The engine refused a job command.
     JobRefused {
+        reason: String,
+    },
+    /// The engine's diagnostics summary and newest records (engine-measured latency).
+    DiagnosticsSynced {
+        summary: crate::diagnostics::DiagnosticsSummary,
+        records: Vec<crate::diagnostics::DiagnosticRecord>,
+    },
+    DiagnosticsExported {
+        path: String,
+        records: u64,
+    },
+    DiagnosticsFailed {
         reason: String,
     },
     /// Context occupancy as the engine estimates it (after responses, model switches and

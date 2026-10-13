@@ -192,7 +192,7 @@ mod tests {
             let crossed = Store::append_entry(c, "s", 1, Some(run), &assistant(StopReason::ToolUse, false))?.id;
             Store::append_entry(c, "s", 2, Some(run), &assistant(StopReason::Stop, true))?;
             let pending = Store::append_entry(c, "s", 3, Some(run), &assistant(StopReason::ToolUse, false))?.id;
-            c.execute_batch("DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN note; ALTER TABLE subagent_tasks DROP COLUMN delivery; ALTER TABLE subagent_tasks DROP COLUMN origin; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; PRAGMA user_version = 7")?;
+            c.execute_batch("DROP TABLE diagnostics; DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN note; ALTER TABLE subagent_tasks DROP COLUMN delivery; ALTER TABLE subagent_tasks DROP COLUMN origin; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; PRAGMA user_version = 7")?;
             Ok((run, crossed, pending))
         }).unwrap();
         let history = s.page("s", None, 100).unwrap().0;

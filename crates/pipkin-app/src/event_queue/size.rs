@@ -79,6 +79,11 @@ pub(super) fn event_bytes(event: &BackendEvent) -> usize {
             EventKind::ContextSynced { context } => {
                 context.model.as_ref().map_or(0, String::capacity) + context.compaction.capacity()
             }
+            EventKind::DiagnosticsSynced { records, .. } => vec_bytes(records, |r| {
+                r.kind.capacity() + r.line.capacity() + strings(&r.call_id)
+            }),
+            EventKind::DiagnosticsExported { path, .. } => path.capacity(),
+            EventKind::DiagnosticsFailed { reason } => reason.capacity(),
             EventKind::PlanEditApplied { request } | EventKind::SubagentControlDone { request } => {
                 request.0.capacity()
             }

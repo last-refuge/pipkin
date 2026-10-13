@@ -4,6 +4,7 @@
 
 pub mod attach;
 pub mod backend;
+pub mod diagnostics;
 pub mod ids;
 pub mod import;
 pub mod jobs;

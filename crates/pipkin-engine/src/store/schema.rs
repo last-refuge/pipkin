@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 18;
+pub const SCHEMA_VERSION: u32 = 19;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -453,8 +453,23 @@ ALTER TABLE subagent_tasks ADD COLUMN origin TEXT NOT NULL DEFAULT 'model';
 ALTER TABLE subagent_tasks ADD COLUMN delivery TEXT NOT NULL DEFAULT 'inline';
 ALTER TABLE subagent_tasks ADD COLUMN note TEXT;
 "#;
+// OBS-1: bounded structured diagnostics per session (provider timing, retries, tool
+// durations, queue waits, settlements), written in the transactions that commit the facts.
+const V19: &str = r#"
+CREATE TABLE diagnostics (
+    session TEXT NOT NULL REFERENCES sessions(id),
+    seq INTEGER NOT NULL,
+    at INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    run INTEGER,
+    request TEXT,
+    call_id TEXT,
+    record TEXT NOT NULL CHECK (json_valid(record)),
+    PRIMARY KEY (session, seq)
+) STRICT;
+"#;
 const MIGRATIONS: &[&str] = &[
-    V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18,
+    V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19,
 ];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {

@@ -448,6 +448,19 @@ pub enum Call {
         session: SessionId,
         child: u64,
     },
+    /// The session's engine-recorded diagnostics (OBS-1): a summary and a page of records,
+    /// newest first, strictly before `before` (a record seq).
+    Diagnostics {
+        session: SessionId,
+        #[serde(default)]
+        before: Option<u64>,
+        limit: u32,
+    },
+    /// Write every retained record of the session as JSON lines into the engine's data
+    /// directory and say where.
+    ExportDiagnostics {
+        session: SessionId,
+    },
     AuthState,
     AuthStart {
         provider: String,
@@ -604,6 +617,11 @@ pub enum Reply {
     Subagents(SubagentsView),
     Subagent(SubagentRow),
     SubagentResult(SubagentResultView),
+    Diagnostics(DiagnosticsView),
+    DiagnosticsExported {
+        path: String,
+        records: u64,
+    },
     Plan(PlanView),
     PlanUpdated(PlanReceipt),
     WebSources(Vec<WebSourceView>),

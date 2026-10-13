@@ -1796,6 +1796,51 @@ impl Live {
                     ),
                 }
             }
+            BackendRequest::Diagnostics {
+                conversation,
+                generation,
+            } => {
+                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
+                    return;
+                };
+                let kind = match self.call(Call::Diagnostics {
+                    session,
+                    before: None,
+                    limit: mapping::MAX_DIAGNOSTIC_LINES as u32,
+                }) {
+                    Ok(Reply::Diagnostics(view)) => {
+                        let (summary, records) = mapping::diagnostics(&view);
+                        EventKind::DiagnosticsSynced { summary, records }
+                    }
+                    Ok(other) => EventKind::DiagnosticsFailed {
+                        reason: format!("Unexpected reply {other:?}"),
+                    },
+                    Err(error) => EventKind::DiagnosticsFailed {
+                        reason: format!("Could not read the diagnostics: {error}"),
+                    },
+                };
+                worker.emit(conversation, generation, kind);
+            }
+            BackendRequest::ExportDiagnostics {
+                conversation,
+                generation,
+            } => {
+                let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
+                    return;
+                };
+                let kind = match self.call(Call::ExportDiagnostics { session }) {
+                    Ok(Reply::DiagnosticsExported { path, records }) => {
+                        EventKind::DiagnosticsExported { path, records }
+                    }
+                    Ok(other) => EventKind::DiagnosticsFailed {
+                        reason: format!("Unexpected reply {other:?}"),
+                    },
+                    Err(error) => EventKind::DiagnosticsFailed {
+                        reason: format!("Could not export the diagnostics: {error}"),
+                    },
+                };
+                worker.emit(conversation, generation, kind);
+            }
             BackendRequest::CancelJob {
                 conversation,
                 generation,

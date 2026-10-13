@@ -1375,6 +1375,186 @@ impl Workspace {
                     .text_color(c.text_faint)
                     .child("Cost is the engine’s reported estimate, not a billing balance."),
             )
+            .child(div().h(px(1.0)).bg(c.border))
+            .child(self.render_diagnostics_section(cx))
+    }
+
+    /// The engine's own measurements for this session (OBS-1): a summary and the newest
+    /// records, fetched when the dialog opens or on Refresh; an export writes them to a file
+    /// in the engine's data directory. Engine-measured model and tool latency only; the
+    /// desktop's input-to-frame figures are a separate measurement.
+    fn render_diagnostics_section(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
+        use pipkin_core::diagnostics::format_ms;
+        let t = cx.theme().clone();
+        let c = &t.colors;
+        let this = cx.entity();
+        let demo = self.state(cx).mode == Mode::Demo;
+        let real = self.state(cx).mode == Mode::Real && self.state(cx).connection.is_ready();
+        let d = self
+            .state(cx)
+            .current()
+            .map(|cv| cv.diagnostics.clone())
+            .unwrap_or_default();
+        let row = |label: &str, value: String| {
+            div()
+                .flex()
+                .justify_between()
+                .gap(px(16.0))
+                .child(
+                    div()
+                        .min_w_0()
+                        .text_color(c.text_muted)
+                        .child(label.to_owned()),
+                )
+                .child(div().font_family(t.mono_font()).child(value))
+        };
+        let opt = |v: Option<u64>| v.map_or_else(|| "—".to_owned(), format_ms);
+        let refresh = {
+            let this = this.clone();
+            Btn::new("diagnostics-refresh")
+                .label("Refresh")
+                .kind(BtnKind::Subtle)
+                .compact()
+                .disabled(!real || d.loading)
+                .aria("Refresh engine diagnostics")
+                .on_click(move |_, cx| {
+                    this.update(cx, |t, cx| t.dispatch(Command::RefreshDiagnostics, cx))
+                })
+        };
+        let export = {
+            let this = this.clone();
+            Btn::new("diagnostics-export")
+                .label("Export")
+                .kind(BtnKind::Subtle)
+                .compact()
+                .disabled(!real || d.exporting || !d.available)
+                .aria("Export engine diagnostics to a file")
+                .on_click(move |_, cx| {
+                    this.update(cx, |t, cx| t.dispatch(Command::ExportDiagnostics, cx))
+                })
+        };
+        let mut section = div()
+            .id("session-diagnostics")
+            .role(Role::Region)
+            .aria_label("Engine diagnostics")
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .child("Engine diagnostics"),
+                    )
+                    .child(div().flex().gap(px(6.0)).child(refresh).child(export)),
+            );
+        if demo {
+            return section.child(
+                div()
+                    .text_size(t.small_size())
+                    .text_color(c.text_muted)
+                    .child("Demo · simulated agent: no engine diagnostics."),
+            );
+        }
+        if let Some(error) = &d.error {
+            section = section.child(
+                div()
+                    .id("diagnostics-error")
+                    .role(Role::Alert)
+                    .text_size(t.small_size())
+                    .text_color(c.warning)
+                    .child(error.clone()),
+            );
+        }
+        match &d.summary {
+            None => {
+                section = section.child(
+                    div()
+                        .id("diagnostics-state")
+                        .role(Role::Status)
+                        .text_size(t.small_size())
+                        .text_color(c.text_muted)
+                        .child(if d.loading {
+                            "Reading the engine’s records…"
+                        } else {
+                            "No diagnostics yet."
+                        }),
+                );
+            }
+            Some(s) => {
+                section = section
+                    .child(row(
+                        "Runs · cancellations",
+                        format!("{} · {}", s.runs, s.cancellations),
+                    ))
+                    .child(row(
+                        "Model requests · errors · retries",
+                        format!(
+                            "{} · {} · {}",
+                            s.provider_requests, s.provider_errors, s.retries
+                        ),
+                    ))
+                    .child(row(
+                        "Model request p50 · p95",
+                        format!("{} · {}", opt(s.provider_p50_ms), opt(s.provider_p95_ms)),
+                    ))
+                    .child(row("First token p50", opt(s.first_token_p50_ms)))
+                    .child(row(
+                        "Tool calls · errors",
+                        format!("{} · {}", s.tool_calls, s.tool_errors),
+                    ))
+                    .child(row(
+                        "Tool call p50 · p95",
+                        format!("{} · {}", opt(s.tool_p50_ms), opt(s.tool_p95_ms)),
+                    ))
+                    .child(row("Longest queue wait", opt(s.queue_wait_max_ms)))
+                    .child(row("Longest Stop", opt(s.stop_latency_max_ms)))
+                    .child(row("Records kept", s.records.to_string()));
+                if !d.records.is_empty() {
+                    section = section.child(
+                        div()
+                            .id("diagnostics-records")
+                            .role(Role::List)
+                            .aria_label("Newest diagnostic records")
+                            .max_h(px(160.0))
+                            .overflow_y_scroll()
+                            .flex()
+                            .flex_col()
+                            .gap(px(3.0))
+                            .text_size(t.small_size())
+                            .font_family(t.mono_font())
+                            .text_color(c.text_muted)
+                            .children(d.records.iter().map(|r| {
+                                div()
+                                    .id(("diagnostic-record", r.seq as usize))
+                                    .role(Role::ListItem)
+                                    .min_w_0()
+                                    .child(format!("#{} {}", r.seq, r.line))
+                            })),
+                    );
+                }
+            }
+        }
+        if let Some(exported) = &d.exported {
+            section = section.child(
+                div()
+                    .id("diagnostics-exported")
+                    .role(Role::Status)
+                    .text_size(t.small_size())
+                    .child(format!("Exported to {exported}")),
+            );
+        }
+        section.child(
+            div()
+                .text_size(t.small_size())
+                .text_color(c.text_faint)
+                .child("Measured by the engine around model and tool calls. The window’s own input-to-frame latency is logged separately (Log performance stats)."),
+        )
     }
 
     fn render_about(&mut self, cx: &mut Context<Self>) -> impl IntoElement {

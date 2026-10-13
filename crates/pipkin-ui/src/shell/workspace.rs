@@ -865,6 +865,9 @@ impl Workspace {
         }
         self.overlay = o;
         self.overlay_sel = usize::from(o == Overlay::ModelSettings && previous == Overlay::Effort);
+        if o == Overlay::Session {
+            self.dispatch(Command::RefreshDiagnostics, cx);
+        }
         match o {
             Overlay::Palette => {
                 self.overlay_input.update(cx, |e, cx| {

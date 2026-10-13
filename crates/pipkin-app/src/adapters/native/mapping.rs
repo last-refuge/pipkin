@@ -1080,6 +1080,112 @@ pub fn context(view: &pipkin_engine_protocol::ContextUsageView) -> pipkin_core::
 
 // ------------------------------------------------------------------ background jobs
 
+/// The engine's diagnostics: the summary as given, each record put into one bounded line.
+pub fn diagnostics(
+    view: &pipkin_engine_protocol::DiagnosticsView,
+) -> (
+    pipkin_core::diagnostics::DiagnosticsSummary,
+    Vec<pipkin_core::diagnostics::DiagnosticRecord>,
+) {
+    use pipkin_core::diagnostics::{DiagnosticRecord, DiagnosticsSummary, format_ms};
+    let s = &view.summary;
+    let summary = DiagnosticsSummary {
+        records: s.records,
+        runs: s.runs,
+        provider_requests: s.provider_requests,
+        provider_errors: s.provider_errors,
+        retries: s.retries,
+        cancellations: s.cancellations,
+        tool_calls: s.tool_calls,
+        tool_errors: s.tool_errors,
+        provider_p50_ms: s.provider_p50_ms,
+        provider_p95_ms: s.provider_p95_ms,
+        first_token_p50_ms: s.first_token_p50_ms,
+        tool_p50_ms: s.tool_p50_ms,
+        tool_p95_ms: s.tool_p95_ms,
+        queue_wait_max_ms: s.queue_wait_max_ms,
+        stop_latency_max_ms: s.stop_latency_max_ms,
+    };
+    let text = |v: &serde_json::Value, key: &str| -> Option<String> {
+        v.get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(|t| t.chars().take(80).collect())
+    };
+    let ms = |v: &serde_json::Value, key: &str| v.get(key).and_then(serde_json::Value::as_u64);
+    let records = view
+        .records
+        .iter()
+        .take(MAX_DIAGNOSTIC_LINES)
+        .map(|r| {
+            let d = &r.data;
+            let mut parts: Vec<String> = vec![r.kind.clone()];
+            match r.kind.as_str() {
+                "run.start" => {
+                    if let Some(w) = ms(d, "queueWaitMs") {
+                        parts.push(format!("waited {}", format_ms(w)));
+                    }
+                    if let Some(p) = text(d, "parent") {
+                        parts.push(format!("child of {p}"));
+                    }
+                }
+                "run.end" => {
+                    parts.extend(text(d, "outcome"));
+                    if let Some(t) = ms(d, "durationMs") {
+                        parts.push(format_ms(t));
+                    }
+                    if let Some(l) = ms(d, "stopLatencyMs") {
+                        parts.push(format!("stopped in {}", format_ms(l)));
+                    }
+                    parts.extend(text(d, "detail"));
+                }
+                "run.resumed" => parts.extend(text(d, "reason")),
+                "provider.request" => {
+                    parts.extend(text(d, "model"));
+                    if let Some(a) = ms(d, "attempt").filter(|a| *a > 1) {
+                        parts.push(format!("attempt {a}"));
+                    }
+                    if let Some(t) = ms(d, "durationMs") {
+                        parts.push(format_ms(t));
+                    }
+                    if let Some(f) = ms(d, "firstTokenMs") {
+                        parts.push(format!("first token {}", format_ms(f)));
+                    }
+                    parts.extend(text(d, "outcome"));
+                    parts.extend(text(d, "error"));
+                }
+                "provider.retry" => {
+                    if let Some(a) = ms(d, "attempt") {
+                        parts.push(format!("after attempt {a}"));
+                    }
+                    if let Some(t) = ms(d, "delayMs") {
+                        parts.push(format!("in {}", format_ms(t)));
+                    }
+                }
+                "tool.call" => {
+                    parts.extend(text(d, "name"));
+                    if let Some(t) = ms(d, "durationMs") {
+                        parts.push(format_ms(t));
+                    }
+                    parts.extend(text(d, "outcome"));
+                }
+                _ => {}
+            }
+            DiagnosticRecord {
+                seq: r.seq,
+                at_ms: r.at_ms,
+                kind: r.kind.clone(),
+                run: r.run,
+                call_id: r.call_id.clone(),
+                line: parts.join(" · "),
+            }
+        })
+        .collect();
+    (summary, records)
+}
+
+/// Record lines shown in the dialog.
+pub const MAX_DIAGNOSTIC_LINES: usize = 40;
+
 pub fn jobs(view: &pipkin_engine_protocol::JobsView) -> pipkin_core::JobsSync {
     use pipkin_core::{Job, JobOrigin, JobState};
     pipkin_core::JobsSync {
