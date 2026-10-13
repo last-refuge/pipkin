@@ -414,9 +414,15 @@ async fn reads_edits_and_runs_a_command_in_one_session() {
 async fn publishes_throttled_live_progress_of_the_tail_window() {
     let dir = temp();
     let (c, seen) = ctx_with(dir.path());
+    // One line, a pause well past the 100 ms minimum interval, then a burst of four lines
+    // microseconds apart: the first line is published at once and on its own; of the
+    // burst, the first chunk to arrive goes out at once (the interval has long passed) and
+    // the rest wait for the interval and are published together. The command stays alive
+    // after the burst: a publication still waiting for the interval when the call settles
+    // is dropped (the result carries the whole output anyway).
     let result = run(
         &BashTool,
-        json!({"command": "for i in 1 2 3 4 5; do echo tick-$i; sleep 0.03; done"}),
+        json!({"command": "echo tick-1; sleep 0.3; echo tick-2; echo tick-3; echo tick-4; echo tick-5; sleep 0.3"}),
         &c,
     )
     .await;
@@ -431,6 +437,7 @@ async fn publishes_throttled_live_progress_of_the_tail_window() {
     for window in &seen {
         assert!("tick-1\ntick-2\ntick-3\ntick-4\ntick-5\n".starts_with(window.as_str()));
     }
-    // At 30 ms per line and a 100 ms minimum interval, some lines were coalesced.
-    assert!(seen.len() < 5, "{seen:?}");
+    // The burst took one or two publications (one when it arrived as a single chunk),
+    // never one per line: the throttle coalesced it.
+    assert!((2..=3).contains(&seen.len()), "{seen:?}");
 }

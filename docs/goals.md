@@ -137,7 +137,7 @@ to check every criterion itself and end with a JSON verdict.
 | Auditor verdict | Goal |
 | --- | --- |
 | `approved` | completed, "Audit approved (round N); the completion claim was independently checked" |
-| `changes_requested`, rounds left | active again; the next turn's prompt carries the findings |
+| `changes_requested`, rounds left | active again, with the findings recorded as the proposing turn's `continue` decision (so a turn still open when the verdict lands settles into the repair turn rather than pausing for want of a status); the next turn's prompt carries the findings |
 | `changes_requested`, limit reached (default 2 rounds) | paused for review |
 | `inconclusive`, a reply without a verdict object, or a provider failure | paused for review; never approval |
 | approval after the claim's files changed during the audit | paused as stale; propose again |

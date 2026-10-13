@@ -952,12 +952,21 @@ impl Shared {
         if !self.session_attached(session) {
             return pause(GoalState::Paused, goals::REASON_DETACHED);
         }
-        let busy = self.store.open_run(session).ok().flatten().is_some()
-            || self
-                .store
-                .queue(session)
-                .map(|q| !q.is_empty())
-                .unwrap_or(false);
+        // What is running or queued may be this goal's own next turn, started by a concurrent
+        // tick (an audit verdict and the proposing turn's settlement can tick at once): that
+        // is not the person's input, and this tick has nothing left to do.
+        let open = self.store.open_run(session).ok().flatten();
+        let queued = self.store.queue(session).unwrap_or_default();
+        let own = |key: &str| goals::is_turn_of(key, goal.id);
+        if open
+            .as_ref()
+            .and_then(|r| r.request.as_deref())
+            .is_some_and(own)
+            || queued.iter().any(|r| own(&r.key))
+        {
+            return;
+        }
+        let busy = open.is_some() || !queued.is_empty();
         if busy {
             if settled.is_some() {
                 // The person's input takes precedence over the goal's next turn.
@@ -1190,7 +1199,15 @@ impl Shared {
             ),
         };
         if state == GoalState::Active {
-            view.decision = None;
+            // The findings are the proposing turn's outcome. That turn may still be open
+            // (its final reply after the proposal's result can land after the verdict), so
+            // it settles as a structured continue rather than as "no status"; once it has
+            // settled, the tick below starts the repair turn.
+            view.decision = Some(GoalDecision {
+                epoch: view.epoch,
+                kind: "continue".into(),
+                reason: Some(reason.clone()),
+            });
         }
         let written = self.goal_commit(session, |tx| {
             Store::goal_write_progress(tx, session, &view, now)?;

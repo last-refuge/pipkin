@@ -46,6 +46,17 @@ fn audit_script(
     hash: String,
     auditor: impl Fn(u32) -> R + Send + Sync + 'static,
 ) -> impl Fn(&ProviderRequest, usize) -> R + Send + Sync {
+    audit_script_holding(hash, None, auditor)
+}
+
+/// [`audit_script`] whose executor holds its final reply of the first goal turn (the text
+/// after the proposal's result) at `hold` when one is given, so the first audit can finish
+/// while the proposing turn is still open.
+fn audit_script_holding(
+    hash: String,
+    hold: Option<Gate>,
+    auditor: impl Fn(u32) -> R + Send + Sync + 'static,
+) -> impl Fn(&ProviderRequest, usize) -> R + Send + Sync {
     let proposed = Arc::new(Mutex::new(std::collections::HashSet::<String>::new()));
     move |req, _| {
         if is_auditor(req) {
@@ -70,6 +81,7 @@ fn audit_script(
             .count()
             .to_string();
         let mut seen = proposed.lock().unwrap();
+        let first_turn = key == "1";
         if seen.insert(key) {
             R::Tools(
                 None,
@@ -79,7 +91,12 @@ fn audit_script(
                 )],
             )
         } else {
-            R::Text("proposed".into())
+            match &hold {
+                Some(gate) if first_turn => {
+                    R::Gated(gate.clone(), Box::new(R::Text("proposed".into())))
+                }
+                _ => R::Text("proposed".into()),
+            }
         }
     }
 }
@@ -106,6 +123,23 @@ fn until_state(e: &mut Engine, s: &str, state: GoalState) -> GoalView {
         assert!(
             std::time::Instant::now() < deadline,
             "goal never reached {state:?}: {:?}",
+            goal_of(e, s)
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn until_goal(e: &mut Engine, s: &str, what: &str, pred: impl Fn(&GoalView) -> bool) -> GoalView {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Some(goal) = goal_of(e, s)
+            && pred(&goal)
+        {
+            return goal;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for {what}: {:?}",
             goal_of(e, s)
         );
         std::thread::sleep(Duration::from_millis(20));
@@ -257,6 +291,72 @@ fn requested_changes_feed_the_next_turn_and_are_bounded_then_skipping_is_unrevie
     assert_eq!(skipped.reason.as_deref(), Some(goals::REASON_AUDIT_SKIPPED));
     assert_eq!(skipped.audit.result.as_ref().unwrap().verdict, "skipped");
     assert!(control(&mut e, &s, GoalAction::SkipAudit).is_err());
+}
+
+#[test]
+fn changes_requested_before_the_proposing_turn_settles_still_run_the_repair_turn() {
+    // The auditor can answer while the executor's proposing turn is still open: its final
+    // reply (after the proposal's result) has not come back yet. The findings are that
+    // turn's outcome, so it must settle as a continue into the repair turn, not pause the
+    // goal for want of a status.
+    let fx = Fixture::new();
+    std::fs::write(fx.project.join("a.txt"), "done").unwrap();
+    let hash = crate::web::sha256_hex(b"done");
+    let hold = Gate::new();
+    let provider = Scripted::new(audit_script_holding(hash, Some(hold.clone()), |round| {
+        verdict(
+            "changes_requested",
+            false,
+            &format!("round {round}: not convinced"),
+        )
+    }));
+    let mut e = fx.start(&provider);
+    let s = e.create(&fx.project, "c");
+    start_audited_goal(&fx, &mut e, &s);
+    // Round 1's verdict lands while turn 1 is held open: the goal is active again with the
+    // findings recorded as the turn's decision, and no repair turn has started.
+    let back = until_goal(&mut e, &s, "round 1's verdict", |g| {
+        g.state == GoalState::Active && g.audit.rounds == 1
+    });
+    assert!(
+        back.reason
+            .as_deref()
+            .unwrap()
+            .starts_with("Audit round 1 requested changes"),
+        "{:?}",
+        back.reason
+    );
+    assert_eq!(back.epoch, 1, "the repair turn waits for turn 1 to settle");
+    let decision = back
+        .decision
+        .clone()
+        .expect("the findings are turn 1's decision");
+    assert_eq!((decision.epoch, decision.kind.as_str()), (1, "continue"));
+    assert_eq!(decision.reason, back.reason);
+    assert_eq!(
+        provider.requests().iter().filter(|r| is_auditor(r)).count(),
+        1
+    );
+    // Turn 1 settles now; the repair turn runs and the second round hits the limit.
+    hold.open();
+    let paused = until_state(&mut e, &s, GoalState::Paused);
+    assert!(
+        paused
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("requested changes 2 time(s) (the limit is 2)"),
+        "{:?}",
+        paused.reason
+    );
+    assert_eq!(paused.turns, 2, "one repair turn ran between the audits");
+    assert_eq!(paused.epoch, 2);
+    let second = provider
+        .requests()
+        .into_iter()
+        .find(|r| !is_auditor(r) && user_text(r).contains("did not approve"))
+        .expect("the repair turn carried the findings");
+    assert!(user_text(&second).contains("criterion #1: not met — round 1: not convinced"));
 }
 
 #[test]

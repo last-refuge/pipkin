@@ -3,6 +3,26 @@
 Release notes for Pipkin. The newest release is first. The GitHub release body for a version is
 this file's section for it; the publish step in `.github/workflows/release.yml` extracts it.
 
+## Unreleased
+
+### Fixed
+
+- Goal audit: when the auditor requested changes before the executor's proposing turn had
+  settled (its final reply after the proposal's result was still pending), that turn then
+  settled with no decision and paused the goal with "the executor reported no goal status
+  this turn" instead of running the repair turn; and when the verdict and the settlement
+  advanced the goal at the same time, the turn one of them had just started could be
+  mistaken for the person's input and pause the goal with "you sent a message". The
+  findings are now recorded as that turn's `continue` decision, and a tick that finds the
+  goal's own next turn already running leaves it alone, so the repair turn runs either way.
+  This was the cause of the structured-goal audit test failing on the macOS CI runner; it
+  could also happen on Linux.
+- Engine tests that lost a race more often on macOS than on Linux: the structured-evidence
+  goal test now gates the turn until it has observed the rejected proposal (and then checks
+  that the accepted one completes the goal); the subagent artifact test no longer writes the
+  same file twice within one parallel tool round; the bash progress test now proves
+  throttling with a pause followed by a burst instead of per-line sleeps.
+
 ## 1.0.0 (2026-10-13)
 
 The first release of Pipkin: a native Rust/GPUI desktop coding agent with a built-in Rust
@@ -80,10 +100,11 @@ reactivates the previous version, subject to the schema and backup rules in
   past 1.0.
 - On macOS the engine cannot find and stop a background job's process after it restarts;
   the job is marked interrupted with "the process is gone". Linux stops it.
-- On the macOS CI runner a handful of engine unit tests fail or flake across runs (the
+- On the macOS CI runner a handful of engine unit tests failed or flaked across runs (the
   structured-goal audit and evidence tests, a subagent artifact re-read, and a timing-based
-  bash progress test). They are macOS issues to investigate and do not affect the Linux
-  build, whose full suite passes in CI.
+  bash progress test). Fixed after 1.0.0 (see Unreleased): three were races the tests
+  themselves lost more often on macOS, and one was an engine race in the goal audit that
+  could also pause a goal on Linux. The 1.0.0 binaries carry the engine race.
 - The owner-run native gate rows in [docs/native-gate-testing.md](docs/native-gate-testing.md)
   keep their recorded status; soak and performance qualification happen after 1.0.
 - Detailed diagnostics (`pipkin --diagnose`) can include sensitive log text; review before

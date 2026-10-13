@@ -63,6 +63,12 @@ pub fn request_key(goal: u64, epoch: u64) -> String {
     format!("goal:{goal}:{epoch}")
 }
 
+/// Whether `key` is the request key of one of `goal`'s turns.
+pub fn is_turn_of(key: &str, goal: u64) -> bool {
+    key.strip_prefix(&format!("goal:{goal}:"))
+        .is_some_and(|epoch| epoch.parse::<u64>().is_ok())
+}
+
 /// The objective shown for a goal-turn prompt, when the prompt is one.
 pub fn objective_of_prompt(text: &str) -> Option<&str> {
     let rest = text.strip_prefix(PROMPT_PREFIX)?;
@@ -103,6 +109,15 @@ mod tests {
         assert_eq!(objective_of_prompt(&prompt), Some("ship v1"));
         assert_eq!(objective_of_prompt("hello"), None);
         assert_eq!(request_key(3, 7), "goal:3:7");
+    }
+
+    #[test]
+    fn turn_keys_are_recognised_per_goal() {
+        assert!(is_turn_of(&request_key(3, 7), 3));
+        assert!(!is_turn_of(&request_key(3, 7), 4));
+        assert!(!is_turn_of("goal:3:", 3));
+        assert!(!is_turn_of("goal:3:x", 3));
+        assert!(!is_turn_of("r1", 3));
     }
 }
 

@@ -77,6 +77,9 @@ fn script(
             return match kind.as_str() {
                 "hang" => R::Gated(child_gate.clone(), Box::new(R::Text("child done".into()))),
                 "write" => {
+                    // Two successful writes of the same file in consecutive rounds (a
+                    // round's calls run in parallel, so the order of two writes to one
+                    // path within a round is not defined), plus a failed write.
                     let results = req
                         .messages
                         .iter()
@@ -85,11 +88,14 @@ fn script(
                     match results {
                         0 => R::Tools(
                             None,
+                            vec![(
+                                "write".into(),
+                                json!({"path": "out.txt", "content": "made by child"}),
+                            )],
+                        ),
+                        1 => R::Tools(
+                            None,
                             vec![
-                                (
-                                    "write".into(),
-                                    json!({"path": "out.txt", "content": "made by child"}),
-                                ),
                                 (
                                     "write".into(),
                                     json!({"path": "out.txt", "content": "made by child again"}),

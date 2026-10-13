@@ -10,7 +10,7 @@ use serde_json::json;
 use super::tests::{Engine, Fixture};
 use crate::goals;
 use crate::provider::ProviderRequest;
-use crate::provider::scripted::{Reply as R, Scripted};
+use crate::provider::scripted::{Gate, Reply as R, Scripted};
 
 fn user_text(req: &ProviderRequest) -> String {
     req.messages
@@ -147,36 +147,80 @@ fn write_settings(fx: &Fixture, body: serde_json::Value) {
     std::fs::write(fx.dir.path().join("config/settings.json"), body.to_string()).unwrap();
 }
 
+/// The tool result the request ends with, by tool name, when it ends with one.
+fn ends_with_result(req: &ProviderRequest) -> Option<String> {
+    match req
+        .messages
+        .iter()
+        .rev()
+        .find(|m| !matches!(m, Message::System(_)))
+    {
+        Some(Message::ToolResult { tool_name, .. }) => Some(tool_name.clone()),
+        _ => None,
+    }
+}
+
 #[test]
 fn structured_continue_and_completion_with_checked_evidence() {
     let fx = Fixture::new();
     std::fs::write(fx.project.join("notes.txt"), "v1").unwrap();
     let hash = crate::web::sha256_hex(b"v1");
-    let provider = Scripted::new(scripted_turns(vec![
-        (
-            vec![
-                ("read", json!({"path": "notes.txt"})),
-                (
-                    "update_goal",
-                    json!({"status": "continue", "note": "read the notes", "criteria": [{"id": 1, "status": "met", "evidence": [{"kind": "observation", "reference": "looks fine"}]}]}),
+    // Turn 1: a read, then an update with an observation-only claim and a structured
+    // continue. Turn 2: a proposal naming a missing tool call (rejected), then, once the
+    // test has looked at the rejection, a proposal citing the real read call (accepted).
+    // The second proposal waits at the gate so the turn cannot end (and pause the goal for
+    // want of a status) before the rejection has been observed.
+    let gate = Gate::new();
+    let provider = Scripted::new({
+        let gate = gate.clone();
+        move |req: &ProviderRequest, _| {
+            if !user_text(req).starts_with(goals::PROMPT_PREFIX) {
+                return R::Text(format!("echo: {}", user_text(req)));
+            }
+            let read_id = req.messages.iter().find_map(|m| match m {
+                Message::ToolResult {
+                    tool_call_id,
+                    tool_name,
+                    ..
+                } if tool_name == "read" => Some(tool_call_id.clone()),
+                _ => None,
+            });
+            let proposals = req
+                .messages
+                .iter()
+                .filter(|m| matches!(m, Message::ToolResult { tool_name, .. } if tool_name == "propose_goal_completion"))
+                .count();
+            match (read_id, ends_with_result(req).as_deref()) {
+                (None, _) => R::Tools(None, vec![("read".into(), json!({"path": "notes.txt"}))]),
+                (Some(_), Some("read")) => R::Tools(
+                    None,
+                    vec![(
+                        "update_goal".into(),
+                        json!({"status": "continue", "note": "read the notes", "criteria": [{"id": 1, "status": "met", "evidence": [{"kind": "observation", "reference": "looks fine"}]}]}),
+                    )],
                 ),
-            ],
-            "working on it",
-        ),
-        (
-            vec![
-                (
-                    "propose_goal_completion",
-                    json!({"summary": "done", "criteria": [{"id": 1, "evidence": [{"kind": "file", "reference": "notes.txt", "sha256": hash}]}, {"id": 2, "evidence": [{"kind": "toolCall", "reference": "nope"}]}]}),
+                (Some(_), Some("update_goal")) => R::Text("working on it".into()),
+                (Some(_), None) => R::Tools(
+                    None,
+                    vec![(
+                        "propose_goal_completion".into(),
+                        json!({"summary": "done", "criteria": [{"id": 1, "evidence": [{"kind": "file", "reference": "notes.txt", "sha256": hash}]}, {"id": 2, "evidence": [{"kind": "toolCall", "reference": "nope"}]}]}),
+                    )],
                 ),
-                (
-                    "propose_goal_completion",
-                    json!({"summary": "done for real", "criteria": [{"id": 2, "evidence": [{"kind": "toolCall", "reference": "will-be-filled"}]}]}),
+                (Some(read_id), Some("propose_goal_completion")) if proposals == 1 => R::Gated(
+                    gate.clone(),
+                    Box::new(R::Tools(
+                        None,
+                        vec![(
+                            "propose_goal_completion".into(),
+                            json!({"summary": "done for real", "criteria": [{"id": 2, "evidence": [{"kind": "toolCall", "reference": read_id}]}]}),
+                        )],
+                    )),
                 ),
-            ],
-            "finished",
-        ),
-    ]));
+                (Some(_), Some(_)) => R::Text("finished".into()),
+            }
+        }
+    });
     let mut e = fx.start(&provider);
     let s = e.create(&fx.project, "c");
     e.snapshot(&s);
@@ -188,7 +232,6 @@ fn structured_continue_and_completion_with_checked_evidence() {
             criteria: vec!["notes are read".into(), "notes are tidy".into()],
         },
     );
-    // Turn 1: a read, then an update with an observation-only claim.
     // The structured continue schedules turn 2 once turn 1 settles.
     let goal = until_goal(&mut e, &s, "the second turn", |g| g.epoch == 2);
     assert_eq!(goal.id, 1);
@@ -201,7 +244,7 @@ fn structured_continue_and_completion_with_checked_evidence() {
             .any(|r| user_text(r).contains("Completion criteria:\n- #1 ["))
     });
     // Turn 2: the first proposal names a missing tool call and is rejected; the goal stays
-    // active. Patch the second proposal to cite the real read call before it runs.
+    // active while the second proposal waits at the gate.
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     let snap = loop {
         let snap = e.snapshot(&s);
@@ -234,25 +277,8 @@ fn structured_continue_and_completion_with_checked_evidence() {
         "{}",
         updates[0].1
     );
-    let read_call = snap
-        .entries
-        .iter()
-        .find_map(|e| match &e.kind {
-            EntryKind::Message {
-                message:
-                    Message::ToolResult {
-                        tool_name,
-                        tool_call_id,
-                        ..
-                    },
-                ..
-            } if tool_name == "read" => Some(tool_call_id.clone()),
-            _ => None,
-        })
-        .unwrap();
-    let _ = read_call;
     let proposals = tool_results(&snap, "propose_goal_completion");
-    assert!(!proposals.is_empty());
+    assert_eq!(proposals.len(), 1, "{proposals:?}");
     assert!(proposals[0].0, "{}", proposals[0].1);
     assert!(proposals[0].1.contains("not met: #2"), "{}", proposals[0].1);
     assert!(
@@ -270,6 +296,23 @@ fn structured_continue_and_completion_with_checked_evidence() {
         "the file hash matched"
     );
     assert_eq!(goal.criteria[1].status, CriterionStatus::Unverified);
+    // The second proposal cites the real read call: every criterion is met and the goal
+    // completes on the engine's evidence checks; the turn's final text is not consulted.
+    gate.open();
+    let done = until_state(&mut e, &s, GoalState::Completed);
+    assert_eq!(done.reason.as_deref(), Some(goals::REASON_PROPOSED));
+    assert_eq!(done.epoch, 2, "completed inside turn 2");
+    assert!(
+        done.criteria
+            .iter()
+            .all(|c| c.status == CriterionStatus::Met),
+        "{:?}",
+        done.criteria
+    );
+    let snap = e.snapshot(&s);
+    let proposals = tool_results(&snap, "propose_goal_completion");
+    assert_eq!(proposals.len(), 2, "{proposals:?}");
+    assert!(!proposals[1].0, "{}", proposals[1].1);
     e.handle.shutdown(Duration::from_millis(200));
 }
 
