@@ -3,6 +3,18 @@
 Release notes for Pipkin. The newest release is first. The GitHub release body for a version is
 this file's section for it; the publish step in `.github/workflows/release.yml` extracts it.
 
+## Unreleased
+
+### Added
+
+- A one-line installer for Linux x86_64: `curl -fsSL
+  https://github.com/last-refuge/pipkin/releases/latest/download/install.sh | bash` downloads the
+  prebuilt archive of the latest release, verifies it against `SHA256SUMS`, and runs the archive's
+  installer into `~/.local`. It never builds from source and takes `--version`, `--prefix`,
+  `--dry-run`, `--list`, `--rollback` and `--uninstall`. The script lives at `install.sh` in the
+  repository, is published as a release asset by the release workflow, and was attached to the
+  1.1.0 release by hand.
+
 ## 1.1.0 (2026-10-13)
 
 A maintenance release on the same engine protocol (31) and store schema (20) as 1.0.0. It

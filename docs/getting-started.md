@@ -5,6 +5,17 @@ checksums (no signing key yet). The supported target is x86_64 Arch/Omarchy with
 are experimental and other desktops and pure X11 are unverified. See the [changelog](../CHANGELOG.md),
 [platforms](platforms.md) and the [release gates](v1-release-gates.md) for what was and was not checked.
 
+## Install a release (Linux x86_64)
+
+```bash
+curl -fsSL https://github.com/last-refuge/pipkin/releases/latest/download/install.sh | bash
+```
+
+This downloads the prebuilt archive of the latest release, verifies it against the release's `SHA256SUMS`
+and installs it into `~/.local` without root. It never builds from source. `--version X.Y.Z` pins a release,
+`--prefix DIR` changes the location, and `--rollback`, `--uninstall` and `--list` manage the versioned
+install afterwards. Source setup below is for developing Pipkin.
+
 ## Recommended: one-command source setup
 
 After the [native prerequisites](source-setup.md#1-install-native-build-prerequisites-once), run

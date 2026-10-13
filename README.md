@@ -98,9 +98,22 @@ Native credentials and configuration live separately from Pi; `--pi-agent-dir DI
 
 ### Download a release
 
-Release archives are on [GitHub Releases](https://github.com/last-refuge/pipkin/releases): the Linux x86_64
-archive with its installer, the experimental macOS DMG/ZIP for Apple Silicon and Intel, `build-info-*.json`
-and one `SHA256SUMS`. Check the checksum before installing; releases carry no signature yet.
+**Linux x86_64 (Arch / Omarchy and others).** One command:
+
+```bash
+curl -fsSL https://github.com/last-refuge/pipkin/releases/latest/download/install.sh | bash
+```
+
+It downloads the prebuilt archive for the latest release, checks it against the release's `SHA256SUMS`,
+and installs it into `~/.local` with the archive's own installer: no root, no build, no Node, no Pi. It never
+compiles anything. On Omarchy, press <kbd>Super</kbd>+<kbd>Space</kbd> and type "Pipkin". Re-run it to
+upgrade; add `--rollback`, `--uninstall` or `--list` to manage the versioned install, `--version 1.1.0` to
+pin a release, or `--dry-run` to see what it would do. The script is short and is also [in this
+repository](install.sh).
+
+By hand: release archives are on [GitHub Releases](https://github.com/last-refuge/pipkin/releases): the Linux
+x86_64 archive with its installer, the experimental macOS DMG/ZIP for Apple Silicon and Intel,
+`build-info-*.json` and one `SHA256SUMS`. Check the checksum before installing; releases carry no signature yet.
 
 ```sh
 sha256sum --check --ignore-missing SHA256SUMS

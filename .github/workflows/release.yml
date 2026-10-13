@@ -234,6 +234,7 @@ jobs:
           version=${GITHUB_REF_NAME#v}
           mkdir -p dist/release
           find collected -type f ! -name SHA256SUMS -exec cp {} dist/release/ \;
+          cp install.sh dist/release/install.sh   # the one-line installer, served from releases/latest/download
           test -f "dist/release/pipkin-native-$version-x86_64.tar.zst"
           test -f "dist/release/pipkin-$version-aarch64-apple-darwin-experimental.dmg"
           (cd dist/release && sha256sum * > SHA256SUMS && sha256sum --check --strict SHA256SUMS)
