@@ -371,6 +371,14 @@ impl Workspace {
                 .child(div().flex_1().child(label))
                 .children(hint.map(|h| kbd(h, cx)))
         };
+        let usage_btn = {
+            let this = cx.entity();
+            util_row("open-usage", "zap", "Usage", None, cx).on_click(move |_, window, cx| {
+                this.update(cx, |this, cx| {
+                    this.open_overlay(Overlay::Session, window, cx)
+                })
+            })
+        };
         let prefs_btn = {
             let this = cx.entity();
             util_row("open-prefs", "settings", "Settings", Some("Ctrl ,"), cx).on_click(
@@ -473,6 +481,7 @@ impl Workspace {
                     .flex_col()
                     .gap(px(2.0))
                     .child(palette_btn)
+                    .child(usage_btn)
                     .child(prefs_btn),
             )
     }

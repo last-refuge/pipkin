@@ -1,8 +1,8 @@
 //! The compact status line (plan §11, STATUS-1): phase, queued inputs, running jobs and
-//! subagents, open questions, context occupancy and session usage, derived from core state
-//! on each render. Empty segments are omitted; secondary ones collapse at narrow widths.
-//! The line is one status region with a full accessible sentence, and the usage chips open
-//! the existing Session usage dialog. Nothing animates and nothing is announced on its own.
+//! subagents, open questions and context occupancy, derived from core state on each render.
+//! Empty segments are omitted; secondary ones collapse at narrow widths.
+//! The context chip opens the Session usage dialog, also available from the sidebar.
+//! Nothing animates and nothing is announced on its own.
 
 use gpui::{
     Context, InteractiveElement, IntoElement, ParentElement, Role, StatefulInteractiveElement,
@@ -159,23 +159,6 @@ impl Workspace {
                     .compact()
                     .aria("Context usage; opens session usage")
                     .selected(over)
-                    .on_click(move |window, cx| {
-                        open.update(cx, |w, cx| w.open_overlay(Overlay::Session, window, cx));
-                    }),
-            );
-        }
-        if !narrow && let Some(total) = line.total_tokens {
-            let mut label = format!("{} tok", compact_tokens(total));
-            if let Some(cost) = line.cost_usd {
-                label.push_str(&format!(" · {}", super::overlays::format_cost(Some(cost))));
-            }
-            let open = this.clone();
-            row = row.child(
-                Btn::new("status-usage")
-                    .label(label)
-                    .kind(BtnKind::Ghost)
-                    .compact()
-                    .aria("Session usage")
                     .on_click(move |window, cx| {
                         open.update(cx, |w, cx| w.open_overlay(Overlay::Session, window, cx));
                     }),
