@@ -49,6 +49,7 @@ fn child(c: &SubagentInfo) -> usize {
 pub(super) fn event_bytes(event: &BackendEvent) -> usize {
     size_of::<BackendEvent>()
         + match &event.kind {
+            EventKind::ExecutionContext { execution_blocked } => strings(execution_blocked),
             EventKind::Opened { items, changes, .. } => {
                 vec_bytes(items, item) + vec_bytes(changes, change)
             }

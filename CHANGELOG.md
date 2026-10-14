@@ -14,6 +14,27 @@ this file's section for it; the publish step in `.github/workflows/release.yml` 
   `--dry-run`, `--list`, `--rollback` and `--uninstall`. The script lives at `install.sh` in the
   repository, is published as a release asset by the release workflow, and was attached to the
   1.1.0 release by hand.
+- **Background jobs in the conversation.** A job the model starts is a row where its
+  `job_start` call was, with its name, state and elapsed time while it runs and its result
+  when it ends; opened, it shows the command, where it ran, how the result is delivered, the
+  tail of its log and a Stop control. The "Working…" strip names what a running turn is
+  waiting on: a running job with its elapsed time, what the turn has done so far, and how long
+  it has waited on the model since the last step. Elapsed times tick. `pipkin --demo jobs`
+  shows it without an engine.
+- **Local Claude CLI bridge, foundation only (engine protocol 32, store schema 21).** The
+  engine gains typed execution backends, an external-run ledger, persistent identities and a
+  native-execution refusal path, with a standalone probe harness and fake-process tests, so a
+  conversation can later run a person's own installed Claude Code CLI as its backend. Nothing
+  is enabled yet: there is no CLI create/select call and no runtime subprocess, and live
+  qualification with an authorized account is still open. See
+  [docs/claude-cli-bridge-plan.md](docs/claude-cli-bridge-plan.md). Opening a store with this
+  schema in 1.1.0 or earlier is refused without changing it.
+
+### Fixed
+
+- Job snapshots and log pages were treated as belonging to one operation, so every job update
+  that arrived while a turn was running was dropped and the Jobs tab only refreshed between
+  turns. They describe the conversation and now land during a run.
 
 ## 1.1.0 (2026-10-13)
 

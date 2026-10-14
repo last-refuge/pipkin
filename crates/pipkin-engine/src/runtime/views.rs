@@ -37,13 +37,31 @@ impl Shared {
         let (entries, has_older) = self
             .store
             .window(session, window.clamp(1, limits::MAX_PAGE_ENTRIES))?;
-        let run = self.store.open_run(session)?.and_then(|r| r.view());
-        let queue = Store::queue_view(&self.store.queue(session)?);
+        let native = row.execution_backend.native_execution();
+        // Never project foreign/native journal rows as a runnable external-agent turn.
+        let run = if native {
+            self.store.open_run(session)?.and_then(|r| r.view())
+        } else {
+            None
+        };
+        let queue = if native {
+            Store::queue_view(&self.store.queue(session)?)
+        } else {
+            Vec::new()
+        };
         let usage = self.store.usage(session)?;
         let catalog = self.auth.catalog();
-        let model = row.model.as_deref().and_then(|k| catalog.find(k));
-        let thinking = models::thinking_view(model, row.thinking.as_deref());
-        let subagents = if row.parent.is_none() {
+        let model = row
+            .model
+            .as_deref()
+            .filter(|_| native)
+            .and_then(|k| catalog.find(k));
+        let thinking = if native {
+            models::thinking_view(model, row.thinking.as_deref())
+        } else {
+            ThinkingView::default()
+        };
+        let subagents = if native && row.parent.is_none() {
             Some(self.subagents_view(session)?)
         } else {
             None
@@ -73,7 +91,16 @@ impl Shared {
             plan: self.store.read(|c| Store::plan_view(c, session, false))?,
             goal: self.store.read(|c| Store::goal_current(c, session))?,
             jobs: self.jobs_view(session)?,
-            context: self.context_usage(session)?,
+            context: if native {
+                self.context_usage(session)?
+            } else {
+                ContextUsageView {
+                    source: "unavailable".into(),
+                    compaction: "off".into(),
+                    revision: row.revision,
+                    ..Default::default()
+                }
+            },
         })
     }
 }

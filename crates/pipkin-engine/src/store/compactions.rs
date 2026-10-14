@@ -151,6 +151,7 @@ impl Store {
         scope: CompactionScope,
         instructions: Option<&str>,
     ) -> Result<CompactionJob> {
+        Self::assert_native_execution(c, session)?;
         if let Some(job) = Self::compaction_by_key(c, session, key)? {
             if job.run != run || job.scope != scope || job.instructions.as_deref() != instructions {
                 return Err(StoreError::Corrupt(

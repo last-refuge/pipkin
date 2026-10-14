@@ -40,13 +40,18 @@ regress = { version = "0.12", features = ["utf16"] }
 # the generic client trait over the engine's own reqwest, never the SDK's reqwest 0.13.
 rmcp = { version = "=3.5.1", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client"] }
 sse-stream = "0.2"
+# Already used by fixtures; private metadata-probe directories also need owned cleanup.
+tempfile = "3"
 
 [dev-dependencies]
-tempfile = "3"
 # The MCP fixture server (examples/mcp_fixture.rs) is built with the SDK's server side.
 rmcp = { version = "=3.5.1", default-features = false, features = ["client", "server", "macros", "schemars", "transport-child-process", "transport-io", "elicitation"] }
 schemars = "1"
 tokio = { version = "1", features = ["test-util"] }
+
+[[example]]
+name = "claude_cli_probe"
+test = true
 
 [features]
 test-support = []

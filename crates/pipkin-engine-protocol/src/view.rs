@@ -27,6 +27,9 @@ pub enum Origin {
 #[serde(rename_all = "camelCase")]
 pub struct SessionSummary {
     pub id: SessionId,
+    /// Which agent loop owns this conversation, independent of provider and import origin.
+    #[serde(default)]
+    pub execution_backend: crate::ExecutionBackend,
     pub cwd: String,
     #[serde(default)]
     pub title: Option<String>,
@@ -935,7 +938,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 31);
+        assert_eq!(crate::PROTOCOL_VERSION, 32);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };

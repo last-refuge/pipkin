@@ -9,6 +9,7 @@ pub mod auth;
 pub mod config;
 pub mod context;
 pub mod endpoint;
+pub mod execution;
 pub mod extensions;
 pub mod goals;
 pub mod host;

@@ -76,12 +76,14 @@ impl Shared {
         Ok(())
     }
 
-    pub(super) async fn execute_compaction(
+    pub(in crate::runtime) async fn execute_compaction(
         self: &Arc<Self>,
         sess: &Arc<SessionRt>,
         id: u64,
         external: &CancellationToken,
     ) -> Result<Compacted, String> {
+        self.require_native_execution(&sess.id)
+            .map_err(|e| e.message)?;
         tokio::select! {
             biased;
             _ = sess.removed.cancelled() => Err("Session removal is committed".into()),

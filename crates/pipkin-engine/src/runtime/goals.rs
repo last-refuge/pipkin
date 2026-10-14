@@ -88,6 +88,7 @@ impl Shared {
         session: &str,
         objective: &str,
     ) -> Result<Option<GoalView>, ProtoError> {
+        self.require_native_execution(session)?;
         let objective = Self::check_objective(objective)?;
         let row = self.store.session(session)?.ok_or_else(|| {
             ProtoError::new(
@@ -123,6 +124,7 @@ impl Shared {
         session: &str,
         action: GoalAction,
     ) -> Result<Option<GoalView>, ProtoError> {
+        self.require_native_execution(session)?;
         let Some(current) = self.goal_view(session)? else {
             return Err(ProtoError::new(
                 ErrorCode::NotFound,
@@ -691,6 +693,7 @@ impl Shared {
         objective: &str,
         paused: Option<&str>,
     ) -> Result<Option<GoalView>, ProtoError> {
+        self.require_native_execution(session)?;
         if key.is_empty() || key.len() > limits::MAX_KEY_BYTES {
             return Err(ProtoError::new(
                 ErrorCode::Invalid,
@@ -794,6 +797,9 @@ impl Shared {
     /// Advance the goal after a settlement (`settled` is the request key and outcome), or
     /// after a set/resume/revise (`None`).
     pub async fn goal_tick(self: &Arc<Self>, session: &str, settled: Option<(String, RunOutcome)>) {
+        if self.require_native_execution(session).is_err() {
+            return;
+        }
         let Ok(Some(goal)) = self.goal_view(session) else {
             return;
         };

@@ -68,6 +68,9 @@ enum Step {
 impl Shared {
     /// Start executing `run` in the background.
     pub fn spawn_run(self: &Arc<Self>, sess: Arc<SessionRt>, run: u64) {
+        if self.require_native_execution(&sess.id).is_err() {
+            return;
+        }
         let cancel = sess.removed.child_token();
         {
             let mut active = sess.active.lock().unwrap_or_else(|e| e.into_inner());
@@ -109,6 +112,9 @@ impl Shared {
         run: u64,
         cancel: &CancellationToken,
     ) -> Option<RunOutcome> {
+        if self.require_native_execution(&sess.id).is_err() {
+            return None; // Never settle or replay external history through the native loop.
+        }
         loop {
             if cancel.is_cancelled() {
                 return (sess.failure().is_none()).then_some(RunOutcome::Aborted);
@@ -550,6 +556,9 @@ impl Shared {
             Ok(Some(r)) => r,
             _ => return Err(None),
         };
+        if !row.execution_backend.native_execution() {
+            return Err(None);
+        }
         let catalog = self.auth.catalog();
         let Some(key) = row.model.clone() else {
             return Err(Some(RunOutcome::NoModel {
@@ -801,6 +810,7 @@ impl Shared {
             .store
             .session(&sess.id)?
             .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "session vanished"))?;
+        self.require_native_execution(&sess.id)?;
         let offered = self.tools_for(&row);
         let find = |name: &str| offered.iter().find(|t| t.spec().name == name).cloned();
         // Reference `generation.ts:558-561`: parallel unless an offered tool in this round is
@@ -880,6 +890,7 @@ impl Shared {
         thinking: Option<String>,
         cancel: CancellationToken,
     ) -> Result<(), ProtoError> {
+        self.require_native_execution(&sess.id)?;
         let session = sess.id.clone();
         // An intent committed before a restart: the effect may have happened.
         let prior = self.store.tool_call(&session, call_id)?;
@@ -1078,6 +1089,9 @@ impl Shared {
     /// After successful settlement: start the next run from queued inputs. A failed
     /// run leaves its queue waiting for explicit new input, including across restart.
     pub async fn next_from_queue(self: &Arc<Self>, sess: &Arc<SessionRt>) {
+        if self.require_native_execution(&sess.id).is_err() {
+            return;
+        }
         let _guard = sess.lock.lock().await;
         if sess.active_run().is_some() {
             return;
@@ -1117,6 +1131,7 @@ impl Shared {
         session: &str,
         settings: &Settings,
     ) -> crate::store::Result<(Option<u64>, Vec<SessionChange>)> {
+        Store::assert_native_execution(tx, session)?;
         let queue = Store::queue_in(tx, session)?;
         let chosen = choose(
             &queue,

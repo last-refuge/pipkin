@@ -2871,6 +2871,13 @@ impl Live {
             .current
             .take()
             .filter(|c| c.conversation == conversation);
+        // Publish the snapshot's gate before history can trigger goal continuations
+        // or migrations. Never infer execution from the catalogue's origin/provider.
+        worker.emit(
+            conversation,
+            generation,
+            mapping::execution_context(&snapshot.summary),
+        );
         let mirror = Mirror::new(snapshot);
         let mapped = transcript::map_entries_with_origin(
             &mirror.entries,

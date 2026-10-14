@@ -14,7 +14,12 @@
 
 pub mod compactions;
 pub mod diagnostics;
+mod external;
 mod generation;
+pub use external::{
+    CliBinding, CliBindingSpec, ExternalAction, ExternalActionStatus, ExternalRun, ExternalRunKey,
+    ExternalRunState,
+};
 mod goals;
 pub mod jobs;
 mod outbox;
@@ -51,6 +56,8 @@ pub enum StoreError {
     /// A test asked for this write to fail.
     Injected,
     Removed,
+    UnsupportedExecution,
+    ExecutionConflict,
 }
 
 impl std::fmt::Display for StoreError {
@@ -69,6 +76,12 @@ impl std::fmt::Display for StoreError {
             StoreError::Corrupt(why) => write!(f, "corrupt engine data: {why}"),
             StoreError::Injected => f.write_str("injected storage failure"),
             StoreError::Removed => f.write_str("session removal is committed"),
+            StoreError::UnsupportedExecution => {
+                f.write_str("This execution backend is not supported for this operation.")
+            }
+            StoreError::ExecutionConflict => {
+                f.write_str("Execution identity or operation conflicts with stored state.")
+            }
         }
     }
 }
@@ -84,10 +97,11 @@ impl From<rusqlite::Error> for StoreError {
 impl From<StoreError> for ProtoError {
     fn from(e: StoreError) -> Self {
         ProtoError::new(
-            if matches!(e, StoreError::Removed) {
-                ErrorCode::NotFound
-            } else {
-                ErrorCode::Storage
+            match &e {
+                StoreError::Removed => ErrorCode::NotFound,
+                StoreError::UnsupportedExecution => ErrorCode::Unsupported,
+                StoreError::ExecutionConflict => ErrorCode::Conflict,
+                _ => ErrorCode::Storage,
             },
             e.to_string(),
         )
@@ -170,6 +184,7 @@ pub struct SessionRow {
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     pub origin: Origin,
+    pub execution_backend: ExecutionBackend,
     pub model: Option<String>,
     pub thinking: Option<String>,
     pub subagents_enabled: bool,
@@ -189,7 +204,12 @@ impl SessionRow {
             updated_at_ms: self.updated_at_ms,
             origin: self.origin.clone(),
             model: self.model.clone(),
-            blocked: self.blocked.clone(),
+            execution_backend: self.execution_backend,
+            blocked: self
+                .execution_backend
+                .disabled_reason()
+                .map(str::to_owned)
+                .or_else(|| self.blocked.clone()),
         }
     }
 }
@@ -598,6 +618,11 @@ impl Store {
             created_at_ms: r.get("created_at")?,
             updated_at_ms: r.get("updated_at")?,
             origin: serde_json::from_str(&origin).unwrap_or_default(),
+            execution_backend: match r.get::<_, String>("execution_backend")?.as_str() {
+                "nativeAgent" => ExecutionBackend::NativeAgent,
+                "localClaudeCli" => ExecutionBackend::LocalClaudeCli,
+                _ => ExecutionBackend::Unsupported,
+            },
             model: r.get("model")?,
             thinking: r.get("thinking")?,
             subagents_enabled: r.get::<_, i64>("subagents_enabled")? != 0,
@@ -639,7 +664,21 @@ impl Store {
                     )
                     .optional()?
             {
+                if !existing.execution_backend.native_execution() {
+                    return Err(StoreError::ExecutionConflict);
+                }
                 return Ok((existing, false));
+            }
+            if tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?1)",
+                [id],
+                |r| r.get::<_, bool>(0),
+            )? {
+                return Err(StoreError::ExecutionConflict);
+            }
+            if let Some((parent, root)) = parent {
+                Self::assert_native_execution(tx, parent)?;
+                Self::assert_native_execution(tx, root)?;
             }
             tx.execute(
                 "INSERT INTO sessions(id, cwd, title, created_at, updated_at, origin, model,
@@ -1194,6 +1233,7 @@ impl Store {
         now: i64,
         fp: String,
     ) -> Result<Admission> {
+        Self::assert_native_execution(tx, session)?;
         if let Some(existing) = Self::request_in(tx, session, key)? {
             return Ok(if existing.fingerprint == fp {
                 Admission::Existing(existing)
@@ -1357,6 +1397,7 @@ impl Store {
         request: Option<&str>,
         now: i64,
     ) -> Result<u64> {
+        Self::assert_native_execution(tx, session)?;
         tx.execute(
             "INSERT INTO runs(session, request, state, started_at) VALUES (?1, ?2, 'running', ?3)",
             params![session, request, now],
@@ -1473,6 +1514,7 @@ impl Store {
         replay_safe: bool,
         now: i64,
     ) -> Result<()> {
+        Self::assert_native_execution(tx, session)?;
         tx.execute(
             "INSERT INTO tool_calls(session, call_id, run, name, arguments, state, replay_safe,
                 started_at)

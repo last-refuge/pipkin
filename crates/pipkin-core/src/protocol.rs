@@ -537,6 +537,12 @@ pub struct BackendEvent {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EventKind {
+    /// Execution identity from an authoritative session snapshot, emitted before its
+    /// history/goal events. Attachment-scoped (op must be None). Phase 1 is a coarse
+    /// OFF-gate; this is not a per-feature capability model.
+    ExecutionContext {
+        execution_blocked: Option<String>,
+    },
     /// Initial window of history for a conversation.
     Opened {
         items: Vec<TranscriptItem>,

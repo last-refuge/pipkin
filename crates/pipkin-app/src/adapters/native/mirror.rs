@@ -274,6 +274,7 @@ mod tests {
                 created_at_ms: 0,
                 updated_at_ms: 0,
                 origin: Default::default(),
+                execution_backend: Default::default(),
                 model: None,
                 blocked: None,
             },

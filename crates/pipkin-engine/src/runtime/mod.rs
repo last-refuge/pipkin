@@ -5,6 +5,7 @@ mod ask;
 mod compaction;
 mod context_usage;
 pub mod diagnostics;
+mod execution;
 pub mod export;
 pub mod faults;
 mod glue;
@@ -155,6 +156,9 @@ impl Shared {
     /// (children have no presentation of their own to ask). The order is stable between
     /// requests.
     pub fn tools_for(&self, row: &SessionRow) -> Vec<Arc<dyn Tool>> {
+        if !row.execution_backend.native_execution() {
+            return Vec::new();
+        }
         let mut tools = self.tools.clone();
         // Bounded read-only inspection, for every session.
         tools.push(Arc::new(crate::tools::inspect::ListFilesTool));
@@ -315,6 +319,11 @@ impl EngineHandle {
             }
             store.finish_removal(&root).map_err(|e| e.to_string())?;
         }
+        // External work is never recovered through native provider retries/tool replay.
+        // No CLI executor is installed; unconfirmed external runs remain Unknown.
+        store
+            .recover_external_runs(now_ms())
+            .map_err(|e| e.to_string())?;
         crate::extensions::profiles::initialize(
             &store,
             &config.extensions,
@@ -668,6 +677,7 @@ async fn dispatch_with_cancel(
     call: Call,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<Reply, ProtoError> {
+    shared.guard_execution_call(&call)?;
     match call {
         Call::CancelRequest { .. } => Err(ProtoError::new(
             ErrorCode::Invalid,
@@ -832,6 +842,12 @@ async fn dispatch_with_cancel(
                 Some(s) => shared.store.session(s)?,
                 None => None,
             };
+            if row
+                .as_ref()
+                .is_some_and(|r| !r.execution_backend.native_execution())
+            {
+                return Ok(Reply::Models(ModelsView::default()));
+            }
             let settings = Settings::load(
                 &shared.config.config_dir,
                 row.as_ref().map(|r| std::path::Path::new(r.cwd.as_str())),
@@ -1408,7 +1424,8 @@ impl Shared {
         let Ok(sess) = self.session(session) else {
             return;
         };
-        if !matches!(self.store.session(session), Ok(Some(row)) if row.parent.is_none()) {
+        if !matches!(self.store.session(session), Ok(Some(row)) if row.parent.is_none() && row.execution_backend.native_execution())
+        {
             return;
         }
         // A new lifetime must not activate extensions until the old generation exited.
@@ -1459,6 +1476,8 @@ pub fn registry_with(extra: Arc<dyn ApiAdapter>) -> Registry {
 mod ask2_tests;
 #[cfg(test)]
 mod ask_tests;
+#[cfg(test)]
+mod execution_tests;
 #[cfg(test)]
 mod export3_tests;
 #[cfg(test)]

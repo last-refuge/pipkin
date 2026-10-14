@@ -1,0 +1,29 @@
+{
+  "kind": "non_inference_cli_control_summary",
+  "observed_date": "2026-10-13",
+  "cli_version": "2.1.296",
+  "credential_profile": "disposable_home_and_config_no_credentials_copied",
+  "real_user_settings_modified": false,
+  "inference_requested": false,
+  "all_invocations_exited_cleanly": true,
+  "startup_init_only": {
+    "control_markers": ["user-hook", "project-hook", "local-hook", "plugin-hook"],
+    "safe_policy_markers": [],
+    "restricted_hook_policy_markers": ["plugin-hook"],
+    "explicit_plugin_is_host_supplied_in_this_control": true,
+    "passed": true
+  },
+  "project_mcp_discovery": {
+    "surface": "mcp list",
+    "control_server_explicitly_approved_in_disposable_user_settings": true,
+    "control_launched_marker": true,
+    "safe_policy_launched_marker": false,
+    "restricted_hook_policy_launched_marker": false,
+    "sentinel_marks_then_exits_not_a_real_mcp_server": true,
+    "passed": true
+  },
+  "print_mode_isolation_verified": false,
+  "managed_policy_isolation_verified": false,
+  "all_installed_plugin_configurations_verified": false,
+  "billing_verified": false
+}

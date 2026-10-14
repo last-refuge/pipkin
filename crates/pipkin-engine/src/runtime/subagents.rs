@@ -586,6 +586,8 @@ impl Shared {
         origin: &str,
         delivery: &str,
     ) -> Result<(TaskRow, bool), String> {
+        self.require_native_execution(parent)
+            .map_err(|e| e.message)?;
         let parent_row = self
             .store
             .session(parent)
@@ -1133,7 +1135,11 @@ impl Shared {
             return;
         };
         for task in rows {
-            self.watch_child(task);
+            if self.require_native_execution(&task.parent_session).is_ok()
+                && self.require_native_execution(&task.child_session).is_ok()
+            {
+                self.watch_child(task);
+            }
         }
     }
 

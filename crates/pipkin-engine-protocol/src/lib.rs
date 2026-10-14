@@ -41,6 +41,10 @@ pub use view::*;
 // Version 29 adds `webSources` to snapshots and `WebSourcesChanged`.
 // Version 30 adds goal cost limits (`maxCostUsd`, `usageCostUsd`); 31 adds bounded subagent
 // results with artifact references (`SubagentResultView.artifacts`, `resultChars`).
-pub const PROTOCOL_VERSION: u32 = 31;
+// Version 32 carries executionBackend in session summaries. Old peers must not
+// interpret a disabled external-agent conversation as a native provider session.
+pub const PROTOCOL_VERSION: u32 = 32;
 
 pub mod delivery;
+pub mod execution;
+pub use execution::ExecutionBackend;

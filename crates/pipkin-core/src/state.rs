@@ -27,6 +27,9 @@ pub struct ConversationState {
     pub has_older: bool,
     pub loading_older: bool,
     pub opened: bool,
+    /// Snapshot-derived phase-1 execution OFF-gate. History remains readable.
+    /// Kept across reattachment and ordinary history/status events.
+    pub execution_blocked: Option<String>,
     /// Attachment generation. Events carrying another generation are dropped.
     pub generation: u64,
     pub run: RunState,
@@ -116,6 +119,7 @@ impl ConversationState {
             has_older: false,
             loading_older: false,
             opened: false,
+            execution_blocked: None,
             generation: 0,
             run: RunState::Idle,
             usage: None,
@@ -799,9 +803,11 @@ impl AppState {
         let ready = has_text && attachments_ok;
         let idle =
             matches!(c.run, RunState::Idle | RunState::Failed { .. }) && c.pending_intent.is_none();
-        // A read-only build, or a conversation another engine owns, offers no way to send,
-        // steer, queue or retry. Stopping a run already in flight stays possible.
-        let can_send = self.read_only.is_none() && !self.owned_elsewhere(c.id);
+        // A read-only build, foreign owner or disabled execution backend offers no
+        // send/steer/queue/retry. Only the execution OFF-gate also disables Stop.
+        let can_send = self.read_only.is_none()
+            && c.execution_blocked.is_none()
+            && !self.owned_elsewhere(c.id);
         // Real steers and follow-ups are journaled one at a time, like prompts.
         let intent_free = self.mode == Mode::Demo || c.pending_intent.is_none();
         Availability {
@@ -825,16 +831,18 @@ impl AppState {
                 && self.current_project().is_some()
                 && c.selected_change.is_some_and(|i| i < c.changes.len()),
             open_terminal: self.mode == Mode::Real && self.current_project().is_some(),
-            cancel: matches!(
-                c.run,
-                RunState::Running { .. } | RunState::Submitting { .. }
-            ),
+            cancel: c.execution_blocked.is_none()
+                && matches!(
+                    c.run,
+                    RunState::Running { .. } | RunState::Submitting { .. }
+                ),
             check_status: !c.status_check_pending
                 && (matches!(c.run, RunState::OutcomeUnknown { .. })
                     || (self.mode == Mode::Real
                         && c.opened
                         && matches!(c.run, RunState::Running { .. } | RunState::Stopping { .. }))),
-            retry_stop: self.mode == Mode::Real
+            retry_stop: c.execution_blocked.is_none()
+                && self.mode == Mode::Real
                 && c.opened
                 && matches!(c.run, RunState::Stopping { .. })
                 && c.stop_error.is_some(),
@@ -937,6 +945,49 @@ impl AppState {
 
     fn dispatch_inner(&mut self, cmd: Command) -> Outcome {
         let mut out = Outcome::default();
+        // Gate intents, not just controls. Reads, local drafts and creation of a new
+        // native conversation remain available. Compact/job start have no desktop
+        // commands today; future execution intents must join this gate.
+        if matches!(
+            cmd,
+            Command::Submit
+                | Command::Retry
+                | Command::Steer
+                | Command::QueueFollowUp
+                | Command::RemoveQueued(_)
+                | Command::Cancel
+                | Command::RetryStop
+                | Command::SetModel(_)
+                | Command::SetThinkingLevel(_)
+                | Command::SetGoal(_)
+                | Command::ClearGoal
+                | Command::PauseGoal
+                | Command::ResumeGoal
+                | Command::SetGoalLimits { .. }
+                | Command::SetGoalCriteria(_)
+                | Command::SetGoalAudit(_)
+                | Command::SkipGoalAudit
+                | Command::SetSubagentsEnabled(_)
+                | Command::LaunchSubagent(_)
+                | Command::SteerSubagent { .. }
+                | Command::StopSubagent(_)
+                | Command::CancelJob(_)
+                | Command::EditPlanTask { .. }
+                | Command::AnswerUiRequest { .. }
+                | Command::CancelUiRequest(_)
+                | Command::McpAddServer(_)
+                | Command::McpRemoveServer(_)
+                | Command::McpTestServer(_)
+                | Command::McpReconnectServer(_)
+                | Command::McpSetToolEnabled { .. }
+                | Command::McpSignIn(_)
+                | Command::McpSignOut(_)
+                | Command::McpApplyImport(_)
+        ) && let Some(id) = self.selected
+            && self.refuse_if_execution_blocked(id, &mut out)
+        {
+            return out;
+        }
         match cmd {
             Command::RemoveSignIn(provider)
                 if self.mode == Mode::Real && self.connection.is_ready() =>
@@ -2266,7 +2317,9 @@ impl AppState {
         origin: IntentOrigin,
     ) -> Outcome {
         let mut out = Outcome::default();
-        if self.conv_mut(id).unwrap().pending_intent.is_some() || self.refuse_if_owned(id, &mut out)
+        if self.refuse_if_execution_blocked(id, &mut out)
+            || self.conv_mut(id).unwrap().pending_intent.is_some()
+            || self.refuse_if_owned(id, &mut out)
         {
             return out;
         }
@@ -2373,9 +2426,9 @@ impl AppState {
                 return out;
             }
         }
-        // Ownership can only have been recorded while the intent was being made durable; it is
-        // then settled as never sent, and the draft keeps the text.
-        if self.refuse_if_owned(id, &mut out) {
+        // Ownership or a snapshot OFF-gate can arrive while the intent is made durable.
+        // Settle it as never sent, preserving the draft and checking its own conversation.
+        if self.refuse_if_execution_blocked(id, &mut out) || self.refuse_if_owned(id, &mut out) {
             out.effects.push(Effect::JournalState {
                 conversation: id,
                 request: intent.request,
@@ -2600,10 +2653,16 @@ impl AppState {
         if ev.generation != c.generation && !by_identity {
             return out;
         }
+        // Snapshot execution identity is attachment-scoped, never a run update.
+        // A delayed op event must not clear or replace the gate, even for a live op.
+        if matches!(ev.kind, EventKind::ExecutionContext { .. }) && ev.op.is_some() {
+            return out;
+        }
         // Operation-scoped events must match the live operation.
         let scoped = !matches!(
             ev.kind,
             EventKind::Opened { .. }
+                | EventKind::ExecutionContext { .. }
                 | EventKind::OlderPage { .. }
                 | EventKind::Synced { .. }
                 | EventKind::OpenFailed { .. }
@@ -2649,6 +2708,12 @@ impl AppState {
             return out;
         }
         match ev.kind {
+            EventKind::ExecutionContext { execution_blocked } => {
+                if c.execution_blocked != execution_blocked {
+                    c.execution_blocked = execution_blocked;
+                    out.notes.push(Note::Other);
+                }
+            }
             EventKind::SubagentsSynced { .. } | EventKind::SubagentDirectory { .. } if c.opened => {
                 let (enabled, children, paged, truncated) = match ev.kind {
                     EventKind::SubagentDirectory {
@@ -2813,7 +2878,11 @@ impl AppState {
                     None => {
                         let legacy = c.goal.as_ref().filter(|g| !g.native).cloned();
                         match legacy {
-                            Some(legacy) if first && c.goal_migration.is_none() => {
+                            Some(legacy)
+                                if first
+                                    && c.goal_migration.is_none()
+                                    && c.execution_blocked.is_none() =>
+                            {
                                 // Offer the desktop's record to the engine, once per content.
                                 let key = format!(
                                     "desktop-{}",
@@ -2833,8 +2902,10 @@ impl AppState {
                                         paused: legacy.paused,
                                     }));
                             }
-                            Some(_) if c.goal_migration.is_some() => {
-                                // Still waiting for the engine's answer to the migration.
+                            Some(_)
+                                if c.goal_migration.is_some() || c.execution_blocked.is_some() =>
+                            {
+                                // Waiting for migration, or retaining a read-only legacy goal.
                             }
                             _ => c.goal = None,
                         }
@@ -3633,6 +3704,7 @@ impl AppState {
             || !c.pending_queue.is_empty()
             || !c.opened && self.mode == Mode::Real
             || self.read_only.is_some()
+            || c.execution_blocked.is_some()
             || self.owned_elsewhere(id)
             || !self.connection.is_ready()
         {
@@ -3653,7 +3725,7 @@ impl AppState {
             return Outcome::default();
         }
         let c = self.conv_mut(id).unwrap();
-        if c.queue.is_empty() {
+        if c.execution_blocked.is_some() || c.queue.is_empty() {
             return Outcome::default();
         }
         let next = c.queue.remove(0);

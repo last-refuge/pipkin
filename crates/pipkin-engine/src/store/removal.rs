@@ -85,7 +85,8 @@ impl Store {
     }
 
     /// Caller has stopped all live work. One transaction drops the whole group, emits
-    /// invalidations via deletion triggers and retains only its idempotent removal receipt.
+    /// invalidations via deletion triggers and retains its idempotent removal receipt plus
+    /// permanent nonsecret CLI UUID ownership receipts (never reusable as fresh context).
     pub fn finish_removal(&self, root: &str) -> Result<Vec<String>> {
         self.tx(|tx| {
             let pending: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM session_removals WHERE root=?1 AND complete=0)", [root], |r| r.get(0))?;
@@ -93,7 +94,7 @@ impl Store {
             let group = "SELECT id FROM sessions WHERE id=?1 OR root=?1";
             let affinities = tx.prepare(&format!("SELECT value FROM kv WHERE key='provider_session_id' AND session IN ({group})"))?
                 .query_map([root], |r| r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
-            for table in ["summary_writes", "compactions"] {
+            for table in ["external_actions", "external_runs", "cli_bindings", "summary_writes", "compactions"] {
                 tx.execute(&format!("DELETE FROM {table} WHERE session IN ({group})"),[root])?;
             }
             for table in ["tool_boundaries", "generation_state"] {

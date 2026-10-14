@@ -106,6 +106,7 @@ impl Shared {
         let Some(session) = session else {
             return Ok(None);
         };
+        self.require_native_execution(session)?;
         let row = self.store.session(session)?.ok_or_else(|| {
             ProtoError::new(
                 ErrorCode::NotFound,

@@ -57,6 +57,8 @@ impl Shared {
         instructions: Option<&str>,
         cancel: &CancellationToken,
     ) -> Result<Compacted, String> {
+        self.require_native_execution(&sess.id)
+            .map_err(|e| e.message)?;
         let scope = if run.is_some() {
             CompactionScope::Blocking
         } else {
@@ -93,6 +95,9 @@ impl Shared {
         run: u64,
         cancel: &CancellationToken,
     ) -> bool {
+        if self.require_native_execution(&sess.id).is_err() {
+            return false;
+        }
         let pending = self.store.read(|c| Store::pending_run_compaction(c, run));
         match pending {
             Ok(Some(id)) => {
@@ -181,6 +186,9 @@ pub(super) fn start_recovery(shared: &Arc<Shared>) {
                 }
                 for (id, session) in page {
                     after = id;
+                    if shared.require_native_execution(&session).is_err() {
+                        continue;
+                    }
                     while tasks.len() >= 8 {
                         tokio::select! {
                             _ = shared.stopping.cancelled() => return,

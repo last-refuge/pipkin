@@ -66,15 +66,38 @@ impl AppState {
         self.owners.contains_key(&id)
     }
 
-    /// Why nothing can be sent in `id`, if nothing can: this build is read-only, or another
-    /// engine owns the conversation.
+    /// Why nothing can be sent in `id`: a read-only build, a disabled execution backend,
+    /// or another engine owning the conversation. Shared by existing disabled hints.
     pub fn read_only_reason(&self, id: ConversationId) -> Option<String> {
         if let Some(reason) = &self.read_only {
+            return Some(reason.clone());
+        }
+        if let Some(reason) = self
+            .conversation(id)
+            .and_then(|c| c.execution_blocked.as_ref())
+        {
             return Some(reason.clone());
         }
         self.owner(id).map(|owner| match owner {
             ConversationOwner::NativeEngine { .. } => NATIVE_OWNED_NOTICE.into(),
         })
+    }
+
+    /// Phase-1 execution OFF-gate, independent of which conversation is selected.
+    pub(crate) fn refuse_if_execution_blocked(
+        &mut self,
+        id: ConversationId,
+        out: &mut Outcome,
+    ) -> bool {
+        let Some(reason) = self
+            .conversation(id)
+            .and_then(|c| c.execution_blocked.clone())
+        else {
+            return false;
+        };
+        self.notice = Some(reason);
+        out.notes.push(Note::Other);
+        true
     }
 
     /// Refuse a change to a conversation another engine owns: say why, send nothing.

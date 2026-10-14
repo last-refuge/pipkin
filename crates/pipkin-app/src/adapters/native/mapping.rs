@@ -34,6 +34,17 @@ pub fn identity_key(summary: &SessionSummary) -> &str {
     }
 }
 
+/// Pure projection of the snapshot's execution identity. Origin/provider do not
+/// grant execution: unknown wire backends fail closed through the protocol enum.
+pub fn execution_context(summary: &SessionSummary) -> EventKind {
+    EventKind::ExecutionContext {
+        execution_blocked: summary
+            .execution_backend
+            .disabled_reason()
+            .map(str::to_owned),
+    }
+}
+
 fn created_secs(summary: &SessionSummary) -> i64 {
     summary.created_at_ms.div_euclid(1000)
 }
@@ -654,6 +665,7 @@ mod tests {
             created_at_ms: created_ms,
             updated_at_ms: created_ms,
             origin: Origin::Native,
+            execution_backend: Default::default(),
             model: None,
             blocked: None,
         }
@@ -666,6 +678,34 @@ mod tests {
                 source: source.into(),
             },
             ..summary(id, created_ms, "/work/app")
+        }
+    }
+
+    #[test]
+    fn snapshot_execution_identity_defaults_native_and_unknown_backends_fail_closed() {
+        let mut wire = serde_json::to_value(imported("s", "legacy", 42)).unwrap();
+        wire.as_object_mut().unwrap().remove("executionBackend");
+        let old: SessionSummary = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            execution_context(&old),
+            EventKind::ExecutionContext {
+                execution_blocked: None,
+            }
+        );
+        for backend in ["localClaudeCli", "futureUnknownBackend"] {
+            wire["executionBackend"] = json!(backend);
+            let summary: SessionSummary = serde_json::from_value(wire.clone()).unwrap();
+            let EventKind::ExecutionContext { execution_blocked } = execution_context(&summary)
+            else {
+                panic!("expected snapshot execution context");
+            };
+            assert_eq!(
+                execution_blocked.as_deref(),
+                summary.execution_backend.disabled_reason()
+            );
+            assert!(execution_blocked.is_some());
+            // History provenance is unchanged and cannot confer native execution.
+            assert_eq!(identity_key(&summary), "legacy");
         }
     }
 

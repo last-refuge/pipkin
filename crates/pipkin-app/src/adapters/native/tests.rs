@@ -40,6 +40,7 @@ fn summary(id: &str) -> SessionSummary {
         created_at_ms: 1_700_000_000_000,
         updated_at_ms: 1_700_000_000_000,
         origin: Origin::Native,
+        execution_backend: Default::default(),
         model: Some("p/m".into()),
         blocked: None,
     }
@@ -291,6 +292,52 @@ fn submit(conversation: ConversationId, op: u64, key: &str) -> BackendRequest {
         attachments: vec![],
         model: None,
     }
+}
+
+#[test]
+fn snapshot_execution_gate_precedes_history_and_uses_snapshot_not_catalog_identity() {
+    let fake = Fake::new();
+    let mut run = Run::start(fake.host(|call| match call {
+        Call::OpenSession { session, .. } => {
+            let mut view = snapshot(session, vec![]);
+            view.summary.execution_backend = ExecutionBackend::LocalClaudeCli;
+            Some(Some(Ok(Reply::Snapshot(Box::new(view)))))
+        }
+        _ => None, // Catalogue still advertises native; the snapshot is authoritative.
+    }));
+    run.ready();
+    let conversation = run.conversation();
+    run.backend.request(BackendRequest::Open {
+        conversation,
+        generation: 7,
+    });
+    run.until("opened", |r| {
+        r.has(|k| matches!(k, EventKind::Opened { .. }))
+    });
+    let gate = run
+        .seen
+        .iter()
+        .position(|e| matches!(e.kind, EventKind::ExecutionContext { .. }))
+        .unwrap();
+    let opened = run
+        .seen
+        .iter()
+        .position(|e| matches!(e.kind, EventKind::Opened { .. }))
+        .unwrap();
+    assert!(gate < opened);
+    let event = &run.seen[gate];
+    assert_eq!(
+        (event.conversation, event.generation, event.op),
+        (conversation, 7, None)
+    );
+    assert_eq!(
+        event.kind,
+        EventKind::ExecutionContext {
+            execution_blocked: ExecutionBackend::LocalClaudeCli
+                .disabled_reason()
+                .map(str::to_owned),
+        }
+    );
 }
 
 #[test]

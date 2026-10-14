@@ -58,11 +58,12 @@ impl Shared {
         {
             return Err(crate::store::StoreError::Removed.into());
         }
-        let (extension_profile, pinned) = if row.parent.is_none() {
-            crate::extensions::profiles::resolve(&self.store, id)?
-        } else {
-            (Vec::new(), true)
-        };
+        let (extension_profile, pinned) =
+            if row.parent.is_none() && row.execution_backend.native_execution() {
+                crate::extensions::profiles::resolve(&self.store, id)?
+            } else {
+                (Vec::new(), true)
+            };
         let shared = self.me.clone();
         let session = id.to_owned();
         let predecessor = sessions.retiring.get(id).cloned();

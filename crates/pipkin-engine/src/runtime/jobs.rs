@@ -140,6 +140,7 @@ impl Shared {
         run: Option<u64>,
         spec: JobSpec,
     ) -> Result<JobView, ProtoError> {
+        self.require_native_execution(session)?;
         let command = spec.command.trim().to_owned();
         if command.is_empty() {
             return Err(invalid("The job needs a command"));
@@ -731,6 +732,9 @@ impl Shared {
             return;
         };
         for row in rows {
+            if self.require_native_execution(&row.session).is_err() {
+                continue;
+            }
             if row.engine_epoch == self.epoch {
                 continue;
             }
@@ -784,7 +788,9 @@ impl Shared {
                 return;
             };
             for row in rows {
-                shared.job_deliver(&row.session, row.id).await;
+                if shared.require_native_execution(&row.session).is_ok() {
+                    shared.job_deliver(&row.session, row.id).await;
+                }
             }
         });
     }

@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 20;
+pub const SCHEMA_VERSION: u32 = 21;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -473,8 +473,9 @@ const V20: &str = r#"
 ALTER TABLE goals ADD COLUMN usage_cost REAL NOT NULL DEFAULT 0;
 ALTER TABLE goals ADD COLUMN turn_cost_start REAL;
 "#;
+const V21: &str = include_str!("external.sql");
 const MIGRATIONS: &[&str] = &[
-    V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19, V20,
+    V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19, V20, V21,
 ];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {

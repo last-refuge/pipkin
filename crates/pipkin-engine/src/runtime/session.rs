@@ -286,6 +286,7 @@ impl Shared {
         text: &str,
         images: &[ImageInput],
     ) -> Result<Reply, ProtoError> {
+        self.require_native_execution(session)?;
         check_input(key, text, images)?;
         let sess = self.session(session)?;
         let _guard = sess.lock.lock().await;
@@ -393,6 +394,7 @@ impl Shared {
         text: &str,
         images: &[ImageInput],
     ) -> Result<Reply, ProtoError> {
+        self.require_native_execution(session)?;
         if mode == InputMode::Prompt {
             return Err(invalid("Use Prompt for a new prompt."));
         }
@@ -742,6 +744,13 @@ impl Shared {
     /// Reconcile a session after a restart or a storage failure: settle runs whose Stop was
     /// durable, record interrupted (unconfirmed) tool effects, and resume the rest.
     pub fn recover_session(self: &Arc<Self>, session: &str) -> Result<(), ProtoError> {
+        match self.require_native_execution(session) {
+            Ok(()) => {}
+            // Also fence native-looking children of disabled roots before any recovery
+            // effects. External recovery belongs to the separate startup ledger pass.
+            Err(error) if error.code == ErrorCode::Unsupported => return Ok(()),
+            Err(error) => return Err(error),
+        }
         let sess = self.session(session)?;
         let gate = sess.clone();
         let _one_at_a_time = gate.recovery.lock().unwrap_or_else(|e| e.into_inner());
@@ -841,6 +850,7 @@ impl Shared {
         result: &crate::tools::ToolResult,
         state: ToolState,
     ) -> Result<Entry, ProtoError> {
+        self.require_native_execution(&sess.id)?;
         let session = sess.id.clone();
         self.commit(sess, |tx| {
             let now = now_ms();
