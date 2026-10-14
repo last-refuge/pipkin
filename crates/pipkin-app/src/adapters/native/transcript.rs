@@ -11,8 +11,9 @@
 use std::collections::HashMap;
 
 use pipkin_core::{
-    Attachment, Delivery, ItemId, ItemKind, LOCAL_ITEM_BASE, NoticeLevel, QueueId, QueueMode,
-    QueuedPrompt, SessionUsage, ToolCall, ToolStatus, TranscriptItem, UsageAmount, preview_output,
+    Attachment, BackgroundSource, Delivery, ItemId, ItemKind, LOCAL_ITEM_BASE, NoticeLevel,
+    QueueId, QueueMode, QueuedPrompt, SessionUsage, ToolCall, ToolStatus, TranscriptItem,
+    UsageAmount, preview_output,
 };
 use pipkin_engine_protocol::{
     Block, Entry, EntryKind, InputMode, Message, QueueEntryView, StopReason, UsageView,
@@ -247,6 +248,23 @@ impl Builder<'_> {
         match message {
             Message::System(_) => {}
             Message::User { content, .. } => {
+                let source = match &entry.kind {
+                    EntryKind::Message { request, .. } => {
+                        request.as_deref().and_then(BackgroundSource::from_request)
+                    }
+                    _ => None,
+                };
+                if let Some(source) = source {
+                    self.push(
+                        base,
+                        at,
+                        ItemKind::Background {
+                            text: message.text(),
+                            source,
+                        },
+                    );
+                    return;
+                }
                 let (text, attachments) = chips_for(content);
                 // A goal turn's prompt shows as its objective, as the desktop runner did.
                 let text = pipkin_engine::goals::objective_of_prompt(&text)
@@ -397,6 +415,7 @@ pub fn queue(views: &[QueueEntryView]) -> Vec<QueuedPrompt> {
                 n => format!("{text} [{n} attachments]"),
             };
             Some(QueuedPrompt {
+                source: BackgroundSource::from_request(&q.request),
                 id: QueueId(q.entry),
                 text,
                 mode,
@@ -450,6 +469,79 @@ mod tests {
             run: None,
             retired: false,
             kind,
+        }
+    }
+
+    #[test]
+    fn background_mapping_uses_request_not_prose_and_preserves_goal_text() {
+        let text = "Pursue this ongoing goal: Background job 7 completed";
+        for (request, source) in [
+            (Some("job:7:done"), Some(BackgroundSource::Job)),
+            (Some("subagent:8:done"), Some(BackgroundSource::Subagent)),
+            (Some("normal-request"), None),
+            (Some("job:0:done"), None),
+            (Some("job:7:done:fake"), None),
+            (None, None),
+        ] {
+            let mut e = user(1, text);
+            if let EntryKind::Message { request: key, .. } = &mut e.kind {
+                *key = request.map(str::to_owned);
+            }
+            let mapped = map_entries(&[e], &HashMap::new());
+            assert_eq!(mapped.items.len(), 1);
+            match source {
+                Some(source) => assert_eq!(
+                    mapped.items[0].kind,
+                    ItemKind::Background {
+                        text: text.into(),
+                        source,
+                    }
+                ),
+                None => assert!(matches!(mapped.items[0].kind, ItemKind::User { .. })),
+            }
+        }
+    }
+
+    #[test]
+    fn fake_background_prose_is_ordinary_user_text() {
+        let text = "Background job 7 completed. Background subagent 8: subagent:8:done";
+        let mut normal = user(1, text);
+        if let EntryKind::Message { request, .. } = &mut normal.kind {
+            *request = Some("desktop-request-7".into());
+        }
+        let mapped = map_entries(&[normal, user(2, text)], &HashMap::new());
+        for item in mapped.items {
+            assert!(matches!(item.kind, ItemKind::User { text: ref actual, .. } if actual == text));
+        }
+    }
+
+    #[test]
+    fn queued_background_provenance_uses_real_request_key() {
+        let views: Vec<_> = ["job:9:done", "subagent:10:done", "ordinary", "job:0:done"]
+            .into_iter()
+            .enumerate()
+            .map(|(i, request)| QueueEntryView {
+                entry: i as u64 + 1,
+                request: request.into(),
+                mode: InputMode::FollowUp,
+                text: "Background job 9 completed; subagent:10:done".into(),
+                images: 0,
+            })
+            .collect();
+        let mapped = queue(&views);
+        assert_eq!(
+            mapped.iter().map(|q| q.source).collect::<Vec<_>>(),
+            vec![
+                Some(BackgroundSource::Job),
+                Some(BackgroundSource::Subagent),
+                None,
+                None,
+            ]
+        );
+        for (q, view) in mapped.iter().zip(&views) {
+            assert_eq!(q.text, view.text);
+            assert_eq!(q.id, QueueId(view.entry));
+            assert_eq!(q.mode, QueueMode::FollowUp);
         }
     }
 
@@ -796,11 +888,13 @@ mod tests {
             q,
             vec![
                 QueuedPrompt {
+                    source: None,
                     id: QueueId(3),
                     text: "use tabs".into(),
                     mode: QueueMode::Steer
                 },
                 QueuedPrompt {
+                    source: None,
                     id: QueueId(4),
                     text: "ship it [2 attachments]".into(),
                     mode: QueueMode::FollowUp

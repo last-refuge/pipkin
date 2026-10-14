@@ -658,11 +658,13 @@ mod removal_tests {
                 id: QueueId(7),
                 text: "tidy the imports".into(),
                 mode: QueueMode::FollowUp,
+                source: None,
             },
             QueuedPrompt {
                 id: QueueId(9),
                 text: "x".repeat(80),
                 mode: QueueMode::Steer,
+                source: None,
             },
         ];
         c.draft.attachments = vec![Attachment {

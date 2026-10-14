@@ -10,6 +10,30 @@ use super::workspace::{Overlay, Panel, Workspace};
 use crate::theme::ActiveTheme;
 use crate::transcript::tools::recent_activity;
 
+fn queue_label(mode: QueueMode, source: Option<BackgroundSource>) -> &'static str {
+    match source {
+        Some(source) => source.label(),
+        None => match mode {
+            QueueMode::Steer => "Steer",
+            QueueMode::FollowUp => "Follow-up",
+        },
+    }
+}
+
+#[test]
+fn automatic_queue_reports_are_not_labeled_as_user_follow_ups() {
+    assert_eq!(
+        queue_label(QueueMode::FollowUp, Some(BackgroundSource::Job)),
+        "Background job"
+    );
+    assert_eq!(
+        queue_label(QueueMode::FollowUp, Some(BackgroundSource::Subagent)),
+        "Background subagent"
+    );
+    assert_eq!(queue_label(QueueMode::FollowUp, None), "Follow-up");
+    assert_eq!(queue_label(QueueMode::Steer, None), "Steer");
+}
+
 /// How long ago `then` was, for a saved copy's label.
 fn ago(now: i64, then: i64) -> String {
     let secs = (now - then).max(0);
@@ -771,11 +795,12 @@ impl Workspace {
         // holds can be removed.
         let queue_total = queue.len() + pending_queue.len();
         let queue_el = (queue_total > 0).then(|| {
-            let row = |i: usize, mode: QueueMode, text: String, note: Option<&'static str>| {
-                let label = match mode {
-                    QueueMode::Steer => "Steer",
-                    QueueMode::FollowUp => "Follow-up",
-                };
+            let row = |i: usize,
+                       mode: QueueMode,
+                       source: Option<pipkin_core::BackgroundSource>,
+                       text: String,
+                       note: Option<&'static str>| {
+                let label = queue_label(mode, source);
                 div()
                     .id(("queued", i))
                     .role(Role::ListItem)
@@ -823,11 +848,15 @@ impl Workspace {
                 .children(queue.into_iter().enumerate().map(|(i, q)| {
                     let this = this.clone();
                     let qid = q.id;
-                    row(i, q.mode, q.text, None).child(
+                    row(i, q.mode, q.source, q.text, q.source.map(|_| "Automatic")).child(
                         Btn::new(("unqueue", qid.0 as usize))
                             .icon("x")
                             .compact()
-                            .aria("Remove queued prompt")
+                            .aria(if q.source.is_some() {
+                                "Dismiss queued background report"
+                            } else {
+                                "Remove queued prompt"
+                            })
                             .on_click(move |_, cx| {
                                 this.update(cx, |t, cx| t.dispatch(Command::RemoveQueued(qid), cx))
                             }),
@@ -838,7 +867,7 @@ impl Workspace {
                         QueueSend::Sending => "Sending…",
                         QueueSend::Unknown => "Checking with the engine…",
                     };
-                    row(held + i, p.mode, p.text, Some(note))
+                    row(held + i, p.mode, None, p.text, Some(note))
                 }))
         });
 

@@ -101,6 +101,7 @@ impl SubagentState {
         self.preview_rev += 1;
         let (speaker, text): (&'static str, std::borrow::Cow<'_, str>) = match &item.kind {
             ItemKind::User { text, .. } => ("Task", text.into()),
+            ItemKind::Background { text, source } => (source.label(), text.into()),
             ItemKind::Assistant { text, .. } => ("Pipkin", text.into()),
             ItemKind::Tool(tool) => (
                 "Tool",

@@ -172,6 +172,7 @@ fn ready_for(command: &Command, owner: bool) -> AppState {
                 EventKind::EngineState {
                     busy: true,
                     queue: vec![QueuedPrompt {
+                        source: None,
                         id: QueueId(5),
                         text: "queued".into(),
                         mode: QueueMode::FollowUp,

@@ -5,7 +5,8 @@
 //! wrote it, or the file was edited) is skipped, never a reason to lose the rest.
 
 use pipkin_core::{
-    Attachment, Delivery, ItemId, ItemKind, NoticeLevel, ToolCall, ToolStatus, TranscriptItem,
+    Attachment, BackgroundSource, Delivery, ItemId, ItemKind, NoticeLevel, ToolCall, ToolStatus,
+    TranscriptItem,
 };
 use serde_json::{Value, json};
 
@@ -32,6 +33,13 @@ fn encode_item(item: &TranscriptItem) -> Value {
                     "path": a.path, "name": a.name, "size": a.size,
                 })).collect::<Vec<_>>(),
             }),
+        ),
+        ItemKind::Background { text, source } => (
+            "background",
+            json!({ "text": text, "source": match source {
+                BackgroundSource::Job => "job",
+                BackgroundSource::Subagent => "subagent",
+            }}),
         ),
         ItemKind::Assistant { text, .. } => ("assistant", json!({ "text": text })),
         ItemKind::Tool(t) => (
@@ -78,6 +86,14 @@ fn decode_item(value: &Value) -> Option<TranscriptItem> {
             // What the engine had when it was copied.
             delivery: Delivery::Sent,
             steer: body.get("steer").and_then(Value::as_bool).unwrap_or(false),
+        },
+        "background" => ItemKind::Background {
+            text: text()?,
+            source: match body.get("source")?.as_str()? {
+                "job" => BackgroundSource::Job,
+                "subagent" => BackgroundSource::Subagent,
+                _ => return None,
+            },
         },
         "assistant" => ItemKind::Assistant {
             text: text()?,
@@ -151,7 +167,9 @@ pub fn decode_items(json: &str) -> Vec<TranscriptItem> {
 /// The text of a message worth searching: what a person said or the model answered.
 pub fn search_text(item: &TranscriptItem) -> Option<String> {
     let text = match &item.kind {
-        ItemKind::User { text, .. } | ItemKind::Assistant { text, .. } => text,
+        ItemKind::User { text, .. }
+        | ItemKind::Background { text, .. }
+        | ItemKind::Assistant { text, .. } => text,
         _ => return None,
     };
     if text.trim().is_empty() {
@@ -167,6 +185,27 @@ pub fn search_text(item: &TranscriptItem) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_provenance_survives_offline_copy_and_search() {
+        let items: Vec<_> = [BackgroundSource::Job, BackgroundSource::Subagent]
+            .into_iter()
+            .enumerate()
+            .map(|(i, source)| TranscriptItem {
+                native_only: true,
+                id: ItemId(i as u64 + 1),
+                at: 42,
+                kind: ItemKind::Background {
+                    text: "completion text".into(),
+                    source,
+                },
+            })
+            .collect();
+        let (json, count) = encode_items(&items);
+        assert_eq!(count, 2);
+        assert_eq!(decode_items(&json), items);
+        assert_eq!(search_text(&items[0]).as_deref(), Some("completion text"));
+    }
 
     #[test]
     fn native_only_history_labels_survive_offline_copies_without_changing_text() {

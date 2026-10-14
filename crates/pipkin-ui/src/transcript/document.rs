@@ -121,6 +121,7 @@ fn revision(item: &TranscriptItem, expanded: bool) -> u64 {
         ItemKind::Assistant { text, .. } => (2, text.len(), 0),
         ItemKind::Tool(t) => (3, t.input.len(), t.output.len()),
         ItemKind::Notice { text, .. } => (4, text.len(), 0),
+        ItemKind::Background { text, .. } => (5, text.len(), 0),
     };
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -132,6 +133,13 @@ fn build(item: &TranscriptItem, expanded: bool) -> Vec<Block> {
     match &item.kind {
         ItemKind::User { text, .. } => vec![Block::plain(BlockKind::Paragraph, text.clone())],
         ItemKind::Notice { text, .. } => vec![Block::plain(BlockKind::Paragraph, text.clone())],
+        ItemKind::Background { text, .. } => {
+            if expanded {
+                vec![Block::plain(BlockKind::Paragraph, text.clone())]
+            } else {
+                vec![]
+            }
+        }
         ItemKind::Assistant { text, .. } => markdown::parse(text),
         ItemKind::Tool(t) => {
             let mut v = Vec::new();

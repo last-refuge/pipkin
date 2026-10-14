@@ -1017,6 +1017,7 @@ mod unit {
                         text
                     }
                     ItemKind::Notice { text, .. } => text,
+                    ItemKind::Background { .. } => panic!("no fabricated background evidence"),
                     ItemKind::Tool(_) => panic!("no fabricated tool evidence"),
                 };
                 assert!(text.len() < 1024);

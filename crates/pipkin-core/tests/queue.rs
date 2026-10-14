@@ -204,6 +204,7 @@ fn the_engines_admission_moves_a_request_into_the_queue_and_finishes_its_journal
     assert_eq!(
         c.queue,
         [QueuedPrompt {
+            source: None,
             id: QueueId(41),
             text: "later".into(),
             mode: QueueMode::FollowUp
@@ -306,6 +307,33 @@ fn a_lost_acknowledgment_is_unknown_not_refused_and_later_resolves() {
 }
 
 #[test]
+fn engine_queue_preserves_background_source_without_starting_a_user_prompt() {
+    let mut s = real();
+    running(&mut s);
+    let items_before = s.current().unwrap().items.clone();
+    let queue = vec![QueuedPrompt {
+        source: Some(BackgroundSource::Job),
+        id: QueueId(99),
+        text: "completion text".into(),
+        mode: QueueMode::FollowUp,
+    }];
+    let out = apply(
+        &mut s,
+        EventKind::EngineState {
+            busy: true,
+            queue: queue.clone(),
+        },
+    );
+    assert_eq!(s.current().unwrap().queue, queue);
+    assert!(
+        !out.effects
+            .iter()
+            .any(|e| matches!(e, Effect::Backend(BackendRequest::Submit { .. })))
+    );
+    assert_eq!(s.current().unwrap().items, items_before);
+}
+
+#[test]
 fn removing_a_queued_input_asks_the_engine_and_waits_for_its_answer() {
     let mut s = real();
     running(&mut s);
@@ -315,11 +343,13 @@ fn removing_a_queued_input_asks_the_engine_and_waits_for_its_answer() {
             busy: true,
             queue: vec![
                 QueuedPrompt {
+                    source: None,
                     id: QueueId(5),
                     text: "a".into(),
                     mode: QueueMode::FollowUp,
                 },
                 QueuedPrompt {
+                    source: None,
                     id: QueueId(6),
                     text: "b".into(),
                     mode: QueueMode::Steer,
@@ -378,6 +408,7 @@ fn stopping_withdraws_the_queue_through_the_engines_report() {
         EventKind::EngineState {
             busy: true,
             queue: vec![QueuedPrompt {
+                source: None,
                 id: QueueId(5),
                 text: "a".into(),
                 mode: QueueMode::FollowUp,
@@ -501,6 +532,7 @@ fn engine_state_reports_are_ignored_by_the_demo() {
         EventKind::EngineState {
             busy: true,
             queue: vec![QueuedPrompt {
+                source: None,
                 id: QueueId(1),
                 text: "x".into(),
                 mode: QueueMode::FollowUp,
@@ -763,6 +795,7 @@ fn a_settlement_survives_a_reattach_but_stale_content_does_not() {
         kind: EventKind::EngineState {
             busy: true,
             queue: vec![QueuedPrompt {
+                source: None,
                 id: QueueId(1),
                 text: "stale".into(),
                 mode: QueueMode::FollowUp,
@@ -791,6 +824,7 @@ fn a_real_run_completing_never_starts_what_the_engine_still_lists_as_queued() {
         EventKind::EngineState {
             busy: true,
             queue: vec![QueuedPrompt {
+                source: None,
                 id: QueueId(5),
                 text: "later".into(),
                 mode: QueueMode::FollowUp,

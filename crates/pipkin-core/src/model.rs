@@ -196,8 +196,46 @@ pub enum NoticeLevel {
     Error,
 }
 
+/// Provenance of engine-owned background completion input, identified only by its request key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackgroundSource {
+    Job,
+    Subagent,
+}
+
+impl BackgroundSource {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Job => "Background job",
+            Self::Subagent => "Background subagent",
+        }
+    }
+
+    pub fn from_request(request: &str) -> Option<Self> {
+        let mut parts = request.split(':');
+        let source = match parts.next()? {
+            "job" => Self::Job,
+            "subagent" => Self::Subagent,
+            _ => return None,
+        };
+        let id = parts.next()?;
+        if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) || id.parse::<u64>().ok()? == 0
+        {
+            return None;
+        }
+        if parts.next()? != "done" || parts.next().is_some() {
+            return None;
+        }
+        Some(source)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ItemKind {
+    Background {
+        text: String,
+        source: BackgroundSource,
+    },
     User {
         text: String,
         attachments: Vec<Attachment>,
@@ -294,6 +332,7 @@ pub enum QueueMode {
 /// id; in the demo the id is local.
 #[derive(Clone, Debug, PartialEq)]
 pub struct QueuedPrompt {
+    pub source: Option<BackgroundSource>,
     pub id: QueueId,
     pub text: String,
     pub mode: QueueMode,

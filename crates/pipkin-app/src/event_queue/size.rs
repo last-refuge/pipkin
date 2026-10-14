@@ -20,7 +20,9 @@ fn item(i: &TranscriptItem) -> usize {
                     a.path.capacity() + a.name.capacity() + strings(&a.error)
                 })
         }
-        ItemKind::Assistant { text, .. } | ItemKind::Notice { text, .. } => text.capacity(),
+        ItemKind::Assistant { text, .. }
+        | ItemKind::Background { text, .. }
+        | ItemKind::Notice { text, .. } => text.capacity(),
         ItemKind::Tool(t) => {
             strings(&t.call_id) + t.name.capacity() + t.input.capacity() + t.output.capacity()
         }

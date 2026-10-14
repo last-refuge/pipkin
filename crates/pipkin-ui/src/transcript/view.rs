@@ -987,6 +987,9 @@ impl TranscriptView {
                 self.render_assistant(&item, item_ix, text, *streaming, new_reply, &ctx, cx)
             }
             ItemKind::Tool(t) => self.render_tool(&item, item_ix, t, &ctx, cx),
+            ItemKind::Background { text, source } => {
+                self.render_background(&item, item_ix, text, *source, &ctx, cx)
+            }
             ItemKind::Notice { text, level } => {
                 self.render_notice(&item, item_ix, text, *level, &ctx, cx)
             }
@@ -996,6 +999,7 @@ impl TranscriptView {
         let (pad_top, pad_bottom) = match &item.kind {
             ItemKind::Tool(_) => (1.0, 1.0),
             ItemKind::Notice { .. } => (2.0, 2.0),
+            ItemKind::Background { .. } => (8.0, 4.0),
             // The header of a message ("You 11:30", "Pipkin 11:32") starts a new step in the
             // conversation, so it gets room above it; the steps between stay tight.
             ItemKind::User { .. } => (16.0, 4.0),
@@ -1289,6 +1293,87 @@ impl TranscriptView {
             .child(marker)
             .child(div().flex_1().min_w_0().child(col))
             .into_any_element()
+    }
+
+    fn render_background(
+        &self,
+        item: &TranscriptItem,
+        item_ix: usize,
+        text: &str,
+        source: pipkin_core::BackgroundSource,
+        ctx: &RowCtx,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = &ctx.theme;
+        let c = &theme.colors;
+        let (conv, id, expanded) = (ctx.conv, item.id, ctx.expanded);
+        let label = source.label();
+        let mut report = div()
+            .id(ElementId::NamedInteger("msg".into(), id.0))
+            .role(Role::Article)
+            .aria_label(format!("Automatic {label} report"))
+            .w_full()
+            .min_w_0()
+            .rounded(px(6.0))
+            .bg(c.bg_hover)
+            .child(
+                div()
+                    .id(ElementId::NamedInteger("background-report".into(), id.0))
+                    .role(Role::Button)
+                    .aria_label(format!("{label} · Automatic · Show report"))
+                    .aria_expanded(expanded)
+                    .tab_stop(true)
+                    .cursor_pointer()
+                    .focus_visible(|s| s.border_1().border_color(c.accent))
+                    .hover(|s| s.bg(c.bg_hover))
+                    .on_mouse_down(MouseButton::Left, stop_mouse_down)
+                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_tool(conv, id, cx)))
+                    .w_full()
+                    .min_w_0()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .p(px(8.0))
+                    .text_size(theme.small_size())
+                    .text_color(c.text_muted)
+                    .child(icon(
+                        if expanded {
+                            "chevron-down"
+                        } else {
+                            "chevron-right"
+                        },
+                        14.0,
+                        c.text_muted,
+                    ))
+                    .child(div().flex_none().child(label))
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(c.text_faint)
+                            .child("Automatic"),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .child(clip(text.lines().next().unwrap_or_default(), 160)),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(c.text_faint)
+                            .child(format_time(item.at)),
+                    ),
+            );
+        if expanded {
+            let mut details = div().w_full().min_w_0().px(px(12.0)).pb(px(10.0));
+            for (bi, block) in self.blocks_for(ctx.conv, item, true).iter().enumerate() {
+                details = details.child(self.block_element(ctx, item, item_ix, bi, block, cx));
+            }
+            report = report.child(details);
+        }
+        report.into_any_element()
     }
 
     fn render_notice(

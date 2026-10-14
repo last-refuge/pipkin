@@ -231,6 +231,68 @@ fn user_messages_align_right_and_keep_hit_testing(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn background_reports_are_collapsed_activity_with_selectable_details(cx: &mut TestAppContext) {
+    let (h, cx) = setup(cx, 0);
+    for source in [BackgroundSource::Job, BackgroundSource::Subagent] {
+        let text = "Background work finished.\nAnswer:\nChanges made and validated.\nArtifacts:\n- file: /project/src/lib.rs";
+        let report = TranscriptItem {
+            id: ItemId(42),
+            at: 1_700_000_000,
+            native_only: true,
+            kind: ItemKind::Background {
+                text: text.into(),
+                source,
+            },
+        };
+        assert!(
+            !is_activity(&report.kind),
+            "reports are not folded into tool runs"
+        );
+        open(&h.model, 1, vec![report], false, cx);
+        frame(&h, cx);
+        cx.update(|_, cx| {
+            let view = h.view.read(cx);
+            assert!(!view.is_expanded(ConversationId(1), ItemId(42)));
+            assert!(view.registry.borrow().find(ItemId(42), 0).is_none());
+        });
+        cx.update(|_, cx| {
+            h.view.update(cx, |view, cx| {
+                view.toggle_tool(ConversationId(1), ItemId(42), cx);
+            })
+        });
+        frame(&h, cx);
+        cx.update(|_, cx| {
+            let view = h.view.read(cx);
+            let registry = view.registry.borrow();
+            let hit = registry
+                .find(ItemId(42), 0)
+                .expect("expanded report paints its details");
+            assert_eq!(hit.layout.text(), text);
+            let mut position = hit.layout.position_for_index(0).unwrap();
+            position.x += px(0.5);
+            position.y += hit.layout.line_height() / 2.0;
+            assert_eq!(registry.hit_test(position), Some((ItemId(42), 0, 0)));
+        });
+        cx.update(|_, cx| {
+            h.view.update(cx, |view, cx| {
+                view.toggle_tool(ConversationId(1), ItemId(42), cx);
+            })
+        });
+        frame(&h, cx);
+        cx.update(|_, cx| {
+            assert!(
+                h.view
+                    .read(cx)
+                    .registry
+                    .borrow()
+                    .find(ItemId(42), 0)
+                    .is_none()
+            )
+        });
+    }
+}
+
+#[gpui::test]
 fn mounted_rows_are_bounded_for_ten_thousand_items(cx: &mut TestAppContext) {
     let (h, cx) = setup(cx, 10_000);
     frame(&h, cx);

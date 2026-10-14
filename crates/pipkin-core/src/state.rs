@@ -1863,6 +1863,7 @@ impl AppState {
                     c.prompt_history.remember(text.clone());
                     c.draft.attachments.clear();
                     c.queue.push(QueuedPrompt {
+                        source: None,
                         id: qid,
                         text,
                         mode: QueueMode::FollowUp,
@@ -2336,6 +2337,7 @@ impl AppState {
                 self.conv_mut(id).unwrap().queue.insert(
                     0,
                     QueuedPrompt {
+                        source: None,
                         id: qid,
                         text: intent.text,
                         mode: QueueMode::FollowUp,
@@ -3269,6 +3271,7 @@ impl AppState {
                     let p = c.pending_queue.remove(i);
                     if c.queue.iter().all(|q| q.id != entry) {
                         c.queue.push(QueuedPrompt {
+                            source: None,
                             id: entry,
                             text: p.text,
                             mode: p.mode,
