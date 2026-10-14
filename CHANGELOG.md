@@ -32,6 +32,13 @@ this file's section for it; the publish step in `.github/workflows/release.yml` 
 
 ### Fixed
 
+- The engine worker could lose its way of answering (its stdout writer thread ended on a write
+  error) and keep running blind: it still executed what it received, but every call from the
+  app timed out after 15 seconds, one after another, which showed up as messages stuck on
+  "Sending", a goal that could neither be resumed nor cleared, and a locked composer. The
+  worker now says why on stderr and exits when it cannot write, so the app's supervisor
+  restarts it; a reply too large to send becomes an error reply instead of ending the writer;
+  and the app restarts an engine that leaves three calls in a row unanswered, with a notice.
 - Job snapshots and log pages were treated as belonging to one operation, so every job update
   that arrived while a turn was running was dropped and the Jobs tab only refreshed between
   turns. They describe the conversation and now land during a run.

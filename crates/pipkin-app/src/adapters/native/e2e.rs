@@ -56,6 +56,11 @@ struct Faults {
     swallow: Mutex<HashSet<u64>>,
     /// Reply ids that sever the link when they arrive (instead of being delivered).
     sever_on: Mutex<HashSet<u64>>,
+    /// Nothing from the engine arrives while set, as when its writer thread has died: calls
+    /// go in and are executed, but no reply or event ever comes back.
+    mute: AtomicBool,
+    /// Links made to the engine (each (re)connection makes one).
+    links: AtomicUsize,
 }
 
 struct FaultSender {
@@ -120,6 +125,9 @@ impl FrameReceiver for FaultReceiver {
                     return Err("the engine stopped".to_owned());
                 }
             };
+            if self.faults.mute.load(Ordering::SeqCst) {
+                continue;
+            }
             if matches!(&frame, ServerFrame::Event { .. })
                 && self.faults.drop_events.load(Ordering::SeqCst)
             {
@@ -255,6 +263,7 @@ impl Fixture {
                 .clone()
                 .ok_or_else(|| "the engine is not running".to_owned())?;
             let (sender, receiver) = handle.connect("e2e").split();
+            faults.links.fetch_add(1, Ordering::SeqCst);
             let severed = Arc::new(AtomicBool::new(false));
             Ok(Link {
                 sender: Box::new(FaultSender {
@@ -3195,6 +3204,42 @@ fn a_goal_stopped_mid_turn_can_be_resumed_or_cleared_after_a_relaunch() {
     });
     gate.open();
     h2.stop();
+}
+
+#[test]
+fn an_engine_that_stops_answering_is_restarted_and_the_conversation_goes_on() {
+    // The person's case: the worker stayed alive but nothing it said came back (its stdout
+    // writer had died), so every call timed out, one after another, and the app sat with
+    // "Sending" and dead controls. Three unanswered calls in a row now restart the engine.
+    let fx = Fixture::start(|_, _| Reply::Text("still here".into()));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start_with(fx.native(Duration::from_millis(400)), &db);
+    h.open_new_conversation(&fx.project);
+    h.send("first");
+    h.until("answered", |s| {
+        is_idle(s) && assistant_texts(s) == ["still here".to_owned()]
+    });
+    assert_eq!(fx.faults.links.load(Ordering::SeqCst), 1);
+    fx.faults.mute.store(true, Ordering::SeqCst);
+    h.until(
+        "the app gave up on the silent engine and reconnected",
+        |_| fx.faults.links.load(Ordering::SeqCst) >= 2,
+    );
+    fx.faults.mute.store(false, Ordering::SeqCst);
+    h.until(
+        "the conversation reopened on the new link and can take a message",
+        |s| {
+            s.current().is_some_and(|c| c.opened)
+                && is_idle(s)
+                && !s.models.is_empty()
+                && format!("{:?}", s.connection) == "Ready"
+        },
+    );
+    h.send("second");
+    h.until("the new link answers", |s| {
+        is_idle(s) && assistant_texts(s).len() == 2
+    });
+    h.stop();
 }
 
 // -------------------------------------------------------------------------------- MCP servers

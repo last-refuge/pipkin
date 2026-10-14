@@ -58,6 +58,10 @@ const SUBAGENT_PAGE: u32 = 200;
 /// A selected child's newest page is re-read at most this often while it is changing.
 const CHILD_SYNC_INTERVAL: Duration = Duration::from_millis(250);
 const SHUTDOWN_CALL: Duration = Duration::from_secs(2);
+/// Calls that time out back to back before the engine is taken as unable to answer and
+/// restarted. One lost call can be a slow operation; three in a row with nothing coming
+/// back means the channel from the engine is dead (its writer died, or it hung).
+const LOST_CALLS_BEFORE_RESTART: u32 = 3;
 const OFFLINE: &str = "Not connected to the built-in engine.";
 
 #[derive(Clone)]
@@ -593,6 +597,7 @@ impl Worker {
             auth_done: None,
             scanning: false,
             rescan: None,
+            lost_in_a_row: std::cell::Cell::new(0),
         };
         live.seq.welcome(welcome.epoch);
         if let Err(error) = live.refresh_sessions() {
@@ -621,6 +626,19 @@ impl Worker {
 
     fn serve(&mut self, live: &mut Live) -> Outcome {
         loop {
+            if let Some(lost) = live.unresponsive() {
+                log::warn!(
+                    "the engine stopped answering ({lost} calls in a row went unanswered); restarting it"
+                );
+                self.notice(
+                    "The engine stopped answering and is being restarted. Work it had already \
+                     accepted is kept."
+                        .into(),
+                );
+                live.client.close();
+                self.supervisor.stop();
+                return Outcome::Retry;
+            }
             let wait = live
                 .next_wakeup()
                 .into_iter()
@@ -772,6 +790,8 @@ struct Live {
     auth_done: Option<String>,
     scanning: bool,
     rescan: Option<(ConversationId, u64)>,
+    /// Consecutive calls that timed out; see [`LOST_CALLS_BEFORE_RESTART`].
+    lost_in_a_row: std::cell::Cell<u32>,
 }
 
 impl Drop for Live {
@@ -806,7 +826,19 @@ const NO_RECORD: &str = "The engine no longer has a record of this run. Its tool
 
 impl Live {
     fn call(&self, call: Call) -> Result<Reply, CallError> {
-        self.client.call(call, self.timeout)
+        let result = self.client.call(call, self.timeout);
+        match &result {
+            Err(CallError::Lost(_)) => self.lost_in_a_row.set(self.lost_in_a_row.get() + 1),
+            Ok(_) | Err(CallError::Refused(_)) => self.lost_in_a_row.set(0),
+            Err(CallError::NotSent(_)) => {}
+        }
+        result
+    }
+
+    /// Whether the engine has stopped answering: enough calls went unanswered in a row.
+    fn unresponsive(&self) -> Option<u32> {
+        let lost = self.lost_in_a_row.get();
+        (lost >= LOST_CALLS_BEFORE_RESTART).then_some(lost)
     }
 
     fn refresh_sessions(&mut self) -> Result<(), CallError> {

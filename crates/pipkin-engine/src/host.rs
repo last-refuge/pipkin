@@ -9,7 +9,7 @@
 use std::sync::mpsc;
 use std::time::Duration;
 
-use pipkin_engine_protocol::{ClientFrame, ServerFrame};
+use pipkin_engine_protocol::{ClientFrame, ErrorCode, ProtoError, ServerFrame};
 
 use crate::config::EngineConfig;
 
@@ -88,6 +88,52 @@ pub fn start(config: EngineConfig) -> Result<EngineHandle, String> {
     crate::runtime::EngineHandle::start(config)
 }
 
+/// What the stdout writer does after forwarding one frame.
+#[derive(Debug, PartialEq, Eq)]
+enum WriterStep {
+    Continue,
+    Exit,
+}
+
+/// Forward one outbound frame to the client. A frame the client could never receive (too
+/// large, or not encodable) is replaced by an error reply when it answered a call, and
+/// dropped with a line on stderr when it was an event, so one bad frame never silences every
+/// later answer. A write that fails on the pipe itself is fatal: the worker must exit so its
+/// supervisor restarts it, instead of running blind while the client's calls time out.
+fn forward(frame: &crate::delivery::Outbound, out: &mut impl std::io::Write) -> WriterStep {
+    use pipkin_engine_protocol::frame::{self, FrameError};
+    match frame.write(out) {
+        Ok(()) => WriterStep::Continue,
+        Err(e @ (FrameError::TooLarge(_) | FrameError::Decode(_))) => {
+            eprintln!("pipkin engine: dropped a frame the client cannot receive: {e}");
+            if let crate::delivery::Outbound::Reply(reply) = frame
+                && let ServerFrame::Reply { id, .. } = **reply
+            {
+                let answer = ServerFrame::Reply {
+                    id,
+                    result: Err(ProtoError::new(
+                        ErrorCode::TooLarge,
+                        format!("the reply could not be delivered: {e}"),
+                    )),
+                };
+                if let Err(e) = frame::write(out, &answer) {
+                    eprintln!(
+                        "pipkin engine: cannot write to the client: {e}; exiting so the client restarts the engine"
+                    );
+                    return WriterStep::Exit;
+                }
+            }
+            WriterStep::Continue
+        }
+        Err(e) => {
+            eprintln!(
+                "pipkin engine: cannot write to the client: {e}; exiting so the client restarts the engine"
+            );
+            WriterStep::Exit
+        }
+    }
+}
+
 /// Allocator policy for dedicated engine processes (stdio workers and socket servers).
 /// Embedding entry points deliberately leave their host application's policy unchanged.
 pub(crate) fn configure_process_allocator() {
@@ -125,8 +171,10 @@ pub fn run_stdio(config: EngineConfig) -> i32 {
             let stdout = std::io::stdout();
             let mut out = BufWriter::new(stdout.lock());
             while let Ok(frame) = rx.recv_shared() {
-                if frame.write(&mut out).is_err() {
-                    break;
+                if let WriterStep::Exit = forward(&frame, &mut out) {
+                    // Running on without a way to answer would leave every later call to
+                    // time out; exiting lets the client's supervisor start a fresh worker.
+                    std::process::exit(3);
                 }
             }
         })
@@ -154,4 +202,58 @@ pub fn run_stdio(config: EngineConfig) -> i32 {
     drop(handle);
     let _ = writer.join();
     0
+}
+
+#[cfg(test)]
+mod writer_tests {
+    use super::*;
+    use crate::delivery::Outbound;
+    use pipkin_engine_protocol::frame;
+
+    struct Broken;
+    impl std::io::Write for Broken {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn reply(id: u64, message: String) -> Outbound {
+        Outbound::Reply(Box::new(ServerFrame::Reply {
+            id,
+            result: Err(ProtoError::new(ErrorCode::Invalid, message)),
+        }))
+    }
+
+    #[test]
+    fn a_reply_too_large_to_send_becomes_an_error_reply_and_the_writer_goes_on() {
+        let huge = "x".repeat(pipkin_engine_protocol::limits::MAX_FRAME_BYTES + 1);
+        let mut out = Vec::new();
+        assert_eq!(forward(&reply(7, huge), &mut out), WriterStep::Continue);
+        let written: ServerFrame = frame::read(&mut out.as_slice()).unwrap();
+        match written {
+            ServerFrame::Reply { id, result } => {
+                assert_eq!(id, 7);
+                let e = result.unwrap_err();
+                assert_eq!(e.code, ErrorCode::TooLarge);
+                assert!(e.message.contains("exceeds the limit"), "{}", e.message);
+            }
+            other => panic!("{other:?}"),
+        }
+        // The next frame still goes out.
+        assert_eq!(
+            forward(&reply(8, "fine".into()), &mut out),
+            WriterStep::Continue
+        );
+    }
+
+    #[test]
+    fn a_broken_pipe_ends_the_worker_instead_of_leaving_it_blind() {
+        assert_eq!(
+            forward(&reply(1, "fine".into()), &mut Broken),
+            WriterStep::Exit
+        );
+    }
 }
