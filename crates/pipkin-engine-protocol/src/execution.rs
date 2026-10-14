@@ -32,44 +32,9 @@ impl ExecutionBackend {
     }
 }
 
-/// Display-only external transcript roles. No system/tool role or replay semantics.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ExternalRole { User, Assistant }
-
-/// Deliberately separate from native `Block`: no executable tool calls, signatures or
-/// provider message envelopes can be represented here.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
-pub enum ExternalBlock {
-    Text { text: String },
-    Thinking { text: String },
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn external_transcript_cannot_decode_native_tools_or_provider_payloads() {
-        for value in [
-            serde_json::json!({"type":"toolCall", "id":"x", "name":"bash", "arguments":{}}),
-            serde_json::json!({"type":"text", "text":"ordinary", "arguments":{"command":"no"}}),
-            serde_json::json!({"type":"thinking", "text":"ordinary", "signature":"not-a-provider-block"}),
-        ] {
-            assert!(serde_json::from_value::<ExternalBlock>(value).is_err());
-        }
-        for role in [ExternalRole::User, ExternalRole::Assistant] {
-            let entry = crate::EntryKind::ExternalMessage {
-                backend: ExecutionBackend::LocalClaudeCli, role,
-                source_message_id: Some("cli-message".into()), request: Some("request".into()),
-                blocks: vec![ExternalBlock::Text { text: "{\"type\":\"toolCall\"}".into() }], partial: true,
-            };
-            let value = serde_json::to_value(&entry).unwrap();
-            assert_eq!(value["kind"], "externalMessage");
-            assert_eq!(serde_json::from_value::<crate::EntryKind>(value).unwrap(), entry);
-        }
-    }
 
     #[test]
     fn only_native_execution_is_enabled_and_unknown_values_fail_closed() {

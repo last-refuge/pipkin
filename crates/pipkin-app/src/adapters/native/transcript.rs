@@ -16,8 +16,7 @@ use pipkin_core::{
     UsageAmount, preview_output,
 };
 use pipkin_engine_protocol::{
-    Block, Entry, EntryKind, ExecutionBackend, ExternalBlock, ExternalRole, InputMode, Message,
-    QueueEntryView, StopReason, UsageView,
+    Block, Entry, EntryKind, InputMode, Message, QueueEntryView, StopReason, UsageView,
 };
 
 use crate::adapters::attach::split_message;
@@ -305,61 +304,6 @@ impl Builder<'_> {
         }
     }
 
-    /// External history is presentation only: never build native messages, attachments or tools.
-    fn external(&mut self, base: u64, at: i64, kind: &EntryKind) {
-        let EntryKind::ExternalMessage {
-            backend,
-            role,
-            blocks,
-            partial,
-            ..
-        } = kind
-        else {
-            return;
-        };
-        // The store supports at most 256 blocks. Defend against unvalidated wire history too;
-        // never clamp overflowing slots into duplicate IDs or guess unknown provenance.
-        if *backend != ExecutionBackend::LocalClaudeCli || blocks.len() > 256 {
-            self.unsupported += 1;
-            self.notice(
-                base,
-                at,
-                NoticeLevel::Info,
-                format!(
-                    "[unsupported external history: backend {backend:?}, {} blocks]",
-                    blocks.len()
-                ),
-            );
-            return;
-        }
-        for (slot, block) in blocks.iter().enumerate() {
-            let id = base + slot as u64;
-            match block {
-                ExternalBlock::Text { text } => {
-                    let kind = match role {
-                        ExternalRole::User => ItemKind::User {
-                            text: text.clone(),
-                            attachments: vec![],
-                            delivery: Delivery::Sent,
-                            steer: false,
-                        },
-                        ExternalRole::Assistant => ItemKind::Assistant {
-                            text: text.clone(),
-                            streaming: *partial && slot + 1 == blocks.len(),
-                        },
-                    };
-                    self.push(id, at, kind);
-                }
-                ExternalBlock::Thinking { text } => self.notice(
-                    id,
-                    at,
-                    NoticeLevel::Info,
-                    format!("Claude CLI thinking\n{text}"),
-                ),
-            }
-        }
-    }
-
     fn entry(&mut self, entry: &Entry) {
         let base = entry_base(entry.id);
         let at = seconds(entry.at_ms);
@@ -370,7 +314,6 @@ impl Builder<'_> {
                 partial,
                 ..
             } => self.message(base, entry, message, *mode, *partial),
-            EntryKind::ExternalMessage { .. } => self.external(base, at, &entry.kind),
             EntryKind::Compaction { .. } => self.notice(
                 base,
                 at,
@@ -526,143 +469,6 @@ mod tests {
             run: None,
             retired: false,
             kind,
-        }
-    }
-
-    fn external(id: u64, role: ExternalRole, blocks: Vec<ExternalBlock>, partial: bool) -> Entry {
-        entry(
-            id,
-            EntryKind::ExternalMessage {
-                backend: ExecutionBackend::LocalClaudeCli,
-                role,
-                source_message_id: Some("source-id-is-not-an-item-id".into()),
-                request: Some("job:7:done".into()),
-                blocks,
-                partial,
-            },
-        )
-    }
-
-    #[test]
-    fn external_text_is_literal_and_tool_looking_json_is_inert() {
-        let goal = "Pursue this ongoing goal: keep this entire literal prompt";
-        assert!(pipkin_engine::goals::objective_of_prompt(goal).is_some());
-        let raw =
-            r#"{"type":"toolCall","id":"call","name":"write","arguments":{"path":"/tmp/no"}}"#;
-        let entries = [
-            external(
-                1,
-                ExternalRole::User,
-                vec![ExternalBlock::Text { text: goal.into() }],
-                false,
-            ),
-            external(
-                2,
-                ExternalRole::Assistant,
-                vec![
-                    ExternalBlock::Thinking {
-                        text: "considering".into(),
-                    },
-                    ExternalBlock::Text { text: raw.into() },
-                ],
-                true,
-            ),
-        ];
-        let mapped = map_entries(
-            &entries,
-            &HashMap::from([("call".into(), "native progress".into())]),
-        );
-        assert_eq!(mapped.unsupported, 0);
-        assert_eq!(mapped.items.len(), 3);
-        assert!(
-            matches!(&mapped.items[0].kind, ItemKind::User { text, attachments, steer: false, .. }
-            if text == goal && attachments.is_empty())
-        );
-        assert!(
-            matches!(&mapped.items[1].kind, ItemKind::Notice { text, .. }
-            if text == "Claude CLI thinking\nconsidering")
-        );
-        assert!(
-            matches!(&mapped.items[2].kind, ItemKind::Assistant { text, streaming: true } if text == raw)
-        );
-        assert!(super::super::mapping::changed_paths(&entries, 0).is_empty());
-        assert!(
-            entries
-                .iter()
-                .all(|e| !super::super::mapping::is_change_evidence(e))
-        );
-        assert_eq!(tool_result_text(&entries, "call"), None);
-        let native = map_entries(&[user(3, goal)], &HashMap::new());
-        assert!(matches!(&native.items[0].kind, ItemKind::User { text, .. } if text != goal));
-    }
-
-    #[test]
-    fn external_block_slots_are_stable_bounded_and_paging_independent() {
-        let blocks: Vec<_> = (0..256)
-            .map(|slot| {
-                if slot % 2 == 0 {
-                    ExternalBlock::Thinking {
-                        text: slot.to_string(),
-                    }
-                } else {
-                    ExternalBlock::Text {
-                        text: slot.to_string(),
-                    }
-                }
-            })
-            .collect();
-        let partial = external(7, ExternalRole::Assistant, blocks.clone(), true);
-        let final_entry = external(7, ExternalRole::Assistant, blocks, false);
-        let before = map_entries(&[partial], &HashMap::new());
-        let after = map_entries(&[final_entry.clone(), user(8, "next")], &HashMap::new());
-        assert_eq!(before.items.len(), 256);
-        for (slot, (a, b)) in before.items.iter().zip(&after.items).enumerate() {
-            assert_eq!(a.id, ItemId(7 * SLOTS_PER_ENTRY + slot as u64));
-            assert_eq!(a.id, b.id);
-            assert_eq!(entry_of_item(a.id), Some(7));
-        }
-        let page = map_entries(&[final_entry], &HashMap::new());
-        assert_eq!(page.items, after.items[..256]);
-        assert!(matches!(
-            page.items[255].kind,
-            ItemKind::Assistant {
-                streaming: false,
-                ..
-            }
-        ));
-        assert_eq!(after.items[256].id, ItemId(8 * SLOTS_PER_ENTRY));
-    }
-
-    #[test]
-    fn external_oversize_or_unsupported_provenance_is_an_honest_notice() {
-        for (backend, count) in [
-            (ExecutionBackend::LocalClaudeCli, 257),
-            (ExecutionBackend::LocalClaudeCli, 1025),
-            (ExecutionBackend::Unsupported, 1),
-            (ExecutionBackend::NativeAgent, 1),
-        ] {
-            let mut e = external(
-                9,
-                ExternalRole::Assistant,
-                vec![
-                    ExternalBlock::Text {
-                        text: "not native".into()
-                    };
-                    count
-                ],
-                false,
-            );
-            if let EntryKind::ExternalMessage { backend: value, .. } = &mut e.kind {
-                *value = backend;
-            }
-            let mapped = map_entries(&[e], &HashMap::new());
-            assert_eq!(mapped.unsupported, 1);
-            assert_eq!(mapped.items.len(), 1);
-            assert_eq!(mapped.items[0].id, ItemId(9 * SLOTS_PER_ENTRY));
-            assert!(
-                matches!(&mapped.items[0].kind, ItemKind::Notice { text, .. }
-                if text.contains("unsupported external history"))
-            );
         }
     }
 

@@ -75,9 +75,6 @@ pub(crate) fn borrowed_contribution(entry: &Entry, head: bool) -> Vec<Cow<'_, Me
                 vec![Cow::Borrowed(message)]
             }
         }
-        // External-agent history is display-only, even if copied into a native session.
-        // Never manufacture provider messages or pending native tool work from it.
-        EntryKind::ExternalMessage { .. } => vec![],
         EntryKind::Compaction { summary, .. } if head => vec![Cow::Owned(Message::User {
             content: vec![Block::text(summary_message_text(summary))],
             timestamp: entry.at_ms,
