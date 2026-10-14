@@ -80,6 +80,18 @@ pub enum EntryKind {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         partial: bool,
     },
+    /// Presentation-only external history. Never native model context or a tool intent.
+    ExternalMessage {
+        backend: crate::ExecutionBackend,
+        role: crate::ExternalRole,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_message_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        request: Option<String>,
+        blocks: Vec<crate::ExternalBlock>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        partial: bool,
+    },
     /// Everything before `first_kept` is summarized by `summary` in the model context.
     Compaction {
         summary: String,
@@ -938,7 +950,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 32);
+        assert_eq!(crate::PROTOCOL_VERSION, 33);
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };

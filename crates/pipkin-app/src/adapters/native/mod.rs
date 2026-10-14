@@ -1138,6 +1138,9 @@ impl Live {
                 if touched == Touched::Transcript {
                     current.dirty = true;
                 }
+                if touched == Touched::Transcript {
+                    self.reconcile_history_requests(worker);
+                }
                 self.touched(worker, conversation, generation, touched);
             }
         }
@@ -1520,9 +1523,45 @@ impl Live {
             worker.emit_op(run.conversation, run.generation, op, kind);
             self.after_run(worker, run.conversation, run.generation);
         }
+        self.reconcile_history_requests(worker);
         let pending = worker.queue_unknown.clone();
         for req in pending {
             self.resolve_queue_unknown(worker, req);
+        }
+    }
+
+    /// Durable user history can acknowledge a pending queue request even if its admission
+    /// event was lost. Match both attachment identity and request, never assistant text/keys.
+    fn reconcile_history_requests(&self, worker: &mut Worker) {
+        let Some(current) = &self.current else { return };
+        let matched: Vec<_> = worker
+            .queue_unknown
+            .iter()
+            .filter_map(|req| {
+                if req.conversation != current.conversation || req.generation != current.generation
+                {
+                    return None;
+                }
+                current
+                    .mirror
+                    .user_entry_for_request(&req.request.0)
+                    .map(|entry| (req.clone(), entry))
+            })
+            .collect();
+        for (req, entry) in matched {
+            worker.queue_unknown.retain(|pending| {
+                pending.conversation != req.conversation
+                    || pending.generation != req.generation
+                    || pending.request != req.request
+            });
+            worker.emit(
+                req.conversation,
+                req.generation,
+                EventKind::QueueAdmitted {
+                    request: req.request,
+                    entry: QueueId(entry),
+                },
+            );
         }
     }
 
@@ -3021,6 +3060,7 @@ impl Live {
             next_changes_scan: Instant::now(),
             evidence,
         });
+        self.reconcile_history_requests(worker);
         self.refresh_models(worker, Some(summary.id.clone()));
         (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
         self.emit_subagents(worker);

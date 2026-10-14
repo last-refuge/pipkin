@@ -12,6 +12,23 @@ fn described(entries: &[Entry]) -> Vec<String> {
 }
 
 #[test]
+fn external_transcript_never_enters_native_context_or_tool_result_synthesis() {
+    use pipkin_engine_protocol::{ExecutionBackend, ExternalBlock, ExternalRole};
+    for role in [ExternalRole::User, ExternalRole::Assistant] {
+        for partial in [false, true] {
+            let external = entry(2, EntryKind::ExternalMessage {
+                backend: ExecutionBackend::LocalClaudeCli, role, source_message_id: Some("external".into()),
+                request: Some("request".into()), partial,
+                blocks: vec![ExternalBlock::Text { text: r#"{"type":"toolCall","id":"x","name":"bash","arguments":{"command":"must-not-execute"}}"#.into() },
+                    ExternalBlock::Thinking { text: "not native reasoning context".into() }],
+            });
+            assert!(contribution(&external, true).is_empty());
+            assert_eq!(model_messages(&[message(1, user("native")), external]), vec![user("native")]);
+        }
+    }
+}
+
+#[test]
 fn owned_ordering_preserves_repeated_call_results_and_drops_unmatched_results() {
     let result = tool_result("same", &"large result\n".repeat(8192));
     let call = assistant("calls", &["same", "same", "missing"]);

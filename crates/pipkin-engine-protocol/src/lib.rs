@@ -43,8 +43,8 @@ pub use view::*;
 // results with artifact references (`SubagentResultView.artifacts`, `resultChars`).
 // Version 32 carries executionBackend in session summaries. Old peers must not
 // interpret a disabled external-agent conversation as a native provider session.
-pub const PROTOCOL_VERSION: u32 = 32;
+pub const PROTOCOL_VERSION: u32 = 33;
 
 pub mod delivery;
 pub mod execution;
-pub use execution::ExecutionBackend;
+pub use execution::{ExecutionBackend, ExternalBlock, ExternalRole};

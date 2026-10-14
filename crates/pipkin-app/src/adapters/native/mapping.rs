@@ -592,6 +592,23 @@ pub fn definite_refusal(code: ErrorCode) -> bool {
     )
 }
 
+/// Admission evidence belongs only to user entries, never an assistant's correlation key.
+pub fn user_request(entry: &Entry) -> Option<&str> {
+    match &entry.kind {
+        EntryKind::Message {
+            message: Message::User { .. },
+            request,
+            ..
+        }
+        | EntryKind::ExternalMessage {
+            role: pipkin_engine_protocol::ExternalRole::User,
+            request,
+            ..
+        } => request.as_deref(),
+        _ => None,
+    }
+}
+
 /// Files this session changed: paths of successful typed `write`/`edit` calls whose result
 /// entry is newer than `after` (the last clean scan), as the Pi adapter scopes them.
 pub fn changed_paths<'a>(entries: impl IntoIterator<Item = &'a Entry>, after: u64) -> Vec<String> {

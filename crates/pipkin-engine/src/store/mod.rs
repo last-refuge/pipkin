@@ -20,6 +20,11 @@ pub use external::{
     CliBinding, CliBindingSpec, ExternalAction, ExternalActionStatus, ExternalRun, ExternalRunKey,
     ExternalRunState,
 };
+pub use external::prompts::{
+    ExternalAdmission, ExternalPromptInput, ExternalPromptMode, ExternalPromptReceipt,
+    ExternalSettlement, ExternalSettlementEvidence, ExternalTerminal, ExternalTerminalOutcome,
+    ExternalTerminalUsage,
+};
 mod goals;
 pub mod jobs;
 mod outbox;
@@ -891,7 +896,7 @@ impl Store {
         kind: std::borrow::Cow<'_, EntryKind>,
         retired: bool,
     ) -> Result<Entry> {
-        let partial = matches!(kind.as_ref(), EntryKind::Message { partial: true, .. });
+        let partial = matches!(kind.as_ref(), EntryKind::Message { partial: true, .. } | EntryKind::ExternalMessage { partial: true, .. });
         tx.execute(
             "INSERT INTO entries(session, id, at_ms, run, retired, partial, kind, body)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -919,7 +924,7 @@ impl Store {
 
     /// Replace an entry's body (finalizing a streamed message); drops its stream chunks.
     pub fn replace_entry(tx: &Connection, session: &str, entry: &Entry) -> Result<()> {
-        let partial = matches!(entry.kind, EntryKind::Message { partial: true, .. });
+        let partial = matches!(entry.kind, EntryKind::Message { partial: true, .. } | EntryKind::ExternalMessage { partial: true, .. });
         Self::remember_tool_ids(tx, session, &entry.kind)?;
         let n = tx.execute(
             "UPDATE entries SET body = ?3, partial = ?4, retired = ?5, kind = ?6
@@ -2041,6 +2046,7 @@ pub enum SessionField {
 fn entry_kind_name(kind: &EntryKind) -> &'static str {
     match kind {
         EntryKind::Message { .. } => "message",
+        EntryKind::ExternalMessage { .. } => "externalMessage",
         EntryKind::Compaction { .. } => "compaction",
         EntryKind::Reset { .. } => "reset",
         EntryKind::Notice { .. } => "notice",
