@@ -3128,6 +3128,75 @@ fn an_engine_owned_goal_runs_to_completion_without_the_desktop_runner() {
     h.stop();
 }
 
+#[test]
+fn a_goal_stopped_mid_turn_can_be_resumed_or_cleared_after_a_relaunch() {
+    // The person's case: a goal turn is stopped, the app is quit and relaunched, and the
+    // paused goal's Resume and clear controls must both reach the engine and show the result.
+    let gate = Gate::new();
+    let fx = Fixture::start(held_first(
+        &gate,
+        Reply::Text("working\n[PIPKIN_GOAL_CONTINUE]".into()),
+        vec![Reply::Text("done\n[PIPKIN_GOAL_MET]".into())],
+    ));
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.until("the engine reported goal ownership", |s| {
+        s.current().is_some_and(|c| c.goal_native)
+    });
+    let conversation = h.state.current().unwrap().id;
+    h.dispatch(Command::SetGoal("finish phase 5".into()));
+    h.until("the goal turn is running", is_running);
+    h.dispatch(Command::Cancel);
+    h.until("the goal paused on the stop", |s| {
+        is_idle(s)
+            && s.current().is_some_and(|c| {
+                c.goal.as_ref().is_some_and(|g| {
+                    g.native
+                        && g.state == Some(pipkin_core::GoalState::Paused)
+                        && g.paused.as_deref().is_some_and(|p| p.contains("Stop"))
+                })
+            })
+    });
+    h.stop();
+
+    let mut h2 = Harness::start(&fx, &db);
+    h2.until("the same conversation reopens with its paused goal", |s| {
+        s.selected == Some(conversation)
+            && s.current().is_some_and(|c| {
+                c.opened
+                    && c.goal_native
+                    && c.goal
+                        .as_ref()
+                        .is_some_and(|g| g.state == Some(pipkin_core::GoalState::Paused))
+            })
+    });
+    h2.dispatch(Command::ResumeGoal);
+    h2.until("the goal is active again and its turn runs", |s| {
+        s.current().is_some_and(|c| {
+            c.goal
+                .as_ref()
+                .is_some_and(|g| g.state == Some(pipkin_core::GoalState::Active))
+                && is_running(s)
+        })
+    });
+    h2.dispatch(Command::Cancel);
+    h2.until("paused again", |s| {
+        is_idle(s)
+            && s.current().is_some_and(|c| {
+                c.goal
+                    .as_ref()
+                    .is_some_and(|g| g.state == Some(pipkin_core::GoalState::Paused))
+            })
+    });
+    h2.dispatch(Command::ClearGoal);
+    h2.until("cleared: no goal is shown", |s| {
+        s.current().is_some_and(|c| c.goal.is_none())
+    });
+    gate.open();
+    h2.stop();
+}
+
 // -------------------------------------------------------------------------------- MCP servers
 
 /// The engine's stdio fixture server, built once with the same cargo (see the engine's
