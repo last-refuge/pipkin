@@ -5,8 +5,8 @@
 //! wrote it, or the file was edited) is skipped, never a reason to lose the rest.
 
 use pipkin_core::{
-    Attachment, BackgroundSource, Delivery, ItemId, ItemKind, NoticeLevel, ToolCall, ToolStatus,
-    TranscriptItem,
+    Attachment, BackgroundSource, Delivery, ItemId, ItemKind, Job, JobOrigin, JobState,
+    NoticeLevel, ToolCall, ToolStatus, TranscriptItem,
 };
 use serde_json::{Value, json};
 
@@ -42,6 +42,18 @@ fn encode_item(item: &TranscriptItem) -> Value {
             }}),
         ),
         ItemKind::Assistant { text, .. } => ("assistant", json!({ "text": text })),
+        ItemKind::Job(j) => (
+            "job",
+            json!({
+                "id": j.id, "name": j.name, "command": j.command, "cwd": j.cwd,
+                "origin": match j.origin { JobOrigin::Model => "model", JobOrigin::User => "user" },
+                "state": j.state.key(), "exit_code": j.exit_code, "reason": j.reason,
+                "call_id": j.call_id, "task": j.task, "wake": j.wake, "delivery": j.delivery,
+                "log_bytes": j.log_bytes, "log_truncated": j.log_truncated,
+                "created_at_ms": j.created_at_ms, "started_at_ms": j.started_at_ms,
+                "ended_at_ms": j.ended_at_ms,
+            }),
+        ),
         ItemKind::Tool(t) => (
             "tool",
             json!({
@@ -99,6 +111,59 @@ fn decode_item(value: &Value) -> Option<TranscriptItem> {
             text: text()?,
             streaming: false,
         },
+        "job" => {
+            let state = JobState::from_key(body.get("state")?.as_str()?)?;
+            ItemKind::Job(Job {
+                id: body.get("id")?.as_u64()?,
+                name: body.get("name").and_then(Value::as_str).map(str::to_owned),
+                command: body.get("command")?.as_str()?.to_owned(),
+                cwd: body
+                    .get("cwd")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                origin: match body.get("origin").and_then(Value::as_str) {
+                    Some("user") => JobOrigin::User,
+                    _ => JobOrigin::Model,
+                },
+                // A copy never shows a job as still running: that was true when it was taken.
+                state: if state.active() {
+                    JobState::Unknown
+                } else {
+                    state
+                },
+                exit_code: body
+                    .get("exit_code")
+                    .and_then(Value::as_i64)
+                    .map(|c| c as i32),
+                reason: body
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                call_id: body
+                    .get("call_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                task: body.get("task").and_then(Value::as_u64),
+                wake: body.get("wake").and_then(Value::as_bool).unwrap_or(false),
+                delivery: body
+                    .get("delivery")
+                    .and_then(Value::as_str)
+                    .unwrap_or("none")
+                    .to_owned(),
+                log_bytes: body.get("log_bytes").and_then(Value::as_u64).unwrap_or(0),
+                log_truncated: body
+                    .get("log_truncated")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                created_at_ms: body
+                    .get("created_at_ms")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0),
+                started_at_ms: body.get("started_at_ms").and_then(Value::as_i64),
+                ended_at_ms: body.get("ended_at_ms").and_then(Value::as_i64),
+            })
+        }
         "tool" => ItemKind::Tool(ToolCall {
             call_ref: None,
             call_id: body

@@ -269,7 +269,12 @@ impl Ctx {
                 match action {
                     None => run.ended = true,
                     Some(Action::Sleep(ms)) => run.due = Instant::now() + self.scale(ms),
-                    Some(Action::Emit(kind)) => {
+                    Some(Action::Emit(mut kind)) => {
+                        if let EventKind::JobsSynced { jobs } = &mut kind {
+                            // Scripted job times are relative to the step; the demo never
+                            // runs anything, so the clock is the only thing that moves.
+                            super::script::stamp_jobs(jobs, unix_ms());
+                        }
                         let terminal = matches!(
                             kind,
                             EventKind::Completed
@@ -896,6 +901,13 @@ fn single_line(text: &str, max_chars: usize) -> String {
     }
 }
 
+fn unix_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod unit {
     use super::*;
@@ -1018,6 +1030,7 @@ mod unit {
                     }
                     ItemKind::Notice { text, .. } => text,
                     ItemKind::Background { .. } => panic!("no fabricated background evidence"),
+                    ItemKind::Job(_) => panic!("no fabricated job evidence"),
                     ItemKind::Tool(_) => panic!("no fabricated tool evidence"),
                 };
                 assert!(text.len() < 1024);

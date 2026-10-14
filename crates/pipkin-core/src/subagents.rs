@@ -102,6 +102,10 @@ impl SubagentState {
         let (speaker, text): (&'static str, std::borrow::Cow<'_, str>) = match &item.kind {
             ItemKind::User { text, .. } => ("Task", text.into()),
             ItemKind::Background { text, source } => (source.label(), text.into()),
+            ItemKind::Job(job) => (
+                "Background job",
+                format!("#{} {}: {}", job.id, job.state.label(), job.command).into(),
+            ),
             ItemKind::Assistant { text, .. } => ("Pipkin", text.into()),
             ItemKind::Tool(tool) => (
                 "Tool",

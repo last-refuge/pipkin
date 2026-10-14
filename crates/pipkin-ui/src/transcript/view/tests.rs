@@ -920,6 +920,7 @@ fn steps_arriving_live_stay_folded_to_one_card_and_show_all_when_opened(cx: &mut
                 call,
                 name: "read".into(),
                 input: format!("{{\"path\":\"src/f{call}.rs\"}}"),
+                call_id: None,
             },
             cx,
         );
@@ -953,6 +954,7 @@ fn steps_arriving_live_stay_folded_to_one_card_and_show_all_when_opened(cx: &mut
             call: 99,
             name: "read".into(),
             input: "{\"path\":\"src/new.rs\"}".into(),
+            call_id: None,
         },
         cx,
     );
@@ -1096,6 +1098,7 @@ fn observed_activity_updates_as_tool_calls_start_and_finish(cx: &mut TestAppCont
             call: 1,
             name: "read".into(),
             input: "{}".into(),
+            call_id: None,
         },
         cx,
     );
@@ -1108,6 +1111,7 @@ fn observed_activity_updates_as_tool_calls_start_and_finish(cx: &mut TestAppCont
             call: 2,
             name: "edit".into(),
             input: "{}".into(),
+            call_id: None,
         },
         cx,
     );
@@ -1171,4 +1175,92 @@ fn an_error_notice_is_never_folded_into_a_run(cx: &mut TestAppContext) {
     toggle(&h, 100, cx);
     let one_open = scroll_extent(&h, cx);
     assert!(both_open > one_open + 500.0, "{both_open} vs {one_open}");
+}
+
+#[gpui::test]
+fn jobs_are_rows_in_the_transcript_that_follow_the_engine(cx: &mut TestAppContext) {
+    let (h, cx) = setup(cx, 0);
+    let call = TranscriptItem {
+        id: ItemId(42),
+        at: 1_700_000_000,
+        native_only: true,
+        kind: ItemKind::Tool(ToolCall {
+            call_ref: None,
+            call_id: Some("c-1".into()),
+            name: "job_start".into(),
+            input: "{\"command\":\"cargo test --workspace\"}".into(),
+            output: String::new(),
+            truncated: false,
+            full_len: 0,
+            status: ToolStatus::Ok,
+        }),
+    };
+    open(&h.model, 1, vec![call], false, cx);
+    let job = Job {
+        id: 3,
+        name: Some("Full workspace tests".into()),
+        command: "cargo test --workspace".into(),
+        cwd: "/home/you/project".into(),
+        origin: JobOrigin::Model,
+        state: JobState::Running,
+        exit_code: None,
+        reason: None,
+        call_id: Some("c-1".into()),
+        task: None,
+        wake: true,
+        delivery: "pending".into(),
+        log_bytes: 0,
+        log_truncated: false,
+        created_at_ms: 1_700_000_000_000,
+        started_at_ms: Some(1_700_000_000_000),
+        ended_at_ms: None,
+    };
+    cx.update(|_, cx| {
+        h.model.update(cx, |m, cx| {
+            let c = m.state.current().unwrap();
+            let ev = BackendEvent {
+                conversation: c.id,
+                generation: c.generation,
+                op: None,
+                kind: EventKind::JobsSynced {
+                    jobs: JobsSync {
+                        jobs: vec![job.clone()],
+                        active: 1,
+                        truncated: false,
+                    },
+                },
+            };
+            m.apply_event(ev, cx);
+        })
+    });
+    frame(&h, cx);
+    cx.update(|_, cx| {
+        let items = &h.model.read(cx).state.current().unwrap().items;
+        assert!(
+            matches!(&items[0].kind, ItemKind::Job(j) if j.id == 3),
+            "the job_start call became the job's row"
+        );
+        assert!(
+            !is_activity(&items[0].kind),
+            "a job is not folded into the steps"
+        );
+        let view = h.view.read(cx);
+        assert!(!view.is_expanded(ConversationId(1), ItemId(42)));
+        assert!(view.registry.borrow().find(ItemId(42), 0).is_none());
+    });
+    // Opening the row makes it the job the core keeps a log tail for, and its command
+    // becomes selectable text.
+    cx.update(|_, cx| {
+        h.view.update(cx, |view, cx| {
+            view.toggle_job(ConversationId(1), ItemId(42), 3, cx);
+        })
+    });
+    frame(&h, cx);
+    cx.update(|_, cx| {
+        let view = h.view.read(cx);
+        assert!(view.is_expanded(ConversationId(1), ItemId(42)));
+        assert!(view.registry.borrow().find(ItemId(42), 0).is_some());
+        let c = h.model.read(cx).state.current().unwrap();
+        assert_eq!(c.jobs.expanded, Some(3));
+    });
 }

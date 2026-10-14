@@ -122,6 +122,7 @@ fn revision(item: &TranscriptItem, expanded: bool) -> u64 {
         ItemKind::Tool(t) => (3, t.input.len(), t.output.len()),
         ItemKind::Notice { text, .. } => (4, text.len(), 0),
         ItemKind::Background { text, .. } => (5, text.len(), 0),
+        ItemKind::Job(job) => (6, job.command.len(), job.state as usize),
     };
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -136,6 +137,13 @@ fn build(item: &TranscriptItem, expanded: bool) -> Vec<Block> {
         ItemKind::Background { text, .. } => {
             if expanded {
                 vec![Block::plain(BlockKind::Paragraph, text.clone())]
+            } else {
+                vec![]
+            }
+        }
+        ItemKind::Job(job) => {
+            if expanded {
+                vec![Block::plain(BlockKind::Paragraph, job.command.clone())]
             } else {
                 vec![]
             }

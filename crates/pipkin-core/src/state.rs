@@ -434,6 +434,13 @@ impl AppState {
         self.now = now;
     }
 
+    /// Whether the open conversation shows time that moves with the clock: a turn in progress
+    /// or a background job still running. The shell redraws on the clock only then.
+    pub fn clock_is_visible(&self) -> bool {
+        self.current()
+            .is_some_and(|c| c.run.is_busy() || c.jobs.active > 0)
+    }
+
     /// Restore existing journal history after this conversation appears in the catalog.
     pub fn restore_prompt_history(&mut self, id: ConversationId, prompts: Vec<String>) {
         if let Some(c) = self.conv_mut(id) {
@@ -2615,6 +2622,9 @@ impl AppState {
                 | EventKind::UiState { .. }
                 | EventKind::UsageSynced(_)
                 | EventKind::UiRespondRefused { .. }
+                | EventKind::JobsSynced { .. }
+                | EventKind::JobLogPage { .. }
+                | EventKind::JobRefused { .. }
                 | EventKind::SubagentsSynced { .. }
                 | EventKind::SubagentsUnavailable(_)
                 | EventKind::SubagentView { .. }
@@ -2705,6 +2715,9 @@ impl AppState {
             EventKind::JobsSynced { jobs } => {
                 if c.opened {
                     let refetch = c.jobs.sync(jobs);
+                    for i in crate::jobs::link_items(&mut c.items, &c.jobs.jobs) {
+                        out.notes.push(Note::ItemChanged(id, i));
+                    }
                     if refetch
                         && let Some(id) = c.jobs.expanded
                         && let Some((offset, limit)) = c.jobs.tail_request(id)
@@ -2983,6 +2996,7 @@ impl AppState {
             EventKind::Synced { items } => {
                 if c.opened {
                     c.items = items;
+                    crate::jobs::link_items(&mut c.items, &c.jobs.jobs);
                     c.import_prompt_history(false);
                     c.streaming_item = None;
                     out.notes.push(Note::ItemsReset(id));
@@ -3171,14 +3185,19 @@ impl AppState {
                     self.conv_mut(id).unwrap().streaming_item = idx;
                 }
             },
-            EventKind::ToolStarted { call, name, input } => {
+            EventKind::ToolStarted {
+                call,
+                name,
+                input,
+                call_id,
+            } => {
                 self.finish_streaming(id, &mut out);
                 let op = ev.op.unwrap();
                 self.push_item(
                     id,
                     ItemKind::Tool(ToolCall {
                         call_ref: Some((op, call)),
-                        call_id: None,
+                        call_id,
                         name,
                         input,
                         output: String::new(),

@@ -25,8 +25,8 @@ use gpui::{
     list, point, prelude::*, px, svg,
 };
 use pipkin_core::{
-    Attachment, Command, ConversationId, Delivery, ItemId, ItemKind, Note, NoticeLevel, RunState,
-    ToolCall, ToolStatus, TranscriptItem,
+    Attachment, Command, ConversationId, Delivery, ItemId, ItemKind, Job, JobState, Note,
+    NoticeLevel, RunState, ToolCall, ToolStatus, TranscriptItem,
 };
 
 use super::blocks::{BaseText, BlockText, FrameStats, SharedRegistry, build_runs};
@@ -364,6 +364,33 @@ impl TranscriptView {
             }
         }
         cx.notify();
+    }
+
+    /// Open or close a job row. Opening it also makes it the job whose log the core keeps
+    /// fetching, so the tail in the row follows the job while it runs.
+    pub fn toggle_job(
+        &mut self,
+        conv: ConversationId,
+        item: ItemId,
+        job: u64,
+        cx: &mut Context<Self>,
+    ) {
+        let opening = self
+            .convs
+            .get(&conv)
+            .is_some_and(|cv| !cv.expanded.contains(&item));
+        self.toggle_tool(conv, item, cx);
+        if opening {
+            let model = self.model.clone();
+            let already = model
+                .read(cx)
+                .state
+                .conversation(conv)
+                .is_some_and(|c| c.jobs.expanded == Some(job));
+            if !already {
+                model.update(cx, |m, cx| m.dispatch(Command::ToggleJob(job), cx));
+            }
+        }
     }
 
     /// Show or hide all the steps of a run of tool calls (named by its first step). The rows of the
@@ -990,6 +1017,7 @@ impl TranscriptView {
             ItemKind::Background { text, source } => {
                 self.render_background(&item, item_ix, text, *source, &ctx, cx)
             }
+            ItemKind::Job(job) => self.render_job(&item, item_ix, job, &ctx, cx),
             ItemKind::Notice { text, level } => {
                 self.render_notice(&item, item_ix, text, *level, &ctx, cx)
             }
@@ -999,7 +1027,7 @@ impl TranscriptView {
         let (pad_top, pad_bottom) = match &item.kind {
             ItemKind::Tool(_) => (1.0, 1.0),
             ItemKind::Notice { .. } => (2.0, 2.0),
-            ItemKind::Background { .. } => (8.0, 4.0),
+            ItemKind::Background { .. } | ItemKind::Job(_) => (8.0, 4.0),
             // The header of a message ("You 11:30", "Pipkin 11:32") starts a new step in the
             // conversation, so it gets room above it; the steps between stay tight.
             ItemKind::User { .. } => (16.0, 4.0),
@@ -1374,6 +1402,210 @@ impl TranscriptView {
             report = report.child(details);
         }
         report.into_any_element()
+    }
+
+    /// A background job where it was started: its name, state and elapsed time stay current
+    /// while it runs; opened, it shows the command, where it ran, why it ended and the tail of
+    /// its log, with a Stop control while it is active.
+    fn render_job(
+        &self,
+        item: &TranscriptItem,
+        item_ix: usize,
+        job: &Job,
+        ctx: &RowCtx,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = &ctx.theme;
+        let c = &theme.colors;
+        let (conv, id, expanded) = (ctx.conv, item.id, ctx.expanded);
+        let job_id = job.id;
+        let active = job.state.active();
+        let (status_icon, status_color) = match job.state {
+            JobState::Starting | JobState::Running | JobState::Cancelling => {
+                ("loader-circle", c.accent)
+            }
+            JobState::Succeeded => ("check", c.success),
+            JobState::Failed | JobState::TimedOut => ("circle-alert", c.danger),
+            _ => ("circle-alert", c.text_muted),
+        };
+        let (now_secs, log, real) = {
+            let state = &self.model.read(cx).state;
+            let conv_state = state.conversation(conv);
+            (
+                state.now(),
+                conv_state
+                    .filter(|cs| cs.jobs.expanded == Some(job_id))
+                    .and_then(|cs| cs.jobs.log.clone())
+                    .filter(|l| l.id == job_id),
+                state.mode == pipkin_core::Mode::Real,
+            )
+        };
+        // Only a real engine runs jobs, so only there can one be stopped.
+        let can_stop = real;
+        let elapsed = job
+            .elapsed_ms(now_secs * 1000)
+            .and_then(|ms| super::tools::format_elapsed(ms / 1000));
+        let mut status = job.state.label().to_string();
+        if let Some(elapsed) = &elapsed {
+            status.push_str(if active { " for " } else { " after " });
+            status.push_str(elapsed);
+        }
+        if let Some(code) = job.exit_code.filter(|_| !active) {
+            status.push_str(&format!(" · exit {code}"));
+        }
+        let title = match &job.name {
+            Some(name) => format!("Background job #{job_id} · {}", clip(name, 80)),
+            None => format!("Background job #{job_id}"),
+        };
+        let aria = format!("{title}, {status}");
+        let model = self.model.clone();
+        let mut row = div()
+            .id(ElementId::NamedInteger("msg".into(), id.0))
+            .role(Role::Article)
+            .aria_label(aria.clone())
+            .w_full()
+            .min_w_0()
+            .rounded(px(6.0))
+            .bg(c.bg_hover)
+            .child(
+                div()
+                    .id(ElementId::NamedInteger("job-row".into(), id.0))
+                    .role(Role::Button)
+                    .aria_label(format!("{aria}. Show details"))
+                    .aria_expanded(expanded)
+                    .tab_stop(true)
+                    .cursor_pointer()
+                    .focus_visible(|s| s.border_1().border_color(c.accent))
+                    .hover(|s| s.bg(c.bg_hover))
+                    .on_mouse_down(MouseButton::Left, stop_mouse_down)
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.toggle_job(conv, id, job_id, cx)),
+                    )
+                    .w_full()
+                    .min_w_0()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .p(px(8.0))
+                    .text_size(theme.small_size())
+                    .text_color(c.text_muted)
+                    .child(icon(
+                        if expanded {
+                            "chevron-down"
+                        } else {
+                            "chevron-right"
+                        },
+                        14.0,
+                        c.text_muted,
+                    ))
+                    .child(icon(status_icon, 14.0, status_color))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_color(c.text)
+                            .child(title),
+                    )
+                    .child(div().flex_none().text_color(status_color).child(status))
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(c.text_faint)
+                            .child(format_time(item.at)),
+                    ),
+            );
+        if expanded {
+            let mut details = div()
+                .w_full()
+                .min_w_0()
+                .px(px(12.0))
+                .pb(px(10.0))
+                .flex()
+                .flex_col()
+                .gap(px(6.0))
+                .text_size(theme.small_size());
+            // The command is part of the document, so it can be selected and copied.
+            for (bi, block) in self.blocks_for(ctx.conv, item, true).iter().enumerate() {
+                details = details.child(self.block_element(ctx, item, item_ix, bi, block, cx));
+            }
+            let mut facts = vec![format!("in {}", job.cwd)];
+            if let Some(reason) = job.reason.as_deref().filter(|r| !r.is_empty()) {
+                facts.push(reason.to_string());
+            }
+            facts.push(match job.delivery.as_str() {
+                "woken" => "Pipkin was woken with the result".to_string(),
+                "pending" if job.wake => "Pipkin will be woken with the result".to_string(),
+                "suppressed" => "the result was not delivered (the turn was stopped)".to_string(),
+                _ => "the result is reported here".to_string(),
+            });
+            details = details.child(div().text_color(c.text_faint).child(facts.join(" · ")));
+            let log_text = match (&log, real) {
+                (Some(tail), _) if !tail.text.trim().is_empty() => Some(tail.text.clone()),
+                (Some(_), _) => Some("(no output yet)".to_string()),
+                (None, true) => Some("Loading the log…".to_string()),
+                (None, false) => None,
+            };
+            if let Some(text) = log_text {
+                let lines: Vec<String> = text
+                    .lines()
+                    .rev()
+                    .take(12)
+                    .map(|l| l.to_string())
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                let mut log_box = div()
+                    .id(ElementId::NamedInteger("job-log".into(), id.0))
+                    .w_full()
+                    .min_w_0()
+                    .rounded(px(4.0))
+                    .bg(c.code_bg)
+                    .p(px(8.0))
+                    .font_family(theme.mono_font())
+                    .text_size(theme.small_size())
+                    .text_color(c.text_muted)
+                    .flex()
+                    .flex_col();
+                for line in lines {
+                    log_box = log_box.child(div().truncate().child(line));
+                }
+                details = details.child(log_box);
+            } else {
+                details = details.child(
+                    div()
+                        .text_color(c.text_faint)
+                        .child("The demo keeps no job logs."),
+                );
+            }
+            if active && can_stop {
+                details = details.child(
+                    div()
+                        .id(ElementId::NamedInteger("job-stop".into(), id.0))
+                        .role(Role::Button)
+                        .aria_label(format!("Stop job {job_id}"))
+                        .tab_stop(true)
+                        .cursor_pointer()
+                        .w(px(64.0))
+                        .px(px(8.0))
+                        .py(px(3.0))
+                        .rounded(px(4.0))
+                        .border_1()
+                        .border_color(c.danger)
+                        .text_color(c.danger)
+                        .text_center()
+                        .hover(|s| s.bg(c.danger_bg))
+                        .on_mouse_down(MouseButton::Left, stop_mouse_down)
+                        .on_click(move |_, _, cx| {
+                            model.update(cx, |m, cx| m.dispatch(Command::CancelJob(job_id), cx));
+                        })
+                        .child("Stop"),
+                );
+            }
+            row = row.child(details);
+        }
+        row.into_any_element()
     }
 
     fn render_notice(

@@ -77,6 +77,9 @@ pub enum StepOp {
         call: u32,
         name: String,
         input: String,
+        /// The engine-style call id, when a later `jobs` step links a job to this call.
+        #[serde(default)]
+        call_id: Option<String>,
     },
     ToolOutput {
         call: u32,
@@ -107,6 +110,83 @@ pub enum StepOp {
     Include {
         scenario: String,
     },
+    /// The engine's job list as of this step: a background job appears, runs and finishes.
+    /// Its times are relative to the step: `age_ms` since it started, `ran_ms` for one that
+    /// has ended. The demo stamps them against the clock when the step runs.
+    Jobs {
+        jobs: Vec<ScriptJob>,
+    },
+}
+
+/// One job in a `jobs` step.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScriptJob {
+    pub id: u64,
+    #[serde(default)]
+    pub name: Option<String>,
+    pub command: String,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// A `JobState` key: `starting`, `running`, `succeeded`, `failed`, ...
+    pub state: String,
+    /// The `call_id` of the `tool_start` that started it, so the job takes that row's place.
+    #[serde(default)]
+    pub call_id: Option<String>,
+    #[serde(default)]
+    pub exit_code: Option<i32>,
+    #[serde(default)]
+    pub log_bytes: u64,
+    #[serde(default)]
+    pub age_ms: u64,
+    #[serde(default)]
+    pub ran_ms: Option<u64>,
+}
+
+impl ScriptJob {
+    /// The job with relative times: `started_at_ms` is `-age_ms`, to be offset by the clock.
+    fn to_job(&self) -> pipkin_core::Job {
+        let started = -(self.age_ms as i64);
+        pipkin_core::Job {
+            id: self.id,
+            name: self.name.clone(),
+            command: self.command.clone(),
+            cwd: self
+                .cwd
+                .clone()
+                .unwrap_or_else(|| "/home/you/project".into()),
+            origin: pipkin_core::JobOrigin::Model,
+            state: pipkin_core::JobState::from_key(&self.state).unwrap_or_default(),
+            exit_code: self.exit_code,
+            reason: None,
+            call_id: self.call_id.clone(),
+            task: None,
+            wake: true,
+            delivery: if self.ran_ms.is_some() {
+                "woken".into()
+            } else {
+                "pending".into()
+            },
+            log_bytes: self.log_bytes,
+            log_truncated: false,
+            created_at_ms: started,
+            started_at_ms: Some(started),
+            ended_at_ms: self.ran_ms.map(|ran| started + ran as i64),
+        }
+    }
+}
+
+/// Turn the relative job times of a scripted snapshot into clock times.
+pub fn stamp_jobs(jobs: &mut pipkin_core::JobsSync, now_ms: i64) {
+    for job in &mut jobs.jobs {
+        job.created_at_ms += now_ms;
+        if let Some(s) = &mut job.started_at_ms {
+            *s += now_ms;
+        }
+        if let Some(e) = &mut job.ended_at_ms {
+            *e += now_ms;
+        }
+    }
 }
 
 /// What the runner executes. `Step`s expand into these.
@@ -144,6 +224,11 @@ pub const SCENARIOS: &[(&str, &str, &str)] = &[
         "normal",
         "Fix a failing test: streaming, tools, a failed then passing test run, three changed files",
         include_str!("../../../../fixtures/scenarios/normal.json"),
+    ),
+    (
+        "jobs",
+        "A background job started by the model: visible in the conversation while it runs, then its result",
+        include_str!("../../../../fixtures/scenarios/jobs.json"),
     ),
     (
         "followup",
@@ -262,10 +347,16 @@ pub fn expand(
                 out.push_back(Action::Sleep(pace));
             }
         }
-        StepOp::ToolStart { call, name, input } => out.push_back(emit(EventKind::ToolStarted {
+        StepOp::ToolStart {
+            call,
+            name,
+            input,
+            call_id,
+        } => out.push_back(emit(EventKind::ToolStarted {
             call: *call,
             name: name.clone(),
             input: subst.apply(input),
+            call_id: call_id.clone(),
         })),
         StepOp::ToolOutput { call, text } => out.push_back(emit(EventKind::ToolOutput {
             call: *call,
@@ -296,6 +387,17 @@ pub fn expand(
                 _ => story::fix_search_changes(),
             };
             out.push_back(emit(EventKind::ChangesReported(changes)));
+        }
+        StepOp::Jobs { jobs } => {
+            let jobs: Vec<pipkin_core::Job> = jobs.iter().map(ScriptJob::to_job).collect();
+            let active = jobs.iter().filter(|j| j.state.active()).count();
+            out.push_back(emit(EventKind::JobsSynced {
+                jobs: pipkin_core::JobsSync {
+                    jobs,
+                    active,
+                    truncated: false,
+                },
+            }));
         }
         StepOp::Complete => out.push_back(emit(EventKind::Completed)),
         StepOp::Fail { message } => out.push_back(emit(EventKind::Failed {

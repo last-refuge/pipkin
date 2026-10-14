@@ -1,7 +1,7 @@
 //! How a tool call reads in the transcript: a friendly verb, the thing it acts on, and an icon.
 //! Pure, so the mapping is tested without a window.
 
-use pipkin_core::{ItemKind, NoticeLevel, ToolStatus, TranscriptItem};
+use pipkin_core::{ItemKind, JobsState, NoticeLevel, ToolStatus, TranscriptItem};
 
 /// What to show for a tool call.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -177,6 +177,62 @@ pub fn run_summary<'a>(names: impl Iterator<Item = &'a str>, running: bool) -> S
         parts.push(part);
     }
     parts.join(", ")
+}
+
+/// What is happening right now, for the "Working…" strip: a background job still running (with
+/// how long it has run), then what the turn has done so far, then how long the turn has been
+/// waiting on the model since the last step landed. Something is always named: a person
+/// watching a long turn should never see a bare spinner.
+pub fn live_activity(items: &[TranscriptItem], jobs: &JobsState, now_secs: i64) -> String {
+    let mut parts = Vec::new();
+    if let Some(job) = jobs.jobs.iter().find(|j| j.state.active()) {
+        let mut part = format!("Background job #{}", job.id);
+        if let Some(name) = &job.name {
+            part.push_str(&format!(" \u{201c}{}\u{201d}", clip_chars(name, 48)));
+        }
+        part.push_str(match job.state {
+            pipkin_core::JobState::Starting => " starting",
+            pipkin_core::JobState::Cancelling => " stopping",
+            _ => " running",
+        });
+        if let Some(elapsed) = job
+            .elapsed_ms(now_secs * 1000)
+            .and_then(|ms| format_elapsed(ms / 1000))
+        {
+            part.push_str(&format!(" for {elapsed}"));
+        }
+        parts.push(part);
+    }
+    if let Some(recent) = recent_activity(items) {
+        parts.push(recent);
+    }
+    let waiting = items
+        .iter()
+        .rev()
+        .find(|i| !matches!(i.kind, ItemKind::Job(_)))
+        .map(|i| now_secs.saturating_sub(i.at))
+        .and_then(format_elapsed);
+    let model_wait = match (&waiting, parts.is_empty()) {
+        (Some(elapsed), _) => format!("waiting for the model for {elapsed}"),
+        (None, true) => "waiting for the model".to_string(),
+        (None, false) => String::new(),
+    };
+    if !model_wait.is_empty() {
+        parts.push(if parts.is_empty() {
+            model_wait[..1].to_uppercase() + &model_wait[1..]
+        } else {
+            model_wait
+        });
+    }
+    parts.join(" · ")
+}
+
+fn clip_chars(s: &str, max: usize) -> String {
+    let mut out: String = s.chars().take(max).collect();
+    if s.chars().count() > max {
+        out.push('…');
+    }
+    out
 }
 
 /// What this run has actually done so far, based on reported tool calls, not the prompt text.
@@ -395,5 +451,61 @@ mod tests {
         assert_eq!(thinking_first_line("Thinking..."), "");
         assert_eq!(thinking_first_line("Thinking (not shown)"), "");
         assert_eq!(thinking_first_line("Thinking"), "");
+    }
+}
+
+#[cfg(test)]
+mod live_activity_tests {
+    use super::*;
+    use pipkin_core::{Delivery, ItemId, Job, JobOrigin, JobState};
+
+    fn running_job(started_at_ms: i64) -> Job {
+        Job {
+            id: 7,
+            name: Some("Full workspace tests".into()),
+            command: "cargo test --workspace".into(),
+            cwd: "/p".into(),
+            origin: JobOrigin::Model,
+            state: JobState::Running,
+            exit_code: None,
+            reason: None,
+            call_id: None,
+            task: None,
+            wake: true,
+            delivery: "pending".into(),
+            log_bytes: 0,
+            log_truncated: false,
+            created_at_ms: started_at_ms,
+            started_at_ms: Some(started_at_ms),
+            ended_at_ms: None,
+        }
+    }
+
+    #[test]
+    fn the_strip_names_the_running_job_the_steps_and_the_wait() {
+        let now = 1_000;
+        let mut jobs = JobsState::default();
+        jobs.jobs.push(running_job(900_000));
+        jobs.active = 1;
+        let items = vec![TranscriptItem {
+            native_only: false,
+            id: ItemId(1),
+            at: 940,
+            kind: ItemKind::User {
+                text: "go".into(),
+                attachments: vec![],
+                delivery: Delivery::Sent,
+                steer: false,
+            },
+        }];
+        let line = live_activity(&items, &jobs, now);
+        assert_eq!(
+            line,
+            "Background job #7 \u{201c}Full workspace tests\u{201d} running for 1m 40s · waiting for the model for 1m"
+        );
+        assert_eq!(
+            live_activity(&[], &JobsState::default(), now),
+            "Waiting for the model"
+        );
     }
 }

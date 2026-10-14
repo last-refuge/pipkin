@@ -545,6 +545,7 @@ fn tool_output_is_bounded() {
             call: 1,
             name: "bash".into(),
             input: "cargo test".into(),
+            call_id: None,
         },
     );
     s.apply_event(e);

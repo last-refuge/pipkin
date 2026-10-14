@@ -25,7 +25,8 @@ use crate::storage::{
     StoredDraft,
 };
 
-const CLOCK_REFRESH: Duration = Duration::from_secs(15);
+// One second: elapsed times on a running turn or a background job move visibly.
+const CLOCK_REFRESH: Duration = Duration::from_secs(1);
 const EVENT_QUEUE: usize = 1024;
 const MAX_BATCH: usize = 512;
 
@@ -1103,7 +1104,14 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
             loop {
                 cx.background_executor().timer(CLOCK_REFRESH).await;
                 let now = unix_secs();
-                if weak.update(cx, |m, _| m.state.set_now(now)).is_err() {
+                let tick = weak.update(cx, |m, cx| {
+                    m.state.set_now(now);
+                    // Redraw only while something on screen shows time moving.
+                    if m.state.clock_is_visible() {
+                        cx.notify();
+                    }
+                });
+                if tick.is_err() {
                     break;
                 }
             }

@@ -22,6 +22,36 @@ impl JobState {
         matches!(self, Self::Starting | Self::Running | Self::Cancelling)
     }
 
+    /// A stable key for copies and scripts: `starting`, `running`, `succeeded`, ...
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Starting => "starting",
+            Self::Running => "running",
+            Self::Cancelling => "cancelling",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::TimedOut => "timed_out",
+            Self::Cancelled => "cancelled",
+            Self::Interrupted => "interrupted",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Some(match key {
+            "starting" => Self::Starting,
+            "running" => Self::Running,
+            "cancelling" => Self::Cancelling,
+            "succeeded" => Self::Succeeded,
+            "failed" => Self::Failed,
+            "timed_out" => Self::TimedOut,
+            "cancelled" => Self::Cancelled,
+            "interrupted" => Self::Interrupted,
+            "unknown" => Self::Unknown,
+            _ => return None,
+        })
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Starting => "Starting",
@@ -183,4 +213,40 @@ impl JobsState {
             JOB_LOG_TAIL_BYTES,
         ))
     }
+}
+
+/// Show the jobs in the conversation itself: the `job_start` tool row the engine recorded for a
+/// job becomes that job's row, and job rows already there follow the engine's latest list, so a
+/// running job is visible where it was started, not only in the Jobs tab. Jobs are matched by
+/// the call id the engine reports; a job with no visible call (one a person started) stays in
+/// the Jobs tab. Returns the indices of the rows that changed.
+pub fn link_items(items: &mut [crate::model::TranscriptItem], jobs: &[Job]) -> Vec<usize> {
+    use crate::model::ItemKind;
+    let mut changed = Vec::new();
+    if jobs.is_empty() {
+        return changed;
+    }
+    for (i, item) in items.iter_mut().enumerate() {
+        match &mut item.kind {
+            ItemKind::Tool(tool) => {
+                let Some(call_id) = tool.call_id.as_deref() else {
+                    continue;
+                };
+                if let Some(job) = jobs.iter().find(|j| j.call_id.as_deref() == Some(call_id)) {
+                    item.kind = ItemKind::Job(job.clone());
+                    changed.push(i);
+                }
+            }
+            ItemKind::Job(current) => {
+                if let Some(job) = jobs.iter().find(|j| j.id == current.id)
+                    && job != current
+                {
+                    *current = job.clone();
+                    changed.push(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    changed
 }

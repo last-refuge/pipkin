@@ -203,7 +203,7 @@ not a public bug report.
 | --- | --- |
 | Talk to a real model | `scripts/run.sh` (source build), or `pipkin` / the installed Mac app; configure the provider in Pipkin |
 | Verify installed coding without live accounts | `scripts/test-native-package.sh` (isolated scripted provider, real tools, migration and restart) |
-| Look around with fake data | `pipkin --demo normal` (also: `followup`, `failure`, `unknown`, `stressed`, `large`, `persist-fail`) |
+| Look around with fake data | `pipkin --demo normal` (also: `jobs`, `followup`, `failure`, `unknown`, `stressed`, `large`, `persist-fail`) |
 | Check an installation | `pipkin --version`, `pipkin --diagnose [--probe]` |
 | Open a specific project | `--project DIR` (repeatable; the last one is selected) |
 | Use your own editor / terminal | `--editor CMD`, `--terminal CMD` (else `$VISUAL`/`$EDITOR`, `$TERMINAL`) |

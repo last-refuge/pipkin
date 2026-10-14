@@ -247,6 +247,10 @@ pub enum ItemKind {
         streaming: bool,
     },
     Tool(ToolCall),
+    /// A background job the engine started from this conversation, shown where its
+    /// `job_start` call was. It follows the engine's job list while it runs (see
+    /// [`crate::jobs::link_items`]).
+    Job(crate::jobs::Job),
     Notice {
         text: String,
         level: NoticeLevel,

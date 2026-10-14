@@ -8,7 +8,7 @@ use super::controls::*;
 use super::overlays::effort_label;
 use super::workspace::{Overlay, Panel, Workspace};
 use crate::theme::ActiveTheme;
-use crate::transcript::tools::recent_activity;
+use crate::transcript::tools::live_activity;
 
 fn queue_label(mode: QueueMode, source: Option<BackgroundSource>) -> &'static str {
     match source {
@@ -529,7 +529,7 @@ impl Workspace {
                 cv.intent_error.clone(),
                 cv.pending_queue.clone(),
                 s.mode == Mode::Real,
-                recent_activity(&cv.items),
+                Some(live_activity(&cv.items, &cv.jobs, s.now())),
             )
         };
         let _ = retry_hint;

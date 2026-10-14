@@ -1,0 +1,168 @@
+{
+ "version": 1,
+ "name": "jobs",
+ "description": "A background job the model starts: its row appears where it was started, shows its state and elapsed time while it runs, and settles with its result; meanwhile the turn keeps working.",
+ "variants": [
+  {
+   "label": "full test run in the background",
+   "steps": [
+    {
+     "op": "delay_ms",
+     "ms": 250
+    },
+    {
+     "op": "accepted"
+    },
+    {
+     "op": "delay_ms",
+     "ms": 150
+    },
+    {
+     "op": "stream",
+     "text": "**Scripted demo response.** I'm a simulated backend replaying a fixed script, so I have not read or acted on your message:\n\n> {prompt}\n\nWhat follows is a canned walkthrough of a background job (model: `{model}`). The full test run takes a while, so I'll start it in the background and keep working while it runs.\n\n"
+    },
+    {
+     "op": "tool_start",
+     "call": 1,
+     "name": "job_start",
+     "call_id": "demo-job-1",
+     "input": "{\"name\": \"Full workspace tests\", \"command\": \"cargo test --workspace\"}"
+    },
+    {
+     "op": "delay_ms",
+     "ms": 300
+    },
+    {
+     "op": "tool_output",
+     "call": 1,
+     "text": "Started background job #1 (Full workspace tests). You will be woken when it finishes.\n"
+    },
+    {
+     "op": "tool_finish",
+     "call": 1,
+     "ok": true
+    },
+    {
+     "op": "jobs",
+     "jobs": [
+      {
+       "id": 1,
+       "name": "Full workspace tests",
+       "command": "cargo test --workspace",
+       "state": "running",
+       "call_id": "demo-job-1",
+       "age_ms": 0
+      }
+     ]
+    },
+    {
+     "op": "stream",
+     "text": "While that runs I'll look at the search test that was failing.\n\n"
+    },
+    {
+     "op": "tool_start",
+     "call": 2,
+     "name": "read_file",
+     "input": "{\"path\": \"crates/pipkin-core/tests/search.rs\"}"
+    },
+    {
+     "op": "delay_ms",
+     "ms": 400
+    },
+    {
+     "op": "tool_output",
+     "call": 2,
+     "text": "#[test]\nfn matches_ignores_case() {\n    assert!(search::matches(\"Fix Billing Rounding\", \"billing\"));\n}\n"
+    },
+    {
+     "op": "tool_finish",
+     "call": 2,
+     "ok": true
+    },
+    {
+     "op": "delay_ms",
+     "ms": 2500
+    },
+    {
+     "op": "jobs",
+     "jobs": [
+      {
+       "id": 1,
+       "name": "Full workspace tests",
+       "command": "cargo test --workspace",
+       "state": "running",
+       "call_id": "demo-job-1",
+       "age_ms": 3200,
+       "log_bytes": 2200
+      }
+     ]
+    },
+    {
+     "op": "stream",
+     "text": "The test itself is fine; the build is still compiling, so I'll wait for the job.\n\n"
+    },
+    {
+     "op": "tool_start",
+     "call": 3,
+     "name": "job_wait",
+     "input": "{\"id\": 1, \"timeout\": 60}"
+    },
+    {
+     "op": "delay_ms",
+     "ms": 3000
+    },
+    {
+     "op": "jobs",
+     "jobs": [
+      {
+       "id": 1,
+       "name": "Full workspace tests",
+       "command": "cargo test --workspace",
+       "state": "running",
+       "call_id": "demo-job-1",
+       "age_ms": 6500,
+       "log_bytes": 6100
+      }
+     ]
+    },
+    {
+     "op": "delay_ms",
+     "ms": 2600
+    },
+    {
+     "op": "jobs",
+     "jobs": [
+      {
+       "id": 1,
+       "name": "Full workspace tests",
+       "command": "cargo test --workspace",
+       "state": "succeeded",
+       "call_id": "demo-job-1",
+       "exit_code": 0,
+       "age_ms": 9100,
+       "ran_ms": 9000,
+       "log_bytes": 9800
+      }
+     ]
+    },
+    {
+     "op": "tool_output",
+     "call": 3,
+     "text": "Background job #1 (Full workspace tests) succeeded after 9s.\n\ntest result: ok. 1657 passed; 0 failed; 0 ignored\n"
+    },
+    {
+     "op": "tool_finish",
+     "call": 3,
+     "ok": true
+    },
+    {
+     "op": "stream",
+     "text": "All 1657 tests pass, so the change is safe to keep. This was a scripted demo: no job ran and nothing on your machine was touched.\n"
+    },
+    {
+     "op": "complete"
+    }
+   ]
+  }
+ ]
+}

@@ -304,3 +304,145 @@ fn stop_goes_to_the_engine_only_for_active_jobs_on_a_real_engine() {
     );
     assert_eq!(state.current().unwrap().jobs.expanded, Some(1));
 }
+
+fn job_start_call(call_id: &str) -> TranscriptItem {
+    TranscriptItem {
+        native_only: true,
+        id: ItemId(7),
+        at: 1,
+        kind: ItemKind::Tool(ToolCall {
+            call_ref: None,
+            call_id: Some(call_id.into()),
+            name: "job_start".into(),
+            input: "{\"command\":\"cargo test\"}".into(),
+            output: "started job 1".into(),
+            truncated: false,
+            full_len: 13,
+            status: ToolStatus::Ok,
+        }),
+    }
+}
+
+fn jobs_event(s: &AppState, jobs: Vec<Job>) -> BackendEvent {
+    let active = jobs.iter().filter(|j| j.state.active()).count();
+    event(
+        s,
+        EventKind::JobsSynced {
+            jobs: JobsSync {
+                jobs,
+                active,
+                truncated: false,
+            },
+        },
+    )
+}
+
+#[test]
+fn a_started_job_takes_the_place_of_its_tool_call_and_follows_the_engine() {
+    let mut s = state();
+    open(&mut s);
+    let conv = s.current().unwrap().id;
+    s.apply_event(event(
+        &s,
+        EventKind::Synced {
+            items: vec![job_start_call("call-9")],
+        },
+    ));
+    let mut running = job(1, JobState::Running, 0);
+    running.call_id = Some("call-9".into());
+    let out = s.apply_event(jobs_event(&s, vec![running.clone()]));
+    assert!(
+        out.notes.contains(&Note::ItemChanged(conv, 0)),
+        "the row changed in place: {:?}",
+        out.notes
+    );
+    let items = &s.current().unwrap().items;
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, ItemId(7), "the row keeps its identity");
+    assert!(
+        matches!(&items[0].kind, ItemKind::Job(j) if j.id == 1 && j.state == JobState::Running)
+    );
+
+    // The engine resyncs the transcript while the job runs: the job row survives the resync.
+    s.apply_event(event(
+        &s,
+        EventKind::Synced {
+            items: vec![job_start_call("call-9")],
+        },
+    ));
+    assert!(matches!(&s.current().unwrap().items[0].kind, ItemKind::Job(j) if j.id == 1));
+
+    // It finishes: the row follows, and nothing else is reported as changed.
+    let mut done = running.clone();
+    done.state = JobState::Succeeded;
+    done.exit_code = Some(0);
+    let out = s.apply_event(jobs_event(&s, vec![done]));
+    assert!(out.notes.contains(&Note::ItemChanged(conv, 0)));
+    assert!(matches!(
+        &s.current().unwrap().items[0].kind,
+        ItemKind::Job(j) if j.state == JobState::Succeeded && j.exit_code == Some(0)
+    ));
+    let again = s.apply_event(jobs_event(
+        &s,
+        vec![{
+            let mut j = running;
+            j.state = JobState::Succeeded;
+            j.exit_code = Some(0);
+            j
+        }],
+    ));
+    assert!(
+        !again
+            .notes
+            .iter()
+            .any(|n| matches!(n, Note::ItemChanged(..)))
+    );
+}
+
+#[test]
+fn a_job_without_a_visible_call_stays_out_of_the_transcript() {
+    let mut s = state();
+    open(&mut s);
+    s.apply_event(event(
+        &s,
+        EventKind::Synced {
+            items: vec![job_start_call("call-9")],
+        },
+    ));
+    let mut by_a_person = job(2, JobState::Running, 0);
+    by_a_person.call_id = None;
+    s.apply_event(jobs_event(&s, vec![by_a_person]));
+    assert!(matches!(
+        &s.current().unwrap().items[0].kind,
+        ItemKind::Tool(_)
+    ));
+    assert_eq!(
+        s.current().unwrap().jobs.jobs.len(),
+        1,
+        "it is still listed"
+    );
+}
+
+#[test]
+fn job_snapshots_land_while_a_turn_is_running() {
+    let mut s = state();
+    open(&mut s);
+    s.dispatch(Command::EditDraft("go".into()));
+    s.dispatch(Command::Submit);
+    let (conv, request) = {
+        let c = s.current().unwrap();
+        (c.id, c.pending_intent.as_ref().unwrap().request.clone())
+    };
+    s.intent_persisted(conv, &request, Ok(()));
+    s.apply_event(event(&s, EventKind::Accepted));
+    assert!(s.current().unwrap().run.is_busy());
+    // The engine reports jobs for the conversation, not for one operation.
+    let mut ev = jobs_event(&s, vec![job(1, JobState::Running, 10)]);
+    ev.op = None;
+    s.apply_event(ev);
+    assert_eq!(s.current().unwrap().jobs.active, 1);
+    assert!(
+        s.clock_is_visible(),
+        "a running job keeps the clock on screen"
+    );
+}

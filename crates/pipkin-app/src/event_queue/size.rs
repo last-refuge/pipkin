@@ -26,6 +26,14 @@ fn item(i: &TranscriptItem) -> usize {
         ItemKind::Tool(t) => {
             strings(&t.call_id) + t.name.capacity() + t.input.capacity() + t.output.capacity()
         }
+        ItemKind::Job(j) => {
+            strings(&j.name)
+                + j.command.capacity()
+                + j.cwd.capacity()
+                + strings(&j.reason)
+                + strings(&j.call_id)
+                + j.delivery.capacity()
+        }
     }
 }
 fn change(c: &FileChange) -> usize {

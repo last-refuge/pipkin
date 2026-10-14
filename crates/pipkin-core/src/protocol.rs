@@ -692,6 +692,8 @@ pub enum EventKind {
         call: u32,
         name: String,
         input: String,
+        /// The engine's id for the call, when the backend has one (a demo job links by it).
+        call_id: Option<String>,
     },
     ToolOutput {
         call: u32,
