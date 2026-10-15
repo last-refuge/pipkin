@@ -1,0 +1,14 @@
+{
+  "attempt": 10,
+  "full_review_exact_before_decision": true,
+  "pending_reviews": 1,
+  "new_target_absent_before_decision": true,
+  "clipboard_contents_retained": false,
+  "tab_navigation_and_page_down_then_space_sent": true,
+  "still_pending_after_navigation": true,
+  "exact_copy_rechecked_before_allow": true,
+  "native_tab_reachability_evidence": "Tab five times from neutral review root; PageDown/Space remained inert; after exact copy recheck, two further Tabs and Space resulted in one consumed Allow. Full arguments tab stop is enabled in the tested build.",
+  "native_nonzero_argument_overflow_scroll_measured": false,
+  "short_arguments_fit": true,
+  "headless_long_argument_scroll_regression": "jobs149,156,157 passed"
+}

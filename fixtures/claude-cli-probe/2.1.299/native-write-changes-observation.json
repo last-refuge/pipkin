@@ -1,0 +1,11 @@
+{
+  "source_job": 158,
+  "explicit_refresh_sent": true,
+  "inspector_crop_ocr": {
+    "changes": true,
+    "native-write-a.txt": true,
+    "native-write-b.txt": true
+  },
+  "git_state_not_action_attribution": true,
+  "ocr_normalization": "lowercase alphanumeric"
+}

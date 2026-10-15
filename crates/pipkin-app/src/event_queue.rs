@@ -5,6 +5,8 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use pipkin_core::BackendEvent;
 
+#[cfg(test)]
+mod approval_tests;
 mod size;
 
 pub const NATIVE_EVENTS: usize = 128;

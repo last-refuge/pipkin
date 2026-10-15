@@ -387,6 +387,17 @@ impl Worker {
 
     fn handle(&mut self, request: BackendRequest) {
         match request {
+            BackendRequest::CliApproval(request) => {
+                let (conversation, generation, op) = request.tuple();
+                self.ctx.emit(conversation, generation, Some(op), EventKind::CliApproval(Box::new(request.failed())));
+            },
+            BackendRequest::RetireLocalCliInspect { .. } => {},
+            BackendRequest::LocalCli { conversation, generation, op, request } => {
+                self.ctx.emit(conversation, generation, Some(op), EventKind::LocalCli(LocalCliEvent::Failed {
+                    phase: request.phase(),
+                    failure: LocalCliFailure::Rejected("Local CLI setup requires the native engine; this is a simulated backend.".into()),
+                }));
+            }
             BackendRequest::Open {
                 conversation,
                 generation,

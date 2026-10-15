@@ -14,6 +14,7 @@ use gpui::{App, AppContext as _, ClipboardItem, Entity};
 use pipkin_core::*;
 use pipkin_ui::{DemoControls, Model};
 
+use crate::adapters::native::local_cli_opt_in::{DesktopCliOptions, LocalCliOptIn};
 use crate::adapters::native::supervisor::{HostKind, HostSpec, WorkerSpec};
 use crate::adapters::native::{ImportResult, NativeBackend, NativeConfig};
 use crate::adapters::script;
@@ -29,6 +30,11 @@ use crate::storage::{
 const CLOCK_REFRESH: Duration = Duration::from_secs(1);
 const EVENT_QUEUE: usize = 1024;
 const MAX_BATCH: usize = 512;
+
+enum CliApprovalAck {
+    Attempt(CliApprovalRequest, Result<(), String>),
+    Receipt(CliApprovalRecovery, Result<(), String>),
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Options {
@@ -56,6 +62,8 @@ pub struct Options {
     /// speaking the process extension protocol, or `builtin:<name>`.
     pub engine_extensions: Vec<String>,
     pub engine_clear_extensions: bool,
+    /// Explicit process-local experimental policy. Never saved as trust or readiness.
+    pub local_cli: LocalCliOptIn,
 }
 
 /// The engine behind real mode.
@@ -95,6 +103,7 @@ impl Default for Options {
             engine_attach: None,
             engine_extensions: vec![],
             engine_clear_extensions: false,
+            local_cli: LocalCliOptIn::desktop_default(),
         }
     }
 }
@@ -115,6 +124,7 @@ impl Options {
     /// (each also accepted as `--flag=value`).
     pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Options, String> {
         let mut options = Options::default();
+        let mut local_cli = DesktopCliOptions::default();
         let mut engine_host = None;
         let mut explicit_engine = false;
         let mut args = args.into_iter();
@@ -212,9 +222,15 @@ impl Options {
                     }
                     options.speed = speed;
                 }
-                other => return Err(format!("unknown argument {other:?}")),
+                other => {
+                    if !local_cli.parse_flag(other, inline.as_deref())? {
+                        return Err(format!("unknown argument {other:?}"));
+                    }
+                }
             }
         }
+        options.local_cli =
+            local_cli.resolve(options.mode == Mode::Real && options.engine_attach.is_none())?;
         if explicit_engine && options.mode == Mode::Demo {
             return Err("--engine native cannot be combined with --demo".into());
         }
@@ -224,9 +240,10 @@ impl Options {
         if options.engine_attach.is_some()
             && (engine_host.is_some()
                 || !options.engine_extensions.is_empty()
-                || options.engine_clear_extensions)
+                || options.engine_clear_extensions
+                || local_cli.explicit())
         {
-            return Err("an attached engine owns its configuration; omit --engine-host, --engine-extension and --engine-clear-extensions".into());
+            return Err("an attached engine owns its configuration; omit --engine-host, --engine-extension, --engine-clear-extensions and CLI host flags".into());
         }
         if let Some(host) = engine_host {
             options.engine_host = host;
@@ -694,7 +711,9 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                         &options.engine_extensions,
                         options.engine_clear_extensions,
                         &log_path,
-                    ) {
+                    )
+                    .and_then(|spec| spec.with_local_cli(options.local_cli))
+                    {
                         Ok(spec) => HostSpec::Child(spec),
                         Err(error) => {
                             eprintln!("pipkin: {error}");
@@ -706,6 +725,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                         config_dir: dirs.config.clone(),
                         extensions: options.engine_extensions.clone(),
                         clear_extensions: options.engine_clear_extensions,
+                        local_cli: options.local_cli,
                     },
                 }
             };
@@ -802,6 +822,8 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
         options.mode == Mode::Demo,
     )));
     restore.borrow_mut().restore_conversations(&mut state);
+    state.restore_local_cli_creations(storage.load_cli_creations());
+    state.restore_cli_approval_recovery(storage.load_cli_approvals());
 
     let model = cx.new(|_| {
         let mut model = Model::new(state);
@@ -813,6 +835,14 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
     let (intent_tx, intent_rx) =
         async_channel::unbounded::<(ConversationId, RequestId, Result<(), String>)>();
     let (import_tx, import_rx) = async_channel::unbounded::<ImportResult>();
+    let (cli_approval_tx, cli_approval_rx) = async_channel::unbounded::<CliApprovalAck>();
+    let (cli_creation_tx, cli_creation_rx) = async_channel::unbounded::<(
+        ConversationId,
+        u64,
+        OperationId,
+        LocalCliCreationId,
+        Result<(), String>,
+    )>();
 
     let cache_saver = Rc::new(CacheSaver::new(storage.clone()));
     let search_runner = Rc::new(SearchRunner::new(storage.clone()));
@@ -827,6 +857,29 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
             let native_backend = native_backend.clone();
             m.set_effect_handler(Box::new(move |effect, cx| match effect {
                 Effect::Backend(request) => backend.request(request),
+                Effect::JournalCliApproval(request) => {
+                    let tx = cli_approval_tx.clone();
+                    if let Some(record) = CliApprovalRecovery::attempt(&request) {
+                        storage.journal_cli_approval(record, move |result| { let _ = tx.send_blocking(CliApprovalAck::Attempt(*request, result)); });
+                    } else { let _ = tx.send_blocking(CliApprovalAck::Attempt(*request, Err("Invalid approval journal request.".into()))); }
+                }
+                Effect::SaveCliApprovalRecovery(record) => {
+                    let tx = cli_approval_tx.clone();
+                    storage.journal_cli_approval(*record.clone(), move |result| {
+                        let _ = tx.send_blocking(CliApprovalAck::Receipt(*record, result));
+                    });
+                }
+                Effect::JournalLocalCliCreation { conversation, generation, op, identity } => {
+                    let tx = cli_creation_tx.clone();
+                    storage.journal_cli_creation(identity.clone(), false, move |result| {
+                        let _ = tx.send_blocking((conversation, generation, op, identity, result));
+                    });
+                }
+                Effect::RetireLocalCliCreation { identity } => {
+                    storage.journal_cli_creation(identity, true, |result| {
+                        if result.is_err() { log::warn!("CLI creation recovery retirement failed; the saved identity remains read-only."); }
+                    });
+                }
                 Effect::Import(step) => {
                     let tx = import_tx.clone();
                     let done: crate::adapters::native::ImportDone = Box::new(move |result| {
@@ -1078,6 +1131,63 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
         .detach();
     }
 
+    {
+        let weak = model.downgrade();
+        cx.spawn(async move |cx| {
+            while let Ok(ack) = cli_approval_rx.recv().await {
+                if weak
+                    .update(cx, |m, cx| {
+                        m.mutate(
+                            |state| match ack {
+                                CliApprovalAck::Attempt(request, result) => {
+                                    state.cli_approval_persisted(&request, result)
+                                }
+                                CliApprovalAck::Receipt(record, result) => {
+                                    state.cli_approval_receipt_persisted(&record, result)
+                                }
+                            },
+                            cx,
+                        )
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+    // Creation may be released once, only after its exact recovery identity is durable.
+    {
+        let weak = model.downgrade();
+        cx.spawn(async move |cx| {
+            while let Ok((conversation, generation, op, identity, result)) =
+                cli_creation_rx.recv().await
+            {
+                if weak
+                    .update(cx, |m, cx| {
+                        m.mutate(
+                            |state| {
+                                state.local_cli_creation_persisted(
+                                    conversation,
+                                    generation,
+                                    op,
+                                    &identity,
+                                    result,
+                                )
+                            },
+                            cx,
+                        )
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
     // Journal commit acknowledgments: only now may a submission be sent.
     {
         let weak = model.downgrade();
@@ -1129,11 +1239,30 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
     {
         let weak = model.downgrade();
         let restore = restore.clone();
+        let native_backend = native_backend.clone();
         cx.spawn(async move |cx| {
             while let Ok(event) = life_rx.recv().await {
                 let alive = weak.update(cx, |m, cx| match event {
                     LifecycleEvent::Connection(c) => m.set_connection(c, cx),
+                    LifecycleEvent::CliApprovalsAvailable(available) => {
+                        m.set_cli_approvals_available(available, cx)
+                    }
+                    LifecycleEvent::LocalCliSetupAvailable(available) => {
+                        let sessions = native_backend
+                            .as_ref()
+                            .filter(|_| available)
+                            .map(|native| native.local_cli_sessions())
+                            .unwrap_or_default();
+                        m.set_local_cli_catalog(available, sessions, cx);
+                    }
                     LifecycleEvent::Catalog(boot) => {
+                        let available = m.state.local_cli.available;
+                        let sessions = native_backend
+                            .as_ref()
+                            .filter(|_| available)
+                            .map(|native| native.local_cli_sessions())
+                            .unwrap_or_default();
+                        m.set_local_cli_catalog(available, sessions, cx);
                         if m.entry == onboarding::EntrySurface::Welcome
                             && !m.setup.started()
                             && !boot.conversations.is_empty()
@@ -1327,6 +1456,55 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<Options, String> {
         Options::parse(args.iter().map(|s| s.to_string()))
+    }
+
+    #[test]
+    fn daily_cli_defaults_have_explicit_opt_out_and_preserve_host_ownership() {
+        use crate::adapters::native::local_cli_opt_in::{
+            DISABLE_FLAG, DISABLE_WRITE_FLAG, EXECUTE_FLAG, WRITE_FLAG,
+        };
+        for args in [
+            vec![],
+            vec!["--engine", "native"],
+            vec!["--engine-host", "inprocess"],
+        ] {
+            assert_eq!(
+                parse(&args).unwrap().local_cli,
+                LocalCliOptIn::desktop_default()
+            );
+        }
+        for args in [
+            vec!["--demo", "normal"],
+            vec!["--engine-attach", "/endpoint"],
+            vec![DISABLE_FLAG],
+        ] {
+            assert_eq!(parse(&args).unwrap().local_cli, LocalCliOptIn::default());
+        }
+        assert_eq!(
+            parse(&[DISABLE_WRITE_FLAG]).unwrap().local_cli,
+            LocalCliOptIn {
+                enabled: true,
+                write: false
+            }
+        );
+        let options = parse(&[WRITE_FLAG, EXECUTE_FLAG]).unwrap();
+        assert!(options.local_cli.enabled && options.local_cli.write);
+        assert!(parse(&[EXECUTE_FLAG]).unwrap().local_cli.enabled);
+        for args in [
+            vec![WRITE_FLAG],
+            vec![EXECUTE_FLAG, EXECUTE_FLAG],
+            vec!["--experimental-local-claude-cli=false"],
+            vec![EXECUTE_FLAG, "--demo", "normal"],
+            vec![EXECUTE_FLAG, "--engine-attach", "/endpoint"],
+            vec![DISABLE_FLAG, "--engine-attach", "/endpoint"],
+            vec![DISABLE_WRITE_FLAG, "--demo", "normal"],
+            vec![DISABLE_FLAG, EXECUTE_FLAG],
+            vec![DISABLE_WRITE_FLAG, EXECUTE_FLAG, WRITE_FLAG],
+            vec![DISABLE_FLAG, DISABLE_FLAG],
+            vec!["--disable-local-claude-cli=false"],
+        ] {
+            assert!(parse(&args).is_err());
+        }
     }
 
     #[test]

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -37,7 +37,7 @@ pub struct Spec {
     pub max_stderr: usize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stop {
     Cancelled,
@@ -47,6 +47,19 @@ pub enum Stop {
     ObserverFailure,
     PipeFailure,
     CleanupTimeout,
+}
+
+/// Closed OS categories only: no paths, stderr or arbitrary io::Error text. Never retry.
+#[cfg(unix)]
+fn spawn_failure(error: &std::io::Error) -> &'static str {
+    use std::io::ErrorKind;
+    match error.kind() {
+        ErrorKind::ExecutableFileBusy => "selected executable is busy; no automatic retry",
+        ErrorKind::WouldBlock => "process resources unavailable; no automatic retry",
+        ErrorKind::PermissionDenied => "selected executable access denied",
+        ErrorKind::NotFound => "selected executable or interpreter unavailable",
+        _ => "failed to spawn selected executable",
+    }
 }
 
 #[derive(Serialize)]
@@ -234,9 +247,7 @@ pub async fn run_observed(
         .stderr(Stdio::piped())
         .process_group(0)
         .kill_on_drop(true);
-    let mut child = cmd
-        .spawn()
-        .map_err(|_| "failed to spawn selected executable")?;
+    let mut child = cmd.spawn().map_err(|error| spawn_failure(&error))?;
     let mut group = OwnedGroup {
         pid: child.id().ok_or("child has no process id")?,
         before_signal,
@@ -691,7 +702,32 @@ mod tests {
         let mut s = spec("", dir.path());
         s.executable = dir.path().join("secret-path-do-not-print");
         let error = run(s, CancellationToken::new()).await.unwrap_err();
-        assert_eq!(error, "failed to spawn selected executable");
+        assert_eq!(error, "selected executable or interpreter unavailable");
+    }
+
+    #[test]
+    fn spawn_failure_categories_do_not_echo_arbitrary_error_text() {
+        use std::io::{Error, ErrorKind};
+        for (kind, expected) in [
+            (
+                ErrorKind::ExecutableFileBusy,
+                "selected executable is busy; no automatic retry",
+            ),
+            (
+                ErrorKind::WouldBlock,
+                "process resources unavailable; no automatic retry",
+            ),
+            (
+                ErrorKind::PermissionDenied,
+                "selected executable access denied",
+            ),
+            (ErrorKind::Other, "failed to spawn selected executable"),
+        ] {
+            assert_eq!(
+                spawn_failure(&Error::new(kind, "private path/argument")),
+                expected
+            );
+        }
     }
 
     #[tokio::test]

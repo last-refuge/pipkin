@@ -22,6 +22,7 @@ use pipkin_engine_protocol::frame::{self, FrameError};
 use pipkin_engine_protocol::{ClientFrame, ServerFrame};
 
 use super::client::{FrameReceiver, FrameSender, Link};
+use super::local_cli_opt_in::LocalCliOptIn;
 
 /// Hidden flag that turns this executable into the engine worker.
 pub const WORKER_FLAG: &str = "--engine-worker";
@@ -38,6 +39,19 @@ pub struct WorkerArgs {
     pub config_dir: PathBuf,
     pub extensions: Vec<String>,
     pub clear_extensions: bool,
+    pub local_cli: LocalCliOptIn,
+}
+impl WorkerArgs {
+    fn config(&self) -> Result<EngineConfig, String> {
+        let mut config = engine_config(
+            &self.data_dir,
+            &self.config_dir,
+            &self.extensions,
+            self.clear_extensions,
+        )?;
+        self.local_cli.apply(&mut config)?;
+        Ok(config)
+    }
 }
 
 /// Starts allowed within `RESTART_WINDOW` before giving up.
@@ -66,12 +80,18 @@ pub fn worker_args(args: &[String]) -> Option<Result<WorkerArgs, String>> {
     let mut config = None;
     let mut extensions = Vec::new();
     let mut clear_extensions = false;
+    let mut local_cli = LocalCliOptIn::default();
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let (flag, inline) = match arg.split_once('=') {
             Some((f, v)) => (f, Some(v.to_owned())),
             None => (arg.as_str(), None),
         };
+        match local_cli.parse_flag(flag, inline.as_deref()) {
+            Ok(true) => continue,
+            Err(error) => return Some(Err(error)),
+            Ok(false) => {}
+        }
         if flag == CLEAR_EXTENSIONS_FLAG {
             if inline.is_some() {
                 return Some(Err(format!("{flag} does not take a value")));
@@ -102,12 +122,16 @@ pub fn worker_args(args: &[String]) -> Option<Result<WorkerArgs, String>> {
             "Cannot select extensions and clear the default together".into(),
         ));
     }
+    if let Err(error) = local_cli.validate() {
+        return Some(Err(error));
+    }
     Some(match (data, config) {
         (Some(data_dir), Some(config_dir)) => Ok(WorkerArgs {
             data_dir,
             config_dir,
             extensions,
             clear_extensions,
+            local_cli,
         }),
         _ => Err(format!("{WORKER_FLAG} needs {DATA_FLAG} and {CONFIG_FLAG}")),
     })
@@ -157,12 +181,7 @@ pub fn server_args(args: &[String]) -> Option<Result<(WorkerArgs, PathBuf), Stri
 }
 
 pub fn run_server(args: WorkerArgs, endpoint: PathBuf) -> i32 {
-    match engine_config(
-        &args.data_dir,
-        &args.config_dir,
-        &args.extensions,
-        args.clear_extensions,
-    ) {
+    match args.config() {
         Ok(config) => pipkin_engine::endpoint::run(config, &endpoint),
         Err(error) => {
             eprintln!("pipkin engine: {error}");
@@ -173,12 +192,7 @@ pub fn run_server(args: WorkerArgs, endpoint: PathBuf) -> i32 {
 
 /// Serve the engine over stdin/stdout until the desktop closes the channel. Returns the exit code.
 pub fn run_worker(args: WorkerArgs) -> i32 {
-    match engine_config(
-        &args.data_dir,
-        &args.config_dir,
-        &args.extensions,
-        args.clear_extensions,
-    ) {
+    match args.config() {
         Ok(config) => pipkin_engine::host::run_stdio(config),
         Err(e) => {
             eprintln!("pipkin engine: {e}");
@@ -217,6 +231,10 @@ pub struct WorkerSpec {
 }
 
 impl WorkerSpec {
+    pub fn with_local_cli(mut self, policy: LocalCliOptIn) -> Result<Self, String> {
+        self.args.extend(policy.flags()?);
+        Ok(self)
+    }
     /// This executable as the engine worker for the given directories.
     pub fn engine(
         data_dir: &Path,
@@ -259,6 +277,7 @@ pub enum HostSpec {
         config_dir: PathBuf,
         extensions: Vec<String>,
         clear_extensions: bool,
+        local_cli: LocalCliOptIn,
     },
     /// Tests: a link to a fake engine the test drives.
     #[cfg(test)]
@@ -380,13 +399,18 @@ impl Supervisor {
                 config_dir,
                 extensions,
                 clear_extensions,
+                local_cli,
             } => {
-                let handle = pipkin_engine::host::start(engine_config(
-                    &data_dir,
-                    &config_dir,
-                    &extensions,
-                    clear_extensions,
-                )?)
+                let handle = pipkin_engine::host::start(
+                    WorkerArgs {
+                        data_dir,
+                        config_dir,
+                        extensions,
+                        clear_extensions,
+                        local_cli,
+                    }
+                    .config()?,
+                )
                 .map_err(|e| format!("cannot start the engine: {e}"))?;
                 let (sender, receiver) = handle.connect("pipkin-desktop").split();
                 self.inprocess = Some(handle);
@@ -567,6 +591,7 @@ mod tests {
                 config_dir: PathBuf::from("/c"),
                 extensions: vec![],
                 clear_extensions: false,
+                local_cli: LocalCliOptIn::default(),
             }))
         );
         assert!(matches!(
@@ -607,6 +632,7 @@ mod tests {
                 config_dir: PathBuf::from("/c"),
                 extensions,
                 clear_extensions: false,
+                local_cli: LocalCliOptIn::default(),
             }))
         );
     }
@@ -807,6 +833,54 @@ mod tests {
     }
 
     #[test]
+    fn desktop_cli_policy_round_trips_worker_and_server_without_becoming_trust() {
+        use super::super::local_cli_opt_in::{EXECUTE_FLAG, WRITE_FLAG};
+        for policy in [
+            LocalCliOptIn::default(),
+            LocalCliOptIn {
+                enabled: true,
+                write: false,
+            },
+            crate::controller::Options::parse(std::iter::empty::<String>())
+                .unwrap()
+                .local_cli,
+        ] {
+            let spec = WorkerSpec::engine(
+                Path::new("/d"),
+                Path::new("/c"),
+                &[],
+                false,
+                Path::new("/l"),
+            )
+            .unwrap()
+            .with_local_cli(policy)
+            .unwrap();
+            let argv: Vec<_> = spec
+                .args
+                .iter()
+                .map(|s| s.to_string_lossy().into_owned())
+                .collect();
+            let parsed = worker_args(&argv).unwrap().unwrap();
+            assert_eq!(parsed.local_cli, policy);
+            let config = parsed.config().unwrap();
+            assert_eq!(config.enable_local_claude_cli, policy.enabled);
+            assert_eq!(config.enable_local_claude_cli_write, policy.write);
+            let mut server = vec!["--engine-server".into(), "/endpoint".into()];
+            server.extend(argv.into_iter().skip(1));
+            assert_eq!(server_args(&server).unwrap().unwrap().0.local_cli, policy);
+        }
+        for extra in [
+            vec![WRITE_FLAG],
+            vec![EXECUTE_FLAG, EXECUTE_FLAG],
+            vec!["--experimental-local-claude-cli=false"],
+        ] {
+            let mut argv = args(&[WORKER_FLAG, DATA_FLAG, "/d", CONFIG_FLAG, "/c"]);
+            argv.extend(extra.into_iter().map(String::from));
+            assert!(worker_args(&argv).unwrap().is_err());
+        }
+    }
+
+    #[test]
     fn the_in_process_engine_answers_hello() {
         let dir = tempfile::tempdir().unwrap();
         let mut supervisor = Supervisor::new(HostSpec::InProcess {
@@ -814,6 +888,7 @@ mod tests {
             config_dir: dir.path().join("engine-config"),
             extensions: vec![],
             clear_extensions: false,
+            local_cli: LocalCliOptIn::default(),
         });
         let link = supervisor.start().unwrap();
         assert!(supervisor.alive());

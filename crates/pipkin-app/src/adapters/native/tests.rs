@@ -1,6 +1,10 @@
 //! Adapter behavior against a scripted fake engine: what the backend emits for replies, errors,
 //! event gaps and a lost link, without a real engine.
 
+mod cli_approvals;
+mod execution;
+mod local_cli;
+
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -41,6 +45,7 @@ fn summary(id: &str) -> SessionSummary {
         updated_at_ms: 1_700_000_000_000,
         origin: Origin::Native,
         execution_backend: Default::default(),
+        local_cli_mode: None,
         model: Some("p/m".into()),
         blocked: None,
     }
@@ -301,6 +306,7 @@ fn snapshot_execution_gate_precedes_history_and_uses_snapshot_not_catalog_identi
         Call::OpenSession { session, .. } => {
             let mut view = snapshot(session, vec![]);
             view.summary.execution_backend = ExecutionBackend::LocalClaudeCli;
+            view.summary.local_cli_mode = Some(LocalCliMode::ChatOnly);
             Some(Some(Ok(Reply::Snapshot(Box::new(view)))))
         }
         _ => None, // Catalogue still advertises native; the snapshot is authoritative.
@@ -333,9 +339,8 @@ fn snapshot_execution_gate_precedes_history_and_uses_snapshot_not_catalog_identi
     assert_eq!(
         event.kind,
         EventKind::ExecutionContext {
-            execution_blocked: ExecutionBackend::LocalClaudeCli
-                .disabled_reason()
-                .map(str::to_owned),
+            execution_blocked: None,
+            profile: pipkin_core::ExecutionProfile::LocalCliChatOnly,
         }
     );
 }

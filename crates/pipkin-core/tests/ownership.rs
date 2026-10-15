@@ -3,6 +3,7 @@
 //! back is explicit and confirmed.
 
 use pipkin_core::*;
+mod support;
 
 const ONE: ConversationId = ConversationId(1);
 const TWO: ConversationId = ConversationId(2);
@@ -37,6 +38,7 @@ fn real() -> AppState {
     );
     s.mode = Mode::Real;
     s.prefs.selected_project = Some(ProjectId(1));
+    support::native_context(&mut s);
     s
 }
 

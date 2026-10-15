@@ -1,0 +1,47 @@
+{
+  "cli_version": "2.1.299",
+  "mode": "stop",
+  "prompt_attempts": 1,
+  "outcomes": [
+    {
+      "state": "Unknown",
+      "mode": "Fresh",
+      "evidence": {
+        "projection_finished": false,
+        "input_delivered": true,
+        "root_reaped": true,
+        "pipes_drained": true,
+        "exit_code": null,
+        "stop_requested": false,
+        "cleanup_timed_out": false,
+        "cancelled_clean_confirmed": false,
+        "supervisor_stop": "observer_failure",
+        "projection_error": "MalformedRecord",
+        "rejected_record": "message_delta",
+        "parse_failure": {
+          "kind": "InvalidType",
+          "field_sha256": null,
+          "message_delta_shapes": {
+            "delta": "Object",
+            "container": "Null",
+            "stop_details": "Null",
+            "stop_reason": "String",
+            "stop_sequence": "Null",
+            "context_management": "Object",
+            "input_transformations": "Missing"
+          }
+        }
+      }
+    }
+  ],
+  "billing_verified": false,
+  "crash_containment_verified": false,
+  "general_production_enabled": false,
+  "runtime_host_opts_enabled_for_qualification": true,
+  "metadata_verified": true,
+  "configuration_canaries_clear": true,
+  "native_inference_calls": 0,
+  "fixture_retained": true,
+  "passed": false,
+  "reason": "run ended without the expected permission review"
+}

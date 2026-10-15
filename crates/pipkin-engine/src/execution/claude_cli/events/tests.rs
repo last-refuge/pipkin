@@ -6,6 +6,9 @@ const SESSION: &str = "12345678-1234-4234-a234-123456789abc";
 const OTHER: &str = "87654321-4321-4321-b432-cba987654321";
 const SECRET: &str = "PRIVATE_account_token_stderr_tool_input";
 
+#[path = "diagnostics_tests.rs"]
+mod diagnostics;
+
 fn decoder() -> Decoder {
     Decoder::new(SESSION, &[]).unwrap()
 }
@@ -493,10 +496,10 @@ fn reused_tool_ids_conflicting_results_and_unknown_tools_fail() {
 }
 
 #[test]
-fn result_block_arrays_and_missing_error_flag_remain_display_only() {
+fn result_block_arrays_and_explicit_null_error_flag_remain_uncertain() {
     let result = envelope(
         "user",
-        json!({"message":{"content":[{"type":"tool_result","tool_use_id":"t","content":[text("a"),text("b")]}]}}),
+        json!({"message":{"content":[{"type":"tool_result","tool_use_id":"t","is_error":null,"content":[text("a"),text("b")]}]}}),
     );
     let (_, events) = run(
         &[

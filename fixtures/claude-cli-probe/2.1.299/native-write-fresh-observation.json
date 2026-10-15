@@ -1,0 +1,34 @@
+{
+  "source_job": 146,
+  "attempt": 9,
+  "state": "completed",
+  "mode": "fresh",
+  "terminal": {
+    "outcome": "success",
+    "usage": {
+      "input_tokens": 4,
+      "output_tokens": 155,
+      "cache_read_input_tokens": 4632,
+      "cache_creation_input_tokens": 2652
+    }
+  },
+  "evidence": {
+    "projection_finished": true,
+    "input_delivered": true,
+    "root_reaped": true,
+    "pipes_drained": true,
+    "exit_code": 0,
+    "stop_requested": false,
+    "cleanup_timed_out": false,
+    "cancelled_clean_confirmed": false,
+    "supervisor_stop": null,
+    "projection_error": null,
+    "rejected_record": null,
+    "parse_failure": null
+  },
+  "exact_expected_regular_file": true,
+  "native_runs": 0,
+  "full_review_interaction": "FAILED: arguments focus handle was not a tab stop; counted navigation activated Allow before expected Copy/validation",
+  "decision_replayed": false,
+  "canaries_clear": true
+}

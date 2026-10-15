@@ -1,12 +1,7 @@
 //! Read-only, bounded Git diffs. Session scans use literal file pathspecs so unrelated
 //! project files are not collected. Both staged and unstaged changes are relative to HEAD.
 
-use std::{
-    io::Read,
-    path::Path,
-    process::{Command, Stdio},
-    time::{Duration, Instant},
-};
+use std::{io::Read, path::Path};
 
 use pipkin_core::{DiffKind, DiffLine, FileChange, Hunk};
 
@@ -17,9 +12,7 @@ const MAX_UNTRACKED_FILES: usize = 50;
 const MAX_UNTRACKED_BYTES: usize = 64 * 1024;
 /// Lines kept per file before the rest is summarized.
 const MAX_LINES_PER_FILE: usize = 2000;
-const GIT_TIMEOUT: Duration = Duration::from_secs(10);
-/// The well-known hash of Git's empty tree, for a repository with no commits yet.
-const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+mod git;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Workspace {
@@ -34,69 +27,8 @@ pub enum Workspace {
     },
 }
 
-/// Run `git` with `args` in `dir`; stdout up to `limit` bytes. `Err` on spawn failure, timeout
-/// or a non-zero exit (with stderr's first line).
-fn git(dir: &Path, args: &[&str], limit: usize) -> Result<(Vec<u8>, bool), String> {
-    let mut child = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .env("LC_ALL", "C")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("cannot run git: {e}"))?;
-    let mut stdout = child.stdout.take().expect("piped");
-    let reader = std::thread::spawn(move || {
-        let mut out = Vec::new();
-        let mut buf = [0u8; 16 * 1024];
-        let mut cut = false;
-        loop {
-            match stdout.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    if out.len() < limit {
-                        let take = n.min(limit - out.len());
-                        out.extend_from_slice(&buf[..take]);
-                        cut |= take < n;
-                    } else {
-                        cut = true; // keep draining so git is never blocked on a full pipe
-                    }
-                }
-            }
-        }
-        (out, cut)
-    });
-    let deadline = Instant::now() + GIT_TIMEOUT;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err("git timed out".into());
-            }
-            Err(e) => return Err(format!("git failed: {e}")),
-        }
-    };
-    let (out, cut) = reader
-        .join()
-        .map_err(|_| "git output reader failed".to_string())?;
-    if !status.success() {
-        let mut err = String::new();
-        if let Some(mut stderr) = child.stderr.take() {
-            let _ = stderr.read_to_string(&mut err);
-        }
-        return Err(err.lines().next().unwrap_or("git failed").to_owned());
-    }
-    Ok((out, cut))
-}
-
-/// The workspace's current changes: staged and unstaged edits against HEAD, plus untracked files.
-#[cfg(test)]
+/// The workspace's current changes, without attributing them to a tool or conversation.
+/// Executable filters/attributes are deliberately not applied; see the private Git reader.
 pub fn collect(dir: &Path) -> Workspace {
     collect_paths(dir, None)
 }
@@ -113,16 +45,10 @@ pub fn collect_scoped(dir: &Path, paths: &[String]) -> Workspace {
 }
 
 fn collect_paths(dir: &Path, paths: Option<&[String]>) -> Workspace {
-    match git(dir, &["rev-parse", "--is-inside-work-tree"], 64) {
-        Ok((out, _)) if out.starts_with(b"true") => {}
-        Ok(_) => return Workspace::NotARepository,
-        Err(e) if e.contains("not a git repository") => return Workspace::NotARepository,
+    let git = match git::Reader::open(dir) {
+        Ok(git) => git,
+        Err(e) if e == "not a git repository" => return Workspace::NotARepository,
         Err(e) => return Workspace::Unavailable(e),
-    }
-    let base = if git(dir, &["rev-parse", "--verify", "--quiet", "HEAD"], 64).is_ok() {
-        "HEAD"
-    } else {
-        EMPTY_TREE
     };
     let mut diff_args = vec![
         "--literal-pathspecs",
@@ -141,16 +67,17 @@ fn collect_paths(dir: &Path, paths: Option<&[String]>) -> Workspace {
         "--dst-prefix=b/",
         "--no-color",
         "--no-ext-diff",
+        "--no-textconv",
         "--relative",
         "-M",
         "-U3",
-        base,
+        &git.base,
         "--",
     ];
     if let Some(paths) = paths {
         diff_args.extend(paths.iter().map(String::as_str));
     }
-    let diff = git(dir, &diff_args, MAX_DIFF_BYTES);
+    let diff = git.run(&diff_args, MAX_DIFF_BYTES);
     let (text, mut truncated) = match diff {
         Ok(v) => v,
         Err(e) => return Workspace::Unavailable(e),
@@ -167,7 +94,7 @@ fn collect_paths(dir: &Path, paths: Option<&[String]>) -> Workspace {
     if let Some(paths) = paths {
         listing_args.extend(paths.iter().map(String::as_str));
     }
-    match git(dir, &listing_args, MAX_DIFF_BYTES) {
+    match git.untracked(&listing_args, MAX_DIFF_BYTES) {
         Ok((listing, cut)) => {
             truncated |= cut;
             let mut names: Vec<String> = listing
@@ -200,7 +127,7 @@ fn untracked_file(dir: &Path, name: &str) -> FileChange {
         return marker(name, "not a regular file");
     }
     let mut bytes = Vec::new();
-    let read = std::fs::File::open(&path).and_then(|f| {
+    let read = git::regular(&path).and_then(|f| {
         f.take(MAX_UNTRACKED_BYTES as u64 + 1)
             .read_to_end(&mut bytes)
     });
@@ -469,6 +396,104 @@ mod tests {
             Workspace::Changes { files, truncated } => (files, truncated),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn inspection_never_runs_configured_filters_textconv_diff_or_fsmonitor() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = repo();
+        let root = dir.path();
+        std::fs::write(root.join("a.txt"), "old\n").unwrap();
+        commit_all(root, "baseline");
+        let driver = root.join(".git/driver");
+        std::fs::write(&driver, "#!/bin/sh\ntouch \"$0.ran\"\ncat \"$@\"\n").unwrap();
+        std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o700)).unwrap();
+        for key in [
+            "filter.trap.clean",
+            "filter.trap.smudge",
+            "filter.trap.process",
+            "diff.trap.textconv",
+            "diff.external",
+            "core.fsmonitor",
+        ] {
+            run(root, &["config", key, driver.to_str().unwrap()]);
+        }
+        run(root, &["config", "filter.trap.required", "true"]);
+        std::fs::write(root.join(".gitattributes"), "*.txt filter=trap diff=trap\n").unwrap();
+        std::fs::write(
+            root.join(".git/info/attributes"),
+            "*.txt filter=trap diff=trap\n",
+        )
+        .unwrap();
+        std::fs::write(root.join(".git/info/exclude"), "private.txt\n").unwrap();
+        std::fs::write(root.join("private.txt"), "must not be displayed\n").unwrap();
+        std::fs::write(root.join("a.txt"), "new\n").unwrap();
+        let index = std::fs::read(root.join(".git/index")).unwrap();
+        let (files, _) = changes(root);
+        assert!(
+            files
+                .iter()
+                .any(|f| f.path == "a.txt" && f.added == 1 && f.removed == 1)
+        );
+        assert!(!files.iter().any(|f| f.path == "private.txt"));
+        assert!(!root.join(".git/driver.ran").exists());
+        assert_eq!(std::fs::read(root.join(".git/index")).unwrap(), index);
+        assert!(!root.join(".git/index.lock").exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn an_index_symlink_fails_closed_without_reading_its_target() {
+        let dir = repo();
+        let root = dir.path();
+        let target = root.join("private-index-target");
+        std::fs::write(&target, "not an index; never display me").unwrap();
+        std::os::unix::fs::symlink(&target, root.join(".git/index")).unwrap();
+        assert!(matches!(collect(root), Workspace::Unavailable(_)));
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "not an index; never display me"
+        );
+    }
+
+    #[test]
+    fn linked_worktree_and_subdirectory_scans_stay_in_the_captured_project() {
+        let dir = repo();
+        let root = dir.path();
+        std::fs::create_dir(root.join("nested")).unwrap();
+        std::fs::write(root.join("nested/a.txt"), "old\n").unwrap();
+        commit_all(root, "baseline");
+        let target = tempfile::tempdir().unwrap();
+        run(
+            root,
+            &[
+                "worktree",
+                "add",
+                "--detach",
+                target.path().to_str().unwrap(),
+            ],
+        );
+        std::fs::write(target.path().join("nested/a.txt"), "new\n").unwrap();
+        let (files, _) = changes(&target.path().join("nested"));
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "a.txt");
+        assert_eq!((files[0].added, files[0].removed), (1, 1));
+        assert!(changes(root).0.is_empty());
+    }
+
+    #[test]
+    fn sha256_unborn_and_committed_repositories_have_real_baselines() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        run(root, &["init", "-q", "--object-format=sha256"]);
+        std::fs::write(root.join("a.txt"), "old\n").unwrap();
+        assert_eq!(changes(root).0.len(), 1);
+        commit_all(root, "baseline");
+        assert!(changes(root).0.is_empty());
+        std::fs::write(root.join("a.txt"), "new\n").unwrap();
+        let (files, _) = changes(root);
+        assert_eq!((files[0].added, files[0].removed), (1, 1));
     }
 
     #[test]

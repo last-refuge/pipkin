@@ -1,7 +1,8 @@
 use pipkin_core::*;
+mod support;
 
 fn state() -> AppState {
-    AppState::new(
+    let mut s = AppState::new(
         Bootstrap {
             projects: vec![Project {
                 id: ProjectId(1),
@@ -13,7 +14,9 @@ fn state() -> AppState {
             now: 0,
         },
         Prefs::default(),
-    )
+    );
+    support::native_context(&mut s);
+    s
 }
 
 fn settle(s: &mut AppState, out: Outcome) -> Outcome {

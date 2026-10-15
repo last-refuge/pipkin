@@ -40,6 +40,14 @@ fn disabled_cli_history_opens_without_extensions_and_native_conversations_still_
         .shared()
         .store
         .tx(|tx| {
+            // Legacy/foreign native operational rows must not become CLI controls.
+            let op: PlanOp =
+                serde_json::from_value(json!({"op": "create", "title": "foreign native task"}))
+                    .unwrap();
+            Store::apply_plan(tx, "cli", "foreign-plan", &[op], None, 1)?
+                .0
+                .unwrap();
+            assert_ne!(Store::plan_view(tx, "cli", false)?, PlanView::default());
             Store::append_entry(
                 tx,
                 "cli",
@@ -84,6 +92,9 @@ fn disabled_cli_history_opens_without_extensions_and_native_conversations_still_
         assert_eq!(view.context.source, "unavailable");
         assert!(view.thinking.levels.is_empty());
         assert!(view.ui.notices.is_empty());
+        assert_eq!(view.plan, PlanView::default());
+        assert_eq!(view.jobs, JobsView::default());
+        assert!(view.goal.is_none() && view.web_sources.is_empty());
     }
     let sess = engine.handle.shared().session("cli").unwrap();
     assert!(sess.extension_profile.is_empty());

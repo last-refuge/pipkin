@@ -2,6 +2,7 @@
 //! launching the editor or a terminal.
 
 use pipkin_core::*;
+mod support;
 
 fn boot(conversations: usize) -> Bootstrap {
     Bootstrap {
@@ -33,6 +34,7 @@ fn real(conversations: usize) -> AppState {
     let mut s = AppState::new(boot(conversations), Prefs::default());
     s.mode = Mode::Real;
     s.prefs.selected_project = Some(ProjectId(1));
+    support::native_context(&mut s);
     s
 }
 

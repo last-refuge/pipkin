@@ -1,5 +1,70 @@
 # Scorecard
 
+## Claude CLI daily-use default and local installation (2026-10-15)
+
+- **Implemented at the user's request:** normal owned desktop child/in-process engines enable
+  chat/Write hosting without experimental flags. Explicit path trust, owner readiness, exact
+  version matching and per-Write review remain required. No conversation backend is changed.
+  Disable switches work; demo stays off; attached-server overrides are refused; standalone
+  server/library defaults remain opt-in.
+- **Measured:** full163 passed workspace tests, strict Clippy, fmt/diff, guard37 and desktop
+  build (UI193). Release package162 built. Candidate and installed offline handshakes passed164.
+  Installed mock-provider migration/coding/restart/archive/durable-replay workflow passed166.
+  Seven installed argument-policy cases passed; the desktop launcher has no experimental flags.
+- **Installed locally:** versioned `1.1.0-native-c820caa101f3` via the normal installer; the prior
+  binary is retained byte-identical and existing profile data was not migrated or modified by
+  installation. The running user's app was not stopped; fully quit/reopen to use the update.
+  Evidence: `fixtures/claude-cli-probe/2.1.299/daily-install-observation.json`.
+- **Failed checks, retained honestly:**160 caught the obsolete default-off UI wording assertion,
+  which was updated alongside the requested behavior.161 had two fixture timeouts; each passed
+  three focused repetitions and full163, without an established timeout root cause.165 supplied
+  the workflow's fixture argument incorrectly and failed before worker startup;166 corrected it.
+- **Not newly measured:** live CLI/default-launch GUI interaction, billing, managed policy,
+  full containment, real IME/accessibility. No additional live inference; the ten-run budget is
+  unchanged. Installed offline testing is not a new live CLI qualification.
+
+## Local Claude CLI: opt-in Write-only testing checkpoint (2026-10-15)
+
+- **Measured (automated).** Full jobs149/156/159 passed workspace tests, strict all-target Clippy,
+  fmt/diff, guard37 and app/helper-example builds (UI193). Job157 adds viewport coverage to
+  exact Copy, actual argument Tab reachability, expiry and long-argument scrolling regressions.
+- **Observed (live/native).** Installed unmodified CLI2.1.299, normal login, private scratch,
+  default-off host flags and address+PID guarded input. Native146 fresh/resumed chat Completed.
+  Native158 resumed Write validated the complete copied review before Allow, then independently
+  recorded terminal success, clean supervision, one consumed Allow and exact regular-file bytes.
+  Explicit Changes refresh listed both scratch files in an inspector-only OCR crop. Native158
+  exited0. Ten cumulative authorized attempts consumed; no further live allowance remains.
+- **Failed, retained.** Earlier Unknown cases were never upgraded or resumed. Native146 fresh
+  Write Completed but its missing argument tab stop caused premature approval: its full-review
+  interaction FAILED. Job147 reproduced it; later fixes and native158 do not erase that failure.
+  Job148's exporter-health assertion failed intermittently; 12 focused repetitions and full149/156
+  passed, without an established root cause. Full-window OCR missed a working palette during
+  restart checks; cropped OCR and temporary closed-field diagnostics corrected that observation.
+- **Unverified / limited.** Billing, managed policy, full descendant containment, installed
+  release packages, real IME/accessibility and display-presentation latency. Native short-argument
+  navigation was exercised; nonzero overflow scrolling remains headless-only. OCR is not visual
+  inspection or accessibility proof. No Read/Edit/Bash/MCP/subagent parity or sandbox claim.
+- **Ready scope.** Experimental chat/Write-only testing of the built Linux desktop, not general
+  production activation. Protocol39, engine schema25, desktop schema10. See the
+  [testing guide](local-claude-cli.md), [evidence](claude-cli-bridge-evidence.md), and
+  [immutable attempt record](../fixtures/claude-cli-probe/2.1.299/README.md).
+
+## Local Claude CLI: offline recovery/handoff checkpoint (job110)
+
+- **Measured (automated/offline).** Workspace tests, strict all-target Clippy, formatting and
+  diff checks passed; UI187 headless tests. Creation and approval write-ahead recovery,
+  metadata-only restart, original-owner receipt isolation, explicit fresh setup with a new
+  UUID, redacted diagnostics, storage failures and owned fixture SIGKILL are covered. Git
+  observation preserves the copied index timestamp to retain racy-clean detection.
+- **Measured limitation.** An already-authorized fake CLI action can complete after its engine
+  dies. Restart retains Unknown and never replays, but this is not crash/orphan containment.
+  Test-only pidfd cleanup does not implement a production reaper.
+- **Unverified.** Current installed helper/managed-policy envelope, real desktop approval flow,
+  IME/accessibility, live account/billing and real CLI crash behavior. No new live request or
+  native input was performed for this checkpoint. Production execution remains default-off.
+- Details: [bridge evidence](claude-cli-bridge-evidence.md) and
+  [recovery limitations](../crates/pipkin-app/CLI_RECOVERY_HARDENING.md).
+
 ## Candidate observation: engine-unavailable state, diagnose probe (2026-10-12)
 
 - **Measured (automated).** `pipkin --diagnose --probe` on the release candidate against a

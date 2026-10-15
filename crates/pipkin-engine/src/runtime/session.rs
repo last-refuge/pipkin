@@ -297,6 +297,9 @@ impl Shared {
         }
         let settings = self.settings_for(session);
         let out = self.commit(&sess, |tx| {
+            if super::request_cancel::is_cancelled() {
+                return Ok((Err(ErrorCode::Cancelled), vec![]));
+            }
             if let Some(existing) = Store::request_in(tx, session, key)? {
                 if existing.fingerprint != store::fingerprint(InputMode::Prompt, text, images) {
                     return Ok((Err(ErrorCode::Conflict), vec![]));
@@ -370,6 +373,10 @@ impl Shared {
                     entry: out.entry,
                 })
             }
+            Err(ErrorCode::Cancelled) => Err(ProtoError::new(
+                ErrorCode::Cancelled,
+                "The request was cancelled before admission.",
+            )),
             Err(ErrorCode::Busy) => Err(ProtoError::new(
                 ErrorCode::Busy,
                 format!("Conversation {session} is busy"),
@@ -403,6 +410,9 @@ impl Shared {
         let _guard = sess.lock.lock().await;
         let settings = self.settings_for(session);
         let result = self.commit(&sess, |tx| {
+            if super::request_cancel::is_cancelled() {
+                return Ok((Err(ErrorCode::Cancelled), vec![]));
+            }
             let now = now_ms();
             let row = match Store::admit(tx, session, key, mode, text, images, None, now)? {
                 Admission::New(row) => row,
@@ -435,6 +445,10 @@ impl Shared {
                     entry,
                 })
             }
+            Err(ErrorCode::Cancelled) => Err(ProtoError::new(
+                ErrorCode::Cancelled,
+                "The request was cancelled before admission.",
+            )),
             Err(ErrorCode::TooLarge) => Err(ProtoError::new(
                 ErrorCode::TooLarge,
                 "The queue is full. Wait for the current work to finish.",

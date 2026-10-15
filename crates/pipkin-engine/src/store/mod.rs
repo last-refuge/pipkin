@@ -16,6 +16,16 @@ pub mod compactions;
 pub mod diagnostics;
 mod external;
 mod generation;
+pub use external::permissions::{
+    EXTERNAL_PERMISSION_POLICY, ExternalPermissionConsumption, ExternalPermissionDecision,
+    ExternalPermissionKey, ExternalPermissionReceipt, ExternalPermissionRequest,
+    ExternalPermissionState,
+};
+pub use external::prompts::{
+    ExternalAdmission, ExternalPromptInput, ExternalPromptMode, ExternalPromptReceipt,
+    ExternalSettlement, ExternalSettlementEvidence, ExternalTerminal, ExternalTerminalOutcome,
+    ExternalTerminalUsage,
+};
 pub use external::{
     CliBinding, CliBindingSpec, ExternalAction, ExternalActionStatus, ExternalRun, ExternalRunKey,
     ExternalRunState,
@@ -205,6 +215,7 @@ impl SessionRow {
             origin: self.origin.clone(),
             model: self.model.clone(),
             execution_backend: self.execution_backend,
+            local_cli_mode: None,
             blocked: self
                 .execution_backend
                 .disabled_reason()
@@ -597,7 +608,11 @@ impl Store {
                     r.get(0)
                 })
                 .optional()?;
-            let next = current.and_then(|v| v.parse::<u64>().ok()).unwrap_or(0) + 1;
+            let next = current.and_then(|v| v.parse::<u64>().ok()).unwrap_or(0)
+                .checked_add(1).filter(|v| *v <= i64::MAX as u64)
+                .ok_or(StoreError::ExecutionConflict)?;
+            // Incarnation rotation fences all unspent external authorizations atomically.
+            tx.execute("UPDATE external_permissions SET state='revoked' WHERE state IN ('pending','granted')", [])?;
             tx.execute(
                 "INSERT INTO meta(key, value) VALUES('epoch', ?1)
                  ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -756,6 +771,15 @@ impl Store {
     pub fn set_session_field(&self, session: &str, field: SessionField) -> Result<u64> {
         self.tx(|tx| {
             Self::assert_session_live(tx, session)?;
+            if matches!(
+                &field,
+                SessionField::Model(_)
+                    | SessionField::Thinking(_)
+                    | SessionField::ModelAndThinking { .. }
+                    | SessionField::SubagentsEnabled(_)
+            ) {
+                Self::assert_native_execution(tx, session)?;
+            }
             match &field {
                 SessionField::Title(t) => tx.execute(
                     "UPDATE sessions SET title = ?2 WHERE id = ?1",
@@ -891,7 +915,11 @@ impl Store {
         kind: std::borrow::Cow<'_, EntryKind>,
         retired: bool,
     ) -> Result<Entry> {
-        let partial = matches!(kind.as_ref(), EntryKind::Message { partial: true, .. });
+        let partial = matches!(
+            kind.as_ref(),
+            EntryKind::Message { partial: true, .. }
+                | EntryKind::ExternalMessage { partial: true, .. }
+        );
         tx.execute(
             "INSERT INTO entries(session, id, at_ms, run, retired, partial, kind, body)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -919,7 +947,11 @@ impl Store {
 
     /// Replace an entry's body (finalizing a streamed message); drops its stream chunks.
     pub fn replace_entry(tx: &Connection, session: &str, entry: &Entry) -> Result<()> {
-        let partial = matches!(entry.kind, EntryKind::Message { partial: true, .. });
+        let partial = matches!(
+            entry.kind,
+            EntryKind::Message { partial: true, .. }
+                | EntryKind::ExternalMessage { partial: true, .. }
+        );
         Self::remember_tool_ids(tx, session, &entry.kind)?;
         let n = tx.execute(
             "UPDATE entries SET body = ?3, partial = ?4, retired = ?5, kind = ?6
@@ -2041,6 +2073,7 @@ pub enum SessionField {
 fn entry_kind_name(kind: &EntryKind) -> &'static str {
     match kind {
         EntryKind::Message { .. } => "message",
+        EntryKind::ExternalMessage { .. } => "externalMessage",
         EntryKind::Compaction { .. } => "compaction",
         EntryKind::Reset { .. } => "reset",
         EntryKind::Notice { .. } => "notice",

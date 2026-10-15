@@ -1,0 +1,37 @@
+{
+  "cli_version": "2.1.299",
+  "mode": "allow",
+  "prompt_attempts": 1,
+  "outcomes": [
+    {
+      "state": "Unknown",
+      "mode": "Fresh",
+      "evidence": {
+        "projection_finished": false,
+        "input_delivered": true,
+        "root_reaped": true,
+        "pipes_drained": true,
+        "exit_code": 0,
+        "stop_requested": false,
+        "cleanup_timed_out": false,
+        "cancelled_clean_confirmed": false,
+        "supervisor_stop": null,
+        "projection_error": null,
+        "rejected_record": null,
+        "parse_failure": null
+      }
+    }
+  ],
+  "billing_verified": false,
+  "crash_containment_verified": false,
+  "general_production_enabled": false,
+  "runtime_host_opts_enabled_for_qualification": true,
+  "metadata_verified": true,
+  "review_matched": true,
+  "review_count": 1,
+  "configuration_canaries_clear": true,
+  "native_inference_calls": 0,
+  "fixture_retained": true,
+  "passed": false,
+  "reason": "independent clean completion evidence missing"
+}

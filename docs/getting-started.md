@@ -5,6 +5,16 @@ checksums (no signing key yet). The supported target is x86_64 Arch/Omarchy with
 are experimental and other desktops and pure X11 are unverified. See the [changelog](../CHANGELOG.md),
 [platforms](platforms.md) and the [release gates](v1-release-gates.md) for what was and was not checked.
 
+## Local Claude CLI
+
+Normal Pipkin desktop launches enable chat and restricted Write hosting through the installed
+CLI's normal login. Exactly CLI2.1.299 was qualified. Choose **New Local CLI conversation…**;
+no experimental launch flags are needed. Follow the [daily-use guide](local-claude-cli.md),
+including explicit path trust and per-Write review. Existing conversations do not change backends.
+A previously published release may predate this integration; use the updated build and fully
+quit/reopen any older running instance. Billing, managed policy and complete crash containment
+remain unverified. Opt out with `--disable-local-claude-cli`.
+
 ## Install a release (Linux x86_64)
 
 ```bash

@@ -13,6 +13,21 @@ use std::{
 use tokio_util::sync::CancellationToken;
 const SESSION: &str = "11111111-1111-4111-8111-111111111111";
 
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn busy_executable_is_classified_and_never_retried() {
+    let fixture = Fixture::new(SESSION, false);
+    let _writer = std::fs::OpenOptions::new()
+        .write(true)
+        .open(fixture.request.candidate.executable())
+        .unwrap();
+    let error = match preflight::check(fixture.request, CancellationToken::new()).await {
+        Err(error) => error,
+        Ok(_) => panic!("a busy executable must not be probed or retried"),
+    };
+    assert_eq!(error, "selected executable is busy; no automatic retry");
+}
+
 struct Fixture {
     _dir: tempfile::TempDir,
     request: preflight::Request,
@@ -40,7 +55,7 @@ impl Fixture {
         let wire = records.iter().map(|r| format!("{r}\n")).collect::<String>();
         let auth = r#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"fixture@example.invalid","orgId":"fixture-org"}"#;
         let script = format!(
-            "#!/bin/sh\ncase \"$1\" in\n--version) printf '%s\\n' '2.1.296 (Claude Code)'; exit ;;\n--help) printf '%s' '{help}'; exit ;;\nesac\nfor arg in \"$@\"; do\n if [ \"$arg\" = '--print' ]; then\n  cat > received-prompt\n  printf '%s' '{wire}'\n  {}\n  exit\n fi\ndone\nprintf '%s\\n' '{auth}'\n",
+            "#!/bin/sh\ncase \"$1\" in\n--version) printf '%s\\n' '2.1.299 (Claude Code)'; exit ;;\n--help) printf '%s' '{help}'; exit ;;\nesac\nfor arg in \"$@\"; do\n if [ \"$arg\" = '--print' ]; then\n  cat > received-prompt\n  printf '%s' '{wire}'\n  {}\n  exit\n fi\ndone\nprintf '%s\\n' '{auth}'\n",
             if hang { "sleep 30" } else { ":" }
         );
         std::fs::write(&exe, script).unwrap();

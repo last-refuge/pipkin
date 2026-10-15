@@ -66,9 +66,18 @@ impl Store {
                     "only a root session can be removed".into(),
                 ));
             }
+            let now = now_ms();
             tx.execute(
                 "INSERT INTO session_removals(root,create_key,requested_at) VALUES (?1,?2,?3)",
-                params![root, key, now_ms()],
+                params![root, key, now],
+            )?;
+            // Removal intent retires unspent authority even if cleanup never succeeds.
+            // Consumed receipts record past authorization, not an effect we can undo.
+            tx.execute(
+                "UPDATE external_permissions SET state='revoked',updated_at=MAX(updated_at,?2)
+                 WHERE session IN (SELECT id FROM sessions WHERE id=?1 OR root=?1)
+                 AND state IN ('pending','granted')",
+                params![root, now],
             )?;
             Self::removal_members_in(tx, root)
         })
@@ -94,7 +103,7 @@ impl Store {
             let group = "SELECT id FROM sessions WHERE id=?1 OR root=?1";
             let affinities = tx.prepare(&format!("SELECT value FROM kv WHERE key='provider_session_id' AND session IN ({group})"))?
                 .query_map([root], |r| r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
-            for table in ["external_actions", "external_runs", "cli_bindings", "summary_writes", "compactions"] {
+            for table in ["external_projection_actions", "external_projection_messages", "external_prompts", "external_actions", "external_runs", "cli_bindings", "summary_writes", "compactions"] {
                 tx.execute(&format!("DELETE FROM {table} WHERE session IN ({group})"),[root])?;
             }
             for table in ["tool_boundaries", "generation_state"] {

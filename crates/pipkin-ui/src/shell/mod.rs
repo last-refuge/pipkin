@@ -2,12 +2,15 @@
 
 pub mod actions;
 mod center;
+mod cli_approvals;
+mod cli_navigation;
 mod clipboard_image;
 pub mod commands;
 pub mod controls;
 mod export_settings;
 mod inspector;
 mod jobs;
+mod local_cli;
 mod mcp_settings;
 mod nav;
 mod onboarding;

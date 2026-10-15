@@ -9,7 +9,8 @@ use std::{
     time::Duration,
 };
 
-pub const QUALIFIED_VERSION: &str = "2.1.296";
+// Exact candidate for the authorized 2.1.299 qualification. Production remains default-off.
+pub const QUALIFIED_VERSION: &str = "2.1.299";
 pub const POLICY_ID: &str = "safe-restricted-no-tools-v1";
 pub const MAX_PROMPT_BYTES: usize = 256 * 1024;
 pub type Environment = BTreeMap<OsString, OsString>;
@@ -66,6 +67,8 @@ pub fn launch_environment(source: &Environment) -> Result<Environment, &'static 
         };
         if key.starts_with("ANTHROPIC_")
             || key.starts_with("CLAUDE_CODE_")
+            // Broker bindings may only be injected by the owning run after preflight.
+            || key.starts_with("PIPKIN_CLI_PERMISSION_")
             || matches!(
                 key,
                 "CLAUDECODE"
@@ -201,15 +204,19 @@ pub fn valid_uuid(s: &str) -> bool {
 }
 
 pub fn validate_version(bytes: &[u8]) -> Result<(), &'static str> {
-    if std::str::from_utf8(bytes).ok().map(str::trim) == Some("2.1.296 (Claude Code)") {
+    let expected = format!("{QUALIFIED_VERSION} (Claude Code)");
+    if std::str::from_utf8(bytes).ok().map(str::trim) == Some(expected.as_str()) {
         Ok(())
     } else {
         Err("unqualified CLI version; no model request attempted")
     }
 }
 pub fn validate_help(bytes: &[u8]) -> Result<(), &'static str> {
+    require_flags(bytes, REQUIRED_FLAGS)
+}
+pub(super) fn require_flags(bytes: &[u8], flags: &[&str]) -> Result<(), &'static str> {
     let help = std::str::from_utf8(bytes).map_err(|_| "invalid CLI help response")?;
-    if REQUIRED_FLAGS.iter().all(|flag| {
+    if flags.iter().all(|flag| {
         help.lines().any(|line| {
             line.trim_start().starts_with('-')
                 && line

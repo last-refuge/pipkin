@@ -35,6 +35,67 @@ pub(super) fn until(done: impl Fn() -> bool) {
 }
 
 #[test]
+fn cancelled_input_rechecks_after_a_ready_lock_even_without_an_outer_select_poll() {
+    use std::{future::Future, task::Poll};
+    for mode in [InputMode::Prompt, InputMode::Steer, InputMode::FollowUp] {
+        let fx = Fixture::new();
+        let provider = Scripted::echo("never");
+        let mut e = fx.start(&provider);
+        let session = e.create(&fx.project, "queued cancellation");
+        let shared = e.handle.shared().clone();
+        let sess = shared.session(&session).unwrap();
+        let lock = sess.lock.blocking_lock();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let call = if mode == InputMode::Prompt {
+            Call::Prompt {
+                session: session.clone(),
+                request: "cancel-gap".into(),
+                text: "work".into(),
+                images: vec![],
+                model: None,
+            }
+        } else {
+            Call::Enqueue {
+                session: session.clone(),
+                request: "cancel-gap".into(),
+                text: "work".into(),
+                images: vec![],
+                mode,
+            }
+        };
+        let result = shared.handle.block_on(async {
+            let mut admission = Box::pin(super::dispatch_with_cancel(
+                &shared,
+                e.conn.client_id(),
+                call,
+                &cancel,
+            ));
+            std::future::poll_fn(|cx| {
+                assert!(admission.as_mut().poll(cx).is_pending());
+                Poll::Ready(())
+            })
+            .await;
+            // Reproduce the select gap: cancellation was checked before this lock became
+            // ready; now directly resume admission, without polling an outer cancel branch.
+            drop(lock);
+            cancel.cancel();
+            admission.await
+        });
+        assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
+        assert!(
+            shared
+                .store
+                .request(&session, "cancel-gap")
+                .unwrap()
+                .is_none()
+        );
+        assert!(provider.requests().is_empty());
+        e.prompt(&session, "after-cancel", "usable").unwrap();
+        assert!(matches!(e.settled("after-cancel"), RunOutcome::Completed));
+    }
+}
+
+#[test]
 fn cancellation_reaches_a_queued_prompt_even_with_every_normal_slot_occupied() {
     let fx = Fixture::new();
     let provider = Scripted::echo("answer");

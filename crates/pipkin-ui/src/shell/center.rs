@@ -396,6 +396,12 @@ impl Workspace {
                     ),
             )
             .children(demo.then(|| chip("Demo · simulated agent", c.text_muted, c.bg_active, cx)))
+            .when(
+                self.state(cx)
+                    .current()
+                    .is_some_and(|c| self.state(cx).cli_approval_panel_available(c.id)),
+                |d| d.child(self.cli_approval_entry(cx)),
+            )
             .when(self.subagent_rows.total > 0, |d| {
                 d.child(
                     Btn::new("show-subagent-tasks")
@@ -585,6 +591,8 @@ impl Workspace {
                 }
                 detail
             });
+        let capabilities = self.state(cx).execution_capabilities();
+        let restricted_model = super::local_cli::restricted_model_label(self.state(cx));
         let no_models = models.is_empty();
         // This build cannot send, or the built-in engine owns this conversation.
         let read_only = match self.state(cx).current() {
@@ -602,7 +610,9 @@ impl Workspace {
                     "Choose model".into()
                 }
             });
-        let model_name = if real {
+        let model_name = if let Some(label) = restricted_model {
+            label.to_owned()
+        } else if real {
             match self
                 .state(cx)
                 .current()
@@ -644,7 +654,13 @@ impl Workspace {
         let status: Option<gpui::AnyElement> = match &run {
             // The engine has no model Pipkin can offer: say what to do about it.
             // Only when connected: offline, which models exist is not known.
-            RunState::Idle if real && no_models && read_only.is_none() && avail.refresh_models => {
+            RunState::Idle
+                if real
+                    && capabilities.model_settings
+                    && no_models
+                    && read_only.is_none()
+                    && avail.refresh_models =>
+            {
                 let can_connect = self.model.read(cx).sign_in.available;
                 let action = if can_connect {
                     Btn::new("connect-account")
@@ -983,6 +999,7 @@ impl Workspace {
                 Btn::new("attach")
                     .icon("paperclip")
                     .aria("Attach files (Ctrl+O)")
+                    .disabled(!capabilities.attachments)
                     .on_click(move |_, cx| this.update(cx, |t, cx| t.attach_files(cx)))
             })
             .child({
@@ -994,12 +1011,15 @@ impl Workspace {
                         Btn::new("model-menu")
                             .label(model_name)
                             .trailing_icon("chevron-up")
-                            .aria("Model and effort settings (Ctrl+M for models)")
+                            .aria(
+                                restricted_model
+                                    .unwrap_or("Model and effort settings (Ctrl+M for models)"),
+                            )
                             .selected(matches!(
                                 self.overlay,
                                 Overlay::ModelSettings | Overlay::Model | Overlay::Effort
                             ))
-                            .disabled(no_models)
+                            .disabled(no_models || !capabilities.model_settings)
                             .on_click(move |window, cx| {
                                 this.update(cx, |t, cx| {
                                     t.open_overlay(Overlay::ModelSettings, window, cx)

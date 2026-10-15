@@ -4,10 +4,14 @@
 
 pub mod attach;
 pub mod backend;
+pub mod cli_approval_port;
+pub mod cli_approvals;
 pub mod diagnostics;
+mod execution;
 pub mod ids;
 pub mod import;
 pub mod jobs;
+pub mod local_cli;
 pub mod mcp;
 pub mod model;
 pub mod onboarding;
@@ -20,9 +24,13 @@ pub mod subagents;
 
 pub use attach::*;
 pub use backend::*;
+pub use cli_approval_port::*;
+pub use cli_approvals::*;
+pub use execution::ExecutionCapabilities;
 pub use ids::*;
 pub use import::*;
 pub use jobs::*;
+pub use local_cli::*;
 pub use mcp::*;
 pub use model::*;
 pub use ownership::*;

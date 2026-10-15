@@ -8,6 +8,8 @@
 //! authorization; Stopping is not eligible for new admission.
 //! Call `recover_external_runs` at startup before allowing any execution; it never replays work.
 use super::*;
+pub mod permissions;
+pub mod prompts;
 
 /// Immutable, nonsecret identity. Config/account fields are opaque markers, NEVER credentials
 /// or paths to credentials. The caller must qualify both paths against the actual filesystem;
@@ -214,10 +216,7 @@ impl Store {
         Ok(())
     }
 
-    /// Root-only, no model, no subagents. Exact request key, id AND identity repeats are
-    /// idempotent; cross-native keys/ids or any changed identity conflict. No rebinding API.
-    /// First binding creation permanently consumes the UUID, even without launch or after
-    /// removal of completed history. Its nonsecret ownership receipt is committed atomically.
+    /// Legacy root-only CLI creation without a model. No rebinding or model upgrade.
     pub fn create_cli_session(
         &self,
         id: &str,
@@ -225,18 +224,86 @@ impl Store {
         binding: &CliBindingSpec,
         now: i64,
     ) -> Result<(SessionRow, bool)> {
+        self.create_cli_session_impl(id, request_key, binding, None, now)
+    }
+
+    /// Atomically freeze the approved binding and model alias. Exact request key, id,
+    /// binding AND model repeats are idempotent; any changed payload conflicts.
+    /// Creation permanently consumes the CLI UUID, even without launch or after removal.
+    pub fn create_cli_session_with_model(
+        &self,
+        id: &str,
+        request_key: &str,
+        binding: &CliBindingSpec,
+        model_alias: &str,
+        now: i64,
+    ) -> Result<(SessionRow, bool)> {
+        if !matches!(model_alias, "haiku" | "sonnet" | "opus") {
+            return Err(StoreError::ExecutionConflict);
+        }
+        self.create_cli_session_impl(id, request_key, binding, Some(model_alias), now)
+    }
+
+    /// Resolve a durable creation before checking an ephemeral approval's expiry.
+    /// Only the exact live CLI id/key pair succeeds. This read never consumes an approval,
+    /// changes a revision, or authorizes creation; None means neither id nor key exists.
+    pub fn cli_creation(&self, id: &str, request_key: &str) -> Result<Option<SessionRow>> {
+        if !token(id) || !token(request_key) {
+            return Err(StoreError::ExecutionConflict);
+        }
+        self.read(|c| Self::cli_creation_in(c, id, request_key))
+    }
+
+    fn cli_creation_in(c: &Connection, id: &str, request_key: &str) -> Result<Option<SessionRow>> {
+        Self::assert_session_live(c, id)?;
+        if c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM session_removals WHERE create_key=?1)",
+            [request_key],
+            |r| r.get::<_, bool>(0),
+        )? {
+            return Err(StoreError::Removed);
+        }
+        let existing = c
+            .query_row(
+                "SELECT * FROM sessions WHERE create_key=?1",
+                [request_key],
+                Self::session_from_row,
+            )
+            .optional()?;
+        if let Some(existing) = existing {
+            if existing.id != id
+                || existing.execution_backend != ExecutionBackend::LocalClaudeCli
+                || Self::cli_binding_in(c, id)?.is_none()
+            {
+                return Err(StoreError::ExecutionConflict);
+            }
+            return Ok(Some(existing));
+        }
+        if c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?1)",
+            [id],
+            |r| r.get::<_, bool>(0),
+        )? {
+            return Err(StoreError::ExecutionConflict);
+        }
+        Ok(None)
+    }
+
+    fn create_cli_session_impl(
+        &self,
+        id: &str,
+        request_key: &str,
+        binding: &CliBindingSpec,
+        model_alias: Option<&str>,
+        now: i64,
+    ) -> Result<(SessionRow, bool)> {
         validate_spec(binding)?;
         if !token(id) || !token(request_key) {
             return Err(StoreError::ExecutionConflict);
         }
         self.tx(|tx| {
-            Self::assert_session_live(tx, id)?;
-            if tx.query_row("SELECT EXISTS(SELECT 1 FROM session_removals WHERE create_key=?1)", [request_key], |r| r.get::<_, bool>(0))? {
-                return Err(StoreError::Removed);
-            }
-            let existing = tx.query_row("SELECT * FROM sessions WHERE create_key=?1", [request_key], Self::session_from_row).optional()?;
-            if let Some(existing) = existing {
-                if existing.id != id || existing.execution_backend != ExecutionBackend::LocalClaudeCli
+            if let Some(existing) = Self::cli_creation_in(tx, id, request_key)? {
+                if existing.model.as_deref() != model_alias
                     || Self::cli_binding_in(tx, id)?.map(|b| b.identity).as_ref() != Some(binding) {
                     return Err(StoreError::ExecutionConflict);
                 }
@@ -245,8 +312,8 @@ impl Store {
             if tx.query_row("SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?1) OR EXISTS(SELECT 1 FROM cli_binding_receipts WHERE cli_session_id=?2 OR session=?1)", params![id,binding.cli_session_id], |r| r.get::<_, bool>(0))? {
                 return Err(StoreError::ExecutionConflict);
             }
-            tx.execute("INSERT INTO sessions(id,cwd,created_at,updated_at,origin,subagents_enabled,create_key,execution_backend)
-                VALUES(?1,?2,?3,?3,?4,0,?5,'localClaudeCli')", params![id,binding.project_path,now,json(&Origin::default()),request_key])?;
+            tx.execute("INSERT INTO sessions(id,cwd,created_at,updated_at,origin,subagents_enabled,create_key,execution_backend,model)
+                VALUES(?1,?2,?3,?3,?4,0,?5,'localClaudeCli',?6)", params![id,binding.project_path,now,json(&Origin::default()),request_key,model_alias])?;
             tx.execute("INSERT INTO cli_bindings(session,cli_session_id,project_path,executable_path,cli_version,config_ref,account_scope,launch_policy)
                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![id,binding.cli_session_id,binding.project_path,binding.executable_path,binding.cli_version,binding.config_ref,binding.account_scope,binding.launch_policy])?;
             Ok((tx.query_row("SELECT * FROM sessions WHERE id=?1", [id], Self::session_from_row)?, true))
@@ -303,6 +370,7 @@ impl Store {
         now: i64,
     ) -> Result<(ExternalRun, bool)> {
         self.tx(|tx| {
+            Self::assert_raw_external_run(tx, key)?;
             Self::assert_external_binding(tx, key)?;
             if let Some(run) = Self::external_run_in(tx, key)? { return Ok((run, false)); }
             if tx.query_row("SELECT EXISTS(SELECT 1 FROM external_runs WHERE session=?1 AND (state<>'completed' OR op=?2))", params![key.session,key.op], |r| r.get::<_, bool>(0))? {
@@ -330,6 +398,7 @@ impl Store {
             return Err(StoreError::ExecutionConflict);
         }
         self.tx(|tx| {
+            Self::assert_raw_external_run(tx, key)?;
             Self::assert_external_binding(tx, key)?;
             if next == ExternalRunState::Completed && tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM external_actions WHERE session=?1 AND generation=?2 AND op=?3 AND status NOT IN ('completed','failed'))",
@@ -347,6 +416,7 @@ impl Store {
     }
 
     fn invalidate_external_binding(c: &Connection, key: &ExternalRunKey, now: i64) -> Result<()> {
+        Self::revoke_external_permissions_for_run_in(c, key, now)?;
         c.execute("UPDATE cli_bindings SET context_valid=0,generation=generation+1 WHERE session=?1 AND generation=?2 AND context_valid=1", params![key.session,key.generation])?;
         c.execute("UPDATE external_actions SET status='unknown',updated_at=MAX(updated_at,?4) WHERE session=?1 AND generation=?2 AND op=?3 AND status IN ('observed','running')", params![key.session,key.generation,key.op,now])?;
         Ok(())
@@ -356,10 +426,17 @@ impl Store {
     /// become Unknown, including admitted-but-not-launched runs. Completed history is preserved.
     pub fn recover_external_runs(&self, now: i64) -> Result<usize> {
         self.tx(|tx| {
+            // Revoke even anomalous/orphaned authority; restart never restores an allow.
+            tx.execute("UPDATE external_permissions SET state='revoked',updated_at=MAX(updated_at,?1) WHERE state IN ('pending','granted')", [now])?;
             let keys = tx.prepare("SELECT session,generation,op FROM external_runs WHERE state IN ('admitted','launchIntent','running','stopping')")?
                 .query_map([], |r| Ok(ExternalRunKey { session: r.get(0)?, generation: r.get(1)?, op: r.get(2)? }))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             for key in &keys {
+                if Self::external_prompt_for_run_in(tx, key)?.is_some() {
+                    Self::recover_external_prompt_in(tx, key, now)?;
+                    Self::bump(tx, &key.session, now)?;
+                    continue;
+                }
                 tx.execute("UPDATE external_runs SET state='unknown',updated_at=MAX(updated_at,?4) WHERE session=?1 AND generation=?2 AND op=?3", params![key.session,key.generation,key.op,now])?;
                 Self::invalidate_external_binding(tx, key, now)?;
                 Self::bump(tx, &key.session, now)?;
@@ -382,6 +459,7 @@ impl Store {
             return Err(StoreError::ExecutionConflict);
         }
         self.tx(|tx| {
+            Self::assert_raw_external_run(tx, key)?;
             Self::assert_external_binding(tx, key)?;
             let run = Self::external_run_in(tx, key)?.ok_or(StoreError::ExecutionConflict)?;
             if !matches!(run.state, ExternalRunState::Running | ExternalRunState::Stopping) { return Err(StoreError::ExecutionConflict); }

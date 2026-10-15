@@ -10,6 +10,10 @@ use super::workspace::{Overlay, Workspace};
 use crate::model::DemoControls;
 use crate::theme::ActiveTheme;
 
+fn native_usage(profile: ExecutionProfile, usage: Option<SessionUsage>) -> Option<SessionUsage> {
+    usage.filter(|_| profile == ExecutionProfile::NativeAgent)
+}
+
 /// Put a submenu beside its parent, preferring the right edge. On a narrow window
 /// neither side fits, so overlap the parent instead of losing the submenu offscreen.
 fn submenu_x(parent_x: f32, parent_width: f32, submenu_width: f32, window_width: f32) -> f32 {
@@ -78,7 +82,10 @@ impl Workspace {
         let demo = cx.try_global::<DemoControls>();
         let mut scored: Vec<(usize, Cmd)> = commands::build(self.state(cx), demo)
             .into_iter()
-            .filter_map(|c| {
+            .filter_map(|mut c| {
+                if let super::commands::Run::LocalCli(existing) = &c.run {
+                    c.enabled = self.local_cli_entry_enabled(*existing, cx);
+                }
                 commands::fuzzy_score(q.trim(), &format!("{} {}", c.group, c.title)).map(|s| (s, c))
             })
             .collect();
@@ -227,6 +234,8 @@ impl Workspace {
             Overlay::Project => self.render_menu_overlay(window, cx).into_any_element(),
             Overlay::Rename(_) => self.render_rename(cx).into_any_element(),
             Overlay::Prefs => self.render_prefs(window, cx).into_any_element(),
+            Overlay::LocalCli => self.render_local_cli(cx).into_any_element(),
+            Overlay::CliApprovals => self.render_cli_approvals(window, cx).into_any_element(),
             Overlay::Session => self.render_session(window, cx).into_any_element(),
             Overlay::About => self.render_about(cx).into_any_element(),
             Overlay::Question => self.render_question(cx).into_any_element(),
@@ -813,14 +822,18 @@ impl Workspace {
     fn render_model_settings(&mut self, focused: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let t = cx.theme().clone();
         let c = &t.colors;
+        let model_settings = self.state(cx).execution_capabilities().model_settings;
         let (model, effort, has_effort) = {
             let s = self.state(cx);
-            let model = s
-                .models
-                .iter()
-                .find(|m| Some(&m.id) == s.prefs.model.as_ref())
-                .map(|m| m.name.clone())
-                .unwrap_or_else(|| "Choose model".into());
+            let model = super::local_cli::restricted_model_label(s)
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    s.models
+                        .iter()
+                        .find(|m| Some(&m.id) == s.prefs.model.as_ref())
+                        .map(|m| m.name.clone())
+                        .unwrap_or_else(|| "Choose model".into())
+                });
             let effort = s
                 .current()
                 .and_then(|conv| conv.thinking_level.as_deref())
@@ -851,39 +864,42 @@ impl Workspace {
             .flex_col()
             .occlude()
             .children(
-                [(0, "Model", model, true), (1, "Effort", effort, has_effort)]
-                    .into_iter()
-                    .map(|(i, label, value, enabled)| {
-                        let this = this.clone();
-                        menu_row(("setting", i), i == selected, cx)
-                            .role(Role::MenuItem)
-                            .aria_label(format!("{label}: {value}"))
-                            .when(!enabled, |r| r.opacity(0.45))
-                            .on_click(move |_, window, cx| {
-                                if enabled {
-                                    this.update(cx, |t, cx| {
-                                        t.open_overlay(
-                                            if i == 0 {
-                                                Overlay::Model
-                                            } else {
-                                                Overlay::Effort
-                                            },
-                                            window,
-                                            cx,
-                                        );
-                                    });
-                                }
-                            })
-                            .child(div().flex_1().child(label))
-                            .child(
-                                div()
-                                    .max_w(px(145.0))
-                                    .truncate()
-                                    .text_color(c.text_muted)
-                                    .child(value),
-                            )
-                            .child(icon("chevron-right", px(14.0), c.text_muted))
-                    }),
+                [
+                    (0, "Model", model, model_settings),
+                    (1, "Effort", effort, has_effort && model_settings),
+                ]
+                .into_iter()
+                .map(|(i, label, value, enabled)| {
+                    let this = this.clone();
+                    menu_row(("setting", i), i == selected, cx)
+                        .role(Role::MenuItem)
+                        .aria_label(format!("{label}: {value}"))
+                        .when(!enabled, |r| r.opacity(0.45))
+                        .on_click(move |_, window, cx| {
+                            if enabled {
+                                this.update(cx, |t, cx| {
+                                    t.open_overlay(
+                                        if i == 0 {
+                                            Overlay::Model
+                                        } else {
+                                            Overlay::Effort
+                                        },
+                                        window,
+                                        cx,
+                                    );
+                                });
+                            }
+                        })
+                        .child(div().flex_1().child(label))
+                        .child(
+                            div()
+                                .max_w(px(145.0))
+                                .truncate()
+                                .text_color(c.text_muted)
+                                .child(value),
+                        )
+                        .child(icon("chevron-right", px(14.0), c.text_muted))
+                }),
             )
             .child(
                 gpui::canvas(
@@ -1202,7 +1218,16 @@ impl Workspace {
     fn render_session(&mut self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = cx.theme().clone();
         let c = &t.colors;
-        let usage = self.state(cx).current().and_then(|cv| cv.usage.clone());
+        let local_cli = self
+            .state(cx)
+            .current()
+            .is_some_and(|cv| cv.profile.is_local_cli());
+        // Native usage rows are not CLI accounting. In particular an empty native
+        // bucket must not present a fabricated zero-dollar CLI bill.
+        let usage = self
+            .state(cx)
+            .current()
+            .and_then(|cv| native_usage(cv.profile, cv.usage.clone()));
         let context = self.state(cx).current().and_then(|cv| cv.context.clone());
         let demo = self.state(cx).mode == Mode::Demo;
         let this = cx.entity();
@@ -1216,7 +1241,13 @@ impl Workspace {
         };
         let totals = usage.as_ref().map(SessionUsage::total);
         let accessible = totals.as_ref().map_or_else(
-            || "Session usage unavailable.".to_string(),
+            || {
+                if local_cli {
+                    "Local CLI usage and billing are unverified.".to_string()
+                } else {
+                    "Session usage unavailable.".to_string()
+                }
+            },
             |total| {
                 format!(
                     "Session usage. {} total tokens. Reported cost {}.",
@@ -1266,7 +1297,9 @@ impl Workspace {
                     .text_color(c.text_muted)
                     .child(usage.as_ref().map_or_else(
                         || {
-                            if demo {
+                            if local_cli {
+                                "CLI usage is not integrated here. Check Claude Code for account usage; subscription billing is unverified.".to_string()
+                            } else if demo {
                                 "Demo · no model usage".to_string()
                             } else {
                                 "The engine has not reported usage for this session.".to_string()
@@ -1777,6 +1810,15 @@ mod form_tests {
 #[cfg(test)]
 mod session_format_tests {
     use super::*;
+
+    #[test]
+    fn external_profiles_never_display_native_zero_usage_as_cli_accounting() {
+        let empty = Some(SessionUsage::default());
+        assert!(native_usage(ExecutionProfile::NativeAgent, empty.clone()).is_some());
+        assert!(native_usage(ExecutionProfile::LocalCliChatOnly, empty.clone()).is_none());
+        assert!(native_usage(ExecutionProfile::LocalCliRestrictedWrite, empty.clone()).is_none());
+        assert!(native_usage(ExecutionProfile::Unsupported, empty).is_none());
+    }
 
     #[test]
     fn counts_and_unreported_costs_are_distinct() {

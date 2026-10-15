@@ -165,9 +165,16 @@ impl RenderOnce for Btn {
                         d.on_click(move |_: &ClickEvent, w, cx| f(w, cx))
                     })
                     .when_some(on_key, |d, f| {
-                        d.on_key_down(move |ev, w, cx| {
-                            if matches!(ev.keystroke.key.as_str(), "enter" | "space") {
-                                f(w, cx);
+                        // GPUI also synthesizes a click on key-up. Handle activation
+                        // in capture so its bubble listener cannot arm a second click.
+                        d.capture_key_down(move |ev, w, cx| {
+                            if matches!(ev.keystroke.key.as_str(), "enter" | "space")
+                                && !ev.keystroke.modifiers.modified()
+                            {
+                                w.prevent_default();
+                                if !ev.is_held {
+                                    f(w, cx);
+                                }
                                 cx.stop_propagation();
                             }
                         })
@@ -321,3 +328,6 @@ pub fn wordmark(size: gpui::Pixels, cx: &App) -> Div {
         .child("Pipk")
         .child(div().text_color(t.colors.accent_fill).child("in"))
 }
+
+#[cfg(test)]
+mod tests;

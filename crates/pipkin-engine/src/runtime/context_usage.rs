@@ -111,6 +111,19 @@ pub fn compute(inputs: ContextInputs<'_>) -> ContextUsageView {
 
 impl Shared {
     pub fn context_usage(&self, session: &str) -> Result<ContextUsageView, ProtoError> {
+        let system_tokens = self
+            .session(session)
+            .ok()
+            .map(|s| Self::cached_system_tokens(&s))
+            .unwrap_or(0);
+        self.context_usage_with_system_tokens(session, system_tokens)
+    }
+
+    pub(super) fn context_usage_with_system_tokens(
+        &self,
+        session: &str,
+        system_tokens: u64,
+    ) -> Result<ContextUsageView, ProtoError> {
         let row = self.store.session(session)?.ok_or_else(|| {
             ProtoError::new(
                 ErrorCode::NotFound,
@@ -128,23 +141,6 @@ impl Shared {
             .compaction
             .enabled
             .then_some(settings.compaction.reserve_tokens);
-        // The system prompt as last sent (byte-stable between turns), when cached.
-        let system_tokens = self
-            .session(session)
-            .ok()
-            .and_then(|sess| {
-                sess.prompt
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .as_ref()
-                    .map(|(_, sections)| {
-                        sections
-                            .values()
-                            .map(|v| estimate_text_tokens(v.as_str().unwrap_or("")))
-                            .sum()
-                    })
-            })
-            .unwrap_or(0);
         let compaction = if !settings.compaction.enabled {
             "off".to_owned()
         } else {
@@ -169,6 +165,22 @@ impl Shared {
             compaction,
             revision: row.revision,
         }))
+    }
+
+    /// Capture volatile cache state before taking publication; session() takes the registry
+    /// lock, which removal takes BEFORE publication. Never invert that ordering in snapshots.
+    pub(super) fn cached_system_tokens(sess: &super::SessionRt) -> u64 {
+        sess.prompt
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|(_, sections)| {
+                sections
+                    .values()
+                    .map(|v| estimate_text_tokens(v.as_str().unwrap_or("")))
+                    .sum()
+            })
+            .unwrap_or(0)
     }
 
     /// Volatile publication (like UI state): the next snapshot recomputes it anyway.

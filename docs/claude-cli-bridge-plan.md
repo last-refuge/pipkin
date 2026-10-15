@@ -1,13 +1,52 @@
 # Native local Claude CLI bridge: implementation plan
 
-Status: **Phase 0 release gates open; Phase 1 foundation and Phase 2 transport foundation implemented**.
+Status: **Phases 0–5 implemented for chat/Write-only testing; live/native evidence recorded; normal desktop hosting enabled by default at the user's subsequent request**.
+Host availability is not path trust, readiness or a Write approval. Explicit disable flags are
+available; demo/attached hosts remain isolated. Historical default-off checkpoints below are
+preserved, not claims about the current desktop default. See [testing instructions and limits](local-claude-cli.md).
+The following implementation chronology preserves earlier checkpoints; current qualification is
+CLI2.1.299 on the built Linux desktop, not installed release-package or general tool parity.
 Workspace tests, Clippy and formatting pass. Standalone Rust probe/fake-process harness implemented;
 authorized fresh/resume, exact Write deny/allow-once and pending-approval interruption checks
 passed. Calibrated startup/discovery isolation and offline durable-lifecycle/crash-cut checks
-passed. Persistent identities, an external ledger and native-execution refusal are implemented;
-CLI execution, general permission UI, real CLI crash recovery/orphan cleanup, broader isolation
-and billing qualification remain open. No CLI create/select RPC or runtime subprocess is enabled.
+passed. External-only prompt receipts/history, durable projection and an internal chat-only
+executor are exercised with fake processes. Protocol 36 retains explicit setup,
+immutable aliases, capability-aware desktop controls, owner-scoped readiness and tracked cleanup,
+and adds inert action reports. Schema 25 adds indexed receipt-backed action projection to
+schema 24's offline approval ledger; bounded parser/gate, private IPC codec and Rust
+helper entry points are implemented. A receipt-backed controller now composes reservation,
+review, one-shot consumption and revocation. Its private Unix listener and packaged Rust
+helper pass offline socket tests. A distinct internal Write-policy preflight/command builder
+and receipt-backed inert action projection now pass offline tests. The internal coding actor
+owns the broker/listener/supervisor and passes fake-process permission, settlement and teardown
+tests. Public mode selection now reaches metadata-only coding setup through protocol/core/
+adapter/UI, with immutable policy checks and no coding execution grant even under chat opt-in.
+Connection-owned approval review/decision/read-only lookup APIs now delegate to weak,
+actor-owned controller registrations, with offline public-RPC lifecycle tests. A staged pure-core
+approval reducer, AppState lifecycle retirement, dedicated command/backend/event ports and native
+receipt-scoped RPC mapping and captured GPUI approval controls are verified offline/headlessly.
+Current-grant public coding admission and core→adapter→engine→fake CLI approval flow are now
+verified. Protocol 39 projects immutable policy into a distinct restricted-write profile;
+identity alone never grants readiness. Coding requires both default-off host switches,
+`enable_local_claude_cli` and `enable_local_claude_cli_write`, and a current owner grant.
+The default-off public Prompt/Stop route and desktop setup pass a fake-CLI end-to-end flow,
+including fresh/resume, reapproval, Allow once/Deny/Stop and lost-decision read-only recovery.
+Creation identities now survive restart through a bounded write-ahead desktop journal, with no
+restored trust or automatic requests. Exact acknowledgment and receipt/catalog retirement,
+write-failure suppression, lost-reply app/engine restart and writer-kill durability are tested.
+Approval attempts now have a separate write-ahead metadata journal, with no restored authority
+or cross-owner lookup. Redacted diagnostics and hints-only fresh handoffs are implemented.
+An owned engine-kill fixture verifies conservative recovery and explicitly demonstrates that an
+already-authorized effect can finish after engine death; crash containment is not qualified.
+Desktop schema is 10; engine protocol/schema remain 39/25.
+Full workspace gates passed job 110 with quota-safe
+fixtures (jobs 45/48/53/57/60/65/69 were earlier chat-only/foundation/controller/listener/policy/actor/setup checkpoints). Lookup/wait/snapshots use external receipts, never native execution rows.
+Default-off process-local desktop opt-ins and built desktop/worker/helper qualification are now
+implemented. Broader tool parity, real CLI crash/orphan containment, managed policy, installed
+release packages and billing remain outside the qualified slice. Setup/creation RPCs never
+submit a prompt; host flags do not grant trust, readiness or approval.
 Progress and commands: [Qualification and implementation evidence](claude-cli-bridge-evidence.md).
+Permission foundations and remaining seams: [integration contract](claude-cli-permission-design.md).
 Planning inspection: 2026-10-13. Locally installed Claude Code: **2.1.296**.
 
 ## 1. Goal and product contract
@@ -192,14 +231,18 @@ Exit: fake-backend tests demonstrate CLI events cannot enter native tool replay,
 
 ### Phase 2 — read-only vertical slice
 
-Transport foundation implemented, still disabled in runtime: shared bounded supervision,
+Transport and default-off chat-only runtime implemented: shared bounded supervision,
 nonblocking stdout observation, explicit trusted-candidate preflight, fixed version-qualified
 **no-tools/chat-only** launch policy, and bounded display-only stream projection. Fake CLI
 integration covers stdin-only prompts, identity mismatch, backpressure and terminal-before-exit
 failure. All 81 original qualification tests remain (30 shared-library + 51 example tests);
 new coverage brings the shared CLI module to 78 tests. Full workspace gates pass (job #33).
-This is not the end-to-end read-only milestone: durable prompt/projection receipts, runtime
-routing, desktop setup/capabilities and live strict-schema qualification remain ahead.
+Subsequent protocol35/schema23 work adds durable receipts/projection, connection-scoped public
+routing, desktop setup/capabilities and explicit uncertain-creation recovery. Job 45 passes the
+full workspace gates, including fake end-to-end fresh/resume/reapproval. This is still **chat
+only**, not read-only tool support: external tools, live strict-schema checks and actual native
+desktop qualification remain open. Approval currently expires five minutes after Inspect;
+expiry stops active work and interrupted contexts require a fresh conversation.
 
 Implement discovery/preflight, bounded subprocess supervisor and decoder; admission-to-stream-to-settlement mapping; explicit-session completed-turn resume; cancellation and conservative crash recovery. Add fake CLI programs and replay fixtures before real-account tests.
 
@@ -209,15 +252,45 @@ Exit: a selected trusted project streams and resumes in the desktop, read-only t
 
 Add documented permission hosting and UI integration; explicit consent for any preapproved rules; stale approvals, denial, timeout, disconnect, and cancellation paths. Allow editing/shell tools only after the host/configuration boundary is verified. Treat AskUserQuestion/MCP elicitation as separate protocols to test, not automatically covered by permission support.
 
-Exit: in a scratch project, approve a bounded edit and command, deny another, cancel a pending approval, and restart after an uncertain mutation without replaying it. Changes inspector reports actual Git/file changes. No permission-bypass flags are needed. Without this gate, the product stays labeled read-only.
+Implementation checkpoint (job 94): the initial **Write-only** slice has scoped one-shot reviews,
+closed UI/adapter commands, current-grant admission and fake-process end-to-end Allow/Deny/Stop/
+uncertain-reply recovery. No Edit/Bash/MCP parity is claimed. Plan task 24 covers this offline
+implementation; Changes/restart recovery and actual qualification remain in tasks 25/26.
+
+Activation exit: in an authorized scratch project, approve a bounded Write, deny another,
+cancel a pending approval, and restart after an uncertain mutation without replaying it.
+Changes must report actual Git/file state. Broader editing/shell commands need their own
+schemas, immutable policies and qualification before advertising support. No bypass flags
+are permitted; production execution remains disabled until the applicable gates pass.
 
 ### Phase 4 — setup UX, optional tool parity, and hardening
+
+Job 99 adds captured-project Changes observation with explicit non-attribution, isolated
+non-executable Git comparison, and admission-time cancellation checks (including explicit
+scope capture into owned CLI preflight/admission). Job110 additionally verifies durable uncertain
+creation/approval metadata recovery, redacted diagnostics and captured hints-only fresh setup.
+Engine-kill fixtures retain partial text and uncertain receipts without replay, but deliberately
+show that an already-authorized effect can finish after engine death: containment is not passed.
+The racy-clean Git index timestamp regression is corrected. See
+`crates/pipkin-app/CLI_WORKSPACE_OBSERVATION.md` and `CLI_RECOVERY_HARDENING.md` in that directory
+for measured coverage and explicit limits. The offline Phase 4 slice is complete.
 
 Complete Connections/model picker/help, per-session capability visibility, diagnostics, backend selection and handoffs. Optionally add a narrowly scoped MCP integration for Pipkin plans/goals/jobs/asks/subagents; design each lifecycle explicitly and keep unsupported features disabled. Do not block basic local-CLI support on full tool parity.
 
 Exit: signed-out/missing/upgraded CLI, auth conflicts, denied actions, account changes and lost CLI session history all give actionable messages. Existing API/native conversations behave unchanged; optional tool execution occurs once under its intended owner.
 
 ### Phase 5 — release qualification
+
+**Experimental-slice checkpoint:** exact CLI2.1.299, Linux built desktop/worker/helper, ten
+cumulative authorized runs. Fresh/resumed chat completed in native146. Fresh Write completed
+there but FAILED review interaction (premature approval); native158 resumed Write passed exact
+full-review copy validation before Allow, independent completion/file proof and Changes listing.
+Deny/Stop controls passed127/128. Unknown histories and failed fixtures remain unchanged.
+Full156, focused157 and final full159 passed; final documentation/regression evidence is recorded
+in the evidence file. Both host switches remain default-off. See [testing guide](local-claude-cli.md).
+The broader matrix below is a risk/verification inventory, not a claim that every item was measured:
+billing, managed policy, installed release packaging, real IME/accessibility, full containment,
+performance and unsupported native-feature parity remain explicitly unqualified.
 
 Run the matrix below, publish minimum/tested CLI versions and platform support, and update `docs/{native-engine-reference,getting-started,diagnostics,live-provider-checks,scorecard}.md` as applicable. Extend `pipkin --engine native --diagnose --probe` with non-inference CLI checks only when configured/opted in; no auth installation, mutation or model prompt during diagnostics.
 

@@ -80,6 +80,12 @@ pub struct EngineConfig {
     /// Tests only: let `web_fetch` reach loopback and private addresses (a local fixture
     /// server). The default refuses them.
     pub web_allow_private_hosts: bool,
+    /// Master host opt-in for the CLI executor (chat-only unless Write is separately
+    /// enabled). Default off; no production switch is exposed before qualification.
+    pub enable_local_claude_cli: bool,
+    /// Separate internal qualification opt-in for Restricted Write; requires the CLI
+    /// master opt-in as well. Default off, Linux only, no production switch exposed.
+    pub enable_local_claude_cli_write: bool,
     /// The Secret Service client (`secret-tool`) for keychain credential storage; `None`
     /// uses the default path when it exists. Tests point it at a fake.
     pub secret_tool: Option<PathBuf>,
@@ -131,6 +137,8 @@ impl EngineConfig {
             extensions: vec![],
             clear_extensions: false,
             web_allow_private_hosts: false,
+            enable_local_claude_cli: false,
+            enable_local_claude_cli_write: false,
             secret_tool: None,
         }
     }

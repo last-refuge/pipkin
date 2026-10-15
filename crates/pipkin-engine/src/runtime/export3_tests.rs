@@ -301,7 +301,12 @@ fn configuration_and_the_credential_are_written_where_they_belong_and_reported_s
     assert_eq!(posts.last().unwrap().header("authorization"), None);
     // Turning it off keeps the rest of the configuration.
     let h = configure(&mut e, false, Some(&endpoint), "metadata").unwrap();
-    assert!(!h.enabled && h.state == "off");
+    assert!(
+        !h.enabled && h.state == "off",
+        "disabled export health: enabled={}, state={}",
+        h.enabled,
+        h.state
+    );
     assert_eq!(h.endpoint_url.as_deref(), Some(endpoint.as_str()));
     assert_eq!(settings_file(&fx)["export"]["enabled"], false);
 }

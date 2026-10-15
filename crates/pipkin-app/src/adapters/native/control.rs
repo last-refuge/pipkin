@@ -1,6 +1,7 @@
-//! Stop must not wait for transcript delivery to GPUI. One bounded worker uses the same
-//! multiplexed connection (no second owner/client). Each request captures its connection and
-//! session at admission; reconnect never redirects an old Stop to a replacement session.
+//! Stop must not wait for transcript delivery to GPUI; setup revocation must not wait for
+//! metadata checks. One bounded worker uses the same multiplexed connection (no second
+//! owner/client). Requests capture their connection at admission; reconnect never redirects
+//! an old Stop or Revoke to the replacement connection.
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, Weak, mpsc};
@@ -18,6 +19,18 @@ struct Binding {
     client: Weak<Client>,
     sessions: HashMap<ConversationId, String>,
     orders: HashMap<ConversationId, Arc<SendOrder>>,
+    policies: HashMap<ConversationId, Arc<Mutex<StopPolicy>>>,
+}
+
+struct StopPolicy {
+    summary: SessionSummary,
+    active: bool,
+}
+
+impl StopPolicy {
+    fn allowed(&self) -> bool {
+        super::execution::stop(&self.summary, self.active)
+    }
 }
 
 #[derive(Default)]
@@ -47,6 +60,7 @@ impl Submission {
 }
 
 struct Stop {
+    policy: Arc<Mutex<StopPolicy>>,
     order: Arc<SendOrder>,
     version: u64,
     submission: Option<Arc<Submission>>,
@@ -57,10 +71,26 @@ struct Stop {
     op: OperationId,
 }
 
+enum Work {
+    Stop(Stop),
+    Revoke {
+        job: super::local_cli::Job,
+        notify: bool,
+    },
+}
+
+#[derive(Default)]
+struct SetupBinding {
+    client: Weak<Client>,
+    conn: u64,
+    supported: bool,
+}
+
 pub(super) struct Control {
     binding: Mutex<Binding>,
+    setup_binding: Mutex<SetupBinding>,
     submissions: Mutex<HashMap<SubmissionKey, Arc<Submission>>>,
-    tx: Mutex<Option<mpsc::SyncSender<Stop>>>,
+    tx: Mutex<Option<mpsc::SyncSender<Work>>>,
     closed: Arc<AtomicBool>,
     thread: Mutex<Option<JoinHandle<()>>>,
     feedback: mpsc::Sender<Msg>,
@@ -68,17 +98,27 @@ pub(super) struct Control {
 
 impl Control {
     pub fn new(feedback: mpsc::Sender<Msg>, timeout: Duration) -> Self {
-        let (tx, rx) = mpsc::sync_channel::<Stop>(CAPACITY);
+        let (tx, rx) = mpsc::sync_channel::<Work>(CAPACITY);
         let closed = Arc::new(AtomicBool::new(false));
         let done = closed.clone();
         let results = feedback.clone();
         let handle = thread::Builder::new()
             .name("native-stop".into())
             .spawn(move || {
-                while let Ok(stop) = rx.recv() {
+                while let Ok(work) = rx.recv() {
                     if done.load(Ordering::Acquire) {
                         break;
                     }
+                    let stop = match work {
+                        Work::Revoke { job, notify } => {
+                            let completion = job.run(timeout);
+                            if notify {
+                                let _ = results.send(Msg::LocalCliCompleted(Box::new(completion)));
+                            }
+                            continue;
+                        }
+                        Work::Stop(stop) => stop,
+                    };
                     // Preserve Submit -> Stop ordering even when Cancel is clicked before the
                     // prompt's acknowledgement. Waiting is bounded and never holds the data worker.
                     let ready = stop.submission.as_ref().is_none_or(|s| s.wait(timeout));
@@ -91,7 +131,9 @@ impl Control {
                         // already settled; it must not cancel the new prompt.
                         continue;
                     }
-                    let error = if !ready {
+                    let error = if !lock(&stop.policy).allowed() {
+                        Some("Stop is unavailable for this execution profile.".into())
+                    } else if !ready {
                         Some("The prompt is still awaiting submission. Try Stop again.".into())
                     } else {
                         match stop.client.upgrade() {
@@ -125,6 +167,7 @@ impl Control {
             .expect("spawn native Stop worker");
         Self {
             binding: Mutex::new(Binding::default()),
+            setup_binding: Mutex::default(),
             submissions: Mutex::default(),
             tx: Mutex::new(Some(tx)),
             closed,
@@ -173,23 +216,133 @@ impl Control {
                 (*id, order)
             })
             .collect();
+        let policies = sessions
+            .iter()
+            .map(|(id, summary)| {
+                let policy = binding
+                    .policies
+                    .get(id)
+                    .filter(|p| lock(p).summary.id == summary.id)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        Arc::new(Mutex::new(StopPolicy {
+                            summary: summary.clone(),
+                            active: false,
+                        }))
+                    });
+                lock(&policy).summary = summary.clone();
+                (*id, policy)
+            })
+            .collect();
         *binding = Binding {
             client: Arc::downgrade(client),
             sessions: sessions.iter().map(|(id, s)| (*id, s.id.clone())).collect(),
             orders,
+            policies,
         };
     }
 
+    /// Snapshot the collision-resolved catalog's exact engine IDs, never reverse a hash.
+    pub fn local_cli_sessions(&self) -> Vec<(ConversationId, pipkin_core::EngineSessionId)> {
+        let setup = lock(&self.setup_binding);
+        let binding = lock(&self.binding);
+        if !setup.supported || !setup.client.ptr_eq(&binding.client) {
+            return Vec::new();
+        }
+        binding
+            .policies
+            .iter()
+            .filter_map(|(id, policy)| {
+                let policy = lock(policy);
+                (policy.summary.execution_backend
+                    == pipkin_engine_protocol::ExecutionBackend::LocalClaudeCli)
+                    .then(|| (*id, pipkin_core::EngineSessionId(policy.summary.id.clone())))
+            })
+            .collect()
+    }
+
+    pub fn set_active(&self, conversation: ConversationId, active: bool) {
+        if let Some(policy) = lock(&self.binding).policies.get(&conversation) {
+            lock(policy).active = active;
+        }
+    }
+
+    pub fn bind_setup(&self, client: &Arc<Client>, conn: u64, supported: bool) {
+        *lock(&self.setup_binding) = SetupBinding {
+            client: Arc::downgrade(client),
+            conn,
+            supported,
+        };
+    }
+
+    /// Best effort cleanup also uses this bounded lane; never wait for a metadata check.
+    pub fn revoke_setup(&self, job: super::local_cli::Job) {
+        self.queue_revoke(job, false);
+    }
+
+    fn queue_revoke(&self, job: super::local_cli::Job, notify: bool) {
+        let work = Work::Revoke { job, notify };
+        let result = match lock(&self.tx).as_ref() {
+            Some(tx) => tx.try_send(work),
+            None => Err(mpsc::TrySendError::Disconnected(work)),
+        };
+        if let Err(
+            mpsc::TrySendError::Full(Work::Revoke { job, notify: true })
+            | mpsc::TrySendError::Disconnected(Work::Revoke { job, notify: true }),
+        ) = result
+        {
+            let _ = self.feedback.send(Msg::LocalCliCompleted(Box::new(
+                super::local_cli::Completion {
+                    pending: job.pending,
+                    result: Err(super::CallError::NotSent(
+                        "The bounded control lane is busy or closed.".into(),
+                    )),
+                },
+            )));
+        }
+    }
+
     pub fn clear(&self, client: &Arc<Client>) {
+        let mut setup = lock(&self.setup_binding);
+        if setup.client.ptr_eq(&Arc::downgrade(client)) {
+            *setup = SetupBinding::default();
+        }
         let mut binding = lock(&self.binding);
         if binding.client.ptr_eq(&Arc::downgrade(client)) {
             *binding = Binding::default();
         }
     }
 
-    /// Returns false only if this is not a Stop. All Stops are either admitted or explicitly
-    /// refused; never fall back to the blocked data worker or silently retry on reconnect.
+    /// Stops and connected setup Revokes are admitted or explicitly refused on this bounded
+    /// lane. An unsupported/offline Revoke returns to the data worker for a scoped refusal;
+    /// it is never retried or redirected on reconnect.
     pub fn request(&self, request: &BackendRequest) -> bool {
+        if let BackendRequest::LocalCli {
+            conversation,
+            generation,
+            op,
+            request: request @ pipkin_core::LocalCliRequest::Revoke { .. },
+        } = request
+        {
+            let binding = lock(&self.setup_binding);
+            if !binding.supported {
+                return false;
+            }
+            self.queue_revoke(
+                super::local_cli::Job {
+                    client: binding.client.clone(),
+                    pending: super::local_cli::Pending {
+                        conn: binding.conn,
+                        conversation: *conversation,
+                        generation: *generation,
+                        op: *op,
+                        request: request.clone(),
+                    },
+                },
+                true,
+            );
+            return true;
+        }
         let BackendRequest::Cancel {
             conversation,
             generation,
@@ -212,12 +365,21 @@ impl Control {
                 fail("This conversation is not connected to the engine.");
                 return true;
             };
+            let Some(policy) = binding
+                .policies
+                .get(conversation)
+                .filter(|p| lock(p).allowed())
+            else {
+                fail("Stop is unavailable for this execution profile.");
+                return true;
+            };
             let order = binding
                 .orders
                 .get(conversation)
                 .expect("catalogue order")
                 .clone();
             Stop {
+                policy: policy.clone(),
                 version: order.version.load(Ordering::Acquire),
                 order,
                 submission: lock(&self.submissions)
@@ -230,7 +392,10 @@ impl Control {
                 op: *op,
             }
         };
-        match lock(&self.tx).as_ref().map(|tx| tx.try_send(stop)) {
+        match lock(&self.tx)
+            .as_ref()
+            .map(|tx| tx.try_send(Work::Stop(stop)))
+        {
             Some(Ok(())) => {}
             Some(Err(mpsc::TrySendError::Full(_))) => {
                 fail("Too many Stop requests are pending. Try Stop again.")
@@ -281,7 +446,19 @@ mod tests {
             client: Arc::downgrade(client),
             sessions: [(ConversationId(1), session.to_owned())].into(),
             orders: [(ConversationId(1), Arc::default())].into(),
+            policies: [(ConversationId(1), native_policy(session))].into(),
         };
+    }
+
+    fn native_policy(session: &str) -> Arc<Mutex<StopPolicy>> {
+        let summary = serde_json::from_value(serde_json::json!({
+            "id": session, "cwd": "/test", "createdAtMs": 0, "updatedAtMs": 0
+        }))
+        .unwrap();
+        Arc::new(Mutex::new(StopPolicy {
+            summary,
+            active: false,
+        }))
     }
 
     #[test]
@@ -339,6 +516,9 @@ mod tests {
                 .sessions
                 .insert(ConversationId(2), "sentinel".into());
             binding.orders.insert(ConversationId(2), Arc::default());
+            binding
+                .policies
+                .insert(ConversationId(2), native_policy("sentinel"));
         }
         control.request(&stop(1));
         let first = incoming.recv_timeout(Duration::from_secs(1)).unwrap();

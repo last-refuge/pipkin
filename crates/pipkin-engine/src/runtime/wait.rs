@@ -27,7 +27,7 @@ impl Shared {
                     "The engine is closing",
                 ));
             }
-            match self.store.prompt_result(session, request)? {
+            match self.prompt_state(session, request)? {
                 PromptState::Unknown => {
                     return Err(ProtoError::new(
                         ErrorCode::NotFound,

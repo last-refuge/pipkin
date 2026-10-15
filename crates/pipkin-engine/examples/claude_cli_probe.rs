@@ -26,7 +26,7 @@ use tokio_util::sync::CancellationToken;
 
 use process::{OutputMode, Spec};
 
-const QUALIFICATION_VERSION: &str = "2.1.296";
+const QUALIFICATION_VERSION: &str = pipkin_engine::execution::claude_cli::policy::QUALIFIED_VERSION;
 const REQUIRED_FLAGS: &[&str] = &[
     "--safe-mode",
     "--restricted",

@@ -25,7 +25,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use serde::{Deserialize, Deserializer, de::IgnoredAny};
+use serde::{Deserialize, Deserializer, Serialize, de::IgnoredAny};
+use sha2::{Digest, Sha256};
 
 pub const MAX_LINE_BYTES: usize = 256 * 1024;
 pub const MAX_ID_BYTES: usize = 128;
@@ -33,7 +34,7 @@ pub const MAX_ENTRIES: usize = 4096;
 /// Cumulative emitted display bytes (including replacements and tool results).
 pub const MAX_PROJECTED_BYTES: usize = 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Error {
     InvalidConfiguration,
     MalformedRecord,
@@ -66,6 +67,157 @@ impl fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
+
+/// Closed diagnostic classes only: never preserve an unrecognized type name or payload.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordClass {
+    System,
+    Assistant,
+    User,
+    Result,
+    StreamEvent,
+    MessageStart,
+    ContentBlockStart,
+    ContentBlockDelta,
+    ContentBlockStop,
+    MessageDelta,
+    MessageStop,
+    Ping,
+    EndOfStream,
+    #[serde(other)]
+    Unknown,
+}
+/// Deserialization diagnostics never contain error text, scalar values or schema labels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ParseFailureKind {
+    UnknownField,
+    MissingField,
+    InvalidType,
+    Other,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParseFailure {
+    pub kind: ParseFailureKind,
+    /// Hash of a rejected field label only (never an arbitrary value or entire error).
+    pub field_sha256: Option<[u8; 32]>,
+    #[serde(default)]
+    pub message_delta_shapes: Option<MessageDeltaShapes>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ValueShape {
+    Missing,
+    Null,
+    String,
+    Number,
+    Bool,
+    EmptyObject,
+    Object,
+    EmptyArray,
+    Array,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageDeltaShapes {
+    pub delta: ValueShape,
+    pub container: ValueShape,
+    pub stop_details: ValueShape,
+    pub stop_reason: ValueShape,
+    pub stop_sequence: ValueShape,
+    pub context_management: ValueShape,
+    pub input_transformations: ValueShape,
+}
+fn message_delta_shapes(bytes: &[u8]) -> Option<MessageDeltaShapes> {
+    // Failure-only, bounded by MAX_LINE_BYTES. Never retain keys or scalar contents.
+    use serde_json::Value;
+    fn shape(v: Option<&Value>) -> ValueShape {
+        match v {
+            None => ValueShape::Missing,
+            Some(Value::Null) => ValueShape::Null,
+            Some(Value::String(_)) => ValueShape::String,
+            Some(Value::Number(_)) => ValueShape::Number,
+            Some(Value::Bool(_)) => ValueShape::Bool,
+            Some(Value::Array(a)) if a.is_empty() => ValueShape::EmptyArray,
+            Some(Value::Array(_)) => ValueShape::Array,
+            Some(Value::Object(o)) if o.is_empty() => ValueShape::EmptyObject,
+            Some(Value::Object(_)) => ValueShape::Object,
+        }
+    }
+    let value: Value = serde_json::from_slice(bytes).ok()?;
+    let event = value.get("event")?;
+    if event.get("type")?.as_str()? != "message_delta" {
+        return None;
+    }
+    let delta = event.get("delta");
+    Some(MessageDeltaShapes {
+        delta: shape(delta),
+        container: shape(delta.and_then(|d| d.get("container"))),
+        stop_details: shape(delta.and_then(|d| d.get("stop_details"))),
+        stop_reason: shape(delta.and_then(|d| d.get("stop_reason"))),
+        stop_sequence: shape(delta.and_then(|d| d.get("stop_sequence"))),
+        context_management: shape(event.get("context_management")),
+        input_transformations: shape(event.get("input_transformations")),
+    })
+}
+fn parse_failure(bytes: &[u8]) -> Option<ParseFailure> {
+    let result =
+        serde_json::from_slice::<Header>(bytes).and_then(|header| match header.kind.as_str() {
+            "stream_event" => serde_json::from_slice::<StreamEnvelope>(bytes).map(|_| ()),
+            "assistant" => serde_json::from_slice::<MessageEnvelope>(bytes).map(|_| ()),
+            "user" => serde_json::from_slice::<UserEnvelope>(bytes).map(|_| ()),
+            "result" => serde_json::from_slice::<TerminalRecord>(bytes).map(|_| ()),
+            _ => Ok(()),
+        });
+    let error = result.err()?;
+    let text = error.to_string();
+    let message_delta_shapes = message_delta_shapes(bytes);
+    for (prefix, kind) in [
+        ("unknown field `", ParseFailureKind::UnknownField),
+        ("missing field `", ParseFailureKind::MissingField),
+    ] {
+        if let Some(label) = text
+            .strip_prefix(prefix)
+            .and_then(|rest| rest.split_once('`').map(|(label, _)| label))
+        {
+            return Some(ParseFailure {
+                kind,
+                field_sha256: Some(Sha256::digest(label.as_bytes()).into()),
+                message_delta_shapes,
+            });
+        }
+    }
+    Some(ParseFailure {
+        kind: if text.starts_with("invalid type:") {
+            ParseFailureKind::InvalidType
+        } else {
+            ParseFailureKind::Other
+        },
+        field_sha256: None,
+        message_delta_shapes,
+    })
+}
+
+fn record_class(bytes: &[u8]) -> RecordClass {
+    #[derive(Deserialize)]
+    struct Inner {
+        #[serde(rename = "type")]
+        kind: RecordClass,
+    }
+    #[derive(Deserialize)]
+    struct Outer {
+        #[serde(rename = "type")]
+        kind: RecordClass,
+        event: Option<Inner>,
+    }
+    serde_json::from_slice::<Outer>(bytes)
+        .map(|r| {
+            if r.kind == RecordClass::StreamEvent {
+                r.event.map_or(RecordClass::Unknown, |e| e.kind)
+            } else {
+                r.kind
+            }
+        })
+        .unwrap_or(RecordClass::Unknown)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextKind {
@@ -162,6 +314,8 @@ pub struct Decoder {
     blocks: usize,
     summary: Summary,
     failed: Option<Error>,
+    failed_record: Option<RecordClass>,
+    parse_failure: Option<ParseFailure>,
 }
 
 #[derive(Default)]
@@ -212,11 +366,20 @@ impl Decoder {
             blocks: 0,
             summary: Summary::default(),
             failed: None,
+            failed_record: None,
+            parse_failure: None,
         })
     }
 
     pub fn summary(&self) -> Summary {
         self.summary
+    }
+
+    pub fn failed_record(&self) -> Option<RecordClass> {
+        self.failed_record
+    }
+    pub fn parse_failure(&self) -> Option<ParseFailure> {
+        self.parse_failure
     }
 
     /// LF/CRLF records; the line bound excludes LF and includes CR. Arbitrarily
@@ -408,6 +571,12 @@ impl Decoder {
                 _ => unreachable!(),
             }
         })();
+        if result.is_err() {
+            self.failed_record = Some(record_class(&bytes));
+            if result == Err(Error::MalformedRecord) {
+                self.parse_failure = parse_failure(&bytes);
+            }
+        }
         bytes.fill(0);
         bytes.clear();
         self.line = bytes;
@@ -933,13 +1102,76 @@ enum StreamEvent {
         _delta: StopDelta,
         #[serde(rename = "usage")]
         _usage: Option<IgnoredAny>,
+        // CLI-owned context telemetry, never native compaction/content or authority.
+        #[serde(
+            default,
+            rename = "context_management",
+            deserialize_with = "discard_context_management"
+        )]
+        _context_management: (),
+        #[serde(
+            default,
+            rename = "input_transformations",
+            deserialize_with = "empty_transformations"
+        )]
+        _input_transformations: (),
     },
     MessageStop,
     Ping,
 }
+fn discard_context_management<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+    // Published BetaContextManagementResponse. Only known closed numeric telemetry
+    // is accepted; no text, tool arguments or executable instructions are retained.
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Metadata {
+        applied_edits: Vec<Edit>,
+    }
+    #[derive(Deserialize)]
+    #[serde(tag = "type", deny_unknown_fields)]
+    enum Edit {
+        #[serde(rename = "clear_thinking_20251015")]
+        Thinking {
+            #[serde(rename = "cleared_input_tokens")]
+            _tokens: u64,
+            #[serde(rename = "cleared_thinking_turns")]
+            _turns: u64,
+        },
+        #[serde(rename = "clear_tool_uses_20250919")]
+        Tools {
+            #[serde(rename = "cleared_input_tokens")]
+            _tokens: u64,
+            #[serde(rename = "cleared_tool_uses")]
+            _uses: u64,
+        },
+    }
+    #[derive(Deserialize)]
+    struct ObjectMetadata(#[serde(deserialize_with = "object")] Metadata);
+    let metadata = Option::<ObjectMetadata>::deserialize(deserializer)?;
+    if metadata.is_some_and(|m| m.0.applied_edits.len() > MAX_ENTRIES) {
+        return Err(serde::de::Error::custom("context metadata limit exceeded"));
+    }
+    Ok(())
+}
+
+fn empty_transformations<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+    let value = Option::<Vec<IgnoredAny>>::deserialize(deserializer)?;
+    if value.is_none_or(|items| items.is_empty()) {
+        Ok(())
+    } else {
+        Err(serde::de::Error::custom(
+            "nonempty input transformations are unqualified",
+        ))
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StopDelta {
+    #[serde(default, rename = "container")]
+    _container: (),
+    #[serde(default, rename = "stop_details")]
+    _stop_details: (),
     #[serde(
         default,
         rename = "stop_reason",
@@ -992,10 +1224,17 @@ struct UserMessage {
 enum ResultBlock {
     ToolResult {
         tool_use_id: String,
+        // The published client-tool result protocol defaults an omitted flag to
+        // reported success. Explicit null remains unknown; this is NOT action proof.
+        #[serde(default = "reported_success_by_default")]
         is_error: Option<bool>,
         content: ResultContent,
     },
 }
+fn reported_success_by_default() -> Option<bool> {
+    Some(false)
+}
+
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum ResultContent {

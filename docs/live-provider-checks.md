@@ -1,5 +1,19 @@
 # Live-provider checks (owner-run)
 
+## Separate local Claude CLI qualification (2026-10-15)
+
+The built Linux desktop with installed unmodified CLI2.1.299 consumed **10/10 explicitly
+authorized scratch runs**; no further qualification run is authorized. Fresh/resumed chat
+and Write completed, with exact copied-review validation before Allow in the final resumed
+Write case. The earlier fresh Write completed but FAILED review interaction; that failure and
+all Unknown runs remain recorded. Deny/Stop controls passed separately. Zero native provider
+runs were recorded in these fixtures; no credential extraction or API fallback was used.
+This is not native provider/API, billing, managed-policy or containment qualification. See the
+[attempt record](../fixtures/claude-cli-probe/2.1.299/README.md) and
+[opt-in testing guide](local-claude-cli.md). Use private home-directory socket ancestry for
+Write, not the older generic `/tmp` example below. Broader checks below remain independently
+unverified.
+
 Every network-facing slice shipped against local fixtures: a mock Brave and SearXNG, the
 `mcp_fixture` stdio server, a scripted model, a fake `secret-tool`, an in-process OTLP
 collector. These checks run the real thing with the owner's credentials. Each is

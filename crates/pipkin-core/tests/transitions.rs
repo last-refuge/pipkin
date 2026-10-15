@@ -1,4 +1,5 @@
 use pipkin_core::*;
+mod support;
 
 fn state() -> AppState {
     let boot = Bootstrap {
@@ -28,6 +29,7 @@ fn state() -> AppState {
     let mut s = AppState::new(boot, Prefs::default());
     s.prefs.selected_project = Some(ProjectId(1));
     s.dispatch(Command::SelectConversation(ConversationId(1)));
+    support::native_context(&mut s);
     s
 }
 
@@ -1341,6 +1343,7 @@ fn in_real_mode_the_engine_decides_the_model() {
             changes: vec![],
         },
     });
+    support::native_context(&mut s);
     let out = s.dispatch(Command::SetModel("stub/b".into()));
     assert!(out.effects.iter().any(|e| matches!(e, Effect::Backend(BackendRequest::SetModel { model, .. }) if model == "stub/b")));
     // The request alone changes nothing; the engine's report does.

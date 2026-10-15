@@ -9,6 +9,17 @@ OBS-2 (an exporter interface) and OBS-3 (opt-in export configuration) build on i
 Status: implemented and covered by automated tests (2026-10-12). Nothing native was
 observed; see [Boundaries](#boundaries). Schema 19, protocol 26, capability `diagnostics`.
 
+## Local Claude CLI is a separate diagnostic scope
+
+The experimental bridge uses external receipts and closed supervisor/parser diagnostics, not
+native tool execution or model context. Its setup dialog offers redacted metadata diagnostics;
+opening or copying them performs no probes. Inspect/Check are explicit non-inference operations.
+Generic `--diagnose --probe` is not a CLI approval or live qualification substitute. After an
+uncertain Create, explicitly look up its exact identity; never replay an uncertain prompt or
+approval. Preserve failed receipts/fixtures. See [CLI testing and recovery](local-claude-cli.md)
+and [qualification evidence](claude-cli-bridge-evidence.md); never collect CLI credentials or
+raw transcripts/arguments into support bundles.
+
 ## What is recorded
 
 Every record carries the session, a per-session sequence number, the engine's clock, and

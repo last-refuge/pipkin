@@ -350,6 +350,23 @@ impl Workspace {
             }
             SettingsSection::Connections => {
                 let this = this.clone();
+                let resume = cx.entity();
+                let cli_controls = vec![
+                    self.local_cli_entry("prefs-local-cli-new", false, cx),
+                    self.local_cli_entry("prefs-local-cli-reapprove", true, cx),
+                    Btn::new("prefs-local-cli-resume")
+                        .label("Resume setup…")
+                        .disabled(
+                            self.state(cx).mode != pipkin_core::Mode::Real
+                                || (self.state(cx).local_cli.target.is_none()
+                                    && self.state(cx).local_cli.parked_creations().is_empty()),
+                        )
+                        .on_click(move |window, cx| {
+                            resume.update(cx, |w, cx| {
+                                w.open_overlay(super::workspace::Overlay::LocalCli, window, cx)
+                            })
+                        }),
+                ];
                 div()
                     .rounded(px(8.0))
                     .border_1()
@@ -376,6 +393,16 @@ impl Workspace {
                     .child(div().px(px(16.0)).py(px(12.0)).text_size(t.small_size())
                         .text_color(c.text_muted)
                         .child("Managing connections opens account setup. Return to the workspace when you’re done."))
+                    .child(separator(cx))
+                    .child(setting_row(
+                        "Local CLI · chat only",
+                        super::local_cli::availability_label(self.state(cx)),
+                        cli_controls,
+                        true,
+                        &t,
+                    ))
+                    .child(div().px(px(16.0)).py(px(12.0)).text_size(t.small_size())
+                        .child("Uses the CLI’s own login. Billing unverified; may consume account allowance or already-enabled extra usage. No Pipkin tools, queued follow-ups, or model changes."))
                     .into_any_element()
             }
             SettingsSection::Servers => self.render_mcp_section(cx),

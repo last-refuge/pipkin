@@ -454,6 +454,7 @@ impl Workspace {
                             .child(new_btn),
                     ),
             )
+            .child(self.local_cli_entry("nav-local-cli-new", false, cx))
             .when(search_visible, |d| {
                 d.child(
                     div().px(px(12.0)).child(

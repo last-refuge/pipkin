@@ -67,6 +67,10 @@ impl Workspace {
         let t = cx.theme().clone();
         let c = &t.colors;
         let demo = self.state(cx).mode == Mode::Demo;
+        let cli_workspace = self
+            .state(cx)
+            .current()
+            .is_some_and(|c| c.profile.is_local_cli());
         let (changes, selected, scan_state) = {
             let s = self.state(cx);
             match s.current() {
@@ -94,7 +98,11 @@ impl Workspace {
                 .child(
                     Btn::new("refresh-changes")
                         .icon("refresh-cw")
-                        .aria("Refresh this session's uncommitted changes")
+                        .aria(if cli_workspace {
+                            "Refresh this project's Git state (not CLI action attribution)"
+                        } else {
+                            "Refresh this session's uncommitted changes"
+                        })
                         .disabled(!avail.refresh_changes)
                         .on_click(move |_, cx| {
                             refresh_this.update(cx, |t, cx| t.dispatch(Command::RefreshChanges, cx))
@@ -188,7 +196,11 @@ impl Workspace {
                 Btn::new("inspector-changes-tab")
                     .label("Changes")
                     .selected(!agents && !plan && !jobs)
-                    .aria("Show this session's uncommitted changes")
+                    .aria(if cli_workspace {
+                        "Show this project's Git state (not CLI action attribution)"
+                    } else {
+                        "Show this session's uncommitted changes"
+                    })
                     .on_click(move |_, cx| {
                         change_tab.update(cx, |w, cx| {
                             w.inspector_tab = InspectorTab::Changes;
@@ -500,6 +512,16 @@ impl Workspace {
             .child(header)
             .child(tabs)
             .children(banner)
+            .when(!demo && !agents && !plan, |panel| {
+                panel.child(
+                    div()
+                        .px(px(12.0))
+                        .py(px(6.0))
+                        .text_size(t.small_size())
+                        .text_color(c.text_faint)
+                        .child(changes_provenance(cli_workspace)),
+                )
+            })
             .child(body)
             .into_any_element()
     }
@@ -635,6 +657,14 @@ impl Workspace {
 
 /// The one-letter kind shown beside a changed file: A for a new file, D for a removed one,
 /// M for anything else. Inferred from the diff, which carries no explicit status.
+fn changes_provenance(cli_workspace: bool) -> &'static str {
+    if cli_workspace {
+        "Project Git state, not proof of CLI actions. Executable Git filters are disabled."
+    } else {
+        "Session-associated Git state. Executable Git filters are disabled."
+    }
+}
+
 fn changes_status(state: &ChangesState, has_changes: bool) -> Option<(&'static str, String)> {
     let previous = if has_changes {
         "Showing the last successful scan. These changes may be out of date."
@@ -674,6 +704,15 @@ fn change_letter(f: &FileChange) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cli_changes_are_project_observations_not_action_receipts() {
+        assert!(changes_provenance(true).contains("not proof of CLI actions"));
+        assert!(changes_provenance(false).contains("Session-associated"));
+        for cli in [false, true] {
+            assert!(changes_provenance(cli).contains("Executable Git filters are disabled"));
+        }
+    }
 
     fn line(kind: DiffKind) -> DiffLine {
         DiffLine {

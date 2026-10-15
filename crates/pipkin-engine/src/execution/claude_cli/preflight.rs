@@ -14,7 +14,7 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, PartialEq, Eq)]
-struct FileStamp {
+pub(super) struct FileStamp {
     length: u64,
     modified: SystemTime,
     #[cfg(unix)]
@@ -25,7 +25,7 @@ struct FileStamp {
     mode: u32,
 }
 impl FileStamp {
-    fn read(path: &Path) -> Result<Self, &'static str> {
+    pub(super) fn read(path: &Path) -> Result<Self, &'static str> {
         let meta = path
             .metadata()
             .map_err(|_| "cannot inspect executable metadata")?;
@@ -187,9 +187,24 @@ pub struct Request {
     pub model: ModelAlias,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LaunchPolicy {
+    ChatOnly,
+    RestrictedWrite,
+}
+impl LaunchPolicy {
+    pub(crate) fn id(self) -> &'static str {
+        match self {
+            Self::ChatOnly => policy::POLICY_ID,
+            Self::RestrictedWrite => super::write_policy::ID,
+        }
+    }
+}
+
 /// Ephemeral verified metadata, NOT execution authority. The runtime must still durably admit
 /// a run and prove fresh-vs-resume eligibility. Never cache this across submissions/restarts.
 pub struct Prepared {
+    policy: LaunchPolicy,
     candidate: Candidate,
     env: Environment,
     model: ModelAlias,
@@ -199,6 +214,10 @@ pub struct Prepared {
     checked_at: Instant,
 }
 impl Prepared {
+    pub(crate) fn requires_permissions(&self) -> bool {
+        self.policy == LaunchPolicy::RestrictedWrite
+    }
+
     pub fn binding(&self, session_uuid: &str) -> Result<CliBindingSpec, &'static str> {
         if !policy::valid_uuid(session_uuid) {
             return Err("invalid explicit CLI session identifier");
@@ -210,9 +229,47 @@ impl Prepared {
             cli_version: policy::QUALIFIED_VERSION.into(),
             config_ref: self.config_ref.clone(),
             account_scope: self.account_scope.clone(),
-            launch_policy: policy::POLICY_ID.into(),
+            launch_policy: self.policy.id().into(),
         })
     }
+    /// Fresh, revalidated metadata for binding creation. Unlike `binding`, this does not
+    /// let expired metadata or a changed executable/project become a new durable identity.
+    /// It still conveys no authority to launch inference.
+    pub fn checked_binding(&self, session_uuid: &str) -> Result<CliBindingSpec, &'static str> {
+        let binding = self.binding(session_uuid)?;
+        self.validate_binding(&binding)?;
+        Ok(binding)
+    }
+
+    fn fresh_at(&self, now: Instant) -> Result<(), &'static str> {
+        if !now
+            .checked_duration_since(self.checked_at)
+            .is_some_and(|age| age <= Duration::from_secs(30))
+        {
+            return Err("CLI preflight expired; refresh before admission");
+        }
+        Ok(())
+    }
+    pub fn validate_binding(&self, binding: &CliBindingSpec) -> Result<(), &'static str> {
+        self.validate_binding_with_clock(binding, Instant::now)
+    }
+    fn validate_binding_with_clock(
+        &self,
+        binding: &CliBindingSpec,
+        mut now: impl FnMut() -> Instant,
+    ) -> Result<(), &'static str> {
+        self.fresh_at(now())?;
+        self.candidate.revalidate(&self.env)?;
+        if configuration_locations(&self.env)? != self.locations {
+            return Err("CLI configuration location changed; refresh preflight");
+        }
+        if &self.binding(&binding.cli_session_id)? != binding {
+            return Err("CLI binding no longer matches preflight; use a fresh conversation");
+        }
+        // Filesystem work consumes the lease too; an entry check is not enough.
+        self.fresh_at(now())
+    }
+
     /// Fixed no-tools policy only. Binding equality does not prove CLI-history integrity:
     /// the caller owns durable launch intent, run exclusivity and fresh/resume selection.
     pub fn launch_spec(
@@ -221,17 +278,11 @@ impl Prepared {
         mode: TurnMode,
         prompt: &str,
     ) -> Result<Spec, &'static str> {
-        if self.checked_at.elapsed() > Duration::from_secs(30) {
-            return Err("CLI preflight expired; refresh before admission");
+        if self.policy != LaunchPolicy::ChatOnly {
+            return Err("coding requires an owned permission hook");
         }
-        self.candidate.revalidate(&self.env)?;
-        if configuration_locations(&self.env)? != self.locations {
-            return Err("CLI configuration location changed; refresh preflight");
-        }
-        if &self.binding(&binding.cli_session_id)? != binding {
-            return Err("CLI binding no longer matches preflight; use a fresh conversation");
-        }
-        policy::turn_spec(
+        self.validate_binding(binding)?;
+        let spec = policy::turn_spec(
             &self.candidate.executable,
             &self.candidate.project,
             &self.env,
@@ -239,7 +290,38 @@ impl Prepared {
             mode,
             self.model,
             prompt,
-        )
+        )?;
+        self.fresh_at(Instant::now())?;
+        Ok(spec)
+    }
+    /// Internal staged route only. The actor must own broker reservation, listener,
+    /// lease and BeforeSignal fencing; constructing a Spec grants no execution authority.
+    #[allow(dead_code)]
+    pub(crate) fn launch_write_spec(
+        &self,
+        binding: &CliBindingSpec,
+        mode: TurnMode,
+        prompt: &str,
+        hook: &super::write_policy::Hook,
+    ) -> Result<Spec, &'static str> {
+        if self.policy != LaunchPolicy::RestrictedWrite {
+            return Err("chat-only context cannot acquire tools");
+        }
+        self.validate_binding(binding)?;
+        let spec = super::write_policy::turn_spec(
+            super::write_policy::Turn {
+                executable: &self.candidate.executable,
+                cwd: &self.candidate.project,
+                environment: &self.env,
+                uuid: &binding.cli_session_id,
+                mode,
+                model: self.model,
+                prompt,
+            },
+            hook,
+        )?;
+        self.fresh_at(Instant::now())?;
+        Ok(spec)
     }
 }
 
@@ -274,6 +356,17 @@ fn account_scope(bytes: &[u8]) -> Result<String, &'static str> {
 }
 
 pub async fn check(request: Request, cancel: CancellationToken) -> Result<Prepared, &'static str> {
+    check_for_policy(request, cancel, LaunchPolicy::ChatOnly).await
+}
+
+pub(crate) async fn check_for_policy(
+    request: Request,
+    cancel: CancellationToken,
+    launch_policy: LaunchPolicy,
+) -> Result<Prepared, &'static str> {
+    if launch_policy == LaunchPolicy::RestrictedWrite && !cfg!(target_os = "linux") {
+        return Err("coding helper image anchoring is unsupported on this platform");
+    }
     if !request.trust_executable {
         return Err("explicit executable trust is required before CLI probes");
     }
@@ -313,9 +406,15 @@ pub async fn check(request: Request, cancel: CancellationToken) -> Result<Prepar
         return Err("CLI help probe did not settle cleanly");
     }
     policy::validate_help(&help.captured)?;
+    if launch_policy == LaunchPolicy::RestrictedWrite {
+        policy::require_flags(&help.captured, super::write_policy::EXTRA_FLAGS)?;
+    }
     candidate.revalidate(&env)?;
     let locations = configuration_locations(&env)?;
-    let mut args = policy::safety_args();
+    let mut args = match launch_policy {
+        LaunchPolicy::ChatOnly => policy::safety_args(),
+        LaunchPolicy::RestrictedWrite => super::write_policy::metadata_args(),
+    };
     args.extend(["auth", "status", "--json"].into_iter().map(Into::into));
     let mut auth = process::run(
         policy::metadata_spec(&candidate.executable, &candidate.project, &env, args),
@@ -336,7 +435,7 @@ pub async fn check(request: Request, cancel: CancellationToken) -> Result<Prepar
     }
     candidate.revalidate(&env)?;
     let mut parts = vec![
-        policy::POLICY_ID.as_bytes().to_vec(),
+        launch_policy.id().as_bytes().to_vec(),
         request.model.as_str().as_bytes().to_vec(),
         candidate.stamp.marker().into_bytes(),
         candidate.project_identity.as_bytes().to_vec(),
@@ -359,6 +458,7 @@ pub async fn check(request: Request, cancel: CancellationToken) -> Result<Prepar
     }
     parts.extend(locations.iter().map(|s| s.as_bytes().to_vec()));
     Ok(Prepared {
+        policy: launch_policy,
         candidate,
         env,
         model: request.model,

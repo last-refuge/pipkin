@@ -9,6 +9,9 @@ use crate::state::Bootstrap;
 #[derive(Clone, Debug, PartialEq)]
 pub enum LifecycleEvent {
     Connection(Connection),
+    /// Explicit service capability, not conversation trust or execution readiness.
+    LocalCliSetupAvailable(bool),
+    CliApprovalsAvailable(bool),
     /// Projects, models and conversation summaries known to the backend.
     Catalog(Bootstrap),
     /// The model the engine reports as selected (`provider/modelId`), which is authoritative.

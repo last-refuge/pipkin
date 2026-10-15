@@ -1,0 +1,12 @@
+{
+  "attempt": 9,
+  "permissions": [
+    {
+      "state": "consumed",
+      "decision": "allowOnce"
+    }
+  ],
+  "consumption_is_not_delivery_or_action_proof": true,
+  "independent_effect_and_completion": "native-write-fresh-observation.json",
+  "full_review_interaction": "failed before intended clipboard validation; no clipboard contents logged or retained"
+}

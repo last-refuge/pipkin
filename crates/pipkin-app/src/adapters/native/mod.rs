@@ -12,9 +12,14 @@
 //! conversation the person moved away from still settles. Streaming deltas update a per-session
 //! mirror; the transcript is remapped and sent at most every `SYNC_INTERVAL`.
 
+mod changes;
+mod cli_approvals;
 pub mod client;
 mod control;
+mod execution;
 mod import;
+mod local_cli;
+pub(crate) mod local_cli_opt_in;
 mod mapping;
 mod mirror;
 pub mod supervisor;
@@ -99,13 +104,13 @@ enum Msg {
         pending: std::sync::Arc<Mutex<pipkin_engine_protocol::delivery::EventQueue>>,
     },
     Request(BackendRequest),
+    LocalCliCompleted(Box<local_cli::Completion>),
     Engine {
         conn: u64,
         inbound: Inbound,
     },
     Changes {
-        conversation: ConversationId,
-        generation: u64,
+        scope: changes::Scope,
         scanned_through: u64,
         workspace: Workspace,
     },
@@ -125,6 +130,7 @@ enum Msg {
 
 pub struct NativeBackend {
     config: NativeConfig,
+    setup_lane: Arc<local_cli::Lane>,
     control: Arc<control::Control>,
     events: crate::event_queue::EventSender,
     tx: Sender<Msg>,
@@ -142,6 +148,7 @@ impl NativeBackend {
         let (tx, rx) = mpsc::channel();
         let control = Arc::new(control::Control::new(tx.clone(), config.call_timeout));
         NativeBackend {
+            setup_lane: Arc::new(local_cli::Lane::new(tx.clone(), config.call_timeout)),
             config,
             control,
             events,
@@ -153,6 +160,13 @@ impl NativeBackend {
 }
 
 impl NativeBackend {
+    /// Exact saved CLI identities for the controller's `Model::set_local_cli_catalog` hook.
+    /// Read when handling Catalog/capability lifecycle updates; never infer engine IDs from
+    /// desktop IDs, selection, or titles. Empty after disconnect or without setup capability.
+    pub fn local_cli_sessions(&self) -> Vec<(ConversationId, pipkin_core::EngineSessionId)> {
+        self.control.local_cli_sessions()
+    }
+
     /// Run one step of an explicit Pi import; `done` is called once with the answer (from the
     /// backend's worker thread), also when the engine cannot be reached.
     pub fn import(&self, step: pipkin_core::ImportStep, done: ImportDone) {
@@ -171,6 +185,7 @@ impl Backend for NativeBackend {
         };
         let worker = Worker {
             supervisor: Supervisor::new(self.config.host.clone()),
+            setup_lane: self.setup_lane.clone(),
             control: self.control.clone(),
             config: self.config.clone(),
             events: self.events.clone(),
@@ -180,6 +195,7 @@ impl Backend for NativeBackend {
             conn: 0,
             ever_connected: false,
             last_open: None,
+            attachment_generations: HashMap::new(),
             runs: HashMap::new(),
             queue_unknown: Vec::new(),
             last_refresh_warning: None,
@@ -203,6 +219,7 @@ impl Backend for NativeBackend {
         // Release a producer waiting for UI admission before asking it to shut down.
         self.events.close();
         self.control.close();
+        self.setup_lane.close();
         let _ = self.tx.send(Msg::Shutdown);
         if let Some(handle) = lock(&self.worker).take() {
             // The worker asks the engine to stop, then waits out the supervisor's grace period
@@ -236,10 +253,12 @@ struct Run {
     conversation: ConversationId,
     generation: u64,
     request: RequestId,
+    cli_receipt: Option<cli_approvals::PromptReceipt>,
 }
 
 struct Worker {
     config: NativeConfig,
+    setup_lane: Arc<local_cli::Lane>,
     control: Arc<control::Control>,
     supervisor: Supervisor,
     events: crate::event_queue::EventSender,
@@ -251,6 +270,8 @@ struct Worker {
     ever_connected: bool,
     /// Latest selection and generation; true until its initial Opened was delivered.
     last_open: Option<(ConversationId, u64, bool)>,
+    /// Captured source generations remain meaningful when selection moves elsewhere.
+    attachment_generations: HashMap<ConversationId, u64>,
     /// Admitted prompts awaiting an outcome. Kept across reconnects and reconciled by asking.
     runs: HashMap<OperationId, Run>,
     /// Queue requests whose acknowledgment was lost.
@@ -277,16 +298,21 @@ impl Worker {
             match self.connect_and_serve() {
                 Outcome::Shutdown => break,
                 Outcome::Retry => {
+                    (self.sink)(LifecycleEvent::LocalCliSetupAvailable(false));
                     if self.wait_to_retry() {
                         break;
                     }
                 }
             }
         }
+        (self.sink)(LifecycleEvent::LocalCliSetupAvailable(false));
         self.supervisor.stop();
     }
 
     fn report(&self, connection: Connection) {
+        if !connection.is_ready() {
+            (self.sink)(LifecycleEvent::LocalCliSetupAvailable(false));
+        }
         (self.sink)(LifecycleEvent::Connection(connection));
     }
 
@@ -348,6 +374,7 @@ impl Worker {
                 Err(mpsc::RecvTimeoutError::Timeout) => return false,
                 Err(mpsc::RecvTimeoutError::Disconnected) | Ok(Msg::Shutdown) => return true,
                 Ok(Msg::Request(request)) => self.refuse_offline(request),
+                Ok(Msg::LocalCliCompleted(_)) => {}
                 Ok(Msg::StopFailed {
                     conversation,
                     generation,
@@ -377,12 +404,37 @@ impl Worker {
             self.control.submitted(*conversation, *generation, *op);
         }
         match request {
+            BackendRequest::CliApproval(request) => {
+                let (conversation, generation, op) = request.tuple();
+                self.emit_op(
+                    conversation,
+                    generation,
+                    op,
+                    EventKind::CliApproval(Box::new(request.failed())),
+                );
+            }
+            BackendRequest::RetireLocalCliInspect { .. } => {}
+            BackendRequest::LocalCli {
+                conversation,
+                generation,
+                op,
+                request,
+            } => self.emit_op(
+                conversation,
+                generation,
+                op,
+                EventKind::LocalCli(local_cli::failed(
+                    request.phase(),
+                    CallError::NotSent(OFFLINE.into()),
+                )),
+            ),
             BackendRequest::Open {
                 conversation,
                 generation,
             } => {
                 // Keep the latest read-only selection so an offline saved copy can attach
                 // when the engine returns. Mutations below are still definitely refused.
+                self.attachment_generations.insert(conversation, generation);
                 self.last_open = Some((conversation, generation, true));
                 self.emit(
                     conversation,
@@ -578,7 +630,16 @@ impl Worker {
                 return Outcome::Retry;
             }
         };
+        let cli_approvals_supported = welcome
+            .capabilities
+            .iter()
+            .any(|c| c == "localCliApprovals");
+        let local_cli_supported = welcome.capabilities.iter().any(|c| c == "localCliSetup");
+        self.control.bind_setup(&client, conn, local_cli_supported);
         let mut live = Live {
+            local_cli_inspection: None,
+            local_cli_supported,
+            cli_approvals_supported,
             client,
             control: self.control.clone(),
             timeout: self.config.call_timeout,
@@ -591,11 +652,14 @@ impl Worker {
             needs_resync: false,
             next_catch_up: Instant::now(),
             sessions: Vec::new(),
+            summary_revisions: HashMap::new(),
+            activity_revisions: HashMap::new(),
             index: HashMap::new(),
             models: Vec::new(),
             current: None,
             auth_done: None,
-            scanning: false,
+            scanning: None,
+            next_changes_op: 0,
             rescan: None,
             lost_in_a_row: std::cell::Cell::new(0),
         };
@@ -614,6 +678,10 @@ impl Worker {
             other => log::warn!("could not read sign-in state: {other:?}"),
         }
         live.publish_export_health(self);
+        (self.sink)(LifecycleEvent::LocalCliSetupAvailable(local_cli_supported));
+        (self.sink)(LifecycleEvent::CliApprovalsAvailable(
+            cli_approvals_supported,
+        ));
         self.report(Connection::Ready);
         if let Some((conversation, generation, initial)) = self.last_open
             && live.open(self, conversation, generation, initial)
@@ -675,6 +743,9 @@ impl Worker {
                         return Outcome::Shutdown;
                     }
                     Msg::Request(request) => live.handle_request(self, request),
+                    Msg::LocalCliCompleted(completion) => {
+                        live.local_cli_complete(self, *completion)
+                    }
                     Msg::StopFailed {
                         conversation,
                         generation,
@@ -722,17 +793,10 @@ impl Worker {
                         ..
                     } => live.observe_event(self, epoch, seq, *event),
                     Msg::Changes {
-                        conversation,
-                        generation,
+                        scope,
                         scanned_through,
                         workspace,
-                    } => live.changes_ready(
-                        self,
-                        conversation,
-                        generation,
-                        scanned_through,
-                        workspace,
-                    ),
+                    } => live.changes_ready(self, scope, scanned_through, workspace),
                 }
             }
             if live.durable && Instant::now() >= live.next_catch_up {
@@ -767,6 +831,8 @@ struct Current {
     child_sync: Instant,
     tools_done: usize,
     workspace_ready: bool,
+    full_workspace: bool,
+    workspace_revision: u64,
     last_workspace: Option<Workspace>,
     publish_empty_changes: bool,
     next_changes_scan: Instant,
@@ -775,6 +841,9 @@ struct Current {
 }
 
 struct Live {
+    cli_approvals_supported: bool,
+    local_cli_inspection: Option<local_cli::Inspection>,
+    local_cli_supported: bool,
     client: Arc<Client>,
     control: Arc<control::Control>,
     timeout: Duration,
@@ -784,11 +853,15 @@ struct Live {
     needs_resync: bool,
     next_catch_up: Instant,
     sessions: Vec<(ConversationId, SessionSummary)>,
+    /// Snapshot/change floors prevent delayed readiness updates from reopening execution.
+    summary_revisions: HashMap<String, u64>,
+    activity_revisions: HashMap<ConversationId, u64>,
     index: HashMap<ConversationId, SessionSummary>,
     models: Vec<ModelInfo>,
     current: Option<Current>,
     auth_done: Option<String>,
-    scanning: bool,
+    scanning: Option<changes::Scope>,
+    next_changes_op: u64,
     rescan: Option<(ConversationId, u64)>,
     /// Consecutive calls that timed out; see [`LOST_CALLS_BEFORE_RESTART`].
     lost_in_a_row: std::cell::Cell<u32>,
@@ -826,6 +899,12 @@ const NO_RECORD: &str = "The engine no longer has a record of this run. Its tool
 
 impl Live {
     fn call(&self, call: Call) -> Result<Reply, CallError> {
+        execution::guard(
+            &call,
+            self.current.as_ref().map(|c| c.session.as_str()),
+            |id| self.index.values().find(|s| s.id == id),
+        )
+        .map_err(|reason| CallError::Refused(ProtoError::new(ErrorCode::Unsupported, reason)))?;
         let result = self.client.call(call, self.timeout);
         match &result {
             Err(CallError::Lost(_)) => self.lost_in_a_row.set(self.lost_in_a_row.get() + 1),
@@ -845,11 +924,53 @@ impl Live {
         match self.call(Call::ListSessions)? {
             Reply::Sessions { sessions } => {
                 self.sessions = mapping::assign_ids(&sessions);
+                for (id, next) in &mut self.sessions {
+                    if let Some(previous) = self.index.get(id).filter(|s| s.id == next.id) {
+                        let pinned = self.summary_revisions.contains_key(&next.id);
+                        execution::preserve_identity(previous, next, pinned);
+                        // Catalogue rows have no revision. They cannot clear a newer block.
+                        if !next.execution_backend.native_execution()
+                            && next.updated_at_ms <= previous.updated_at_ms
+                            && previous.blocked.is_some()
+                        {
+                            next.blocked = previous.blocked.clone();
+                        }
+                    }
+                }
                 self.index = self.sessions.iter().cloned().collect();
                 self.control.bind(&self.client, &self.sessions);
                 Ok(())
             }
             other => Err(CallError::Lost(format!("unexpected reply {other:?}"))),
+        }
+    }
+
+    fn update_summary(&mut self, id: ConversationId, mut summary: SessionSummary, revision: u64) {
+        if let Some(previous) = self.index.get(&id) {
+            let floor = self.summary_revisions.get(&summary.id);
+            execution::preserve_identity(previous, &mut summary, floor.is_some());
+            if floor == Some(&revision) && !summary.execution_backend.native_execution() {
+                // The same revision may revoke readiness, but cannot carry a new grant.
+                summary.blocked = summary.blocked.or_else(|| previous.blocked.clone());
+            }
+        }
+        self.summary_revisions.insert(summary.id.clone(), revision);
+        self.index.insert(id, summary.clone());
+        if let Some(row) = self.sessions.iter_mut().find(|(i, _)| *i == id) {
+            row.1 = summary;
+        }
+        self.control.bind(&self.client, &self.sessions);
+    }
+
+    fn update_activity(&mut self, conversation: ConversationId, revision: u64, active: bool) {
+        if revision != 0
+            && self
+                .activity_revisions
+                .get(&conversation)
+                .is_none_or(|floor| revision > *floor)
+        {
+            self.activity_revisions.insert(conversation, revision);
+            self.control.set_active(conversation, active);
         }
     }
 
@@ -1009,7 +1130,7 @@ impl Live {
             },
         );
         if finished_tool {
-            current.workspace_ready = true;
+            current.invalidate_workspace(worker);
             self.schedule_changes(worker, conversation, generation);
         }
     }
@@ -1059,6 +1180,18 @@ impl Live {
         change: SessionChange,
     ) {
         self.mark_child(&session, &change);
+        // Control-lane permission follows committed activity even for an unselected session.
+        if let Some(conversation) = self.conversation_of(&session) {
+            match &change {
+                SessionChange::RunChanged { run } => {
+                    self.update_activity(conversation, revision, run.is_some())
+                }
+                SessionChange::RunSettled { .. } => {
+                    self.update_activity(conversation, revision, false)
+                }
+                _ => {}
+            }
+        }
         // A waiting question is attention for its conversation whether or not it is open:
         // the badge is a lifecycle fact, not an attachment-scoped event.
         if let SessionChange::UiChanged { ui } = &change
@@ -1115,10 +1248,23 @@ impl Live {
                 }
             }
             SessionChange::SummaryChanged { summary } => {
-                if let Some(id) = self.conversation_of(&summary.id) {
-                    self.index.insert(id, summary.clone());
-                    if let Some(row) = self.sessions.iter_mut().find(|(i, _)| *i == id) {
-                        row.1 = summary;
+                if summary.id != session
+                    || revision == 0
+                    || self
+                        .summary_revisions
+                        .get(&session)
+                        .is_some_and(|floor| revision <= *floor)
+                {
+                    return;
+                }
+                if let Some(id) = self.conversation_of(&session) {
+                    self.update_summary(id, summary, revision);
+                    if let Some(current) = self.current.as_ref().filter(|c| c.session == session) {
+                        worker.emit(
+                            id,
+                            current.generation,
+                            mapping::execution_context(&self.index[&id]),
+                        );
                     }
                     (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
                 }
@@ -1134,9 +1280,16 @@ impl Live {
                     current.evidence.insert(entry.id, entry.clone());
                 }
                 let (conversation, generation) = (current.conversation, current.generation);
+                let external_action = current.full_workspace && changes::external_action(&change);
                 let touched = current.mirror.apply(revision, change);
                 if touched == Touched::Transcript {
                     current.dirty = true;
+                    if external_action {
+                        current.invalidate_workspace(worker);
+                    }
+                }
+                if touched == Touched::Transcript {
+                    self.reconcile_history_requests(worker);
                 }
                 self.touched(worker, conversation, generation, touched);
             }
@@ -1222,7 +1375,7 @@ impl Live {
 
     fn after_run_current(&mut self, worker: &Worker) {
         if let Some(c) = self.current.as_mut() {
-            c.workspace_ready = true;
+            c.invalidate_workspace(worker);
             let (conversation, generation) = (c.conversation, c.generation);
             self.schedule_changes(worker, conversation, generation);
         }
@@ -1502,6 +1655,10 @@ impl Live {
                     outcome,
                     ..
                 })) => mapping::outcome(outcome.as_ref()),
+                Ok(Reply::Lookup(LookupResult::Known { open: true, .. })) => {
+                    self.control.set_active(run.conversation, true);
+                    continue;
+                }
                 Ok(Reply::Lookup(LookupResult::Unknown)) => EventKind::Failed {
                     message: NO_RECORD.into(),
                 },
@@ -1510,6 +1667,7 @@ impl Live {
                 _ => continue,
             };
             worker.runs.remove(&op);
+            self.control.set_active(run.conversation, false);
             if self
                 .current
                 .as_ref()
@@ -1520,9 +1678,45 @@ impl Live {
             worker.emit_op(run.conversation, run.generation, op, kind);
             self.after_run(worker, run.conversation, run.generation);
         }
+        self.reconcile_history_requests(worker);
         let pending = worker.queue_unknown.clone();
         for req in pending {
             self.resolve_queue_unknown(worker, req);
+        }
+    }
+
+    /// Durable user history can acknowledge a pending queue request even if its admission
+    /// event was lost. Match both attachment identity and request, never assistant text/keys.
+    fn reconcile_history_requests(&self, worker: &mut Worker) {
+        let Some(current) = &self.current else { return };
+        let matched: Vec<_> = worker
+            .queue_unknown
+            .iter()
+            .filter_map(|req| {
+                if req.conversation != current.conversation || req.generation != current.generation
+                {
+                    return None;
+                }
+                current
+                    .mirror
+                    .user_entry_for_request(&req.request.0)
+                    .map(|entry| (req.clone(), entry))
+            })
+            .collect();
+        for (req, entry) in matched {
+            worker.queue_unknown.retain(|pending| {
+                pending.conversation != req.conversation
+                    || pending.generation != req.generation
+                    || pending.request != req.request
+            });
+            worker.emit(
+                req.conversation,
+                req.generation,
+                EventKind::QueueAdmitted {
+                    request: req.request,
+                    entry: QueueId(entry),
+                },
+            );
         }
     }
 
@@ -1555,6 +1749,20 @@ impl Live {
 
     fn handle_request(&mut self, worker: &mut Worker, request: BackendRequest) {
         match request {
+            BackendRequest::CliApproval(request) => self.cli_approval_request(worker, request),
+            BackendRequest::RetireLocalCliInspect {
+                conversation,
+                generation,
+                op,
+            } => self.retire_local_cli_inspect(worker, conversation, generation, op),
+            BackendRequest::LocalCli {
+                conversation,
+                generation,
+                op,
+                request,
+            } => {
+                self.local_cli_request(worker, conversation, generation, op, request);
+            }
             BackendRequest::RemoveSignIn(provider) => {
                 match self.call(Call::AuthRemove {
                     provider: provider.pi_id().into(),
@@ -1606,6 +1814,9 @@ impl Live {
                 conversation,
                 generation,
             } => {
+                worker
+                    .attachment_generations
+                    .insert(conversation, generation);
                 let opened = self.open(worker, conversation, generation, true);
                 worker.last_open = Some((conversation, generation, !opened));
             }
@@ -1802,7 +2013,7 @@ impl Live {
                 request,
                 text,
                 attachments,
-                ..
+                model,
             } => self.submit(
                 worker,
                 conversation,
@@ -1811,6 +2022,7 @@ impl Live {
                 request,
                 text,
                 attachments,
+                model,
             ),
             BackendRequest::Queue {
                 conversation,
@@ -2145,7 +2357,13 @@ impl Live {
                     },
                 );
             }
-            BackendRequest::RefreshModels { .. } => {
+            BackendRequest::RefreshModels { conversation, .. } => {
+                if !self
+                    .session_of(conversation)
+                    .is_some_and(|s| s.execution_backend.native_execution())
+                {
+                    return worker.notice(execution::NATIVE_ONLY.into());
+                }
                 if let Err(error) = self.call(Call::RefreshModels) {
                     worker.notice(format!("Could not refresh the models: {error}"));
                 }
@@ -2161,14 +2379,7 @@ impl Live {
                     .as_mut()
                     .filter(|c| c.conversation == conversation && c.generation == generation)
                 {
-                    current.workspace_ready = true;
-                    current.last_workspace = None;
-                    current.publish_empty_changes = true;
-                    worker.emit(
-                        conversation,
-                        generation,
-                        EventKind::ChangesScanState(ChangesState::Loading),
-                    );
+                    current.invalidate_workspace(worker);
                     self.schedule_changes(worker, conversation, generation);
                 } else {
                     worker.emit(
@@ -2298,6 +2509,7 @@ impl Live {
         request: RequestId,
         text: String,
         attachments: Vec<Attachment>,
+        model: Option<String>,
     ) {
         let reject = |worker: &Worker, reason: String| {
             self.control.submitted(conversation, generation, op);
@@ -2310,6 +2522,9 @@ impl Live {
                 "This conversation is not known to the engine.".into(),
             );
         };
+        if let Err(reason) = execution::prompt(&summary, !attachments.is_empty(), model.is_some()) {
+            return reject(worker, reason);
+        }
         let prepared = match attach::prepare(&text, &attachments, Some(Path::new(&summary.cwd))) {
             Ok(p) => p,
             Err(reason) => return reject(worker, reason),
@@ -2330,13 +2545,20 @@ impl Live {
         drop(sending);
         self.control.submitted(conversation, generation, op);
         match result {
-            Ok(Reply::Admitted { .. }) => {
+            Ok(Reply::Admitted { run, .. }) => {
+                self.control.set_active(conversation, true);
                 worker.runs.insert(
                     op,
                     Run {
                         conversation,
                         generation,
                         request,
+                        cli_receipt: cli_approvals::PromptReceipt::capture(
+                            worker.conn,
+                            self.seq.epoch(),
+                            &summary,
+                            run,
+                        ),
                     },
                 );
                 worker.emit_op(conversation, generation, op, EventKind::Accepted);
@@ -2360,6 +2582,9 @@ impl Live {
             return worker
                 .queue_refused(&req, "This conversation is not known to the engine.".into());
         };
+        if !summary.execution_backend.native_execution() {
+            return worker.queue_refused(&req, execution::NATIVE_ONLY.into());
+        }
         let prepared =
             match attach::prepare(&req.text, &req.attachments, Some(Path::new(&summary.cwd))) {
                 Ok(p) => p,
@@ -2472,7 +2697,7 @@ impl Live {
             );
         };
         match self.call(Call::Lookup {
-            session,
+            session: session.clone(),
             request: request.0.clone(),
         }) {
             Ok(Reply::Lookup(LookupResult::Unknown)) => {
@@ -2486,15 +2711,24 @@ impl Live {
                 };
                 worker.emit_op(conversation, generation, op, kind);
             }
-            Ok(Reply::Lookup(LookupResult::Known { open, outcome, .. })) => {
+            Ok(Reply::Lookup(LookupResult::Known { open, outcome, run, mode, .. })) => {
+                self.control.set_active(conversation, open);
                 worker.emit_op(conversation, generation, op, EventKind::StatusResolved { accepted: true });
                 if open {
+                    let captured = (mode == InputMode::Prompt).then(|| self.session_of(conversation)
+                        .and_then(|s| cli_approvals::PromptReceipt::capture(worker.conn, self.seq.epoch(), s, run))).flatten();
+                    let cli_receipt = match worker.runs.get(&op) {
+                        Some(previous) if previous.conversation == conversation && previous.generation == generation && previous.request == request => previous.cli_receipt.clone().or(captured),
+                        Some(_) => None,
+                        None => captured,
+                    };
                     worker.runs.insert(
                         op,
                         Run {
                             conversation,
                             generation,
                             request,
+                            cli_receipt,
                         },
                     );
                 } else {
@@ -2862,6 +3096,22 @@ impl Live {
             Ok(other) => return fail(worker, format!("unexpected reply {other:?}")),
             Err(error) => return fail(worker, format!("Could not read the conversation: {error}")),
         };
+        if snapshot.summary.id != summary.id {
+            return fail(worker, "The engine returned a different session.".into());
+        }
+        if self
+            .summary_revisions
+            .get(&summary.id)
+            .is_some_and(|floor| snapshot.revision < *floor)
+        {
+            return fail(
+                worker,
+                "The engine returned a stale execution snapshot.".into(),
+            );
+        }
+        self.update_summary(conversation, snapshot.summary.clone(), snapshot.revision);
+        snapshot.summary = self.index[&conversation].clone();
+        self.update_activity(conversation, snapshot.revision, snapshot.run.is_some());
         // Catch-up must not collapse history the person already paged in. Refresh the same
         // range from the store, including any changed retirement/result state, before replacing it.
         let oldest = (!initial)
@@ -3015,12 +3265,15 @@ impl Live {
             child_dirty: false,
             child_sync: Instant::now(),
             tools_done: done,
-            workspace_ready: done > 0 || has_older,
+            workspace_ready: done > 0 || has_older || changes::full_workspace(&summary),
+            full_workspace: changes::full_workspace(&summary),
+            workspace_revision: 0,
             last_workspace: None,
             publish_empty_changes: false,
             next_changes_scan: Instant::now(),
             evidence,
         });
+        self.reconcile_history_requests(worker);
         self.refresh_models(worker, Some(summary.id.clone()));
         (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
         self.emit_subagents(worker);
@@ -3033,7 +3286,8 @@ impl Live {
         true
     }
 
-    /// Collect uncommitted Git changes scoped to the session's file mutations, off this thread.
+    /// Read-only Git observation, off this thread. CLI changes are project-wide, never
+    /// attributed from untrusted action paths or inserted into native tool evidence.
     fn schedule_changes(&mut self, worker: &Worker, conversation: ConversationId, generation: u64) {
         let Some(current) = self
             .current
@@ -3045,11 +3299,27 @@ impl Live {
         if !current.workspace_ready {
             return;
         }
-        if self.scanning {
+        current.next_changes_scan = Instant::now() + CHANGES_POLL;
+        if self.scanning.is_some() {
             self.rescan = Some((conversation, generation));
             return;
         }
-        current.next_changes_scan = Instant::now() + CHANGES_POLL;
+        let Some(op) = self.next_changes_op.checked_add(1) else {
+            current.workspace_ready = false;
+            worker.emit(
+                conversation,
+                generation,
+                EventKind::ChangesScanState(ChangesState::Unavailable(
+                    "Changes operation capacity exhausted; reconnect.".into(),
+                )),
+            );
+            return;
+        };
+        self.next_changes_op = op;
+        let scope = changes::Scope {
+            source: changes::Source::capture(worker.conn, self.seq.epoch(), current),
+            op,
+        };
         let after = worker
             .changes_bases
             .get(&conversation)
@@ -3058,12 +3328,13 @@ impl Live {
         let paths = mapping::changed_paths(current.evidence.values(), after);
         let scanned_through = current.evidence.keys().next_back().copied().unwrap_or(0);
         let cwd = current.cwd.clone();
-        self.scanning = true;
+        self.scanning = Some(scope.clone());
         let tx = worker.tx.clone();
         thread::spawn(move || {
             let workspace = match cwd {
+                Some(cwd) if scope.source.full => workspace::collect(Path::new(&cwd)),
                 Some(cwd) => workspace::collect_scoped(Path::new(&cwd), &paths),
-                None if paths.is_empty() => Workspace::Changes {
+                None if paths.is_empty() && !scope.source.full => Workspace::Changes {
                     files: vec![],
                     truncated: false,
                 },
@@ -3072,8 +3343,7 @@ impl Live {
                 }
             };
             let _ = tx.send(Msg::Changes {
-                conversation,
-                generation,
+                scope,
                 scanned_through,
                 workspace,
             });
@@ -3083,22 +3353,28 @@ impl Live {
     fn changes_ready(
         &mut self,
         worker: &mut Worker,
-        conversation: ConversationId,
-        generation: u64,
+        scope: changes::Scope,
         scanned_through: u64,
         workspace: Workspace,
     ) {
-        self.scanning = false;
+        // An old connection/operation must not release a newer scan or publish its data.
+        if !scope.is_pending(self.scanning.as_ref(), worker.conn) {
+            return;
+        }
+        self.scanning = None;
+        let conversation = scope.source.conversation;
+        let generation = scope.source.generation;
         let had_files = self.current.as_ref().is_some_and(|c| {
             matches!(&c.last_workspace, Some(Workspace::Changes { files, .. }) if !files.is_empty())
         });
         let changed = self
             .current
             .as_mut()
-            .filter(|c| c.conversation == conversation && c.generation == generation)
+            .filter(|c| scope.belongs_to(&changes::Source::capture(worker.conn, self.seq.epoch(), c)))
             .is_some_and(|current| {
-                // A clean scan retires everything it covered: committed work does not return.
-                if matches!(&workspace, Workspace::Changes { files, truncated: false } if files.is_empty()) {
+                // Only native session evidence has a retirement cursor. A CLI workspace
+                // scan says nothing about which actor caused any particular file change.
+                if !current.full_workspace && matches!(&workspace, Workspace::Changes { files, truncated: false } if files.is_empty()) {
                     let base = worker.changes_bases.entry(conversation).or_default();
                     *base = (*base).max(scanned_through);
                 }

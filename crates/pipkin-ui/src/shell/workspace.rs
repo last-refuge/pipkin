@@ -29,6 +29,8 @@ pub enum Overlay {
     Prefs,
     Session,
     About,
+    LocalCli,
+    CliApprovals,
     /// A question an extension asked, for the first one waiting.
     Question,
 }
@@ -146,6 +148,13 @@ pub struct Workspace {
     pub(super) nav_search: Entity<ComposerEditor>,
     pub(super) overlay_input: Entity<ComposerEditor>,
     pub(super) setup_input: Entity<ComposerEditor>,
+    pub(super) local_cli_executable: Entity<ComposerEditor>,
+    pub(super) local_cli_project: Entity<ComposerEditor>,
+    pub(super) cli_approval_panel: super::cli_approvals::Panel,
+    pub(super) cli_approval_text: Entity<super::cli_approvals::ApprovalText>,
+    pub(super) cli_dialog_scroll: ScrollHandle,
+    pub(super) cli_review_scroll: ScrollHandle,
+    pub(super) cli_review_focus: FocusHandle,
     /// The MCP servers settings section's inputs and form choices.
     pub(super) mcp_name: Entity<ComposerEditor>,
     pub(super) mcp_target: Entity<ComposerEditor>,
@@ -235,6 +244,17 @@ impl Workspace {
         let composer = cx.new(|cx| ComposerEditor::new(window, cx));
         let nav_search = cx.new(|cx| ComposerEditor::single_line(window, cx));
         let overlay_input = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        let cli_approval_text = cx.new(|_| super::cli_approvals::ApprovalText::default());
+        let local_cli_executable = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        local_cli_executable.update(cx, |e, cx| {
+            e.set_label("Local CLI executable path", cx);
+            e.set_placeholder("/absolute/path/to/claude");
+        });
+        let local_cli_project = cx.new(|cx| ComposerEditor::single_line(window, cx));
+        local_cli_project.update(cx, |e, cx| {
+            e.set_label("Local CLI project path", cx);
+            e.set_placeholder("/absolute/path/to/project");
+        });
         let setup_input = cx.new(|cx| ComposerEditor::single_line(window, cx));
         setup_input.update(cx, |e, cx| {
             e.set_label("Sign-in response", cx);
@@ -306,6 +326,13 @@ impl Workspace {
         });
         composer.update(cx, |e, _| e.set_placeholder("Ask anything\u{2026}"));
         let mut subs = Vec::new();
+        for editor in [&local_cli_executable, &local_cli_project] {
+            subs.push(
+                cx.subscribe_in(editor, window, |this, _, event, window, cx| {
+                    this.on_local_cli_input(event, window, cx);
+                }),
+            );
+        }
         subs.push(cx.subscribe_in(&composer, window, Self::on_composer_event));
         subs.push(cx.subscribe_in(&nav_search, window, Self::on_search_event));
         subs.push(cx.subscribe_in(&overlay_input, window, Self::on_overlay_input_event));
@@ -348,6 +375,13 @@ impl Workspace {
             nav_search,
             overlay_input,
             setup_input,
+            local_cli_executable,
+            local_cli_project,
+            cli_approval_panel: Default::default(),
+            cli_approval_text,
+            cli_dialog_scroll: ScrollHandle::new(),
+            cli_review_scroll: ScrollHandle::new(),
+            cli_review_focus: cx.focus_handle(),
             mcp_name,
             mcp_target,
             mcp_values,
@@ -456,6 +490,13 @@ impl Workspace {
     // ------------------------------------------------------------ model → view
 
     fn on_model(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(
+            self.overlay,
+            Overlay::Model | Overlay::ModelSettings | Overlay::Effort
+        ) && !self.state(cx).execution_capabilities().model_settings
+        {
+            self.close_overlay(window, cx);
+        }
         self.refresh_subagent_rows(cx);
         self.refresh_plan_rows(cx);
         self.refresh_job_rows(cx);
@@ -522,6 +563,9 @@ impl Workspace {
             cx.set_global(wanted);
             cx.refresh_windows();
         }
+        self.retain_cli_navigation(window, cx);
+        self.reconcile_local_cli_inputs(cx);
+        self.reconcile_cli_approval_text(cx);
         match current {
             Some((id, epoch, text)) => {
                 if self.synced != (Some(id), epoch) {
@@ -548,12 +592,12 @@ impl Workspace {
             e.set_prompt_history_enabled(history_enabled);
             e.set_prompt_history_browsing(history_browsing);
         });
-        // A conversation another engine owns is read here, not written: no draft to type.
-        let owned = self
+        // Use authoritative conversation readiness/profile, never Local CLI metadata tickets.
+        let read_only = self
             .state(cx)
             .current()
-            .is_some_and(|c| self.state(cx).owned_elsewhere(c.id));
-        let locked = owned
+            .is_some_and(|c| self.state(cx).read_only_reason(c.id).is_some());
+        let locked = read_only
             || matches!(
                 run,
                 Some(RunState::Submitting { .. } | RunState::OutcomeUnknown { .. }) | None
@@ -615,6 +659,9 @@ impl Workspace {
     }
 
     fn paste_image(&mut self, image: gpui::Image, cx: &mut Context<Self>) {
+        if !self.state(cx).execution_capabilities().attachments {
+            return;
+        }
         let Some(conversation) = self.state(cx).selected else {
             self.show_toast("Open a conversation before pasting an image", cx);
             return;
@@ -628,7 +675,9 @@ impl Workspace {
                 Ok(path) => {
                     let attached = this
                         .update(cx, |this, cx| {
-                            if this.state(cx).selected != Some(conversation) {
+                            if this.state(cx).selected != Some(conversation)
+                                || !this.state(cx).execution_capabilities().attachments
+                            {
                                 this.show_toast(
                                     "Image not attached: conversation changed during paste",
                                     cx,
@@ -907,10 +956,24 @@ impl Workspace {
     // ----------------------------------------------------------------- overlays
 
     pub(super) fn open_overlay(&mut self, o: Overlay, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(o, Overlay::Model | Overlay::ModelSettings | Overlay::Effort)
+            && !self.state(cx).execution_capabilities().model_settings
+        {
+            return;
+        }
         if self.overlay == Overlay::None {
             self.restore_focus = window.focused(cx);
         }
         let previous = self.overlay;
+        if previous != o && matches!(o, Overlay::LocalCli | Overlay::CliApprovals) {
+            self.cli_dialog_scroll
+                .set_offset(gpui::point(px(0.), px(0.)));
+            self.cli_review_scroll
+                .set_offset(gpui::point(px(0.), px(0.)));
+        }
+        if previous == Overlay::CliApprovals && o != previous {
+            self.clear_cli_approval_text(cx);
+        }
         if o == Overlay::Prefs && previous == Overlay::None {
             self.settings_section = super::settings::SettingsSection::default();
         }
@@ -965,11 +1028,16 @@ impl Workspace {
                 });
                 window.focus(&self.menu_focus, cx);
             }
+            Overlay::LocalCli => {
+                let handle = self.local_cli_executable.read(cx).focus_handle(cx);
+                window.focus(&handle, cx);
+            }
             Overlay::ModelSettings
             | Overlay::Project
             | Overlay::Prefs
             | Overlay::Session
-            | Overlay::About => window.focus(&self.menu_focus, cx),
+            | Overlay::About
+            | Overlay::CliApprovals => window.focus(&self.menu_focus, cx),
             Overlay::Question => {
                 self.ensure_form_editors(window, cx);
                 let question = self.waiting_question(cx, true);
@@ -1113,6 +1181,8 @@ impl Workspace {
     }
 
     pub(super) fn close_overlay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Local CLI dismissal is presentation only: never cancel/discard an unresolved core
+        // mutation. Resume setup reopens the same captured identity, without any probe.
         if self.overlay == Overlay::None {
             return;
         }
@@ -1127,6 +1197,9 @@ impl Workspace {
             window.focus(&self.menu_focus, cx);
             cx.notify();
             return;
+        }
+        if self.overlay == Overlay::CliApprovals {
+            self.clear_cli_approval_text(cx);
         }
         self.overlay = Overlay::None;
         match self.restore_focus.take() {
@@ -1171,6 +1244,9 @@ impl Workspace {
                 window.dispatch_action(a, cx);
             }
             Run::Dispatch(c) => self.dispatch(c.clone(), cx),
+            Run::LocalCli(existing) => self.open_local_cli(*existing, window, cx),
+            Run::ResumeLocalCli => self.open_overlay(Overlay::LocalCli, window, cx),
+            Run::CliApprovals => self.open_cli_approvals(window, cx),
             Run::InspectSubagent(child) => {
                 self.dispatch(Command::SelectSubagent(*child), cx);
                 window.dispatch_action(Box::new(ShowSubagents), cx);
@@ -1478,6 +1554,10 @@ impl Workspace {
     }
 
     pub(super) fn attach_files(&mut self, cx: &mut Context<Self>) {
+        if !self.state(cx).execution_capabilities().attachments {
+            return;
+        }
+        let conversation = self.state(cx).selected;
         let rx = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -1497,8 +1577,12 @@ impl Workspace {
                     return;
                 }
             };
-            this.update(cx, |this, cx| this.attach_paths(paths, cx))
-                .ok();
+            this.update(cx, |this, cx| {
+                if this.state(cx).selected == conversation {
+                    this.attach_paths(paths, cx);
+                }
+            })
+            .ok();
         })
         .detach();
     }
@@ -1506,6 +1590,10 @@ impl Workspace {
     /// Attach files by path: from the picker, or dropped onto the window. Folders cannot be
     /// attached; they are skipped with a word about it. The files are read off the UI thread.
     pub(super) fn attach_paths(&mut self, paths: Vec<std::path::PathBuf>, cx: &mut Context<Self>) {
+        if !self.state(cx).execution_capabilities().attachments {
+            return;
+        }
+        let conversation = self.state(cx).selected;
         let (files, folders): (Vec<_>, Vec<_>) = paths.into_iter().partition(|p| !p.is_dir());
         if !folders.is_empty() {
             self.show_toast(
@@ -1530,7 +1618,11 @@ impl Workspace {
                 })
                 .await;
             this.update(cx, |this, cx| {
-                this.dispatch(Command::AddAttachments(described), cx)
+                if this.state(cx).selected == conversation
+                    && this.state(cx).execution_capabilities().attachments
+                {
+                    this.dispatch(Command::AddAttachments(described), cx);
+                }
             })
             .ok();
         })
@@ -1694,6 +1786,20 @@ mod diagnostics_tests {
                                     )],
                                     now: 1,
                                 })
+                            },
+                            cx,
+                        );
+                        // A catalog entry alone is not an execution capability grant.
+                        let c = model.state.current().unwrap();
+                        model.apply_event(
+                            BackendEvent {
+                                conversation: c.id,
+                                generation: c.generation,
+                                op: None,
+                                kind: EventKind::ExecutionContext {
+                                    profile: ExecutionProfile::NativeAgent,
+                                    execution_blocked: None,
+                                },
                             },
                             cx,
                         );

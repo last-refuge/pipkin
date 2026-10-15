@@ -1,0 +1,70 @@
+{
+  "source_job": 146,
+  "attempts": [
+    7,
+    8
+  ],
+  "guarded_owned_desktop": true,
+  "actual_app_worker": true,
+  "runs": [
+    {
+      "state": "completed",
+      "mode": "fresh",
+      "terminal": {
+        "outcome": "success",
+        "usage": {
+          "input_tokens": 2,
+          "output_tokens": 16,
+          "cache_read_input_tokens": 535,
+          "cache_creation_input_tokens": 2379
+        }
+      },
+      "evidence": {
+        "projection_finished": true,
+        "input_delivered": true,
+        "root_reaped": true,
+        "pipes_drained": true,
+        "exit_code": 0,
+        "stop_requested": false,
+        "cleanup_timed_out": false,
+        "cancelled_clean_confirmed": false,
+        "supervisor_stop": null,
+        "projection_error": null,
+        "rejected_record": null,
+        "parse_failure": null
+      },
+      "exact_expected_reply": true
+    },
+    {
+      "state": "completed",
+      "mode": "resume",
+      "terminal": {
+        "outcome": "success",
+        "usage": {
+          "input_tokens": 2,
+          "output_tokens": 16,
+          "cache_read_input_tokens": 2578,
+          "cache_creation_input_tokens": 403
+        }
+      },
+      "evidence": {
+        "projection_finished": true,
+        "input_delivered": true,
+        "root_reaped": true,
+        "pipes_drained": true,
+        "exit_code": 0,
+        "stop_requested": false,
+        "cleanup_timed_out": false,
+        "cancelled_clean_confirmed": false,
+        "supervisor_stop": null,
+        "projection_error": null,
+        "rejected_record": null,
+        "parse_failure": null
+      },
+      "exact_expected_reply": true
+    }
+  ],
+  "native_runs": 0,
+  "canaries_clear": true,
+  "billing": "unverified"
+}

@@ -6,6 +6,8 @@ use crate::onboarding::{SignInAnswer, SignInProvider};
 /// User intents issued by the UI or command palette.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
+    LocalCli(crate::local_cli::LocalCliCommand),
+    CliApproval(crate::CliApprovalCommand),
     RemoveSignIn(SignInProvider),
     StartSignIn(SignInProvider),
     ReuseSignIn(SignInProvider),
@@ -248,6 +250,21 @@ pub struct Availability {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BackendRequest {
+    CliApproval(crate::CliApprovalPortRequest),
+    /// Fire-and-forget retirement of this exact pending Inspect tuple, not a setup
+    /// operation and not a creation cancellation. Adapter cancels/cleans up racing
+    /// inspection results; no acknowledgement or successful revocation is assumed.
+    RetireLocalCliInspect {
+        conversation: ConversationId,
+        generation: u64,
+        op: OperationId,
+    },
+    LocalCli {
+        conversation: ConversationId,
+        generation: u64,
+        op: OperationId,
+        request: crate::local_cli::LocalCliRequest,
+    },
     RemoveSignIn(SignInProvider),
     /// V1 sign-in can only request Pi's allowlisted subscription OAuth methods.
     StartSignIn(SignInProvider),
@@ -537,11 +554,14 @@ pub struct BackendEvent {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EventKind {
-    /// Execution identity from an authoritative session snapshot, emitted before its
-    /// history/goal events. Attachment-scoped (op must be None). Phase 1 is a coarse
-    /// OFF-gate; this is not a per-feature capability model.
+    LocalCli(crate::local_cli::LocalCliEvent),
+    CliApproval(Box<crate::CliApprovalEvent>),
+    /// Execution contract and temporary readiness from an authoritative session snapshot,
+    /// emitted before its history/goal events. Attachment-scoped (`op` must be `None`).
+    /// Map unknown identities to `Unsupported`; never infer the profile from readiness.
     ExecutionContext {
         execution_blocked: Option<String>,
+        profile: ExecutionProfile,
     },
     /// Initial window of history for a conversation.
     Opened {
@@ -825,6 +845,21 @@ pub enum Effect {
         text: String,
     },
     Launch(Launch),
+    /// Save this exact public identity before Create; answer via local_cli_creation_persisted.
+    JournalLocalCliCreation {
+        conversation: ConversationId,
+        generation: u64,
+        op: OperationId,
+        identity: crate::local_cli::LocalCliCreationId,
+    },
+    /// An approval attempt must be durable before its one-shot decision can be released.
+    JournalCliApproval(Box<crate::CliApprovalRequest>),
+    /// Receipt metadata only; failure leaves a conservative unknown record on disk.
+    SaveCliApprovalRecovery(Box<crate::CliApprovalRecovery>),
+    /// Exact completion plus catalog reconciliation makes this recovery record obsolete.
+    RetireLocalCliCreation {
+        identity: crate::local_cli::LocalCliCreationId,
+    },
     /// Durably record a submission's immutable payload. The controller must report the commit
     /// with `AppState::intent_persisted`; until then nothing is sent and the draft is kept.
     JournalIntent {

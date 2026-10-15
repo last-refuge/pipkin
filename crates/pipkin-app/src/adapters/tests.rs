@@ -53,6 +53,26 @@ impl Harness {
         for effect in outcome.effects {
             match effect {
                 Effect::Backend(request) => self.backend.request(request),
+                Effect::JournalLocalCliCreation {
+                    conversation,
+                    generation,
+                    op,
+                    identity,
+                } => {
+                    let out = self.state.local_cli_creation_persisted(
+                        conversation,
+                        generation,
+                        op,
+                        &identity,
+                        Ok(()),
+                    );
+                    self.exec(out);
+                }
+                Effect::RetireLocalCliCreation { .. } | Effect::SaveCliApprovalRecovery(_) => {}
+                Effect::JournalCliApproval(request) => {
+                    let out = self.state.cli_approval_persisted(&request, Ok(()));
+                    self.exec(out);
+                }
                 // The journal commits instantly here; the controller does it asynchronously.
                 Effect::JournalIntent {
                     conversation,

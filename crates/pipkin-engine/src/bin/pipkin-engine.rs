@@ -9,6 +9,11 @@
 use std::path::PathBuf;
 
 fn main() {
+    if let Some(code) =
+        pipkin_engine::execution::claude_cli::permission_helper::maybe_run_from_env()
+    {
+        std::process::exit(code);
+    }
     env_logger_init();
     let mut data: Option<PathBuf> = None;
     let mut config: Option<PathBuf> = None;

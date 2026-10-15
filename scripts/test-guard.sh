@@ -72,6 +72,12 @@ expect_refused "refuses a different app even at the pinned address (class is che
 reset; "$GUARD" pin 100 >/dev/null; set_active pipkin 0xbbb 200 2
 expect_refused "refuses another pipkin instance (not the pinned window)" "$GUARD" key Return
 
+reset; "$GUARD" pin 100 >/dev/null; set_active pipkin 0xaaa 200 2
+expect_refused "refuses a recycled compositor address owned by another pid" "$GUARD" key Return
+
+reset; printf '0xaaa\n' >"$T/pin"
+expect_refused "legacy address-only pins require explicit repinning" "$GUARD" key Return
+
 reset; "$GUARD" pin 100 >/dev/null; set_active pipkin 0xaaa 100 3
 expect_refused "refuses when the window is not on the active workspace" "$GUARD" key Return
 
@@ -114,7 +120,7 @@ reset; "$GUARD" pin 999 >/dev/null 2>&1; rc=$?
 "$GUARD" pin notanumber >/dev/null 2>&1; rc=$?
 [[ $rc -eq 2 ]] && ok "pin rejects a non-numeric pid" || bad "pin usage (rc=$rc)"
 
-reset; "$GUARD" pin 200 >/dev/null; [[ "$(cat "$T/pin")" == "0xbbb" ]] && ok "pin records the address of the right pid" || bad "pin address"
+reset; "$GUARD" pin 200 >/dev/null; [[ "$(cat "$T/pin")" == $'0xbbb\n200' ]] && ok "pin records the address and owning pid" || bad "pin address and pid"
 "$GUARD" unpin >/dev/null; [[ ! -e "$T/pin" ]] && ok "unpin removes the pin" || bad "unpin"
 
 echo "---"; echo "passed $pass, failed $failed"

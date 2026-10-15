@@ -1,5 +1,16 @@
 use crate::ids::*;
 
+/// Fixed execution contract, independent of temporary backend readiness.
+/// Adapters must map unknown execution identities to `Unsupported`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExecutionProfile {
+    #[default]
+    NativeAgent,
+    LocalCliChatOnly,
+    LocalCliRestrictedWrite,
+    Unsupported,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Project {
     pub id: ProjectId,

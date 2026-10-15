@@ -24,6 +24,8 @@ fn rejects_conflicts_by_presence_before_filtering_without_echoing_values() {
         "CLAUDE_CODE_UNKNOWN",
         "CLAUDECODE",
         "NODE_OPTIONS",
+        "PIPKIN_CLI_PERMISSION_NONCE",
+        "PIPKIN_CLI_PERMISSION_UNKNOWN",
         "LD_PRELOAD",
         "BASH_ENV",
     ] {
@@ -119,7 +121,8 @@ fn fixed_no_tools_policy_uses_stdin_and_exact_session_selection_not_shell_argume
 
 #[test]
 fn version_and_help_are_exact_and_marker_parts_are_unambiguous() {
-    assert!(validate_version(b"2.1.296 (Claude Code)\n").is_ok());
+    assert!(validate_version(b"2.1.299 (Claude Code)\n").is_ok());
+    assert!(validate_version(b"2.1.296 (Claude Code)\n").is_err());
     for bytes in [
         b"2.1.297 (Claude Code)".as_slice(),
         b"2.1.296 attacker",

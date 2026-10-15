@@ -19,6 +19,8 @@ pub struct Model {
     completing_setup: bool,
     handler: Option<EffectHandler>,
     support_report: Option<String>,
+    /// Exact engine IDs from the controller's authoritative catalog, never desktop IDs.
+    local_cli_sessions: std::collections::HashMap<ConversationId, EngineSessionId>,
 }
 
 impl EventEmitter<Note> for Model {}
@@ -38,12 +40,40 @@ impl Model {
             completing_setup: false,
             handler: None,
             support_report: None,
+            local_cli_sessions: Default::default(),
         }
     }
 
     /// Installed by the controller (pipkin-app). Effects are executed outside render.
     pub fn set_effect_handler(&mut self, handler: EffectHandler) {
         self.handler = Some(handler);
+    }
+
+    /// Controller integration hook: advertise only the adapter's actual setup capability.
+    /// Session pairs must come from captured authoritative source backend IDs. Replacing the
+    /// snapshot (including with an empty one on disconnect) prevents stale reapproval targets.
+    pub fn set_local_cli_catalog(
+        &mut self,
+        available: bool,
+        sessions: impl IntoIterator<Item = (ConversationId, EngineSessionId)>,
+        cx: &mut Context<Self>,
+    ) {
+        let mut outcome = self.state.set_local_cli_available(available);
+        let sessions = sessions.into_iter().collect();
+        if self.local_cli_sessions != sessions {
+            self.local_cli_sessions = sessions;
+            outcome.notes.push(pipkin_core::Note::Other);
+        }
+        self.finish(outcome, cx);
+    }
+
+    pub fn set_cli_approvals_available(&mut self, available: bool, cx: &mut Context<Self>) {
+        let out = self.state.set_cli_approvals_available(available);
+        self.finish(out, cx);
+    }
+
+    pub fn local_cli_session(&self, conversation: ConversationId) -> Option<&EngineSessionId> {
+        self.local_cli_sessions.get(&conversation)
     }
 
     /// Prepared by the controller outside render; never composed from conversation/error text.
@@ -72,6 +102,9 @@ impl Model {
     }
 
     pub fn set_connection(&mut self, connection: Connection, cx: &mut Context<Self>) {
+        if !connection.is_ready() {
+            self.local_cli_sessions.clear();
+        }
         if !connection.is_ready() && self.state.connection.is_ready() {
             self.accepted_provider = None;
             self.engine_selected_model = None;

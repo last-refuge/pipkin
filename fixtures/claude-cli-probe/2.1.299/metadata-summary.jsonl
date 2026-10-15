@@ -1,0 +1,3 @@
+{"mode":"probe","cli_version":"2.1.299","missing_flags":[],"routing_override_names":[],"billing_verified":false,"launch_policy_verified":false}
+{"mode":"auth","cli_version":"2.1.299","missing_flags":[],"routing_override_names":[],"billing_verified":false,"launch_policy_verified":false}
+{"logged_in":true,"method":"claude_account"}

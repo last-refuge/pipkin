@@ -1406,7 +1406,15 @@ impl Render for ComposerEditor {
         let mut root = gpui::div()
             .id("composer-editor")
             .key_context("Composer")
-            .track_focus(&self.focus_handle)
+            // Explicit tracked handles carry their own tab metadata; div.tab_index
+            // only configures handles created by GPUI for that div.
+            .track_focus(
+                &self
+                    .focus_handle
+                    .clone()
+                    .tab_index(0)
+                    .tab_stop(!self.disabled),
+            )
             .role(Role::MultilineTextInput)
             .aria_label(self.label.clone())
             .aria_value(SharedString::from(self.model.text().to_string()))

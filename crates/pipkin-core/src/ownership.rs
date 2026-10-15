@@ -78,12 +78,32 @@ impl AppState {
         {
             return Some(reason.clone());
         }
+        if self.mode == crate::Mode::Real
+            && !self.owned_elsewhere(id)
+            && self
+                .conversation(id)
+                .is_some_and(|c| !c.execution_context_known)
+        {
+            return Some(
+                "Waiting for the authoritative execution context. History remains available."
+                    .into(),
+            );
+        }
+        if self
+            .conversation(id)
+            .is_some_and(|c| c.profile == crate::ExecutionProfile::Unsupported)
+        {
+            return Some(
+                "This execution profile is unsupported. History remains available.".into(),
+            );
+        }
         self.owner(id).map(|owner| match owner {
             ConversationOwner::NativeEngine { .. } => NATIVE_OWNED_NOTICE.into(),
         })
     }
 
-    /// Phase-1 execution OFF-gate, independent of which conversation is selected.
+    /// Temporary readiness gate, independent of which conversation is selected.
+    /// This does not determine the fixed execution profile.
     pub(crate) fn refuse_if_execution_blocked(
         &mut self,
         id: ConversationId,

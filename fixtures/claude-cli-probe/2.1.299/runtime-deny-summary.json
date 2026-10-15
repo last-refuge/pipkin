@@ -1,0 +1,34 @@
+{
+  "cli_version": "2.1.299",
+  "mode": "deny",
+  "prompt_attempts": 1,
+  "outcomes": [
+    {
+      "state": "Unknown",
+      "mode": "Fresh",
+      "evidence": {
+        "projection_finished": false,
+        "input_delivered": true,
+        "root_reaped": true,
+        "pipes_drained": true,
+        "exit_code": null,
+        "stop_requested": false,
+        "cleanup_timed_out": false,
+        "cancelled_clean_confirmed": false,
+        "supervisor_stop": "observer_failure",
+        "projection_error": "MalformedRecord",
+        "rejected_record": "message_delta"
+      }
+    }
+  ],
+  "billing_verified": false,
+  "crash_containment_verified": false,
+  "general_production_enabled": false,
+  "runtime_host_opts_enabled_for_qualification": true,
+  "metadata_verified": true,
+  "configuration_canaries_clear": true,
+  "native_inference_calls": 0,
+  "fixture_retained": true,
+  "passed": false,
+  "reason": "run ended without the expected permission review"
+}

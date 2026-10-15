@@ -1,7 +1,10 @@
 use super::*;
 use crate::store::compactions::CompactionScope;
 
+mod permissions;
+mod prompts;
 mod review;
+mod setup;
 
 fn receipt_count(s: &Store) -> i64 {
     s.read(|c| {
@@ -60,11 +63,12 @@ fn conflict<T: std::fmt::Debug>(result: Result<T>) {
 }
 fn drop_v21(c: &Connection) -> Result<()> {
     c.execute_batch(
-        "DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings;
+        "DROP TABLE external_permissions; DROP TABLE external_projection_messages; DROP TABLE external_prompts;
+        DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings;
         DROP TABLE cli_binding_receipts;
         DROP TRIGGER session_execution_immutable; DROP TRIGGER cli_session_shape_insert;
         DROP TRIGGER cli_session_shape_update; ALTER TABLE sessions DROP COLUMN execution_backend;
-        PRAGMA user_version=20;",
+        DROP TABLE external_projection_actions; PRAGMA user_version=20;",
     )?;
     Ok(())
 }
@@ -148,7 +152,7 @@ fn v20_is_backed_up_and_preserves_native_records() {
     s.tx(|c| drop_v21(c)).unwrap();
     drop(s);
     let s = Store::open(dir.path()).unwrap();
-    assert_eq!(s.read(schema::version).unwrap(), 21);
+    assert_eq!(s.read(schema::version).unwrap(), SCHEMA_VERSION);
     let row = s.session("native").unwrap().unwrap();
     assert_eq!(row.execution_backend, ExecutionBackend::NativeAgent);
     assert_eq!(row.model.as_deref(), Some("model"));

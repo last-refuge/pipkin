@@ -46,10 +46,80 @@ fn child(c: &SubagentInfo) -> usize {
     c.call_id.capacity() + c.task.capacity() + c.status.capacity()
 }
 
+fn approval_run(r: &CliApprovalRun) -> usize {
+    r.session.capacity() + r.op.capacity()
+}
+fn approval_id(i: &CliApprovalId) -> usize {
+    approval_run(&i.run) + i.invocation.capacity() + i.arguments_sha256.capacity()
+}
+fn approval_rows(rows: &Vec<CliApprovalReview>) -> usize {
+    vec_bytes(rows, |r| approval_id(&r.id) + r.arguments.capacity())
+}
+fn approval_event(e: &CliApprovalEvent) -> usize {
+    match e {
+        CliApprovalEvent::DiscoveryFailed(_) => 0,
+        CliApprovalEvent::Discovered { run, reviews, .. } => {
+            run.as_ref().map_or(0, approval_run) + approval_rows(reviews)
+        }
+        CliApprovalEvent::Response(r) => {
+            approval_run(&r.context.run)
+                + match &r.result {
+                    CliApprovalResult::Failed => 0,
+                    CliApprovalResult::Receipt(receipt) => {
+                        receipt.as_ref().map_or(0, |r| approval_id(&r.id))
+                    }
+                    CliApprovalResult::Listed { run, reviews } => {
+                        run.as_ref().map_or(0, approval_run) + approval_rows(reviews)
+                    }
+                }
+        }
+    }
+}
+fn cli_identity(id: &LocalCliCreationId) -> usize {
+    id.session.0.capacity() + id.setup.0.capacity()
+}
+fn cli_event(event: &LocalCliEvent) -> usize {
+    match event {
+        LocalCliEvent::Inspected(view)
+        | LocalCliEvent::Checked(view)
+        | LocalCliEvent::Status(view) => {
+            let target = match &view.target {
+                LocalCliInspectTarget::New { project, .. } => project.capacity(),
+                LocalCliInspectTarget::Existing { session, .. } => session.0.capacity(),
+            };
+            view.setup.0.capacity()
+                + target
+                + view.root_candidate.as_ref().map_or(0, |s| s.0.capacity())
+                + view.executable.capacity()
+                + view.project.capacity()
+                + view.qualified_version.capacity()
+                + strings(&view.reason)
+        }
+        LocalCliEvent::Created(created) => cli_identity(&created.identity),
+        LocalCliEvent::CreationLookup { identity, found } => {
+            cli_identity(identity) + found.as_ref().map_or(0, |c| cli_identity(&c.identity))
+        }
+        LocalCliEvent::SessionStatus(view) => {
+            view.session.0.capacity() + view.executable.capacity() + view.project.capacity()
+        }
+        LocalCliEvent::Failed { failure, .. } => match failure {
+            LocalCliFailure::Unknown(reason) | LocalCliFailure::Rejected(reason) => {
+                reason.capacity()
+            }
+            LocalCliFailure::Expired | LocalCliFailure::Conflict => 0,
+        },
+        LocalCliEvent::Revoked => 0,
+    }
+}
+
 pub(super) fn event_bytes(event: &BackendEvent) -> usize {
     size_of::<BackendEvent>()
         + match &event.kind {
-            EventKind::ExecutionContext { execution_blocked } => strings(execution_blocked),
+            EventKind::LocalCli(event) => cli_event(event),
+            EventKind::CliApproval(event) => size_of::<CliApprovalEvent>() + approval_event(event),
+            EventKind::ExecutionContext {
+                execution_blocked, ..
+            } => strings(execution_blocked),
             EventKind::Opened { items, changes, .. } => {
                 vec_bytes(items, item) + vec_bytes(changes, change)
             }

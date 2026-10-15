@@ -47,6 +47,13 @@ struct Faults {
     drop_prompt_reply: AtomicBool,
     drop_prompt: AtomicBool,
     drop_stop: AtomicBool,
+    /// Permission decision reaches the real broker, but its reply is lost. No reconnect.
+    drop_approval_reply: AtomicBool,
+    approval_decisions: AtomicUsize,
+    approval_lookups: AtomicUsize,
+    drop_creation_reply: AtomicBool,
+    creations: AtomicUsize,
+    creation_lookups: AtomicUsize,
     /// Let the next steer or follow-up reach the engine, then drop its reply and sever.
     drop_queue_reply: AtomicBool,
     /// Sever the link instead of delivering the next steer or follow-up.
@@ -81,6 +88,35 @@ impl FrameSender for FaultSender {
                 return Ok(()); // "sent", and lost on the way
             }
             if self.faults.drop_prompt_reply.swap(false, Ordering::SeqCst) {
+                self.faults.fired.fetch_add(1, Ordering::SeqCst);
+                self.faults.swallow.lock().unwrap().insert(frame.id);
+            }
+        }
+        if matches!(frame.call, Call::CreateLocalCliSession { .. }) {
+            self.faults.creations.fetch_add(1, Ordering::SeqCst);
+            if self
+                .faults
+                .drop_creation_reply
+                .swap(false, Ordering::SeqCst)
+            {
+                self.faults.swallow.lock().unwrap().insert(frame.id);
+            }
+        }
+        if matches!(frame.call, Call::LookupLocalCliCreation { .. }) {
+            self.faults.creation_lookups.fetch_add(1, Ordering::SeqCst);
+        }
+        if matches!(frame.call, Call::LookupLocalCliApproval { .. }) {
+            self.faults.approval_lookups.fetch_add(1, Ordering::SeqCst);
+        }
+        if matches!(frame.call, Call::DecideLocalCliApproval { .. }) {
+            self.faults
+                .approval_decisions
+                .fetch_add(1, Ordering::SeqCst);
+            if self
+                .faults
+                .drop_approval_reply
+                .swap(false, Ordering::SeqCst)
+            {
                 self.faults.fired.fetch_add(1, Ordering::SeqCst);
                 self.faults.swallow.lock().unwrap().insert(frame.id);
             }
@@ -166,6 +202,13 @@ impl FrameReceiver for FaultReceiver {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[path = "tests/cli_coding_e2e.rs"]
+mod cli_coding_e2e;
+#[cfg(unix)]
+#[path = "tests/local_cli_e2e.rs"]
+mod local_cli_e2e;
+
 struct Fixture {
     _dir: tempfile::TempDir,
     root: PathBuf,
@@ -249,7 +292,38 @@ impl Fixture {
             registry_with(Arc::new(self.provider.clone())),
             pipkin_engine::tools::builtin_tools(),
         )
-        .expect("engine starts");
+        .unwrap_or_else(|error| {
+            // Only fixed fixture paths and metadata: never dump config/credential contents.
+            let paths = [
+                "",
+                "engine",
+                "engine/engine.sqlite",
+                "engine/engine.sqlite-wal",
+                "engine/engine.sqlite-shm",
+            ];
+            let metadata: Vec<_> = paths
+                .iter()
+                .map(|path| {
+                    let info = std::fs::metadata(self.root.join(path))
+                        .map(|m| (m.is_dir(), m.len(), m.permissions().readonly()));
+                    (*path, info)
+                })
+                .collect();
+            // SQLite startup currently erases its extended error code. A separate,
+            // bounded allocation probe can expose OS errors (e.g. EDQUOT despite free
+            // space reported by df). It is diagnostic only, never a retry/fallback.
+            let write_probe = tempfile::tempfile_in(&self.root).and_then(|mut file| {
+                use std::io::Write;
+                file.write_all(&[0; 32 * 1024])?;
+                file.sync_all()
+            });
+            panic!(
+                "engine starts: {error}; test={:?}; fixture={}; metadata={metadata:?}; \
+                 separate_32k_write_probe={write_probe:?}",
+                thread::current().name(),
+                self.root.display(),
+            );
+        });
         *slot = Some(Arc::new(handle));
     }
 
@@ -299,10 +373,41 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        if let Some(engine) = self.engine.lock().unwrap().take() {
+        // Startup can panic while holding the slot. Still perform ordinary shutdown and
+        // TempDir cleanup, rather than aborting on a second panic and hiding other failures.
+        let engine = self.engine.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some(engine) = engine {
             engine.shutdown(Duration::from_secs(5));
         }
     }
+}
+
+#[test]
+fn fixture_drop_recovers_poison_and_cleans_up() {
+    let fx = Fixture::start(|_, _| Reply::Text("unused".into()));
+    let root = fx.root.clone();
+    let engine = fx.engine();
+    let connection = engine.connect("poison-cleanup");
+    let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _slot = fx.engine.lock().unwrap();
+        panic!("deliberately poison the fixture slot");
+    }));
+    assert!(poisoned.is_err());
+    assert!(fx.engine.is_poisoned());
+    drop(fx);
+    assert!(
+        !root.exists(),
+        "fixture TempDir still receives standard cleanup"
+    );
+    // Shutdown closes delivery but preserves already-buffered startup events.
+    for _ in 0..16 {
+        match connection.try_recv() {
+            Ok(_) => continue,
+            Err(mpsc::TryRecvError::Disconnected) => return,
+            Err(mpsc::TryRecvError::Empty) => panic!("engine client was not closed"),
+        }
+    }
+    panic!("unexpectedly many startup events before engine client closure");
 }
 
 // ------------------------------------------------------------------------------ the harness
@@ -362,6 +467,8 @@ impl Harness {
         state.can_create = true;
         state.set_request_prefix(unique("e2e"));
         state.set_connection(Connection::Connecting);
+        state.restore_local_cli_creations(storage.load_cli_creations());
+        state.restore_cli_approval_recovery(storage.load_cli_approvals());
         for path in &loaded.projects {
             state.restore_project(path);
         }
@@ -407,6 +514,54 @@ impl Harness {
         for effect in outcome.effects {
             match effect {
                 Effect::Backend(request) => self.backend.request(request),
+                Effect::JournalCliApproval(request) => {
+                    let (tx, rx) = mpsc::channel();
+                    self.storage.journal_cli_approval(
+                        pipkin_core::CliApprovalRecovery::attempt(&request).unwrap(),
+                        move |r| {
+                            let _ = tx.send(r);
+                        },
+                    );
+                    let out = self
+                        .state
+                        .cli_approval_persisted(&request, rx.recv_timeout(WAIT).unwrap());
+                    self.exec(out);
+                }
+                Effect::SaveCliApprovalRecovery(record) => {
+                    let (tx, rx) = mpsc::channel();
+                    self.storage
+                        .journal_cli_approval(*record.clone(), move |r| {
+                            let _ = tx.send(r);
+                        });
+                    let out = self
+                        .state
+                        .cli_approval_receipt_persisted(&record, rx.recv_timeout(WAIT).unwrap());
+                    self.exec(out);
+                }
+                Effect::JournalLocalCliCreation {
+                    conversation,
+                    generation,
+                    op,
+                    identity,
+                } => {
+                    let (tx, rx) = mpsc::channel();
+                    self.storage
+                        .journal_cli_creation(identity.clone(), false, move |r| {
+                            let _ = tx.send(r);
+                        });
+                    let result = rx.recv_timeout(WAIT).unwrap();
+                    let out = self.state.local_cli_creation_persisted(
+                        conversation,
+                        generation,
+                        op,
+                        &identity,
+                        result,
+                    );
+                    self.exec(out);
+                }
+                Effect::RetireLocalCliCreation { identity } => {
+                    self.storage.journal_cli_creation(identity, true, |_| {});
+                }
                 Effect::SaveDraft {
                     conversation,
                     text,
@@ -521,6 +676,12 @@ impl Harness {
         for event in lifecycle {
             let outcome = match event {
                 LifecycleEvent::Connection(c) => self.state.set_connection(c),
+                LifecycleEvent::CliApprovalsAvailable(available) => {
+                    self.state.set_cli_approvals_available(available)
+                }
+                LifecycleEvent::LocalCliSetupAvailable(available) => {
+                    self.state.set_local_cli_available(available)
+                }
                 LifecycleEvent::Catalog(boot) => {
                     let mut out = self.state.apply_catalog(boot);
                     out.merge(self.restore.apply(&mut self.state));

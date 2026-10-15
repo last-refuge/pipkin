@@ -1,0 +1,12 @@
+{
+  "source_job": 125,
+  "observation_only": true,
+  "permission_state": "Consumed",
+  "action_report_state": "Unknown",
+  "cli_terminal": "Success",
+  "requested_regular_file_exact_bytes_match": true,
+  "owned_cli_history_tool_result_error_flag_present": false,
+  "history_is_raw_stream_capture": false,
+  "receipt_reclassified": false,
+  "uncertain_session_resumed": false
+}

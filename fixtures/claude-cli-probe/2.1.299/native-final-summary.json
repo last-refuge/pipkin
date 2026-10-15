@@ -1,0 +1,34 @@
+{
+  "qualified_scope": "experimental built Linux desktop, CLI2.1.299 chat and restricted Write only",
+  "attempts_consumed": 10,
+  "remaining_authorized_runs": 0,
+  "native_desktop_completed_runs": 4,
+  "native_engine_runs": 0,
+  "pending_permissions": 0,
+  "fresh_write_review_interaction": "failed; retained without reclassification",
+  "resumed_write_exact_review_before_allow": true,
+  "both_expected_scratch_files_exact": true,
+  "canaries_clear": true,
+  "owned_diagnostic_and_final_windows_absent": true,
+  "final_native_job": 158,
+  "final_native_job_exit": 0,
+  "limitations": [
+    "billing",
+    "managed policy",
+    "complete descendant containment",
+    "installed release packages",
+    "real IME/accessibility",
+    "nonzero native argument overflow scrolling",
+    "display-presentation latency"
+  ],
+  "artifact_sha256": {
+    "runtime-budget.txt": "bf794518e35d7f1ce3a50b3058c4191bb9401e568fc645d77e10b0f404cf1f22",
+    "native-chat-summary.json": "81dac637f278b65d053a577229c375a01d6286b77acf90091bd145efb903860f",
+    "native-write-fresh-observation.json": "fafd24ae844db5e716e73dbb12495a309171842342b5fa2ebe3acee16313c3aa",
+    "native-write-fresh-permission-observation.json": "809937dcc96751924ce361147a849480b347faca10a98dcb7753cbd1d2691a13",
+    "native-write-resume-reservation.json": "9ddd59677629134b30807d9c2e6a64e01f8766867e28f8bb75648b0b3e082d2b",
+    "native-write-resume-review.json": "62153c7cdb65f6fbb99f6b9b705db2e6606cb61825ffc44e662dc8eda730d2b1",
+    "native-write-resume-observation.json": "cffb952c8d2a00246036d7dd4a82243b6213f927b9f461b608df25a9456b8f16",
+    "native-write-changes-observation.json": "feb4a1f0492b41545426ae7b495c0f55f0050e11c93c4deb8ba3963ab12e4f6c"
+  }
+}

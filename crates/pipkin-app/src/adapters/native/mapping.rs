@@ -6,10 +6,10 @@ use std::collections::{BTreeSet, HashMap};
 
 use pipkin_core::onboarding::{SignInChallenge, SignInProvider, SignInSnapshot, SignInStatus};
 use pipkin_core::{
-    Bootstrap, ConversationId, EventKind, Goal, GoalState, ModelInfo, PlanCounts, PlanEvidence,
-    PlanTask, PlanTaskStatus, Project, ProjectId, SubagentInfo, SubagentOrigin, UiAnswer, UiForm,
-    UiFormKind, UiFormOption, UiFormQuestion, UiNotice, UiNoticeLevel, UiRequest, UiRequestItem,
-    UiRequestKind, project_id_for_path, project_name_for_path,
+    Bootstrap, ConversationId, EventKind, ExecutionProfile, Goal, GoalState, ModelInfo, PlanCounts,
+    PlanEvidence, PlanTask, PlanTaskStatus, Project, ProjectId, SubagentInfo, SubagentOrigin,
+    UiAnswer, UiForm, UiFormKind, UiFormOption, UiFormQuestion, UiNotice, UiNoticeLevel, UiRequest,
+    UiRequestItem, UiRequestKind, project_id_for_path, project_name_for_path,
 };
 use pipkin_engine_protocol::{
     Answer, AuthSnapshot, AuthStatus, Block, CredentialKind, Entry, EntryKind, ErrorCode,
@@ -37,11 +37,30 @@ pub fn identity_key(summary: &SessionSummary) -> &str {
 /// Pure projection of the snapshot's execution identity. Origin/provider do not
 /// grant execution: unknown wire backends fail closed through the protocol enum.
 pub fn execution_context(summary: &SessionSummary) -> EventKind {
+    use pipkin_engine_protocol::ExecutionBackend;
+    let (profile, execution_blocked) = match summary.execution_backend {
+        ExecutionBackend::NativeAgent => (ExecutionProfile::NativeAgent, None),
+        ExecutionBackend::LocalClaudeCli => match summary.local_cli_mode {
+            Some(pipkin_engine_protocol::LocalCliMode::ChatOnly) => {
+                (ExecutionProfile::LocalCliChatOnly, summary.blocked.clone())
+            }
+            Some(pipkin_engine_protocol::LocalCliMode::RestrictedWrite) => (
+                ExecutionProfile::LocalCliRestrictedWrite,
+                summary.blocked.clone(),
+            ),
+            _ => (
+                ExecutionProfile::Unsupported,
+                Some(super::execution::UNKNOWN.into()),
+            ),
+        },
+        ExecutionBackend::Unsupported => (
+            ExecutionProfile::Unsupported,
+            Some(super::execution::UNKNOWN.into()),
+        ),
+    };
     EventKind::ExecutionContext {
-        execution_blocked: summary
-            .execution_backend
-            .disabled_reason()
-            .map(str::to_owned),
+        execution_blocked,
+        profile,
     }
 }
 
@@ -592,6 +611,23 @@ pub fn definite_refusal(code: ErrorCode) -> bool {
     )
 }
 
+/// Admission evidence belongs only to user entries, never an assistant's correlation key.
+pub fn user_request(entry: &Entry) -> Option<&str> {
+    match &entry.kind {
+        EntryKind::Message {
+            message: Message::User { .. },
+            request,
+            ..
+        }
+        | EntryKind::ExternalMessage {
+            role: pipkin_engine_protocol::ExternalRole::User,
+            request,
+            ..
+        } => request.as_deref(),
+        _ => None,
+    }
+}
+
 /// Files this session changed: paths of successful typed `write`/`edit` calls whose result
 /// entry is newer than `after` (the last clean scan), as the Pi adapter scopes them.
 pub fn changed_paths<'a>(entries: impl IntoIterator<Item = &'a Entry>, after: u64) -> Vec<String> {
@@ -666,6 +702,7 @@ mod tests {
             updated_at_ms: created_ms,
             origin: Origin::Native,
             execution_backend: Default::default(),
+            local_cli_mode: None,
             model: None,
             blocked: None,
         }
@@ -690,22 +727,77 @@ mod tests {
             execution_context(&old),
             EventKind::ExecutionContext {
                 execution_blocked: None,
+                profile: ExecutionProfile::NativeAgent,
             }
         );
         for backend in ["localClaudeCli", "futureUnknownBackend"] {
             wire["executionBackend"] = json!(backend);
+            wire["localCliMode"] = json!("chatOnly");
             let summary: SessionSummary = serde_json::from_value(wire.clone()).unwrap();
-            let EventKind::ExecutionContext { execution_blocked } = execution_context(&summary)
+            let EventKind::ExecutionContext {
+                execution_blocked,
+                profile,
+            } = execution_context(&summary)
             else {
                 panic!("expected snapshot execution context");
             };
-            assert_eq!(
-                execution_blocked.as_deref(),
-                summary.execution_backend.disabled_reason()
-            );
-            assert!(execution_blocked.is_some());
+            if backend == "localClaudeCli" {
+                assert_eq!(profile, ExecutionProfile::LocalCliChatOnly);
+                assert_eq!(execution_blocked, None);
+                let mut blocked = summary.clone();
+                blocked.blocked = Some("Server readiness pending".into());
+                assert_eq!(
+                    execution_context(&blocked),
+                    EventKind::ExecutionContext {
+                        execution_blocked: blocked.blocked,
+                        profile: ExecutionProfile::LocalCliChatOnly,
+                    }
+                );
+            } else {
+                assert_eq!(profile, ExecutionProfile::Unsupported);
+                assert!(execution_blocked.is_some());
+            }
             // History provenance is unchanged and cannot confer native execution.
             assert_eq!(identity_key(&summary), "legacy");
+        }
+    }
+
+    #[test]
+    fn cli_mode_is_authoritative_and_missing_or_unknown_never_means_chat() {
+        for (mode, expected) in [
+            (json!("chatOnly"), ExecutionProfile::LocalCliChatOnly),
+            (
+                json!("restrictedWrite"),
+                ExecutionProfile::LocalCliRestrictedWrite,
+            ),
+            (json!("futureMode"), ExecutionProfile::Unsupported),
+            (json!(null), ExecutionProfile::Unsupported),
+        ] {
+            let mut wire = serde_json::to_value(summary("s", 1, "/work")).unwrap();
+            wire["executionBackend"] = json!("localClaudeCli");
+            wire["localCliMode"] = mode;
+            let parsed: SessionSummary = serde_json::from_value(wire.clone()).unwrap();
+            let EventKind::ExecutionContext {
+                profile,
+                execution_blocked,
+            } = execution_context(&parsed)
+            else {
+                panic!()
+            };
+            assert_eq!(profile, expected);
+            assert_eq!(
+                execution_blocked.is_some(),
+                expected == ExecutionProfile::Unsupported
+            );
+            wire.as_object_mut().unwrap().remove("localCliMode");
+            let missing: SessionSummary = serde_json::from_value(wire).unwrap();
+            assert!(matches!(
+                execution_context(&missing),
+                EventKind::ExecutionContext {
+                    profile: ExecutionProfile::Unsupported,
+                    execution_blocked: Some(_)
+                }
+            ));
         }
     }
 

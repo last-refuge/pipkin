@@ -6,6 +6,23 @@ use pipkin_core::*;
 use super::*;
 use crate::theme::Theme as UiTheme;
 
+#[test]
+fn cli_empty_transcript_does_not_request_a_native_account_or_model() {
+    let mut state = AppState::new(boot(), Prefs::default());
+    state.mode = Mode::Real;
+    state.connection = Connection::Ready;
+    state.models.clear();
+    state.selected = Some(ConversationId(1));
+    assert!(native_models_missing(&state));
+    for profile in [
+        ExecutionProfile::LocalCliChatOnly,
+        ExecutionProfile::LocalCliRestrictedWrite,
+    ] {
+        state.conversations[0].profile = profile;
+        assert!(!native_models_missing(&state));
+    }
+}
+
 fn project() -> Project {
     Project {
         id: ProjectId(1),

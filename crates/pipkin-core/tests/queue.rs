@@ -1,6 +1,7 @@
 //! M3: the engine owns the queue and the run; steer and follow-up are journaled like prompts.
 
 use pipkin_core::*;
+mod support;
 
 fn real() -> AppState {
     let boot = Bootstrap {
@@ -30,6 +31,7 @@ fn real() -> AppState {
         },
     );
     s.apply_event(opened);
+    support::native_context(&mut s);
     s
 }
 

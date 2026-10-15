@@ -1,0 +1,14 @@
+{
+  "source_job": 130,
+  "owned_window_guarded": true,
+  "same_workspace": true,
+  "app_exit_code": 0,
+  "cli_bindings": 0,
+  "external_prompts": 0,
+  "configuration_canaries_clear": true,
+  "keyboard_navigation": "failed before any probe/trust/create",
+  "accessibility_bus": "connection refused; no service changes attempted",
+  "real_ime": "unverified",
+  "live_attempts_cumulative": 6,
+  "authorized_cap": 10
+}

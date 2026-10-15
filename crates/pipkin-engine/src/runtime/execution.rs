@@ -1,4 +1,4 @@
-//! Run-level admission boundary. There is deliberately no CLI executor installed yet.
+//! Run-level admission boundary. Only Prompt/Stop dispatch by backend.
 //! An external agent is never an ApiAdapter and never falls back to the native run loop.
 
 use pipkin_engine_protocol::{Call, ErrorCode, ProtoError};
@@ -53,10 +53,8 @@ impl Shared {
 fn native_execution_session(call: &Call) -> Option<&str> {
     use Call::*;
     match call {
-        Prompt { session, .. }
-        | Enqueue { session, .. }
+        Enqueue { session, .. }
         | CancelQueued { session, .. }
-        | Stop { session }
         | SetModel { session, .. }
         | SetThinking { session, .. }
         | CycleThinking { session }
@@ -84,12 +82,25 @@ fn native_execution_session(call: &Call) -> Option<&str> {
         | McpAuthRevoke { session, .. }
         | McpImportPreview { session, .. }
         | McpImportApply { session, .. } => session.as_deref(),
-        CancelRequest { .. }
+        Prompt { .. }
+        | Stop { .. }
+        | CancelRequest { .. }
         | Hello { .. }
         | CatchUp { .. }
         | AckEvents { .. }
         | ListSessions
         | CreateSession { .. }
+        // Explicit setup may establish ephemeral trust only under the config opt-in.
+        | InspectLocalCli { .. }
+        | CheckLocalCli { .. }
+        | LocalCliSetupStatus { .. }
+        | RevokeLocalCliSetup { .. }
+        | CreateLocalCliSession { .. }
+        | LookupLocalCliCreation { .. }
+        | LocalCliSessionStatus { .. }
+        | LocalCliApprovals { .. }
+        | DecideLocalCliApproval { .. }
+        | LookupLocalCliApproval { .. }
         | RenameSession { .. }
         | RemoveSession { .. }
         | OpenSession { .. }

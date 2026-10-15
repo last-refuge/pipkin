@@ -4,6 +4,7 @@
 //! and a refusal becomes the directory's error.
 
 use pipkin_core::*;
+mod support;
 
 fn state_in_mode(mode: Mode) -> AppState {
     let mut state = AppState::new(
@@ -22,6 +23,7 @@ fn state_in_mode(mode: Mode) -> AppState {
     state.mode = mode;
     state.set_connection(Connection::Ready);
     state.dispatch(Command::SelectConversation(ConversationId(1)));
+    support::native_context(&mut state);
     state
 }
 

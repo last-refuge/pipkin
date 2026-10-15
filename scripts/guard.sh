@@ -33,10 +33,10 @@ usage()  { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 log()    { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$LOG" 2>/dev/null || true; }
 need()   { command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1" 2; }
 
-# Active window as "class address workspace-id", or empty if there is none.
+# Active window as "class address workspace-id pid", or empty if there is none.
 active_window() {
   hyprctl activewindow -j 2>/dev/null | jq -r 'select(type=="object" and (.address // "") != "") |
-    "\(.class)\t\(.address)\t\(.workspace.id)"' 2>/dev/null || true
+    "\(.class)\t\(.address)\t\(.workspace.id)\t\(.pid)"' 2>/dev/null || true
 }
 active_workspace() { hyprctl activeworkspace -j 2>/dev/null | jq -r '.id // empty' 2>/dev/null || true; }
 
@@ -45,13 +45,16 @@ pinned_address() { [[ -s "$STATE" ]] || return 1; head -n1 "$STATE"; }
 # Succeeds only if the pinned window is active, on the active workspace, with the right class.
 # On failure prints why and returns 1. Never changes anything.
 check() {
-  local pin line class address ws active_ws
+  local pin pin_pid line class address ws pid active_ws
   pin="$(pinned_address)" || { echo "no pin: run 'guard.sh pin <pid>' for the window you launched" >&2; return 1; }
+  pin_pid="$(head -n2 "$STATE" | tail -n1)"
+  [[ "$pin_pid" =~ ^[0-9]+$ ]] || { echo "pin has no process identity; explicitly pin the owned window again" >&2; return 1; }
   line="$(active_window)"
   [[ -n "$line" ]] || { echo "no active window" >&2; return 1; }
-  IFS=$'\t' read -r class address ws <<<"$line"
+  IFS=$'\t' read -r class address ws pid <<<"$line"
   [[ "$class" == "$APP_CLASS" ]] || { echo "active window is '$class', not '$APP_CLASS'" >&2; return 1; }
   [[ "$address" == "$pin" ]] || { echo "active $APP_CLASS window $address is not the one you pinned ($pin)" >&2; return 1; }
+  [[ "$pid" == "$pin_pid" ]] || { echo "pinned window address now belongs to another process" >&2; return 1; }
   active_ws="$(active_workspace)"
   [[ -n "$active_ws" && "$ws" == "$active_ws" ]] || { echo "pinned window is not on the active workspace" >&2; return 1; }
   return 0
@@ -69,7 +72,9 @@ cmd_pin() {
   done
   [[ -n "$address" ]] || die "no '$APP_CLASS' window for pid $pid appeared within ${PIN_WAIT_SECONDS}s" 3
   umask 077
-  printf '%s\n' "$address" >"$STATE"
+  # Compositor addresses can be recycled after a window exits. Retain the PID too;
+  # a new launch must be explicitly repinned, even if its address happens to match.
+  printf '%s\n%s\n' "$address" "$pid" >"$STATE"
   log "pin pid=$pid address=$address"
   echo "pinned $address (pid $pid)"
 }

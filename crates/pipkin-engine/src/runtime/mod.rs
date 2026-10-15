@@ -7,17 +7,27 @@ mod context_usage;
 pub mod diagnostics;
 mod execution;
 pub mod export;
+mod external;
+mod external_coding;
+mod external_permission_server;
+mod external_permissions;
+mod external_read;
 pub mod faults;
 mod glue;
 mod goals;
 mod import;
 pub mod jobs;
 mod lifecycle;
+mod local_cli_approvals;
+mod local_cli_runtime;
+mod local_cli_setup;
+mod local_cli_status;
 mod mcp;
 pub mod models;
 mod plans;
 mod plugins;
 mod removal;
+mod request_cancel;
 mod run;
 mod session;
 pub mod subagents;
@@ -69,6 +79,9 @@ pub struct Shared {
     pub locks: Arc<MutationLocks>,
     publication: Mutex<()>,
     stopping: tokio_util::sync::CancellationToken,
+    external_tasks: tokio_util::task::TaskTracker,
+    local_cli_setups: local_cli_setup::Registry,
+    local_cli_approvals: local_cli_approvals::Registry,
     prompt_waits: Arc<Semaphore>,
     compaction_slots: Arc<Semaphore>,
     removal_slots: Arc<Semaphore>,
@@ -320,7 +333,7 @@ impl EngineHandle {
             store.finish_removal(&root).map_err(|e| e.to_string())?;
         }
         // External work is never recovered through native provider retries/tool replay.
-        // No CLI executor is installed; unconfirmed external runs remain Unknown.
+        // External work is never replayed on startup; unconfirmed runs remain Unknown.
         store
             .recover_external_runs(now_ms())
             .map_err(|e| e.to_string())?;
@@ -371,6 +384,9 @@ impl EngineHandle {
             cursors: Mutex::new(HashMap::new()),
             publication: Mutex::new(()),
             stopping: tokio_util::sync::CancellationToken::new(),
+            external_tasks: tokio_util::task::TaskTracker::new(),
+            local_cli_setups: local_cli_setup::Registry::default(),
+            local_cli_approvals: local_cli_approvals::Registry::default(),
             prompt_waits: Arc::new(Semaphore::new(64)),
             compaction_slots: Arc::new(Semaphore::new(8)),
             removal_slots: Arc::new(Semaphore::new(8)),
@@ -445,6 +461,7 @@ impl EngineHandle {
 
     fn connect_with_ownership(&self, _name: &str, owns_engine: bool) -> Connection {
         let client = self.next_client.fetch_add(1, Ordering::SeqCst);
+        self.shared.local_cli_approvals.connect(client);
         let (in_tx, mut in_rx) = mpsc::channel::<ClientFrame>(64);
         let (control, mut controls) = mpsc::channel::<ClientFrame>(8);
         let (out_tx, out_rx) = crate::delivery::channel();
@@ -478,6 +495,8 @@ impl EngineHandle {
                         _ = lifetime.cancelled(), if !disconnected => {
                             disconnected = true;
                             shared.auth.client_gone(client);
+                            shared.local_cli_setups.revoke_owner(client);
+                            shared.local_cli_approvals.revoke_owner(client);
                             out_tx.close();
                             continue;
                         }
@@ -512,7 +531,12 @@ impl EngineHandle {
                         // Only drop futures whose suspension points are cancellation-safe.
                         // Blocking imports/refreshes must finish while retaining this slot;
                         // otherwise repeated cancellations could spawn unbounded detached work.
-                        let interruptible = matches!(&frame.call,
+                        let cli_setup = matches!(&frame.call,
+                            Call::InspectLocalCli { .. } | Call::CheckLocalCli { .. }
+                            | Call::LocalCliSetupStatus { .. } | Call::RevokeLocalCliSetup { .. }
+                            | Call::CreateLocalCliSession { .. }
+                            | Call::LookupLocalCliCreation { .. } | Call::LocalCliSessionStatus { .. });
+                        let interruptible = cli_setup || matches!(&frame.call,
                             Call::Prompt { .. } | Call::Enqueue { .. } | Call::CancelQueued { .. }
                             | Call::Stop { .. } | Call::WaitForPrompt { .. });
                         let result = tokio::select! {
@@ -520,8 +544,10 @@ impl EngineHandle {
                             _ = request.cancel.cancelled(), if interruptible => {
                                 Err(ProtoError::new(ErrorCode::Cancelled, "the request was cancelled; committed work is unchanged"))
                             }
-                            _ = lifetime.cancelled(), if signing_in || waiting => {
+                            _ = lifetime.cancelled(), if signing_in || waiting || cli_setup => {
                                 shared.auth.client_gone(client);
+                                shared.local_cli_setups.revoke_owner(client);
+                                shared.local_cli_approvals.revoke_owner(client);
                                 Err(ProtoError::new(ErrorCode::ShuttingDown, "the client disconnected"))
                             }
                             result = async {
@@ -555,6 +581,8 @@ impl EngineHandle {
                 out_tx.close();
                 while tasks.join_next().await.is_some() {}
                 shared.release_client(client);
+                shared.local_cli_setups.revoke_owner(client);
+                shared.local_cli_approvals.revoke_owner(client);
                 shared.clients.lock().unwrap_or_else(|e| e.into_inner()).remove(&client);
                 shared.cursors.lock().unwrap_or_else(|e| e.into_inner()).remove(&client);
                 shared.auth.client_gone(client);
@@ -575,6 +603,9 @@ impl EngineHandle {
     /// cancelled; runs in flight stay unsettled in the store and resume on the next start.
     pub fn shutdown(&self, timeout: Duration) {
         self.shared.stopping.cancel();
+        self.shared.local_cli_setups.shutdown();
+        self.shared.local_cli_approvals.shutdown();
+        let external_done = self.shared.external_shutdown();
         self.shared.auth.cancel_model_refresh();
         for delivery in self
             .shared
@@ -609,21 +640,23 @@ impl EngineHandle {
             let jobs_done = self.shared.jobs_shutdown();
             let export_done = self.shared.export.done();
             let done = rt.spawn(async move {
-                for sess in sessions {
-                    sess.questions.dispose();
-                    if let Some(runner) = sess.extensions.lock().await.take() {
-                        runner.shutdown(grace).await;
+                tokio::join!(external_done.wait(), async {
+                    for sess in sessions {
+                        sess.questions.dispose();
+                        if let Some(runner) = sess.extensions.lock().await.take() {
+                            runner.shutdown(grace).await;
+                        }
                     }
-                }
-                // MCP server processes and background jobs belong to this engine's lifetime.
-                for handle in mcp.drain() {
-                    let _ = tokio::time::timeout(grace, handle.stop()).await;
-                }
-                for done in jobs_done {
-                    let _ = tokio::time::timeout(grace, done.notified()).await;
-                }
-                // The exporter finishes the post in flight (bounded) and never starts another.
-                let _ = tokio::time::timeout(grace, export_done.notified()).await;
+                    // MCP server processes and background jobs belong to this engine's lifetime.
+                    for handle in mcp.drain() {
+                        let _ = tokio::time::timeout(grace, handle.stop()).await;
+                    }
+                    for done in jobs_done {
+                        let _ = tokio::time::timeout(grace, done.notified()).await;
+                    }
+                    // The exporter finishes the post in flight (bounded) and never starts another.
+                    let _ = tokio::time::timeout(grace, export_done.notified()).await;
+                });
             });
             let deadline = std::time::Instant::now() + grace + Duration::from_millis(500);
             while !done.is_finished() && std::time::Instant::now() < deadline {
@@ -677,6 +710,18 @@ async fn dispatch_with_cancel(
     call: Call,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<Reply, ProtoError> {
+    let mut reply =
+        request_cancel::scope(cancel, dispatch_call(shared, client, call, cancel)).await?;
+    shared.filter_local_cli_readiness(client, &mut reply);
+    Ok(reply)
+}
+
+async fn dispatch_call(
+    shared: &Arc<Shared>,
+    client: u64,
+    call: Call,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Result<Reply, ProtoError> {
     shared.guard_execution_call(&call)?;
     match call {
         Call::CancelRequest { .. } => Err(ProtoError::new(
@@ -698,6 +743,7 @@ async fn dispatch_with_cancel(
                 epoch: shared.epoch,
                 capabilities: vec![
                     "durableInvalidations".into(),
+                    "localCliSetup".into(),
                     "sessionAttachments".into(),
                     "extensionProfiles".into(),
                     "waitForPrompt".into(),
@@ -724,7 +770,16 @@ async fn dispatch_with_cancel(
                     "contextUsage".into(),
                     "compaction".into(),
                     "toolOutput".into(),
-                ],
+                ]
+                .into_iter()
+                .chain(
+                    shared
+                        .config
+                        .enable_local_claude_cli
+                        .then(|| "localCliChat".into()),
+                )
+                .chain(cfg!(unix).then(|| "localCliApprovals".into()))
+                .collect(),
             }))
         }
         Call::CatchUp { after, limit } => {
@@ -796,13 +851,45 @@ async fn dispatch_with_cancel(
                 native_history_start: shared.store.native_history_start(&session)?,
             })
         }
+        Call::LocalCliApprovals { session } => shared.local_cli_approvals(client, &session),
+        Call::LookupLocalCliApproval { id } => shared.lookup_local_cli_approval(client, id),
+        Call::DecideLocalCliApproval { id, decision } => {
+            shared.decide_local_cli_approval(client, id, decision)
+        }
+        Call::InspectLocalCli {
+            executable,
+            target,
+            mode,
+        } => shared.inspect_local_cli_mode(client, &executable, target, mode),
+        Call::CheckLocalCli {
+            setup,
+            trust_executable,
+            trust_project,
+        } => {
+            shared
+                .check_local_cli(client, &setup, trust_executable, trust_project)
+                .await
+        }
+        Call::LocalCliSetupStatus { setup } => shared.local_cli_setup_status(client, &setup),
+        Call::LookupLocalCliCreation { session, setup } => {
+            shared.lookup_local_cli_creation(&session, &setup)
+        }
+        Call::LocalCliSessionStatus { session } => shared.local_cli_session_status(&session),
+        Call::RevokeLocalCliSetup { setup } => shared.revoke_local_cli_setup(client, &setup),
+        Call::CreateLocalCliSession { session, setup } => {
+            shared.create_local_cli_session(client, &session, &setup)
+        }
         Call::Prompt {
             session,
             request,
             text,
             images,
-            ..
-        } => shared.prompt(&session, &request, &text, &images).await,
+            model,
+        } => {
+            shared
+                .prompt_by_backend(client, &session, &request, &text, &images, model.as_deref())
+                .await
+        }
         Call::Enqueue {
             session,
             request,
@@ -816,19 +903,14 @@ async fn dispatch_with_cancel(
         }
         Call::Lookup { session, request } => {
             shared.session(&session)?;
-            Ok(Reply::Lookup(
-                match shared.store.request(&session, &request)? {
-                    Some(row) => row.lookup(),
-                    None => LookupResult::Unknown,
-                },
-            ))
+            Ok(Reply::Lookup(shared.lookup_prompt(&session, &request)?))
         }
         Call::WaitForPrompt { session, request } => shared
             .wait_for_prompt(&session, &request)
             .await
             .map(Reply::PromptResult),
         Call::CancelQueued { session, entry } => shared.cancel_queued(&session, entry).await,
-        Call::Stop { session } => shared.stop(&session).await,
+        Call::Stop { session } => shared.stop_by_backend(&session).await,
         Call::SetModel { session, model } => {
             let reply = shared.set_model(&session, &model)?;
             shared.publish_context(&session);
@@ -1255,8 +1337,9 @@ impl Shared {
             .root_sessions()?
             .iter()
             .map(|row| {
-                let mut summary = row.summary();
-                if summary.blocked.is_none()
+                let mut summary = self.execution_summary(row);
+                if row.execution_backend.native_execution()
+                    && summary.blocked.is_none()
                     && let Some(key) = &row.model
                     && let Some(model) = catalog.find(key)
                     && let Err(crate::auth::AuthError::Unavailable(why)) =
@@ -1482,6 +1565,10 @@ mod execution_tests;
 mod export3_tests;
 #[cfg(test)]
 mod export_tests;
+#[cfg(test)]
+mod external_read_tests;
+#[cfg(test)]
+mod external_tests;
 #[cfg(test)]
 mod fault_tests;
 #[cfg(test)]

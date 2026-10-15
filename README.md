@@ -4,6 +4,11 @@
 
 # Pipkin
 
+[Local Claude CLI](docs/local-claude-cli.md) chat and Write-only hosting is enabled by default
+in normal Pipkin desktop launches, with exactly CLI2.1.299. Choose **New Local CLI conversation…**;
+no experimental flags are needed. Explicit trust and review remain required. This is not a
+sandbox, billing guarantee or full tool parity.
+
 **A faster way to AI, for developers.**<br>
 A native desktop coding agent with a built-in Rust engine and GPUI interface.
 

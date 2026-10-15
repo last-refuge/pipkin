@@ -43,8 +43,18 @@ pub use view::*;
 // results with artifact references (`SubagentResultView.artifacts`, `resultChars`).
 // Version 32 carries executionBackend in session summaries. Old peers must not
 // interpret a disabled external-agent conversation as a native provider session.
-pub const PROTOCOL_VERSION: u32 = 32;
+// Version 33 adds inert external transcript entries, deliberately separate from native messages.
+// Version 34 adds explicit, metadata-only local CLI setup and immutable creation calls.
+// Version 36 adds inert CLI-reported action blocks, never native tool calls.
+// Version 37 captures immutable CLI setup mode. 38 adds owner-scoped external approvals.
+pub const PROTOCOL_VERSION: u32 = 39;
+
+mod cli_approvals;
+pub use cli_approvals::*;
 
 pub mod delivery;
 pub mod execution;
-pub use execution::ExecutionBackend;
+pub use execution::{
+    ExecutionBackend, ExternalActionState, ExternalBlock, ExternalRole, LocalCliMode,
+    LocalCliModel, LocalCliSessionView, LocalCliSetupStage, LocalCliSetupTarget, LocalCliSetupView,
+};

@@ -53,6 +53,9 @@ pub struct Mirror {
     pub progress: HashMap<String, String>,
     /// The snapshot's revision. Committed changes at or below it are already in the snapshot.
     floor: u64,
+    /// External entries stream via replacements, not native deltas. Keep their newest
+    /// committed revision so a delayed partial cannot overwrite a final replacement.
+    external_revisions: HashMap<EntryId, u64>,
 }
 
 impl Mirror {
@@ -76,6 +79,7 @@ impl Mirror {
             web_sources: snapshot.web_sources,
             progress: HashMap::new(),
             floor: snapshot.revision,
+            external_revisions: HashMap::new(),
         }
     }
 
@@ -109,11 +113,32 @@ impl Mirror {
         self.entries.first().map(|e| e.id)
     }
 
+    pub fn user_entry_for_request(&self, request: &str) -> Option<EntryId> {
+        self.entries
+            .iter()
+            .find(|entry| super::mapping::user_request(entry) == Some(request))
+            .map(|entry| entry.id)
+    }
+
     /// Apply one change published at `revision`. Volatile changes carry revision 0 and always
     /// apply; committed ones already reflected in the snapshot are skipped.
     pub fn apply(&mut self, revision: u64, change: SessionChange) -> Touched {
         if revision != 0 && revision <= self.floor {
             return Touched::Nothing;
+        }
+        if let SessionChange::EntryAppended { entry } | SessionChange::EntryReplaced { entry } =
+            &change
+            && matches!(entry.kind, EntryKind::ExternalMessage { .. })
+            && revision != 0
+        {
+            if self
+                .external_revisions
+                .get(&entry.id)
+                .is_some_and(|last| revision <= *last)
+            {
+                return Touched::Nothing;
+            }
+            self.external_revisions.insert(entry.id, revision);
         }
         match change {
             SessionChange::EntryAppended { entry } => {
@@ -138,6 +163,9 @@ impl Mirror {
             SessionChange::EntryDelta { id, delta } => {
                 match self.entries.binary_search_by_key(&id, |e| e.id) {
                     Ok(i) => {
+                        if matches!(self.entries[i].kind, EntryKind::ExternalMessage { .. }) {
+                            return Touched::Nothing;
+                        }
                         apply_delta(&mut self.entries[i], delta);
                         Touched::Transcript
                     }
@@ -275,6 +303,7 @@ mod tests {
                 updated_at_ms: 0,
                 origin: Default::default(),
                 execution_backend: Default::default(),
+                local_cli_mode: None,
                 model: None,
                 blocked: None,
             },
@@ -330,6 +359,119 @@ mod tests {
             EntryKind::Message { message, .. } => message.text(),
             _ => String::new(),
         }
+    }
+
+    fn external(id: u64, role: pipkin_engine_protocol::ExternalRole, partial: bool) -> Entry {
+        Entry {
+            id,
+            at_ms: 1000,
+            run: None,
+            retired: false,
+            kind: EntryKind::ExternalMessage {
+                backend: pipkin_engine_protocol::ExecutionBackend::LocalClaudeCli,
+                role,
+                source_message_id: None,
+                request: Some("matching".into()),
+                blocks: vec![pipkin_engine_protocol::ExternalBlock::Text {
+                    text: if partial { "partial" } else { "final" }.into(),
+                }],
+                partial,
+            },
+        }
+    }
+
+    #[test]
+    fn external_replacement_rejects_stale_partials_and_native_deltas() {
+        use pipkin_engine_protocol::ExternalRole::Assistant;
+        let partial = external(2, Assistant, true);
+        let final_entry = external(2, Assistant, false);
+        let mut m = Mirror::new(snapshot(5, vec![partial.clone()]));
+        assert_eq!(
+            m.apply(
+                5,
+                SessionChange::EntryReplaced {
+                    entry: final_entry.clone()
+                }
+            ),
+            Touched::Nothing
+        );
+        assert_eq!(m.entries, vec![partial.clone()]);
+        assert_eq!(
+            m.apply(
+                8,
+                SessionChange::EntryReplaced {
+                    entry: final_entry.clone()
+                }
+            ),
+            Touched::Transcript
+        );
+        for revision in [5, 6, 7, 8] {
+            assert_eq!(
+                m.apply(
+                    revision,
+                    SessionChange::EntryReplaced {
+                        entry: partial.clone()
+                    }
+                ),
+                Touched::Nothing
+            );
+        }
+        for delta in [
+            Delta::Text {
+                block: 0,
+                text: "native".into(),
+            },
+            Delta::Thinking {
+                block: 0,
+                text: "native".into(),
+            },
+            Delta::ToolCall {
+                block: 1,
+                id: "call".into(),
+                name: "write".into(),
+            },
+        ] {
+            assert_eq!(
+                m.apply(0, SessionChange::EntryDelta { id: 2, delta }),
+                Touched::Nothing
+            );
+        }
+        m.prepend(vec![partial], false);
+        assert_eq!(m.entries, vec![final_entry.clone()]);
+        assert!(m.progress.is_empty());
+        let mut refreshed = Mirror::new(snapshot(8, vec![final_entry.clone()]));
+        assert_eq!(
+            refreshed.apply(
+                7,
+                SessionChange::EntryReplaced {
+                    entry: external(2, Assistant, true)
+                }
+            ),
+            Touched::Nothing
+        );
+        assert_eq!(refreshed.entries, vec![final_entry]);
+    }
+
+    #[test]
+    fn request_reconciliation_matches_only_user_entries() {
+        use pipkin_engine_protocol::ExternalRole::{Assistant, User};
+        let mut m = Mirror::new(snapshot(5, vec![external(1, Assistant, false)]));
+        assert_eq!(m.user_entry_for_request("matching"), None);
+        m.upsert(external(2, User, false));
+        assert_eq!(m.user_entry_for_request("other"), None);
+        assert_eq!(m.user_entry_for_request("matching"), Some(2));
+        let mut native = entry(3, Message::user_text("native", 0), false);
+        if let EntryKind::Message { request, .. } = &mut native.kind {
+            *request = Some("native".into());
+        }
+        m.upsert(native);
+        assert_eq!(m.user_entry_for_request("native"), Some(3));
+        let mut native_assistant = entry(4, assistant(vec![]), false);
+        if let EntryKind::Message { request, .. } = &mut native_assistant.kind {
+            *request = Some("assistant".into());
+        }
+        m.upsert(native_assistant);
+        assert_eq!(m.user_entry_for_request("assistant"), None);
     }
 
     #[test]

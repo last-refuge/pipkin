@@ -1,0 +1,20 @@
+{
+  "source_jobs": [
+    138,
+    143
+  ],
+  "guarded_owned_windows": true,
+  "same_workspace": true,
+  "separate_path_entry_observed": true,
+  "inspection_observed": true,
+  "post_inspect_keyboard_recovery_observed_at_job143": true,
+  "trust_keyup_double_toggle_reproduced_by_job144": true,
+  "check_create_prompt_or_decision_performed": false,
+  "cli_bindings": 0,
+  "external_prompts": 0,
+  "job138_shutdown": "guarded quit did not exit; owned job cancelled after zero-bindings/prompts check",
+  "job143_exit_code": 0,
+  "live_attempts_cumulative": 6,
+  "authorized_cap": 10,
+  "a11y_real_ime": "unverified"
+}

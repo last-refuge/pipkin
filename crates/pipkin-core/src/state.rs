@@ -27,8 +27,11 @@ pub struct ConversationState {
     pub has_older: bool,
     pub loading_older: bool,
     pub opened: bool,
-    /// Snapshot-derived phase-1 execution OFF-gate. History remains readable.
-    /// Kept across reattachment and ordinary history/status events.
+    /// Fixed execution contract, retained across reattachment and history/status events.
+    pub profile: ExecutionProfile,
+    /// Only an authoritative ExecutionContext grants real conversation capabilities.
+    pub(crate) execution_context_known: bool,
+    /// Temporary readiness failure. Clearing it never changes the execution profile.
     pub execution_blocked: Option<String>,
     /// Attachment generation. Events carrying another generation are dropped.
     pub generation: u64,
@@ -119,6 +122,8 @@ impl ConversationState {
             has_older: false,
             loading_older: false,
             opened: false,
+            profile: ExecutionProfile::default(),
+            execution_context_known: false,
             execution_blocked: None,
             generation: 0,
             run: RunState::Idle,
@@ -318,6 +323,9 @@ pub struct Goal {
 }
 
 pub struct AppState {
+    pub cli_approvals: crate::cli_approvals::CliApprovals,
+    pub cli_approval_port: crate::CliApprovalPort,
+    pub local_cli: crate::local_cli::LocalCliState,
     /// The engine's trace exporter as it last reported itself (`None` until it does).
     pub export_health: Option<crate::diagnostics::ExportHealth>,
     /// The Trace export settings page.
@@ -394,7 +402,12 @@ impl AppState {
             .selected_conversation
             .filter(|id| conversations.iter().any(|c| c.id == *id))
             .or_else(|| conversations.first().map(|c| c.id));
+        let mut cli_approvals = crate::cli_approvals::CliApprovals::default();
+        cli_approvals.tick(boot.now.saturating_mul(1000));
         AppState {
+            cli_approvals,
+            cli_approval_port: Default::default(),
+            local_cli: Default::default(),
             projects: boot.projects,
             models: boot.models,
             conversations,
@@ -436,6 +449,8 @@ impl AppState {
 
     pub fn set_now(&mut self, now: i64) {
         self.now = now;
+        self.cli_approvals.tick(now.saturating_mul(1000));
+        self.local_cli_expire();
     }
 
     /// Whether the open conversation shows time that moves with the clock: a turn in progress
@@ -494,6 +509,7 @@ impl AppState {
         self.projects = merge_projects(boot.projects, &self.bookmarks);
         self.models = boot.models;
         self.now = self.now.max(boot.now);
+        self.local_cli_expire();
         // The engine's complete catalog is authoritative for both cached and live
         // conversations. Removal must also discard a currently attached conversation.
         let listed: std::collections::HashSet<ConversationId> =
@@ -530,6 +546,7 @@ impl AppState {
         if self.prefs.model.is_none() {
             self.prefs.model = self.models.first().map(|m| m.id.clone());
         }
+        self.local_cli_reconcile_catalog(&mut out);
         out.notes.push(Note::ConversationsChanged);
         out
     }
@@ -716,6 +733,8 @@ impl AppState {
             // Questions from extensions cannot be answered without the engine; its own state is
             // read again when it is reachable.
             if !self.connection.is_ready() {
+                self.local_cli_disconnected();
+                self.set_cli_approvals_available(false);
                 for c in &mut self.conversations {
                     c.ui_requests.clear();
                     c.ui_answering.clear();
@@ -744,6 +763,7 @@ impl AppState {
             // confirmation once the engine is reachable again.
             if !was_ready && self.connection.is_ready() {
                 out.merge(self.check_unknown());
+                self.local_cli_reconcile_catalog(&mut out);
             }
         }
         out
@@ -777,6 +797,7 @@ impl AppState {
             && self.read_only.is_none()
             && self.current().is_some_and(|c| {
                 c.opened
+                    && c.execution_profile(self.mode) == ExecutionProfile::NativeAgent
                     && c.plan.available
                     && c.plan.pending_edit.is_none()
                     && !self.owned_elsewhere(c.id)
@@ -803,9 +824,15 @@ impl AppState {
         let ready = has_text && attachments_ok;
         let idle =
             matches!(c.run, RunState::Idle | RunState::Failed { .. }) && c.pending_intent.is_none();
-        // A read-only build, foreign owner or disabled execution backend offers no
-        // send/steer/queue/retry. Only the execution OFF-gate also disables Stop.
-        let can_send = self.read_only.is_none()
+        let profile = c.execution_profile(self.mode);
+        let native = profile == ExecutionProfile::NativeAgent;
+        let can_stop = match profile {
+            ExecutionProfile::NativeAgent => c.execution_blocked.is_none(),
+            ExecutionProfile::LocalCliChatOnly | ExecutionProfile::LocalCliRestrictedWrite => true,
+            ExecutionProfile::Unsupported => false,
+        };
+        let can_send = profile != ExecutionProfile::Unsupported
+            && self.read_only.is_none()
             && c.execution_blocked.is_none()
             && !self.owned_elsewhere(c.id);
         // Real steers and follow-ups are journaled one at a time, like prompts.
@@ -813,16 +840,25 @@ impl AppState {
         Availability {
             new_conversation,
             // A conversation showing only a saved copy cannot be written to.
-            submit: can_send && idle && ready && (self.mode == Mode::Demo || c.opened),
-            steer: can_send && intent_free && matches!(c.run, RunState::Running { .. }) && ready,
-            queue: can_send
+            submit: can_send
+                && (native || c.draft.attachments.is_empty())
+                && idle
+                && ready
+                && (self.mode == Mode::Demo || c.opened),
+            steer: native
+                && can_send
+                && intent_free
+                && matches!(c.run, RunState::Running { .. })
+                && ready,
+            queue: native
+                && can_send
                 && intent_free
                 && matches!(
                     c.run,
                     RunState::Running { .. } | RunState::Submitting { .. }
                 )
                 && ready,
-            refresh_models: self.mode == Mode::Real && c.opened,
+            refresh_models: native && self.mode == Mode::Real && c.opened,
             refresh_changes: self.mode == Mode::Real
                 && c.opened
                 && c.changes_state != ChangesState::Loading,
@@ -831,7 +867,7 @@ impl AppState {
                 && self.current_project().is_some()
                 && c.selected_change.is_some_and(|i| i < c.changes.len()),
             open_terminal: self.mode == Mode::Real && self.current_project().is_some(),
-            cancel: c.execution_blocked.is_none()
+            cancel: can_stop
                 && matches!(
                     c.run,
                     RunState::Running { .. } | RunState::Submitting { .. }
@@ -841,12 +877,13 @@ impl AppState {
                     || (self.mode == Mode::Real
                         && c.opened
                         && matches!(c.run, RunState::Running { .. } | RunState::Stopping { .. }))),
-            retry_stop: c.execution_blocked.is_none()
+            retry_stop: can_stop
                 && self.mode == Mode::Real
                 && c.opened
                 && matches!(c.run, RunState::Stopping { .. })
                 && c.stop_error.is_some(),
-            retry: can_send
+            retry: native
+                && can_send
                 && c.last_submission.is_some()
                 && c.pending_intent.is_none()
                 && (matches!(c.run, RunState::Failed { .. })
@@ -873,7 +910,11 @@ impl AppState {
         id
     }
 
-    fn alloc_op(&mut self) -> OperationId {
+    pub(crate) fn reserve_recovered_operation(&mut self, high: u64) {
+        self.next_op = self.next_op.max(high.saturating_add(1));
+    }
+
+    pub(crate) fn alloc_op(&mut self) -> OperationId {
         let id = OperationId(self.next_op);
         self.next_op += 1;
         id
@@ -906,7 +947,60 @@ impl AppState {
 
     // ---------------------------------------------------------------- commands
 
+    // Lifecycle retirement only, NOT approval admission. Only the authoritative coding
+    // profile can retain review authority; chat-only metadata never enables approvals.
+    fn reconcile_cli_approvals(&mut self) -> bool {
+        self.reconcile_cli_approval_queries();
+        let retire: Vec<_> = self
+            .cli_approvals
+            .contexts()
+            .filter_map(|context| {
+                let conversation = self.conversation(context.conversation);
+                let invalid = self.mode != Mode::Real
+                    || !self.connection.is_ready()
+                    || self.owned_elsewhere(context.conversation)
+                    || !conversation.is_some_and(|c| {
+                        c.generation == context.generation
+                            && c.execution_profile(self.mode)
+                                == ExecutionProfile::LocalCliRestrictedWrite
+                    });
+                let active = self.read_only.is_none()
+                    && conversation.is_some_and(|c| {
+                        c.opened
+                            && c.execution_blocked.is_none()
+                            && matches!(c.run, RunState::Running { .. })
+                            && c.run.op() == Some(context.run_op)
+                    });
+                (invalid || !active).then(|| (context.clone(), invalid))
+            })
+            .collect();
+        let mut changed = false;
+        for (context, invalid) in retire {
+            changed |= if invalid {
+                self.cli_approvals.invalidate(&context)
+            } else {
+                self.cli_approvals.retire(&context)
+            };
+        }
+        changed
+    }
+
     pub fn dispatch(&mut self, cmd: Command) -> Outcome {
+        let before = self.reconcile_cli_approvals();
+        let mut out = self.dispatch_scoped(cmd);
+        if self.reconcile_cli_approvals() || before {
+            out.notes.push(Note::Other);
+        }
+        out
+    }
+    fn dispatch_scoped(&mut self, cmd: Command) -> Outcome {
+        if let Command::CliApproval(command) = cmd {
+            return self.dispatch_cli_approval(command);
+        }
+        // Setup has its own captured target and policy, never the selected conversation's.
+        if let Command::LocalCli(command) = cmd {
+            return self.dispatch_local_cli(command);
+        }
         let mut out = self.dispatch_inner(cmd);
         if let Some(id) = self.selected
             && self.retitle(id)
@@ -945,9 +1039,15 @@ impl AppState {
 
     fn dispatch_inner(&mut self, cmd: Command) -> Outcome {
         let mut out = Outcome::default();
-        // Gate intents, not just controls. Reads, local drafts and creation of a new
-        // native conversation remain available. Compact/job start have no desktop
-        // commands today; future execution intents must join this gate.
+        // Profile policy is independent of readiness and fails closed for new commands.
+        if let Some(c) = self.current() {
+            let (id, allowed) = (c.id, c.execution_profile(self.mode).allows_command(&cmd));
+            if self.refuse_if_profile_disallows(id, allowed, &mut out) {
+                return out;
+            }
+        }
+        // Preserve the native readiness gate. CLI Stop must remain possible after
+        // readiness loss; that loss does not retire or clear an in-flight operation.
         if matches!(
             cmd,
             Command::Submit
@@ -984,11 +1084,18 @@ impl AppState {
                 | Command::McpSignOut(_)
                 | Command::McpApplyImport(_)
         ) && let Some(id) = self.selected
+            && !(self
+                .conversation(id)
+                .is_some_and(|c| c.profile.is_local_cli())
+                && matches!(cmd, Command::Cancel | Command::RetryStop))
             && self.refuse_if_execution_blocked(id, &mut out)
         {
             return out;
         }
         match cmd {
+            Command::LocalCli(_) | Command::CliApproval(_) => {
+                unreachable!("scoped commands are routed first")
+            }
             Command::RemoveSignIn(provider)
                 if self.mode == Mode::Real && self.connection.is_ready() =>
             {
@@ -2005,6 +2112,7 @@ impl AppState {
                     // Pause the goal that exists at the instant Stop is requested. A goal set
                     // afterwards is a replacement task and must not be paused by the old ack.
                     if matches!(cmd, Command::Cancel)
+                        && c.profile == ExecutionProfile::NativeAgent
                         && !c.goal_native
                         && let Some(goal) = &mut c.goal
                     {
@@ -2317,14 +2425,17 @@ impl AppState {
         origin: IntentOrigin,
     ) -> Outcome {
         let mut out = Outcome::default();
-        if self.refuse_if_execution_blocked(id, &mut out)
+        if self.refuse_intent(id, origin, &text, atts.len(), &mut out)
             || self.conv_mut(id).unwrap().pending_intent.is_some()
-            || self.refuse_if_owned(id, &mut out)
         {
             return out;
         }
         let request = self.alloc_request();
-        let model = self.prefs.model.clone();
+        let model = if self.conv(id).execution_profile(self.mode) == ExecutionProfile::NativeAgent {
+            self.prefs.model.clone()
+        } else {
+            None
+        };
         let c = self.conv_mut(id).unwrap();
         c.intent_error = None;
         c.pending_intent = Some(PendingIntent {
@@ -2382,6 +2493,7 @@ impl AppState {
                 "Could not save the prompt before sending, so it was not sent: {e}"
             ));
             if intent.origin == IntentOrigin::Goal
+                && c.profile == ExecutionProfile::NativeAgent
                 && let Some(goal) = &mut self.conv_mut(id).unwrap().goal
             {
                 goal.paused = Some(format!("Could not save goal turn: {e}"));
@@ -2391,7 +2503,11 @@ impl AppState {
                     paused: goal.paused.clone(),
                 });
             }
-            if intent.origin == IntentOrigin::Queue {
+            if intent.origin == IntentOrigin::Queue
+                && self
+                    .conversation(id)
+                    .is_some_and(|c| c.profile == ExecutionProfile::NativeAgent)
+            {
                 let qid = QueueId(self.next_queue);
                 self.next_queue += 1;
                 self.conv_mut(id).unwrap().queue.insert(
@@ -2426,9 +2542,21 @@ impl AppState {
                 return out;
             }
         }
-        // Ownership or a snapshot OFF-gate can arrive while the intent is made durable.
-        // Settle it as never sent, preserving the draft and checking its own conversation.
-        if self.refuse_if_execution_blocked(id, &mut out) || self.refuse_if_owned(id, &mut out) {
+        out.merge(self.dispatch_intent(id, intent));
+        out
+    }
+
+    /// Second half of a submission, after the intent is durable.
+    fn dispatch_intent(&mut self, id: ConversationId, mut intent: PendingIntent) -> Outcome {
+        let mut out = Outcome::default();
+        // Recheck the owning conversation after the journal delay, not the selection.
+        if self.refuse_intent(
+            id,
+            intent.origin,
+            &intent.text,
+            intent.attachments.len(),
+            &mut out,
+        ) {
             out.effects.push(Effect::JournalState {
                 conversation: id,
                 request: intent.request,
@@ -2436,13 +2564,9 @@ impl AppState {
             });
             return out;
         }
-        out.merge(self.dispatch_intent(id, intent));
-        out
-    }
-
-    /// Second half of a submission, after the intent is durable.
-    fn dispatch_intent(&mut self, id: ConversationId, intent: PendingIntent) -> Outcome {
-        let mut out = Outcome::default();
+        if self.conv(id).execution_profile(self.mode) != ExecutionProfile::NativeAgent {
+            intent.model = None;
+        }
         let op = self.alloc_op();
         let now = self.now;
         let c = self.conv_mut(id).unwrap();
@@ -2598,6 +2722,21 @@ impl AppState {
     // ------------------------------------------------------------------ events
 
     pub fn apply_event(&mut self, ev: BackendEvent) -> Outcome {
+        let before = self.reconcile_cli_approvals();
+        let mut out = self.apply_event_scoped(ev);
+        if self.reconcile_cli_approvals() || before {
+            out.notes.push(Note::Other);
+        }
+        out
+    }
+    fn apply_event_scoped(&mut self, ev: BackendEvent) -> Outcome {
+        if matches!(ev.kind, EventKind::CliApproval(_)) {
+            return self.apply_cli_approval_event(ev);
+        }
+        // Reserved global route and setup ops must be checked before normal run machinery.
+        if matches!(ev.kind, EventKind::LocalCli(_)) {
+            return self.apply_local_cli_event(ev);
+        }
         let id = ev.conversation;
         let mut out = self.apply_event_inner(ev);
         if self.retitle(id) {
@@ -2708,9 +2847,20 @@ impl AppState {
             return out;
         }
         match ev.kind {
-            EventKind::ExecutionContext { execution_blocked } => {
-                if c.execution_blocked != execution_blocked {
+            EventKind::LocalCli(_) | EventKind::CliApproval(_) => {
+                unreachable!("scoped events are routed first")
+            }
+            EventKind::ExecutionContext {
+                execution_blocked,
+                profile,
+            } => {
+                if !c.execution_context_known
+                    || c.execution_blocked != execution_blocked
+                    || c.profile != profile
+                {
+                    c.execution_context_known = true;
                     c.execution_blocked = execution_blocked;
+                    c.profile = profile;
                     out.notes.push(Note::Other);
                 }
             }
@@ -2738,7 +2888,9 @@ impl AppState {
                     c.subagents.clear_activity();
                 }
                 c.subagents.error = None;
-                if let Some(child) = c.subagents.selected
+                if (!real || c.execution_context_known)
+                    && c.profile == ExecutionProfile::NativeAgent
+                    && let Some(child) = c.subagents.selected
                     && !c.subagents.loading
                     && c.subagents.viewed != Some(child)
                     && c.subagents.items.is_empty()
@@ -2784,6 +2936,8 @@ impl AppState {
                         out.notes.push(Note::ItemChanged(id, i));
                     }
                     if refetch
+                        && (!real || c.execution_context_known)
+                        && c.profile == ExecutionProfile::NativeAgent
                         && let Some(id) = c.jobs.expanded
                         && let Some((offset, limit)) = c.jobs.tail_request(id)
                     {
@@ -2881,7 +3035,9 @@ impl AppState {
                             Some(legacy)
                                 if first
                                     && c.goal_migration.is_none()
-                                    && c.execution_blocked.is_none() =>
+                                    && c.execution_blocked.is_none()
+                                    && (!real || c.execution_context_known)
+                                    && c.profile == ExecutionProfile::NativeAgent =>
                             {
                                 // Offer the desktop's record to the engine, once per content.
                                 let key = format!(
@@ -2903,7 +3059,10 @@ impl AppState {
                                     }));
                             }
                             Some(_)
-                                if c.goal_migration.is_some() || c.execution_blocked.is_some() =>
+                                if c.goal_migration.is_some()
+                                    || c.execution_blocked.is_some()
+                                    || (real && !c.execution_context_known)
+                                    || c.profile != ExecutionProfile::NativeAgent =>
                             {
                                 // Waiting for migration, or retaining a read-only legacy goal.
                             }
@@ -3571,7 +3730,7 @@ impl AppState {
         let Some(c) = self.conversation(id) else {
             return Outcome::default();
         };
-        if c.goal_native {
+        if c.goal_native || c.execution_profile(self.mode) != ExecutionProfile::NativeAgent {
             return Outcome::default();
         }
         let Some(goal) = &c.goal else {
@@ -3691,7 +3850,7 @@ impl AppState {
         let Some(c) = self.conversation(id) else {
             return Outcome::default();
         };
-        if c.goal_native {
+        if c.goal_native || c.execution_profile(self.mode) != ExecutionProfile::NativeAgent {
             return Outcome::default();
         }
         let Some(goal) = &c.goal else {
@@ -3725,7 +3884,10 @@ impl AppState {
             return Outcome::default();
         }
         let c = self.conv_mut(id).unwrap();
-        if c.execution_blocked.is_some() || c.queue.is_empty() {
+        if c.profile != ExecutionProfile::NativeAgent
+            || c.execution_blocked.is_some()
+            || c.queue.is_empty()
+        {
             return Outcome::default();
         }
         let next = c.queue.remove(0);

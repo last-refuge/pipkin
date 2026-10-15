@@ -1,0 +1,21 @@
+{
+  "cli_version": "2.1.299",
+  "mode": "chat",
+  "prompt_attempts": 1,
+  "outcomes": [
+    {
+      "state": "Unknown",
+      "mode": "Fresh"
+    }
+  ],
+  "billing_verified": false,
+  "crash_containment_verified": false,
+  "general_production_enabled": false,
+  "runtime_host_opts_enabled_for_qualification": true,
+  "metadata_verified": true,
+  "configuration_canaries_clear": true,
+  "native_inference_calls": 0,
+  "fixture_retained": true,
+  "passed": false,
+  "reason": "independent clean completion evidence missing"
+}

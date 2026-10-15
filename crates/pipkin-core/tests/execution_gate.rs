@@ -1,5 +1,6 @@
-//! Phase-1 coarse OFF-gate, not a per-feature capability contract.
+//! Fixed profiles and temporary readiness gates are independent.
 use pipkin_core::*;
+mod support;
 
 const BLOCKED: &str = "Execution is not enabled. History remains available.";
 const A: ConversationId = ConversationId(1);
@@ -34,6 +35,7 @@ fn state() -> AppState {
             changes: vec![],
         },
     );
+    support::native_context(&mut s);
     s.dispatch(Command::EditDraft("keep this draft".into()));
     s
 }
@@ -53,6 +55,7 @@ fn block(s: &mut AppState) {
         A,
         EventKind::ExecutionContext {
             execution_blocked: Some(BLOCKED.into()),
+            profile: ExecutionProfile::NativeAgent,
         },
     );
 }
@@ -154,6 +157,7 @@ fn snapshot_gate_is_conversation_and_generation_scoped_and_not_cleared_by_histor
         B,
         EventKind::ExecutionContext {
             execution_blocked: None,
+            profile: ExecutionProfile::NativeAgent,
         },
     );
     event(
@@ -177,6 +181,7 @@ fn snapshot_gate_is_conversation_and_generation_scoped_and_not_cleared_by_histor
             op,
             kind: EventKind::ExecutionContext {
                 execution_blocked: None,
+                profile: ExecutionProfile::Unsupported,
             },
         });
         assert_eq!(s.read_only_reason(A).as_deref(), Some(BLOCKED));
@@ -207,6 +212,7 @@ fn snapshot_gate_is_conversation_and_generation_scoped_and_not_cleared_by_histor
         op: None,
         kind: EventKind::ExecutionContext {
             execution_blocked: None,
+            profile: ExecutionProfile::Unsupported,
         },
     });
     assert!(!s.availability().submit);
@@ -216,6 +222,7 @@ fn snapshot_gate_is_conversation_and_generation_scoped_and_not_cleared_by_histor
         A,
         EventKind::ExecutionContext {
             execution_blocked: None,
+            profile: ExecutionProfile::NativeAgent,
         },
     );
     assert!(s.availability().submit);

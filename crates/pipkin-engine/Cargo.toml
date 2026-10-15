@@ -53,5 +53,9 @@ tokio = { version = "1", features = ["test-util"] }
 name = "claude_cli_probe"
 test = true
 
+[[example]]
+name = "claude_cli_runtime_qualify"
+test = true
+
 [features]
 test-support = []

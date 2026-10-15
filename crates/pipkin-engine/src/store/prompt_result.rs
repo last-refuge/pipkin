@@ -22,6 +22,12 @@ impl Store {
 
     pub(crate) fn prompt_result(&self, session: &str, request: &str) -> Result<PromptState> {
         self.read(|c| {
+            if let Some(receipt) = Self::external_prompt_in(c, session, request)? {
+                return Ok(match receipt.result {
+                    Some(result) => PromptState::Settled(result),
+                    None => PromptState::Pending,
+                });
+            }
             // Pending waits wake on streaming commits too. Read only status columns, not
             // the request's potentially large input text/images, on each notification.
             let row = c

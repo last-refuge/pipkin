@@ -3,6 +3,7 @@
 //! real engine, and an attention count for jobs that finish out of view.
 
 use pipkin_core::*;
+mod support;
 
 fn state() -> AppState {
     let mut state = AppState::new(
@@ -21,6 +22,7 @@ fn state() -> AppState {
     state.mode = Mode::Real;
     state.set_connection(Connection::Ready);
     state.dispatch(Command::SelectConversation(ConversationId(1)));
+    support::native_context(&mut state);
     state
 }
 

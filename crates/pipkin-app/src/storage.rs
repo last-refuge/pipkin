@@ -123,6 +123,19 @@ const MIGRATIONS: &[&str] = &[
         source_namespace TEXT NOT NULL,
         imported_at INTEGER NOT NULL
      );",
+    "CREATE TABLE cli_creation_recovery (
+        namespace TEXT NOT NULL,
+        session TEXT NOT NULL,
+        setup TEXT NOT NULL,
+        PRIMARY KEY(namespace, session)
+     );",
+    "CREATE TABLE cli_approval_recovery (
+        namespace TEXT NOT NULL,
+        conversation TEXT NOT NULL,
+        invocation TEXT NOT NULL,
+        record TEXT NOT NULL,
+        PRIMARY KEY(namespace, conversation, invocation)
+     );",
 ];
 
 /// `conversation_owners.owner` for the built-in engine.
@@ -169,6 +182,9 @@ pub fn inspect(path: &Path) -> Result<String, String> {
     Ok(format!("schema {version}, {bytes} bytes, integrity ok"))
 }
 
+mod cli_approvals;
+mod cli_creations;
+
 pub type Ack = Box<dyn FnOnce(Result<(), String>) + Send>;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -213,6 +229,15 @@ pub struct Loaded {
 }
 
 enum Msg {
+    CliApproval {
+        record: Box<pipkin_core::CliApprovalRecovery>,
+        ack: Ack,
+    },
+    CliCreation {
+        identity: pipkin_core::LocalCliCreationId,
+        retire: bool,
+        ack: Ack,
+    },
     Draft {
         conversation: ConversationId,
         text: String,
@@ -1274,6 +1299,26 @@ fn write(
                 Err(INJECTED_FAILURE.to_string())
             } else {
                 write_intent(conn, ns, conversation, &request, &payload)
+            };
+            ack(result);
+        }
+        Msg::CliApproval { record, ack } => {
+            let result = if fail.load(Ordering::SeqCst) || fail_background.load(Ordering::SeqCst) {
+                Err(INJECTED_FAILURE.to_string())
+            } else {
+                cli_approvals::write(conn, ns, &record)
+            };
+            ack(result);
+        }
+        Msg::CliCreation {
+            identity,
+            retire,
+            ack,
+        } => {
+            let result = if fail.load(Ordering::SeqCst) || fail_background.load(Ordering::SeqCst) {
+                Err(INJECTED_FAILURE.to_string())
+            } else {
+                cli_creations::write(conn, ns, &identity, retire)
             };
             ack(result);
         }
@@ -3280,7 +3325,7 @@ mod tests {
             .unwrap();
         }
         let s = Storage::open(&path, "pi:test").unwrap();
-        assert_eq!(SCHEMA_VERSION, 8);
+        assert_eq!(SCHEMA_VERSION, 10);
         assert_eq!(draft_text(&s, 1).as_deref(), Some("kept draft"));
         assert_eq!(s.native_owned().unwrap(), vec![]);
         assert!(path.with_extension("sqlite3.bak-v7").exists());

@@ -9,6 +9,17 @@ engine and is available without an external runtime or network access.
 - Desktop Connections supports Claude subscription and ChatGPT/Codex sign-in. Other
   built-in OAuth flows are accessible through the engine service. Saved subscription
   credentials remain distinct from API keys; failed refresh does not silently switch billing.
+- Experimental local Claude CLI conversations use an installed, unmodified CLI and its own
+  normal login, separately from native subscription sign-in. The built Linux desktop qualified
+  exactly CLI 2.1.299 for chat and restricted Write; other versions fail closed. Normal owned
+  desktop engines enable CLI hosting by default, without granting trust or readiness. Use
+  `--disable-local-claude-cli` or `--disable-local-claude-cli-write` to opt out. Demo stays disabled;
+  attached hosts own their policy, and standalone server/library defaults remain off. Explicit
+  Inspect, both path approvals, Check and Create/Return precede sending. Only Write is supported
+  in the coding slice, not Read/Edit/Bash/MCP or native tools/goals/queues/retries. Review complete
+  arguments before Allow once; Ctrl+Shift+C copies the current review without deciding. Unknown
+  prompts/decisions must not be replayed. Billing, managed policy and full crash containment remain
+  unverified. See docs/local-claude-cli.md for isolated testing and recovery.
 - Amazon Bedrock supports AWS IAM Identity Center profiles and the AWS CLI SSO token cache.
   Run `aws sso login --profile <profile>` to establish the session, then select that profile
   through `AWS_PROFILE` or the Bedrock profile option. Session-based SSO profiles can refresh
@@ -31,8 +42,9 @@ engine and is available without an external runtime or network access.
   Certificate ADC supports explicit or default `certificate_config.json`, leaf/trust chains,
   and mutual TLS for credential exchanges while model requests use the resulting bearer token.
 - The engine configuration directory holds `auth.json`, `models.json` and `settings.json`.
-  The desktop's `--engine-config-dir` and `--engine-data-dir` select engine configuration
-  and history; `--data-dir` selects desktop drafts/cache. Do not expose stored credentials.
+  Standalone engine-server flags `--engine-config-dir` and `--engine-data-dir` select engine
+  configuration and history. Desktop `--data-dir` selects an isolated desktop/owned-engine
+  profile; those server-only path flags are not desktop options. Do not expose stored credentials.
 - Project instructions come from AGENTS.md or CLAUDE.md and their supported overrides.
   Skills load from the engine configuration's `skills` directory, the project's `.pi/skills`,
   and configured skill paths. Prompt templates load from the configuration's `prompts`

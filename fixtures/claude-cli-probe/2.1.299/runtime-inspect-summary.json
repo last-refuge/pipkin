@@ -1,0 +1,14 @@
+{
+  "cli_version": "2.1.299",
+  "mode": "inspect",
+  "prompt_attempts": 0,
+  "outcomes": [],
+  "billing_verified": false,
+  "crash_containment_verified": false,
+  "general_production_enabled": false,
+  "runtime_host_opts_enabled_for_qualification": true,
+  "metadata_verified": true,
+  "configuration_canaries_clear": true,
+  "native_inference_calls": 0,
+  "passed": true
+}

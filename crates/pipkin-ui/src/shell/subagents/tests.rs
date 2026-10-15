@@ -330,6 +330,14 @@ fn open(cx: &mut TestAppContext) -> (Ui, &mut VisualTestContext) {
     event(
         &ui,
         cx,
+        EventKind::ExecutionContext {
+            profile: ExecutionProfile::NativeAgent,
+            execution_blocked: None,
+        },
+    );
+    event(
+        &ui,
+        cx,
         EventKind::Opened {
             items: vec![],
             has_older: false,

@@ -2299,6 +2299,13 @@ impl TranscriptView {
     }
 }
 
+fn native_models_missing(state: &pipkin_core::AppState) -> bool {
+    state.mode == pipkin_core::Mode::Real
+        && state.connection.is_ready()
+        && state.models.is_empty()
+        && !state.current().is_some_and(|c| c.profile.is_local_cli())
+}
+
 impl Render for TranscriptView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
@@ -2321,12 +2328,7 @@ impl Render for TranscriptView {
                 None => state.read_only.clone(),
             }
         };
-        let no_model = {
-            let model = self.model.read(cx);
-            model.state.mode == pipkin_core::Mode::Real
-                && model.state.connection.is_ready()
-                && model.state.models.is_empty()
-        };
+        let no_model = native_models_missing(&self.model.read(cx).state);
         self.resolved = None;
         if let Some(id) = self.current {
             self.ensure_conv(id, cx);

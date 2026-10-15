@@ -70,7 +70,7 @@ mod unix {
         }
         fn good() -> Self {
             Self::new(
-                "2.1.296 (Claude Code)",
+                "2.1.299 (Claude Code)",
                 r#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"fixture@example.invalid","orgId":"fixture-org"}"#,
             )
         }
@@ -90,6 +90,110 @@ mod unix {
                 .count()
         }
     }
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn coding_binding_is_distinct_and_cannot_upgrade_a_chat_context() {
+        use crate::execution::claude_cli::{
+            permission_helper::HelperLaunch, permission_wire::Binding, write_policy::Hook,
+        };
+        let f = Fixture::good();
+        let script = std::fs::read_to_string(&f.exe).unwrap().replace(
+            "--safe-mode fixture",
+            "--settings fixture\n--safe-mode fixture",
+        );
+        std::fs::write(&f.exe, script).unwrap();
+        let chat = check(f.request(), CancellationToken::new()).await.unwrap();
+        let coding = check_for_policy(
+            f.request(),
+            CancellationToken::new(),
+            LaunchPolicy::RestrictedWrite,
+        )
+        .await
+        .unwrap();
+        let uuid = "11111111-1111-4111-8111-111111111111";
+        let cb = chat.checked_binding(uuid).unwrap();
+        let wb = coding.checked_binding(uuid).unwrap();
+        assert_ne!(cb.config_ref, wb.config_ref);
+        assert_eq!(cb.launch_policy, policy::POLICY_ID);
+        assert_eq!(wb.launch_policy, super::super::super::write_policy::ID);
+        assert!(chat.validate_binding(&wb).is_err());
+        assert!(coding.validate_binding(&cb).is_err());
+        assert!(coding.launch_spec(&wb, TurnMode::Fresh, "prompt").is_err());
+        let hook = Hook::capture(
+            HelperLaunch::new(Path::new("/private/socket"), Binding::fresh().unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            chat.launch_write_spec(&cb, TurnMode::Fresh, "prompt", &hook)
+                .is_err()
+        );
+        assert!(
+            coding
+                .launch_write_spec(&cb, TurnMode::Fresh, "prompt", &hook)
+                .is_err()
+        );
+        assert!(
+            coding
+                .launch_write_spec(&wb, TurnMode::Fresh, "prompt", &hook)
+                .is_ok()
+        );
+        assert!(
+            coding
+                .launch_write_spec(&wb, TurnMode::Resume, "prompt", &hook)
+                .is_ok()
+        );
+        assert_eq!(f.calls(), 6); // Only version/help/auth. Constructing Specs never launches.
+        let calls = std::fs::read_to_string(f.dir.path().join("invocations")).unwrap();
+        let auth = calls.lines().last().unwrap();
+        assert!(auth.contains("--settings") && auth.contains("onFailure"));
+        assert!(!auth.contains("--safe-mode") && !auth.contains("--print"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn coding_requires_settings_help_and_consent_before_authentication() {
+        let f = Fixture::good();
+        let mut req = f.request();
+        req.trust_project = false;
+        assert!(
+            check_for_policy(req, CancellationToken::new(), LaunchPolicy::RestrictedWrite)
+                .await
+                .is_err()
+        );
+        assert_eq!(f.calls(), 0);
+        assert!(
+            check_for_policy(
+                f.request(),
+                CancellationToken::new(),
+                LaunchPolicy::RestrictedWrite
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(f.calls(), 2); // Missing --settings stops before auth; no inference.
+    }
+
+    #[tokio::test]
+    async fn filesystem_revalidation_cannot_return_freshness_after_lease_expiry() {
+        let f = Fixture::good();
+        let prepared = check(f.request(), CancellationToken::new()).await.unwrap();
+        let binding = prepared
+            .binding("11111111-1111-4111-8111-111111111111")
+            .unwrap();
+        let mut clocks = [
+            prepared.checked_at + Duration::from_secs(1),
+            prepared.checked_at + Duration::from_secs(31),
+        ]
+        .into_iter();
+        assert!(
+            prepared
+                .validate_binding_with_clock(&binding, || clocks.next().unwrap())
+                .is_err()
+        );
+        assert!(clocks.next().is_none());
+        assert_eq!(f.calls(), 3); // Metadata only, no inference or automatic refresh.
+    }
+
     #[tokio::test]
     async fn consent_and_environment_fail_before_any_spawn() {
         let f = Fixture::good();
@@ -123,6 +227,10 @@ mod unix {
         let binding = prepared
             .binding("11111111-1111-4111-8111-111111111111")
             .unwrap();
+        assert_eq!(
+            prepared.checked_binding(&binding.cli_session_id).unwrap(),
+            binding
+        );
         assert_eq!(binding.cli_version, policy::QUALIFIED_VERSION);
         assert_eq!(binding.launch_policy, policy::POLICY_ID);
         let spec = prepared
@@ -141,6 +249,7 @@ mod unix {
                 .is_err()
         );
         prepared.checked_at = Instant::now() - Duration::from_secs(31);
+        assert!(prepared.checked_binding(&binding.cli_session_id).is_err());
         assert!(
             prepared
                 .launch_spec(&binding, TurnMode::Resume, "x")

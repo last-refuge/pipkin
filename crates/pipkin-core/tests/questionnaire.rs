@@ -6,6 +6,7 @@
 //! conversation for attention whether or not it is open.
 
 use pipkin_core::*;
+mod support;
 
 fn state() -> AppState {
     let mut state = AppState::new(
@@ -27,6 +28,7 @@ fn state() -> AppState {
     state.mode = Mode::Real;
     state.set_connection(Connection::Ready);
     state.dispatch(Command::SelectConversation(ConversationId(1)));
+    support::native_context(&mut state);
     state.apply_event(event(
         &state,
         EventKind::Opened {

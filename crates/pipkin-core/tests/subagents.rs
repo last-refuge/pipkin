@@ -1,4 +1,5 @@
 use pipkin_core::*;
+mod support;
 
 fn state() -> AppState {
     state_in_mode(Mode::Real)
@@ -24,6 +25,7 @@ fn state_in_mode(mode: Mode) -> AppState {
     state.mode = mode;
     state.set_connection(Connection::Ready);
     state.dispatch(Command::SelectConversation(ConversationId(1)));
+    support::native_context(&mut state);
     state
 }
 

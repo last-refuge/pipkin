@@ -258,6 +258,10 @@ pub struct Sequencer {
 }
 
 impl Sequencer {
+    pub(super) fn epoch(&self) -> Option<u64> {
+        self.epoch
+    }
+
     pub fn welcome(&mut self, epoch: u64) {
         self.epoch = Some(epoch);
         self.last = None;

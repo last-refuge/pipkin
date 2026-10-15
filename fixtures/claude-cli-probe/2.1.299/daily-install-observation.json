@@ -1,0 +1,16 @@
+{
+  "installed_executable": "/home/jason/.local/lib/pipkin/versions/1.1.0-native-c820caa101f3/usr/bin/pipkin",
+  "sha256": "c820caa101f383fc085e82232b5723ec65ad054150e5d2b131f4c6a65b222f85",
+  "version": "pipkin 1.1.0 (source 7c04b2ac86014e9824691eef1adb8e35ce790355, dirty: true, engine native 1.1.0, engine protocol 39, engine schema 25, schema 10)",
+  "previous_binary_retained_unchanged": true,
+  "running_instance_not_stopped": true,
+  "additional_live_inference": false,
+  "full_regression_job": 163,
+  "release_package_job": 162,
+  "installation_probe_job": 164,
+  "installed_mock_workflow_job": 166,
+  "installed_mock_workflow_passed": true,
+  "installed_argument_policy_cases_passed": 7,
+  "desktop_launcher_needs_no_experimental_flags": true,
+  "live_budget_sha256": "bf794518e35d7f1ce3a50b3058c4191bb9401e568fc645d77e10b0f404cf1f22"
+}

@@ -143,6 +143,53 @@ pub enum Call {
         extensions: Option<Vec<ExtensionSpec>>,
     },
     ListSessions,
+    /// Filesystem inspection only; no executable runs before explicit trust.
+    InspectLocalCli {
+        #[serde(default)]
+        mode: crate::LocalCliMode,
+        executable: String,
+        target: crate::LocalCliSetupTarget,
+    },
+    /// Runs bounded version/help/auth-status checks, never inference.
+    CheckLocalCli {
+        setup: String,
+        trust_executable: bool,
+        trust_project: bool,
+    },
+    /// Pure metadata read, including checking a lost check acknowledgement.
+    LocalCliSetupStatus {
+        setup: String,
+    },
+    /// Pure reads: neither missing creation nor missing trust causes a probe or mutation.
+    LookupLocalCliCreation {
+        session: SessionId,
+        setup: String,
+    },
+    LocalCliSessionStatus {
+        session: SessionId,
+    },
+    /// Owner-only ephemeral full reviews; never a model/tool context.
+    LocalCliApprovals {
+        session: SessionId,
+    },
+    /// Explicit one-shot decision. On uncertainty use lookup, never resend.
+    DecideLocalCliApproval {
+        id: crate::LocalCliApprovalId,
+        decision: crate::LocalCliApprovalDecision,
+    },
+    /// Read-only receipt lookup; cannot recreate permission authority.
+    LookupLocalCliApproval {
+        id: crate::LocalCliApprovalId,
+    },
+    RevokeLocalCliSetup {
+        setup: String,
+    },
+    /// The setup ticket is the immutable creation request key. A repeat resolves the
+    /// durable creation before requiring an unexpired ticket; never submits a prompt.
+    CreateLocalCliSession {
+        session: SessionId,
+        setup: String,
+    },
     /// Idempotent under `request`: the same key returns the same session.
     CreateSession {
         cwd: String,
@@ -552,7 +599,11 @@ impl Call {
     /// Calls that must not wait behind normal traffic.
     pub fn lane(&self) -> Lane {
         match self {
-            Call::Stop { .. } | Call::Shutdown | Call::CancelRequest { .. } => Lane::Control,
+            Call::Stop { .. }
+            | Call::Shutdown
+            | Call::CancelRequest { .. }
+            | Call::RevokeLocalCliSetup { .. }
+            | Call::DecideLocalCliApproval { .. } => Lane::Control,
             _ => Lane::Normal,
         }
     }
@@ -607,6 +658,18 @@ pub struct ToolOutputView {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "reply", rename_all = "camelCase")]
 pub enum Reply {
+    LocalCliSetup(crate::LocalCliSetupView),
+    LocalCliCreation {
+        summary: Option<SessionSummary>,
+    },
+    LocalCliSession(crate::LocalCliSessionView),
+    LocalCliApprovals {
+        run: Option<crate::LocalCliApprovalRun>,
+        reviews: Vec<crate::LocalCliApprovalReview>,
+    },
+    LocalCliApproval {
+        receipt: Option<crate::LocalCliApprovalReceipt>,
+    },
     PromptResult(PromptResult),
     Welcome(Welcome),
     Events(EventPage),
