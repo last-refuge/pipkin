@@ -1,0 +1,21 @@
+{
+  "executable": "/home/jason/.local/lib/pipkin/versions/1.1.0-native-ffe95dc723a1/usr/bin/pipkin",
+  "sha256": "ffe95dc723a1a1faf6b7eff15914a9649bc3bf9a40bd7543479667e6ccd11ea1",
+  "version": "pipkin 1.1.0 (source 6e8c85b459f30d1e351d775d1c3fe763dc0b953b, dirty: true, engine native 1.1.0, engine protocol 40, engine schema 25, schema 10)",
+  "minimum_cli_version": "2.1.299",
+  "cli_2_1_301_accepted_by_version_policy": true,
+  "newer_version_fake_workflow_passed": true,
+  "actual_cli_version_bound": true,
+  "previous_binary_retained_unchanged": true,
+  "all_previous_versions_retained": true,
+  "user_session_not_stopped": true,
+  "full_gates_job": 214,
+  "package_job": 215,
+  "installation_and_offline_workflow_job": 216,
+  "offline_probes_and_installed_workflow_passed": true,
+  "additional_live_cli_prompts": 0,
+  "live_budget_sha256": "bf794518e35d7f1ce3a50b3058c4191bb9401e568fc645d77e10b0f404cf1f22",
+  "native_pointer_interaction_verified": false,
+  "current_cli_2_1_301_live_qualified": false,
+  "changes_uncommitted": true
+}

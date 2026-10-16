@@ -9,8 +9,11 @@ use std::{
     time::Duration,
 };
 
-// Exact candidate for the authorized 2.1.299 qualification. Production remains default-off.
+// Historical live qualification baseline, not an upper compatibility bound.
 pub const QUALIFIED_VERSION: &str = "2.1.299";
+pub const MINIMUM_SUPPORTED_VERSION: &str = "2.1.299";
+pub const VERSION_FAILURE: &str =
+    "CLI version is below the supported minimum or malformed; no model request attempted";
 pub const POLICY_ID: &str = "safe-restricted-no-tools-v1";
 pub const MAX_PROMPT_BYTES: usize = 256 * 1024;
 pub type Environment = BTreeMap<OsString, OsString>;
@@ -204,12 +207,44 @@ pub fn valid_uuid(s: &str) -> bool {
 }
 
 pub fn validate_version(bytes: &[u8]) -> Result<(), &'static str> {
-    let expected = format!("{QUALIFIED_VERSION} (Claude Code)");
-    if std::str::from_utf8(bytes).ok().map(str::trim) == Some(expected.as_str()) {
-        Ok(())
-    } else {
-        Err("unqualified CLI version; no model request attempted")
+    supported_version(bytes).map(|_| ())
+}
+
+/// Accept stable numeric releases at or above the minimum, retaining the actual observed
+/// version for immutable bindings. Capability/login checks remain independently required.
+pub fn supported_version(bytes: &[u8]) -> Result<String, &'static str> {
+    fn numeric(version: &str) -> Option<(u64, u64, u64)> {
+        let mut parts = version.split('.');
+        let mut component = || {
+            let part = parts.next()?;
+            if part.is_empty()
+                || (part.len() > 1 && part.starts_with('0'))
+                || !part.bytes().all(|b| b.is_ascii_digit())
+            {
+                return None;
+            }
+            part.parse::<u64>().ok()
+        };
+        let parsed = (component()?, component()?, component()?);
+        if parts.next().is_some() {
+            return None;
+        }
+        Some(parsed)
     }
+    if bytes.len() > 128 {
+        return Err(VERSION_FAILURE);
+    }
+    let reported = std::str::from_utf8(bytes)
+        .ok()
+        .map(str::trim)
+        .and_then(|s| s.strip_suffix(" (Claude Code)"))
+        .ok_or(VERSION_FAILURE)?;
+    let version = numeric(reported).ok_or(VERSION_FAILURE)?;
+    let minimum = numeric(MINIMUM_SUPPORTED_VERSION).expect("valid minimum CLI version");
+    if version < minimum {
+        return Err(VERSION_FAILURE);
+    }
+    Ok(reported.to_owned())
 }
 pub fn validate_help(bytes: &[u8]) -> Result<(), &'static str> {
     require_flags(bytes, REQUIRED_FLAGS)

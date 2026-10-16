@@ -209,6 +209,7 @@ pub struct Prepared {
     env: Environment,
     model: ModelAlias,
     config_ref: String,
+    cli_version: String,
     account_scope: String,
     locations: Vec<String>,
     checked_at: Instant,
@@ -226,7 +227,7 @@ impl Prepared {
             cli_session_id: session_uuid.into(),
             project_path: self.candidate.project.to_str().unwrap().into(),
             executable_path: self.candidate.executable.to_str().unwrap().into(),
-            cli_version: policy::QUALIFIED_VERSION.into(),
+            cli_version: self.cli_version.clone(),
             config_ref: self.config_ref.clone(),
             account_scope: self.account_scope.clone(),
             launch_policy: self.policy.id().into(),
@@ -390,7 +391,7 @@ pub(crate) async fn check_for_policy(
     if !version.clean_exit() {
         return Err("CLI version probe did not settle cleanly");
     }
-    policy::validate_version(&version.captured)?;
+    let cli_version = policy::supported_version(&version.captured)?;
     candidate.revalidate(&env)?;
     let help = process::run(
         policy::metadata_spec(
@@ -463,6 +464,7 @@ pub(crate) async fn check_for_policy(
         env,
         model: request.model,
         config_ref: policy::marker(parts),
+        cli_version,
         account_scope,
         locations,
         checked_at: Instant::now(),

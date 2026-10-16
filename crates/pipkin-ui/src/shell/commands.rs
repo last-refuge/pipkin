@@ -13,8 +13,6 @@ use crate::model::DemoControls;
 pub enum Run {
     Action(Box<dyn Action>),
     Dispatch(Command),
-    LocalCli(bool),
-    ResumeLocalCli,
     CliApprovals,
     InspectSubagent(Option<u64>),
     CopyDiagnostics,
@@ -58,30 +56,6 @@ pub fn build(state: &AppState, demo: Option<&DemoControls>) -> Vec<Cmd> {
             Some("Ctrl+N"),
             a.new_conversation,
             Run::Action(Box::new(NewConversation)),
-        ),
-        cmd(
-            super::local_cli::NEW_LABEL,
-            "Conversation",
-            None,
-            state.local_cli_availability().begin,
-            Run::LocalCli(false),
-        ),
-        cmd(
-            super::local_cli::REAPPROVE_LABEL,
-            "Conversation",
-            None,
-            state.local_cli_availability().begin
-                && state.current().is_some_and(|c| c.profile.is_local_cli()),
-            Run::LocalCli(true),
-        ),
-        cmd(
-            "Resume Local CLI setup…",
-            "Conversation",
-            None,
-            state.mode == Mode::Real
-                && (state.local_cli.target.is_some()
-                    || !state.local_cli.parked_creations().is_empty()),
-            Run::ResumeLocalCli,
         ),
         cmd(
             super::cli_approvals::LABEL,
@@ -138,7 +112,7 @@ pub fn build(state: &AppState, demo: Option<&DemoControls>) -> Vec<Cmd> {
             "Choose model…",
             "Composer",
             Some("Ctrl+M"),
-            state.execution_capabilities().model_settings && !state.models.is_empty(),
+            state.provider_picker_available(),
             Run::Action(Box::new(OpenModelMenu)),
         ),
         cmd(

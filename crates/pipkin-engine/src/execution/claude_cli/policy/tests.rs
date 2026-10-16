@@ -120,12 +120,29 @@ fn fixed_no_tools_policy_uses_stdin_and_exact_session_selection_not_shell_argume
 }
 
 #[test]
-fn version_and_help_are_exact_and_marker_parts_are_unambiguous() {
-    assert!(validate_version(b"2.1.299 (Claude Code)\n").is_ok());
-    assert!(validate_version(b"2.1.296 (Claude Code)\n").is_err());
+fn minimum_version_is_numeric_and_help_and_marker_parts_remain_strict() {
+    for version in [
+        "2.1.299", "2.1.300", "2.1.301", "2.1.1000", "2.2.0", "3.0.0", "10.0.0",
+    ] {
+        let output = format!("{version} (Claude Code)\n");
+        assert!(validate_version(output.as_bytes()).is_ok());
+        assert_eq!(supported_version(output.as_bytes()).unwrap(), version);
+    }
     for bytes in [
-        b"2.1.297 (Claude Code)".as_slice(),
-        b"2.1.296 attacker",
+        b"2.1.298 (Claude Code)".as_slice(),
+        b"2.1.30 (Claude Code)",
+        b"2.0.9999 (Claude Code)",
+        b"1.99.9999 (Claude Code)",
+        b"2.1.301 attacker",
+        b"2.1.301 (Claude Code)\nextra output",
+        b"2.1 (Claude Code)",
+        b"2.1.301.0 (Claude Code)",
+        b"2.1.299-beta (Claude Code)",
+        b"2.1.301+build (Claude Code)",
+        b"02.1.301 (Claude Code)",
+        b"2.1.-301 (Claude Code)",
+        b"18446744073709551616.0.0 (Claude Code)",
+        b"2.1.\n301 (Claude Code)",
         b"\xff",
     ] {
         assert!(validate_version(bytes).is_err());

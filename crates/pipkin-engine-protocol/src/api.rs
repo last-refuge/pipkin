@@ -144,6 +144,11 @@ pub enum Call {
     },
     ListSessions,
     /// Filesystem inspection only; no executable runs before explicit trust.
+    /// Filesystem-only suggestions on this engine host; never probes or grants trust.
+    DiscoverLocalCli {
+        saved: Option<String>,
+        project: String,
+    },
     InspectLocalCli {
         #[serde(default)]
         mode: crate::LocalCliMode,
@@ -659,6 +664,9 @@ pub struct ToolOutputView {
 #[serde(tag = "reply", rename_all = "camelCase")]
 pub enum Reply {
     LocalCliSetup(crate::LocalCliSetupView),
+    LocalCliCandidates {
+        paths: Vec<String>,
+    },
     LocalCliCreation {
         summary: Option<SessionSummary>,
     },

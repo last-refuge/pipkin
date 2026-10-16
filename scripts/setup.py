@@ -103,8 +103,10 @@ def main():
     run(['cargo', 'build', '-p', 'pipkin-app', '--release', '--locked'], env=env)
     (prefix / 'bin').mkdir(exist_ok=True)
     shutil.copy2(ROOT / 'target/release/pipkin', prefix / 'bin/pipkin')
-    # Short private HOME/TMPDIR, no inherited credentials or external-server overrides.
-    with tempfile.TemporaryDirectory(prefix='', dir='/tmp') as profile:
+    # Keep the private probe on the build filesystem: /tmp may be a quota-limited
+    # tmpfs even when the checkout has plenty of space. No inherited credentials
+    # or external-server overrides; TemporaryDirectory removes the scratch profile.
+    with tempfile.TemporaryDirectory(prefix='probe-', dir=base) as profile:
         probe_env = {'HOME': profile, 'TMPDIR': profile, 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin'}
         run([prefix / 'bin/pipkin', '--diagnose', '--probe', '--data-dir', Path(profile) / 'app-data'], env=probe_env)
     current = base / 'current'

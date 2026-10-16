@@ -5,8 +5,11 @@
 # Pipkin
 
 [Local Claude CLI](docs/local-claude-cli.md) chat and Write-only hosting is enabled by default
-in normal Pipkin desktop launches, with exactly CLI2.1.299. Choose **New Local CLI conversation…**;
-no experimental flags are needed. Explicit trust and review remain required. This is not a
+in normal Pipkin desktop launches, with CLI **2.1.299 or newer** (stable releases). Configure **Settings → Connections →
+Claude Code · local CLI**, then choose a CLI model in the ordinary model picker alongside native
+providers. Installation/project discovery needs no typed paths; setup failure never substitutes
+another provider or disables unrelated conversations. No
+experimental flags are needed. Explicit trust and review remain required. This is not a
 sandbox, billing guarantee or full tool parity.
 
 **A faster way to AI, for developers.**<br>

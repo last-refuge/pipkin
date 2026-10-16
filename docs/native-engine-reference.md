@@ -10,12 +10,26 @@ engine and is available without an external runtime or network access.
   built-in OAuth flows are accessible through the engine service. Saved subscription
   credentials remain distinct from API keys; failed refresh does not silently switch billing.
 - Experimental local Claude CLI conversations use an installed, unmodified CLI and its own
-  normal login, separately from native subscription sign-in. The built Linux desktop qualified
-  exactly CLI 2.1.299 for chat and restricted Write; other versions fail closed. Normal owned
+  normal login, separately from native subscription sign-in. The built Linux desktop accepts
+  stable CLI versions 2.1.299 or newer for chat and restricted Write, subject to capability, trust
+  and login checks. Bindings record the actual version; existing identities are not rewritten.
+  Live qualification evidence is limited to 2.1.299, not every accepted newer release. Normal owned
   desktop engines enable CLI hosting by default, without granting trust or readiness. Use
   `--disable-local-claude-cli` or `--disable-local-claude-cli-write` to opt out. Demo stays disabled;
-  attached hosts own their policy, and standalone server/library defaults remain off. Explicit
-  Inspect, both path approvals, Check and Create/Return precede sending. Only Write is supported
+  attached hosts own their policy, and standalone server/library defaults remain off. Choose
+  Settings → Connections → Claude Code · local CLI. Setup is only in Connections, not a sidebar
+  action or Ctrl+N chooser. Connections configures independent providers without selecting one.
+  Choose Claude Code CLI Haiku/Sonnet/Opus in the normal model picker alongside native providers.
+  Cross-provider or CLI-alias changes create a separate conversation; no history/draft is forwarded.
+  Failed/cancelled changes block only their source until completed or explicitly kept; other chats
+  remain usable. New follows the current conversation's model, or its explicit pending choice.
+  The composer shows the actual immutable backend/model, never a silent GPT/native fallback.
+  Filesystem-only discovery finds the installation
+  and captures the selected project; saved model/path preferences are not grants. Review canonical
+  paths, then explicitly confirm Trust these paths and connect. Provider configuration stops
+  after Check; connecting a conversation coordinates Check and one metadata-only Create/Return,
+  not a prompt. Uncertain outcomes never automatically replay.
+  Reconnect loads saved hints but requires fresh confirmation. Only Write is supported
   in the coding slice, not Read/Edit/Bash/MCP or native tools/goals/queues/retries. Review complete
   arguments before Allow once; Ctrl+Shift+C copies the current review without deciding. Unknown
   prompts/decisions must not be replayed. Billing, managed policy and full crash containment remain

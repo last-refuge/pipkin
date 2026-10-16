@@ -29,6 +29,7 @@ pub struct ConversationState {
     pub opened: bool,
     /// Fixed execution contract, retained across reattachment and history/status events.
     pub profile: ExecutionProfile,
+    pub provider_model: Option<crate::ProviderModel>,
     /// Only an authoritative ExecutionContext grants real conversation capabilities.
     pub(crate) execution_context_known: bool,
     /// Temporary readiness failure. Clearing it never changes the execution profile.
@@ -123,6 +124,7 @@ impl ConversationState {
             loading_older: false,
             opened: false,
             profile: ExecutionProfile::default(),
+            provider_model: None,
             execution_context_known: false,
             execution_blocked: None,
             generation: 0,
@@ -369,6 +371,8 @@ pub struct AppState {
     bookmarks: Vec<Project>,
     /// A conversation creation waiting for the backend to report it.
     pending_create: Option<RequestId>,
+    pending_created: Option<ConversationId>,
+    provider_creation_origin: Option<(ConversationId, crate::ProviderModel)>,
     request_prefix: String,
     next_request: u64,
     next_op: u64,
@@ -433,6 +437,8 @@ impl AppState {
             target_pages: 0,
             bookmarks: Vec::new(),
             pending_create: None,
+            pending_created: None,
+            provider_creation_origin: None,
             request_prefix: "req".into(),
             next_request: 1,
             next_op: 1,
@@ -526,29 +532,55 @@ impl AppState {
         {
             self.selected = None;
         }
-        let mut created: Vec<(ConversationId, i64)> = Vec::new();
         for (id, project, title, at) in boot.conversations {
             if self.conv_mut(id).is_none() {
                 self.conversations
                     .push(ConversationState::new(id, project, title, at));
                 self.next_conversation = self.next_conversation.max(id.0 + 1);
-                created.push((id, at));
             }
         }
         // A conversation we asked the backend to create has arrived: show it.
-        if self.pending_create.is_some()
-            && let Some((id, _)) = created.iter().max_by_key(|(_, at)| *at)
-        {
-            let id = *id;
-            self.pending_create = None;
-            out.merge(self.dispatch(Command::SelectConversation(id)));
-        }
+        self.reconcile_native_creation(&mut out);
         if self.prefs.model.is_none() {
             self.prefs.model = self.models.first().map(|m| m.id.clone());
         }
         self.local_cli_reconcile_catalog(&mut out);
         out.notes.push(Note::ConversationsChanged);
         out
+    }
+
+    pub(crate) fn pending_native_creation(&self) -> bool {
+        self.pending_create.is_some()
+    }
+
+    pub fn native_conversation_created(
+        &mut self,
+        request: &RequestId,
+        conversation: ConversationId,
+    ) -> Outcome {
+        let mut out = Outcome::default();
+        if self.pending_create.as_ref() == Some(request) {
+            self.pending_created = Some(conversation);
+            self.reconcile_native_creation(&mut out);
+        }
+        out
+    }
+
+    fn reconcile_native_creation(&mut self, out: &mut Outcome) {
+        if let Some(id) = self
+            .pending_created
+            .filter(|id| self.conversation(*id).is_some())
+        {
+            self.pending_created = None;
+            self.pending_create = None;
+            let origin = self.provider_creation_origin.take();
+            let select = self.provider_origin_current(&origin);
+            self.finish_provider_origin(origin, out);
+            if select {
+                out.merge(self.dispatch(Command::SelectConversation(id)));
+            }
+            self.coalesce_provider_prefs(out);
+        }
     }
 
     /// The engine reports which model is selected; that, not a local choice, is what is shown.
@@ -711,7 +743,17 @@ impl AppState {
 
     /// Select the remembered (or first) conversation, if nothing is selected, so its history loads.
     pub fn select_initial(&mut self) -> Outcome {
-        if self.selected.is_some() {
+        if self.selected.is_some()
+            || self.pending_native_creation()
+            || (self.mode == Mode::Real
+                && self.prefs.provider_model.is_some()
+                && self
+                    .prefs
+                    .selected_conversation
+                    .is_none_or(|id| self.conversation(id).is_none()))
+        {
+            // A blank workspace with an explicit provider choice is not consent to open an
+            // unrelated catalog row, including after interrupted creation/restart.
             return Outcome::default();
         }
         let id = self
@@ -810,9 +852,17 @@ impl AppState {
             return Availability::default();
         }
         // Real sessions are created by the engine, so creation is offered only once it can be asked.
-        let new_conversation = (self.mode == Mode::Demo || self.can_create)
-            && self.pending_create.is_none()
-            && self.current_project().is_some();
+        let creation_available = if self.mode == Mode::Demo {
+            true
+        } else {
+            match self.next_provider_model() {
+                Some(crate::ProviderModel::ClaudeCli(_)) => self.local_cli_availability().begin,
+                Some(crate::ProviderModel::Unsupported) => false,
+                _ => self.can_create,
+            }
+        };
+        let new_conversation =
+            creation_available && self.pending_create.is_none() && self.current_project().is_some();
         let Some(c) = self.current() else {
             return Availability {
                 new_conversation,
@@ -831,7 +881,8 @@ impl AppState {
             ExecutionProfile::LocalCliChatOnly | ExecutionProfile::LocalCliRestrictedWrite => true,
             ExecutionProfile::Unsupported => false,
         };
-        let can_send = profile != ExecutionProfile::Unsupported
+        let can_send = !self.provider_selection_pending(c.id)
+            && profile != ExecutionProfile::Unsupported
             && self.read_only.is_none()
             && c.execution_blocked.is_none()
             && !self.owned_elsewhere(c.id);
@@ -1493,14 +1544,68 @@ impl AppState {
             // Real sessions are created and renamed by the engine; a local-only row would be
             // simulated success.
             Command::RenameConversation(..) if self.mode == Mode::Real => {}
+            Command::SelectProviderModel(model) => return self.select_provider_model(model),
+            Command::KeepConversationProvider => {
+                if let Some(id) = self.selected {
+                    if self
+                        .local_cli
+                        .provider_origin
+                        .as_ref()
+                        .is_some_and(|(origin, _)| *origin == id)
+                        && self.local_cli.stage != crate::LocalCliStage::Created
+                    {
+                        self.local_cli_cancel(&mut out);
+                    }
+                    self.prefs.pending_provider_models.remove(&id.0);
+                    self.prefs.pending_provider_models.remove(&0);
+                    out.effects.push(Effect::SavePrefs(self.prefs.clone()));
+                    out.notes.push(Note::Other);
+                }
+            }
+            Command::NewConversation
+                if self.mode == Mode::Real
+                    && matches!(
+                        self.next_provider_model(),
+                        Some(crate::ProviderModel::ClaudeCli(_))
+                    ) =>
+            {
+                if let Some(crate::ProviderModel::ClaudeCli(alias)) = self.next_provider_model() {
+                    self.prefs.cli_model = alias;
+                }
+                self.mark_provider_origin(
+                    crate::ProviderModel::ClaudeCli(self.prefs.cli_model),
+                    &mut out,
+                );
+                if self.availability().new_conversation {
+                    out.merge(self.dispatch_local_cli(crate::LocalCliCommand::BeginGuided));
+                } else {
+                    self.notice = Some("Claude Code is selected but cannot create a conversation. Check Settings → Connections; no native provider was substituted.".into());
+                    out.notes.push(Note::Other);
+                }
+            }
             Command::NewConversation if self.mode == Mode::Real => {
                 if self.availability().new_conversation
                     && let Some(project) = self.current_project().cloned()
                 {
+                    if let Some(model) = self.next_provider_model() {
+                        self.mark_provider_origin(model, &mut out);
+                    }
                     let request = self.alloc_request();
                     self.pending_create = Some(request.clone());
+                    self.pending_created = None;
+                    self.provider_creation_origin = self.selected.and_then(|id| {
+                        self.prefs
+                            .pending_provider_models
+                            .get(&id.0)
+                            .cloned()
+                            .map(|model| (id, model))
+                    });
                     out.effects
                         .push(Effect::Backend(BackendRequest::CreateConversation {
+                            model: match self.next_provider_model() {
+                                Some(crate::ProviderModel::Native(id)) => Some(id.clone()),
+                                _ => None,
+                            },
                             project: project.id,
                             cwd: project.path,
                             request,
@@ -2432,13 +2537,17 @@ impl AppState {
         }
         let request = self.alloc_request();
         let model = if self.conv(id).execution_profile(self.mode) == ExecutionProfile::NativeAgent {
-            self.prefs.model.clone()
+            match &self.conv(id).provider_model {
+                Some(crate::ProviderModel::Native(id)) => Some(id.clone()),
+                _ => self.prefs.model.clone(),
+            }
         } else {
             None
         };
         let c = self.conv_mut(id).unwrap();
         c.intent_error = None;
         c.pending_intent = Some(PendingIntent {
+            provider_changed: false,
             request: request.clone(),
             origin,
             text: text.clone(),
@@ -2550,6 +2659,16 @@ impl AppState {
     fn dispatch_intent(&mut self, id: ConversationId, mut intent: PendingIntent) -> Outcome {
         let mut out = Outcome::default();
         // Recheck the owning conversation after the journal delay, not the selection.
+        if intent.provider_changed {
+            self.notice = Some("Not sent: the provider/model changed before this prompt was dispatched. Review and send explicitly; the draft was kept.".into());
+            out.notes.push(Note::Other);
+            out.effects.push(Effect::JournalState {
+                conversation: id,
+                request: intent.request,
+                state: JournalState::Cancelled,
+            });
+            return out;
+        }
         if self.refuse_intent(
             id,
             intent.origin,
@@ -2794,7 +2913,11 @@ impl AppState {
         }
         // Snapshot execution identity is attachment-scoped, never a run update.
         // A delayed op event must not clear or replace the gate, even for a live op.
-        if matches!(ev.kind, EventKind::ExecutionContext { .. }) && ev.op.is_some() {
+        if matches!(
+            ev.kind,
+            EventKind::ExecutionContext { .. } | EventKind::ConversationModel(_)
+        ) && ev.op.is_some()
+        {
             return out;
         }
         // Operation-scoped events must match the live operation.
@@ -2802,6 +2925,7 @@ impl AppState {
             ev.kind,
             EventKind::Opened { .. }
                 | EventKind::ExecutionContext { .. }
+                | EventKind::ConversationModel(_)
                 | EventKind::OlderPage { .. }
                 | EventKind::Synced { .. }
                 | EventKind::OpenFailed { .. }
@@ -2849,6 +2973,23 @@ impl AppState {
         match ev.kind {
             EventKind::LocalCli(_) | EventKind::CliApproval(_) => {
                 unreachable!("scoped events are routed first")
+            }
+            EventKind::ConversationModel(model) => {
+                c.provider_model = model.filter(|m| match m {
+                    crate::ProviderModel::Native(_) => {
+                        c.execution_context_known && c.profile == ExecutionProfile::NativeAgent
+                    }
+                    crate::ProviderModel::ClaudeCli(_) => {
+                        c.execution_context_known && c.profile.is_local_cli()
+                    }
+                    crate::ProviderModel::Unsupported => false,
+                });
+                let actual = c.provider_model.clone();
+                let id = c.id;
+                if let Some(model @ crate::ProviderModel::Native(_)) = actual {
+                    self.finish_provider_origin(Some((id, model)), &mut out);
+                }
+                out.notes.push(Note::Other);
             }
             EventKind::ExecutionContext {
                 execution_blocked,

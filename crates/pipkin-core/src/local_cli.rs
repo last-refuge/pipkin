@@ -6,6 +6,7 @@ use crate::{
 };
 
 mod assistance;
+mod guided;
 mod recovery;
 
 /// Reserved for setup that does not yet have a desktop conversation.
@@ -98,6 +99,7 @@ pub struct LocalCliSetupView {
     pub root_candidate: Option<EngineSessionId>,
     pub executable: String,
     pub project: String,
+    /// Minimum supported version; the observed executable version belongs to its binding.
     pub qualified_version: String,
     pub stage: LocalCliMetadataStage,
     /// Unix seconds, on AppState's injected clock. None means backend-enforced expiry only.
@@ -133,6 +135,20 @@ pub struct LocalCliSessionView {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LocalCliCommand {
     BeginNew(LocalCliDraft),
+    /// Guided setup only discovers filesystem metadata until explicit confirmation.
+    BeginGuided,
+    /// Configure the provider without selecting a model or creating a conversation.
+    BeginProviderSetup,
+    BeginGuidedExisting {
+        conversation: ConversationId,
+        session: EngineSessionId,
+    },
+    Discover,
+    Configure(LocalCliDraft),
+    /// The visible captured ticket, not whatever ticket happens to arrive later.
+    ConfirmAndConnect {
+        setup: SetupId,
+    },
     BeginExisting {
         conversation: ConversationId,
         session: EngineSessionId,
@@ -167,6 +183,10 @@ pub enum LocalCliCommand {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LocalCliRequest {
+    Discover {
+        saved: Option<String>,
+        project: String,
+    },
     Inspect {
         mode: CliMode,
         executable: String,
@@ -196,6 +216,7 @@ pub enum LocalCliRequest {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LocalCliPhase {
+    Discover,
     Inspect,
     Check,
     Status,
@@ -208,6 +229,7 @@ pub enum LocalCliPhase {
 impl LocalCliRequest {
     pub fn phase(&self) -> LocalCliPhase {
         match self {
+            Self::Discover { .. } => LocalCliPhase::Discover,
             Self::Inspect { .. } => LocalCliPhase::Inspect,
             Self::Check { .. } => LocalCliPhase::Check,
             Self::Status { .. } => LocalCliPhase::Status,
@@ -230,6 +252,7 @@ pub enum LocalCliFailure {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LocalCliEvent {
+    Discovered(Vec<String>),
     Inspected(LocalCliSetupView),
     Checked(LocalCliSetupView),
     Status(LocalCliSetupView),
@@ -248,6 +271,7 @@ pub enum LocalCliEvent {
 impl LocalCliEvent {
     pub fn phase(&self) -> LocalCliPhase {
         match self {
+            Self::Discovered(_) => LocalCliPhase::Discover,
             Self::Inspected(_) => LocalCliPhase::Inspect,
             Self::Checked(_) => LocalCliPhase::Check,
             Self::Status(_) => LocalCliPhase::Status,
@@ -271,6 +295,13 @@ struct Pending {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LocalCliState {
+    pub guided: bool,
+    pub provider_only: bool,
+    pub(crate) provider_origin: Option<(ConversationId, crate::ProviderModel)>,
+    pub candidates: Vec<String>,
+    pub discovering: bool,
+    /// One-shot consent for this exact pending Check only. Never serialized.
+    connect_after_check: bool,
     /// Adapter capability, false until explicitly advertised. Not a profile/readiness grant.
     pub available: bool,
     /// An unreadable recovery journal must never be treated as an empty journal.
@@ -316,6 +347,11 @@ pub struct LocalCliAvailability {
 }
 
 impl LocalCliState {
+    /// Captures asynchronous file-picker/discovery editing lifetime, including Existing targets.
+    pub fn input_revision(&self) -> u64 {
+        self.generation
+    }
+
     /// Bounded recovery identities. Entries remain here while being recovered,
     /// until an exact completion receipt and its catalog entry have reconciled.
     pub fn parked_creations(&self) -> &[LocalCliCreationId] {
@@ -332,6 +368,8 @@ impl LocalCliState {
             .checked_add(1)
             .expect("setup generation exhausted");
         self.pending = None;
+        self.discovering = false;
+        self.connect_after_check = false;
         self.ticket = None;
         self.trust_executable = false;
         self.trust_project = false;
@@ -444,6 +482,7 @@ impl AppState {
                 ),
             revoke: connected && self.local_cli_target_allowed(true) && ticket,
             create: writable
+                && !s.provider_only
                 && !s.recovery_unavailable
                 && live
                 && free
@@ -527,10 +566,16 @@ impl AppState {
 
     pub(crate) fn dispatch_local_cli(&mut self, command: LocalCliCommand) -> Outcome {
         use LocalCliCommand as C;
+        if let Some(out) = self.dispatch_guided_cli(&command) {
+            return out;
+        }
         let mut out = Outcome::default();
         let a = self.local_cli_availability();
         match command {
             C::BeginNew(draft) if a.begin => {
+                self.local_cli.guided = false;
+                self.local_cli.provider_only = false;
+                self.local_cli.provider_origin = None;
                 self.local_cli.invalidate();
                 self.local_cli.stage = LocalCliStage::Editing;
                 self.local_cli.target = Some(LocalCliTarget::New);
@@ -553,6 +598,9 @@ impl AppState {
                     return out;
                 }
                 let generation = c.generation;
+                self.local_cli.guided = false;
+                self.local_cli.provider_only = false;
+                self.local_cli.provider_origin = None;
                 self.local_cli.invalidate();
                 self.local_cli.stage = LocalCliStage::Editing;
                 self.local_cli.target = Some(LocalCliTarget::Existing {
@@ -740,7 +788,7 @@ impl AppState {
         out
     }
 
-    fn local_cli_cancel(&mut self, out: &mut Outcome) {
+    pub(crate) fn local_cli_cancel(&mut self, out: &mut Outcome) {
         if let Some(p) = &self.local_cli.pending
             && p.phase == LocalCliPhase::Inspect
         {
@@ -808,7 +856,13 @@ impl AppState {
             .parked_creations
             .retain(|identity| identity != &created.identity);
         self.local_cli.stage = LocalCliStage::Created;
-        self.local_cli_refresh(id, out);
+        let origin = self.local_cli.provider_origin.take();
+        let select = self.provider_origin_current(&origin);
+        self.finish_provider_origin(origin, out);
+        if select {
+            self.local_cli_refresh(id, out);
+        }
+        self.coalesce_provider_prefs(out);
     }
 
     pub(crate) fn apply_local_cli_event(&mut self, ev: BackendEvent) -> Outcome {
@@ -834,7 +888,17 @@ impl AppState {
         }
         self.local_cli.pending = None;
         self.local_cli.error = None;
+        let checked = matches!(&event, LocalCliEvent::Checked(_));
+        let discovered = matches!(&event, LocalCliEvent::Discovered(_));
+        let hints = matches!(&event, LocalCliEvent::SessionStatus(_));
         match event {
+            LocalCliEvent::Discovered(paths) => {
+                self.local_cli.discovering = false;
+                self.local_cli.candidates = paths;
+                if self.local_cli.candidates.len() == 1 {
+                    self.local_cli.draft.executable = self.local_cli.candidates[0].clone();
+                }
+            }
             LocalCliEvent::Inspected(view) => {
                 self.local_cli.ticket = Some(view);
                 self.local_cli.trust_executable = false;
@@ -866,6 +930,8 @@ impl AppState {
             }
             LocalCliEvent::SessionStatus(view) => self.local_cli.session_status = Some(view),
             LocalCliEvent::Failed { phase, failure } => {
+                self.local_cli.connect_after_check = false;
+                self.local_cli.discovering = false;
                 // A failed Create never proves absence; pure lookup is the only next step.
                 if self.local_cli.unresolved() {
                     self.local_cli.stage = if self.local_cli.created.is_some() {
@@ -887,6 +953,7 @@ impl AppState {
             }
         }
         self.local_cli_expire();
+        self.advance_guided_cli(discovered, hints, checked, &mut out);
         self.local_cli_reconcile_catalog(&mut out);
         out.notes.push(Note::Other);
         out
@@ -898,6 +965,12 @@ impl AppState {
             s.creation.as_ref() == Some(&c.identity) && c.conversation != LOCAL_CLI_GLOBAL
         };
         match event {
+            LocalCliEvent::Discovered(paths) => {
+                paths.len() <= 16
+                    && paths.iter().all(|p| {
+                        p.starts_with('/') && p.len() <= 4096 && !p.chars().any(char::is_control)
+                    })
+            }
             LocalCliEvent::Inspected(view) => {
                 let target = match &s.target {
                     Some(LocalCliTarget::New) => LocalCliInspectTarget::New {

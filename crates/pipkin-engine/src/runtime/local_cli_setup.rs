@@ -21,7 +21,9 @@ use crate::{
 };
 
 const TTL: Duration = Duration::from_secs(300);
-const FAILURE: &str = "Local CLI metadata verification failed; inspect and approve again.";
+const FAILURE: &str = "Local CLI metadata verification failed; review paths and reconnect.";
+const VERSION_FAILURE: &str = "This Claude Code version is not supported. This build requires CLI 2.1.299 or newer with a recognized version response; no message was sent.";
+const LOGIN_FAILURE: &str = "Claude Code is signed out. Sign in using Claude Code's own terminal login, then reconnect. No API key or Pipkin provider sign-in is needed.";
 fn error(code: ErrorCode, text: &'static str) -> ProtoError {
     ProtoError::new(code, text)
 }
@@ -502,9 +504,17 @@ impl Registry {
                     matches!(ticket.view.target, Target::New { .. }).then(|| Arc::new(prepared));
                 ticket.view.stage = Stage::MetadataVerified;
             }
-            Err(_) => {
+            Err(failure) => {
                 ticket.view.stage = Stage::Failed;
-                ticket.view.reason = Some(FAILURE.into());
+                // Only closed public categories; never forward arbitrary provider/process errors.
+                ticket.view.reason = Some(
+                    match failure.message.as_str() {
+                        VERSION_FAILURE => VERSION_FAILURE,
+                        LOGIN_FAILURE => LOGIN_FAILURE,
+                        _ => FAILURE,
+                    }
+                    .into(),
+                );
             }
         }
         Ok(ticket.view.clone())
@@ -699,7 +709,7 @@ impl Shared {
                 selected_executable: executable.into(),
                 executable: resolved_executable,
                 project: resolved_project,
-                qualified_version: policy::QUALIFIED_VERSION.into(),
+                qualified_version: policy::MINIMUM_SUPPORTED_VERSION.into(),
                 stage: Stage::AwaitingTrust,
                 reason: None,
                 execution_enabled: false,
@@ -791,7 +801,14 @@ impl Shared {
                     }
                     Ok(prepared)
                 })(),
-                Err(_) => Err(metadata_error(())),
+                Err(reason) => Err(error(
+                    ErrorCode::Invalid,
+                    match reason {
+                        policy::VERSION_FAILURE => VERSION_FAILURE,
+                        "sign in using the CLI's own terminal login, then refresh" => LOGIN_FAILURE,
+                        _ => FAILURE,
+                    },
+                )),
             };
             let reply = shared
                 .local_cli_setups

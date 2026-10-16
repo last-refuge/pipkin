@@ -355,7 +355,7 @@ impl Workspace {
                     self.local_cli_entry("prefs-local-cli-new", false, cx),
                     self.local_cli_entry("prefs-local-cli-reapprove", true, cx),
                     Btn::new("prefs-local-cli-resume")
-                        .label("Resume setup…")
+                        .label("Review connection / recovery…")
                         .disabled(
                             self.state(cx).mode != pipkin_core::Mode::Real
                                 || (self.state(cx).local_cli.target.is_none()
@@ -373,8 +373,8 @@ impl Workspace {
                     .border_color(c.border)
                     .bg(c.bg_surface)
                     .child(setting_row(
-                        "Model connections",
-                        "Connect Claude or ChatGPT subscriptions to Pipkin.",
+                        "Claude / ChatGPT subscriptions",
+                        "Connect these providers, then choose their models in the normal model picker.",
                         vec![Btn::new("prefs-connections")
                             .label("Manage…")
                             .trailing_icon("chevron-right")
@@ -395,14 +395,14 @@ impl Workspace {
                         .child("Managing connections opens account setup. Return to the workspace when you’re done."))
                     .child(separator(cx))
                     .child(setting_row(
-                        "Local CLI · chat only",
+                        "Claude Code · local CLI",
                         super::local_cli::availability_label(self.state(cx)),
                         cli_controls,
                         true,
                         &t,
                     ))
                     .child(div().px(px(16.0)).py(px(12.0)).text_size(t.small_size())
-                        .child("Uses the CLI’s own login. Billing unverified; may consume account allowance or already-enabled extra usage. No Pipkin tools, queued follow-ups, or model changes."))
+                        .child("Claude Code CLI is another provider in the model picker, using its own login. Configuring it does not select it or disable other providers. Its conversations have fixed models and restricted tools; changing backend opens a separate conversation. Billing unverified; no native fallback."))
                     .into_any_element()
             }
             SettingsSection::Servers => self.render_mcp_section(cx),

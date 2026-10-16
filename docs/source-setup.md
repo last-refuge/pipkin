@@ -1,6 +1,8 @@
 # Build, run and install Pipkin from source
 
 Source setup builds the Rust app and built-in engine, then verifies an isolated offline handshake.
+The probe uses a private, automatically removed directory under `dist/source-setup`, so a full
+or quota-limited `/tmp` does not prevent its SQLite database from starting.
 No Pi checkout, Node/npm, manual patches or separately started server is needed. It does not authenticate
 providers or make paid requests. Do not build as root.
 

@@ -8,9 +8,17 @@ are experimental and other desktops and pure X11 are unverified. See the [change
 ## Local Claude CLI
 
 Normal Pipkin desktop launches enable chat and restricted Write hosting through the installed
-CLI's normal login. Exactly CLI2.1.299 was qualified. Choose **New Local CLI conversation…**;
-no experimental launch flags are needed. Follow the [daily-use guide](local-claude-cli.md),
+CLI's normal login. CLI2.1.299 or newer is accepted; live qualification evidence is for2.1.299. Configure **Settings → Connections →
+Claude Code · local CLI**. There is no dedicated sidebar action or Ctrl+N backend chooser.
+Connections configures independent providers; choose **Claude Code CLI · Haiku/Sonnet/Opus**
+in the ordinary model picker alongside native providers. Configuration alone selects no model.
+Pipkin resolves the installation and selected project; review the paths and choose
+**Trust these paths and connect**. No experimental launch flags or manually typed paths are needed
+in the normal detected-installation case. Follow the [daily-use guide](local-claude-cli.md),
 including explicit path trust and per-Write review. Existing conversations do not change backends.
+The composer identifies its actual backend/model. Cross-provider selection opens a separate chat;
+a failed/cancelled change blocks only its source until completed or explicitly kept. Other chats
+remain usable. New follows the current conversation's model, not another conversation's choice.
 A previously published release may predate this integration; use the updated build and fully
 quit/reopen any older running instance. Billing, managed policy and complete crash containment
 remain unverified. Opt out with `--disable-local-claude-cli`.

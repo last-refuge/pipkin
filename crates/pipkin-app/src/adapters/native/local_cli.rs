@@ -150,6 +150,10 @@ fn target(target: &core::LocalCliInspectTarget) -> proto::LocalCliSetupTarget {
 pub(super) fn call(request: &core::LocalCliRequest) -> Call {
     use core::LocalCliRequest as R;
     match request {
+        R::Discover { saved, project } => Call::DiscoverLocalCli {
+            saved: saved.clone(),
+            project: project.clone(),
+        },
         R::Inspect {
             mode,
             executable,
@@ -487,6 +491,14 @@ impl Live {
     ) -> Result<core::LocalCliEvent, CallError> {
         use core::{LocalCliEvent as E, LocalCliRequest as R};
         match (request, result?) {
+            (R::Discover { .. }, Reply::LocalCliCandidates { paths })
+                if paths.len() <= 16
+                    && paths.iter().all(|p| {
+                        p.starts_with('/') && p.len() <= 4096 && !p.chars().any(char::is_control)
+                    }) =>
+            {
+                Ok(E::Discovered(paths))
+            }
             (
                 R::Inspect {
                     mode,

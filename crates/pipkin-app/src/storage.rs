@@ -32,7 +32,18 @@ pub const INJECTED_FAILURE: &str = "injected write failure";
 pub const DEMO_NAMESPACE: &str = "demo";
 
 /// Preference keys that refer to backend-owned identities rather than to the application.
-const SESSION_PREF_KEYS: [&str; 3] = ["selected_project", "selected_conversation", "model"];
+const SESSION_PREF_KEYS: [&str; 10] = [
+    "selected_project",
+    "selected_conversation",
+    "model",
+    "cli_executable",
+    "cli_model",
+    "cli_mode",
+    "conversation_backend", // read-only migration input; new saves clear it
+    "provider_model",
+    "pending_provider_models",
+    "cli_provider_configured",
+];
 
 const MIGRATIONS: &[&str] = &[
     "CREATE TABLE prefs (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -245,9 +256,9 @@ enum Msg {
         rev: u64,
         ack: Ack,
     },
-    Prefs(Prefs),
+    Prefs(Box<Prefs>),
     SetupCompletion {
-        prefs: Prefs,
+        prefs: Box<Prefs>,
         ack: Ack,
     },
     Goal {
@@ -516,6 +527,9 @@ impl Storage {
             .map_err(sql_err)?;
         for row in rows {
             let (key, value) = row.map_err(sql_err)?;
+            if SESSION_PREF_KEYS.contains(&key.as_str()) {
+                continue;
+            }
             if let Ok(v) = serde_json::from_str::<Value>(&value) {
                 apply_pref(&mut prefs, &key, &v);
             }
@@ -532,6 +546,40 @@ impl Storage {
             let (key, value) = row.map_err(sql_err)?;
             if let Ok(v) = serde_json::from_str::<Value>(&value) {
                 apply_pref(&mut prefs, &key, &v);
+            } else if key == "provider_model" || key == "pending_provider_models" {
+                prefs.provider_model = Some(pipkin_core::ProviderModel::Unsupported);
+                prefs
+                    .pending_provider_models
+                    .insert(0, pipkin_core::ProviderModel::Unsupported);
+            }
+        }
+        let has_provider_pref: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM session_prefs WHERE namespace=?1 AND key='provider_model')", [&self.namespace], |r| r.get(0)).map_err(sql_err)?;
+        if !has_provider_pref {
+            let legacy: Option<String> = conn.query_row("SELECT value FROM session_prefs WHERE namespace=?1 AND key='conversation_backend'", [&self.namespace], |r| r.get(0)).ok();
+            if let Some(legacy) = legacy {
+                let value = serde_json::from_str::<Value>(&legacy).unwrap_or(json!("unsupported"));
+                prefs.provider_model = match value.as_str() {
+                    Some("localClaudeCli") => {
+                        Some(pipkin_core::ProviderModel::ClaudeCli(prefs.cli_model))
+                    }
+                    Some("nativeAgent") => {
+                        prefs.model.clone().map(pipkin_core::ProviderModel::Native)
+                    }
+                    _ if value.is_null() => None,
+                    _ => Some(pipkin_core::ProviderModel::Unsupported),
+                };
+                if matches!(
+                    prefs.provider_model,
+                    Some(
+                        pipkin_core::ProviderModel::ClaudeCli(_)
+                            | pipkin_core::ProviderModel::Unsupported
+                    )
+                ) && let Some(id) = prefs.selected_conversation
+                {
+                    prefs
+                        .pending_provider_models
+                        .insert(id.0, prefs.provider_model.clone().unwrap());
+                }
             }
         }
         let mut drafts = conn
@@ -758,6 +806,7 @@ impl Storage {
         self.journal_intent_with_origin(
             conversation,
             PendingIntent {
+                provider_changed: false,
                 request,
                 origin: IntentOrigin::Draft,
                 text: text.into(),
@@ -819,7 +868,7 @@ impl Storage {
     }
 
     pub fn save_prefs(&self, prefs: &Prefs) {
-        if self.send(Msg::Prefs(prefs.clone())).is_err() {
+        if self.send(Msg::Prefs(Box::new(prefs.clone()))).is_err() {
             log::warn!("preferences write dropped: storage busy or closed");
         }
     }
@@ -830,7 +879,7 @@ impl Storage {
         ack: impl FnOnce(Result<(), String>) + Send + 'static,
     ) {
         let msg = Msg::SetupCompletion {
-            prefs,
+            prefs: Box::new(prefs),
             ack: Box::new(ack),
         };
         if let Err(Msg::SetupCompletion { ack, .. }) = self.send(msg) {
@@ -1686,6 +1735,41 @@ fn write_prefs(conn: &mut Connection, ns: &str, p: &Prefs) -> Result<(), String>
             json!(p.selected_conversation.map(|i| i.0)),
         ),
         ("model", json!(p.model)),
+        ("conversation_backend", Value::Null),
+        (
+            "provider_model",
+            p.provider_model
+                .as_ref()
+                .map(provider_model_json)
+                .unwrap_or(Value::Null),
+        ),
+        (
+            "pending_provider_models",
+            Value::Object(
+                p.pending_provider_models
+                    .iter()
+                    .map(|(id, model)| (id.to_string(), provider_model_json(model)))
+                    .collect(),
+            ),
+        ),
+        ("cli_provider_configured", json!(p.cli_provider_configured)),
+        ("cli_executable", json!(p.cli_executable)),
+        (
+            "cli_mode",
+            json!(match p.cli_mode {
+                pipkin_core::CliMode::ChatOnly => "chatOnly",
+                pipkin_core::CliMode::RestrictedWrite => "restrictedWrite",
+                pipkin_core::CliMode::Unsupported => "unsupported",
+            }),
+        ),
+        (
+            "cli_model",
+            json!(match p.cli_model {
+                pipkin_core::CliModel::Haiku => "haiku",
+                pipkin_core::CliModel::Sonnet => "sonnet",
+                pipkin_core::CliModel::Opus => "opus",
+            }),
+        ),
     ];
     let tx = conn.transaction().map_err(sql_err)?;
     for (key, value) in entries {
@@ -1705,6 +1789,34 @@ fn write_prefs(conn: &mut Connection, ns: &str, p: &Prefs) -> Result<(), String>
         .map_err(sql_err)?;
     }
     tx.commit().map_err(sql_err)
+}
+
+fn provider_model_json(model: &pipkin_core::ProviderModel) -> Value {
+    use pipkin_core::{CliModel, ProviderModel};
+    match model {
+        ProviderModel::Native(id) => json!({"provider":"native", "model":id}),
+        ProviderModel::ClaudeCli(alias) => {
+            json!({"provider":"claudeCli", "model":match alias { CliModel::Haiku => "haiku", CliModel::Sonnet => "sonnet", CliModel::Opus => "opus" }})
+        }
+        ProviderModel::Unsupported => json!({"provider":"unsupported"}),
+    }
+}
+fn parse_provider_model(v: &Value) -> pipkin_core::ProviderModel {
+    use pipkin_core::{CliModel, ProviderModel};
+    match (
+        v.get("provider").and_then(Value::as_str),
+        v.get("model").and_then(Value::as_str),
+    ) {
+        (Some("native"), Some(id))
+            if !id.is_empty() && id.len() <= 4096 && !id.chars().any(char::is_control) =>
+        {
+            ProviderModel::Native(id.into())
+        }
+        (Some("claudeCli"), Some("haiku")) => ProviderModel::ClaudeCli(CliModel::Haiku),
+        (Some("claudeCli"), Some("sonnet")) => ProviderModel::ClaudeCli(CliModel::Sonnet),
+        (Some("claudeCli"), Some("opus")) => ProviderModel::ClaudeCli(CliModel::Opus),
+        _ => ProviderModel::Unsupported,
+    }
 }
 
 fn apply_pref(p: &mut Prefs, key: &str, v: &Value) {
@@ -1734,6 +1846,51 @@ fn apply_pref(p: &mut Prefs, key: &str, v: &Value) {
         "selected_project" => p.selected_project = v.as_u64().map(ProjectId),
         "selected_conversation" => p.selected_conversation = v.as_u64().map(ConversationId),
         "model" => p.model = v.as_str().map(str::to_string),
+        "provider_model" => {
+            p.provider_model = if v.is_null() {
+                None
+            } else {
+                Some(parse_provider_model(v))
+            }
+        }
+        "pending_provider_models" => {
+            p.pending_provider_models = v
+                .as_object()
+                .filter(|m| m.len() <= 1024)
+                .and_then(|rows| {
+                    rows.iter()
+                        .map(|(id, model)| {
+                            id.parse::<u64>()
+                                .ok()
+                                .map(|id| (id, parse_provider_model(model)))
+                        })
+                        .collect::<Option<std::collections::BTreeMap<_, _>>>()
+                })
+                .unwrap_or_else(|| [(0, pipkin_core::ProviderModel::Unsupported)].into());
+        }
+        "cli_provider_configured" => p.cli_provider_configured = v.as_bool().unwrap_or(false),
+        "cli_executable" => {
+            p.cli_executable = v
+                .as_str()
+                .filter(|s| {
+                    s.starts_with('/') && s.len() <= 4096 && !s.chars().any(char::is_control)
+                })
+                .map(str::to_owned)
+        }
+        "cli_mode" => {
+            p.cli_mode = match v.as_str() {
+                Some("chatOnly") => pipkin_core::CliMode::ChatOnly,
+                Some("restrictedWrite") => pipkin_core::CliMode::RestrictedWrite,
+                _ => pipkin_core::CliMode::Unsupported,
+            }
+        }
+        "cli_model" => {
+            p.cli_model = match v.as_str() {
+                Some("haiku") => pipkin_core::CliModel::Haiku,
+                Some("opus") => pipkin_core::CliModel::Opus,
+                _ => pipkin_core::CliModel::Sonnet,
+            }
+        }
         _ => {}
     }
 }
@@ -1746,6 +1903,73 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn malformed_connection_choice_never_falls_back_to_native() {
+        let (_dir, path) = tmp_db();
+        let storage = Storage::open(&path, "test:cli-choice").unwrap();
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("INSERT INTO session_prefs(namespace,key,value) VALUES ('test:cli-choice','conversation_backend','broken json')", []).unwrap();
+        assert_eq!(
+            storage.load_all().unwrap().prefs.provider_model,
+            Some(pipkin_core::ProviderModel::Unsupported)
+        );
+        let other = Storage::open(&path, "other:profile").unwrap();
+        assert_eq!(other.load_all().unwrap().prefs.provider_model, None);
+        other.shutdown();
+        storage.shutdown();
+        let mut prefs = Prefs::default();
+        apply_pref(
+            &mut prefs,
+            "provider_model",
+            &json!({"provider":"future-backend"}),
+        );
+        assert_eq!(
+            prefs.provider_model,
+            Some(pipkin_core::ProviderModel::Unsupported)
+        );
+        apply_pref(
+            &mut prefs,
+            "provider_model",
+            &json!({"provider":"claudeCli","model":"haiku"}),
+        );
+        assert_eq!(
+            prefs.provider_model,
+            Some(pipkin_core::ProviderModel::ClaudeCli(
+                pipkin_core::CliModel::Haiku
+            ))
+        );
+        apply_pref(&mut prefs, "pending_provider_models", &json!("invalid"));
+        assert!(prefs.pending_provider_models.contains_key(&0));
+    }
+
+    #[test]
+    fn legacy_cli_switch_migrates_to_model_preference_and_only_its_selected_source() {
+        let (_dir, path) = tmp_db();
+        let storage = Storage::open(&path, "test:migrate-provider").unwrap();
+        let conn = Connection::open(&path).unwrap();
+        for (key, value) in [
+            ("conversation_backend", json!("localClaudeCli")),
+            ("selected_conversation", json!(42)),
+            ("cli_model", json!("opus")),
+        ] {
+            conn.execute("INSERT INTO session_prefs(namespace,key,value) VALUES ('test:migrate-provider',?1,?2)", params![key, value.to_string()]).unwrap();
+        }
+        let prefs = storage.load_all().unwrap().prefs;
+        assert_eq!(
+            prefs.provider_model,
+            Some(pipkin_core::ProviderModel::ClaudeCli(
+                pipkin_core::CliModel::Opus
+            ))
+        );
+        assert_eq!(prefs.pending_provider_models.len(), 1);
+        assert!(prefs.pending_provider_models.contains_key(&42));
+        storage.save_prefs(&prefs);
+        storage.shutdown();
+        let storage = Storage::open(&path, "test:migrate-provider").unwrap();
+        assert_eq!(storage.load_all().unwrap().prefs, prefs);
+        storage.shutdown();
+    }
 
     fn tmp_db() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
@@ -1984,6 +2208,18 @@ mod tests {
             selected_project: Some(ProjectId(2)),
             selected_conversation: Some(ConversationId(11)),
             model: Some("pi-opus".into()),
+            provider_model: Some(pipkin_core::ProviderModel::ClaudeCli(
+                pipkin_core::CliModel::Haiku,
+            )),
+            pending_provider_models: [(
+                42,
+                pipkin_core::ProviderModel::ClaudeCli(pipkin_core::CliModel::Opus),
+            )]
+            .into(),
+            cli_provider_configured: true,
+            cli_executable: Some("/opt/claude".into()),
+            cli_model: pipkin_core::CliModel::Haiku,
+            cli_mode: pipkin_core::CliMode::RestrictedWrite,
         };
         {
             let s = Storage::open(&path, DEMO_NAMESPACE).unwrap();
@@ -2277,6 +2513,7 @@ mod tests {
         s.journal_intent_with_origin(
             ConversationId(conv),
             PendingIntent {
+                provider_changed: false,
                 request: RequestId(request.into()),
                 origin: IntentOrigin::Draft,
                 text: text.into(),
@@ -2435,6 +2672,7 @@ mod tests {
                 s.journal_intent_with_origin(
                     ConversationId(1),
                     PendingIntent {
+                        provider_changed: false,
                         request: request.clone(),
                         origin,
                         text: text.clone(),

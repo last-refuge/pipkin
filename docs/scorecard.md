@@ -1,5 +1,120 @@
 # Scorecard
 
+## CLI minimum-version policy (current)
+
+- **User-reported acceptance:** the user reports that everything works and they can test, and
+  requested committing all pending changes to main. This is not a new formal live qualification.
+  Historical installation receipts marked uncommitted describe their build-time state.
+- **Commit gates:** full219 passed workspace tests, strict all-target Clippy, fmt/diff, source-setup
+  contracts and guard37. Gate217 had an unresolved intermittent creation-recovery lookup timeout;
+  five isolated repeats218 passed. Test-only diagnostics added, no production behavior changed.
+  See `fixtures/claude-cli-setup/commit-checks.md`.
+- **Changed at user request:** stable CLI2.1.299 or newer is accepted numerically. This supersedes
+  the exact-version blocker below; it is not a claim of live qualification for every newer version.
+- **Preserved:** explicit scoped trust, required capabilities, normal login, immutable actual-version
+  bindings, fresh per-turn checks, individual Write review and no native/API fallback.
+- **Measured:** targeted213 passed version/preflight/setup tests and7 app fake-CLI workflows,
+  including fake2.1.301 fresh/resumed turns and provider switching. Full214 passed workspace tests
+  (UI198), strict all-target Clippy, fmt/diff, guard37 and app build. Package215/install216 activated
+  `1.1.0-native-ffe95dc723a1`; isolated candidate/installed probes and synthetic installed workflow
+  passed. Prior versions retained and running user session untouched; fully quit/reopen.
+- **Unverified:** real2.1.301 runtime compatibility, native pointer/IME/accessibility and all prior
+  billing/managed-policy/containment limits. No new live prompts; original ledger untouched.
+  Evidence: `fixtures/claude-cli-setup/minimum-version-checks.md`.
+
+## CLI setup dialog / continuation correction
+
+- **Reproduced:**207 pointer-click test dispatched a setup action but also dismissed the dialog.
+  Guided setup was missing modal occlusion; earlier tests missed the closing overlay.
+- **Corrected:** guided/advanced panels occlude the backdrop; inside clicks preserve the dialog,
+  outside clicks still close it. Connections continues an existing model-picker setup instead of
+  replacing its purpose with provider-only configuration. Rediscovery clears old consent.
+- **Measured:**209 passed 40 core setup and19 UI setup tests, including pointer interactions.
+  Full210 passed workspace tests (UI198), strict all-target Clippy, fmt/diff, guard37 and build.
+  Package211/install212 activated `1.1.0-native-0dded419540c`; candidate/installed offline probes
+  and synthetic installed workflow passed. All prior versions retained, running session untouched;
+  fully quit/reopen. No live CLI execution; exact2.1.299 policy unchanged. Native
+  interaction/accessibility verification is not claimed. Evidence:
+  `fixtures/claude-cli-setup/dialog-flow-checks.md`.
+
+## First-class CLI provider integration (current)
+
+- **Implemented:** normal typed provider/model catalog; independent Connections configuration;
+  source-specific unfinished-selection guards; immutable cross-provider/CLI-alias creation;
+  authoritative model labels; exact native creation receipts; stable picker rows; legacy migration.
+  New follows the current conversation, not a global exclusive backend switch.
+- **Measured:** final full204 passed workspace tests (UI197), strict all-target Clippy, fmt/diff, guard37
+  and app build. Fake CLI fresh/resume, native switch and CLI return use the normal typed catalog.
+  Source guards, journal races, exact receipts, stable picker rows and preference migration pass.
+  Blank workspace/restart cannot auto-select an unrelated row when an explicit choice has no
+  available saved target; explicit navigation to another provider stays available.
+- **Failures corrected:**191 hidden native catalog;192/193 absent new native guard-index row;
+  195 ordinary New blocking its earlier source prompt;197 old UI fixture missing creation receipt.
+  200/201 exposed a fake-disconnect fixture ordering assumption: post-review disconnect now uses
+  a barrier, with immediate disconnect separately tested. Three focused repetitions each and
+  full202 passed without changing production execution policy. See
+  `fixtures/claude-cli-setup/provider-checks.md` for details and retained failure evidence.
+- **Installed:** package205/install206 activated `1.1.0-native-685ecb881596`; all four prior
+  versions retained, previous binary hash unchanged, running user session left untouched.
+  Candidate/installed offline probes and the installed synthetic-provider workflow passed.
+  Fully quit/reopen to use it. Evidence: `fixtures/claude-cli-setup/provider-installation-observation.json`.
+- **Limits:** no live prompts; ten-run ledger unchanged. Native picker,
+  focus, accessibility and live CLI verification are not claimed. Exact2.1.299 policy remains.
+
+## Connections-only global switch (superseded; rejected abstraction)
+
+- **Observed:** read-only normal-profile metadata showed no CLI conversations and recent native
+  GPT sessions (no transcript/credential reads). Source allowed the old native composer after
+  unfinished/failed CLI setup; ordinary New also did not retain a CLI connection choice.
+- **Implemented:** setup/reapproval/recovery only in Settings → Connections; no dedicated sidebar,
+  palette setup action or Ctrl+N chooser. Explicit, namespace-isolated routing choice controls New.
+  Failed/cancelled setup does not enable a mismatched composer; the same guard runs after durable
+  intent persistence. Unknown saved choices fail closed. The composer identifies the authoritative
+  backend. Existing identities, running work and per-Write approvals are unchanged.
+- **Measured so far:** core routing tests passed; real core+adapter+fake CLI fresh/resume passed
+  in184 with a configured native model and a native provider that panics if invoked. Native model
+  preference remained unchanged, CLI intents omitted native model overrides, and no native calls
+  occurred.184 also caught opening Settings on Appearance rather than Connections; opening order
+  was corrected, and the regression remains in the suite.182 caught a fixture attempting to
+  reapprove Sonnet with its old Opus manual draft; reconnect now tests authoritative saved hints.
+- **Full gates:**185 passed workspace tests, strict all-target Clippy, fmt/diff, guard37 and app
+  build (UI197). Persistence checks include namespace isolation and malformed-choice fail-closed.
+  Package186/install187 updated the normal launcher to `1.1.0-native-d43630fc7e1d`, preserving the
+  previous binary and running session. Candidate/installed offline probes and the installed
+  synthetic-provider workflow passed. Evidence: `fixtures/claude-cli-setup/connections-installation-observation.json`.
+  Real native interaction/live CLI verification of this correction remains unverified. The current `latest` link still resolves into2.1.301; exact2.1.299 support is
+  unchanged. No extra live calls.
+
+## Initial guided Claude Code redesign (entry points superseded above)
+
+- **Implemented:** normal New conversation now offers Claude Code local CLI separately from
+  native providers. Engine-owned bounded filesystem discovery, selected-project capture, saved
+  path/model hints, model/tool selectors and native path pickers replace required manual paths.
+  One scoped confirmation coordinates metadata Check and journaled Create/Return; no prompt,
+  Write approval, retry, backend migration or persistent grant is implied. Protocol is now40.
+- **Measured:** full177 passed workspace tests, strict all-target Clippy, fmt/diff, guard37 and
+  app build (UI196). Fake-CLI end-to-end setup discovers from a known installation location,
+  inspects without executing, requires confirmation, performs three metadata probes and creates
+  exactly the captured conversation with no inference. Core tests cover ambiguity, stale input,
+  unknown checks, cancellation, superseded confirmation, unsupported saved models and reconnect.
+  Headless GPUI checks chooser behavior, explicit visible confirmation and stale folder pickers.
+- **Failed then addressed:**172 exposed a stale protocol39 assertion after the protocol40 bump;
+  it now checks40 and discovery serialization. Strict lint findings were corrected.176 had an
+  existing fake-preflight executable-busy failure; three isolated repeats and full177 passed.
+  The cause of that transient busy executable is not established or claimed fixed by rerunning.
+- **Observed compatibility blocker:** the user's installed `latest` symlink now resolves into
+  Claude2.1.301. The exact2.1.299 qualification policy is unchanged; current-version login/live
+  execution was not probed or qualified. New setup reports supported-version/login failures
+  through closed actionable categories, without raw CLI output.
+- **Unverified:** real native picker/focus/accessibility interaction for the new flow and live
+  CLI qualification of this redesign. No additional live Claude CLI prompt was submitted; the
+  original ten-entry ledger remains unchanged. Package/install evidence is recorded separately
+  under `fixtures/claude-cli-setup/`.
+- **Installed:** package178 and install179 updated the normal launcher to
+  `1.1.0-native-c0d0d0f1b997`; prior executable retained unchanged, running session/profile left
+  untouched. Offline probes and installed synthetic migration/coding/restart/archive/replay
+  checks passed. Fully quit/reopen to use the redesigned interface.
+
 ## Claude CLI daily-use default and local installation (2026-10-15)
 
 - **Implemented at the user's request:** normal owned desktop child/in-process engines enable

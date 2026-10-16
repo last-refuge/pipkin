@@ -1,4 +1,6 @@
 use super::*;
+#[path = "guided_tests.rs"]
+mod guided_tests;
 use gpui::{AppContext as _, EntityInputHandler, TestAppContext, VisualTestContext};
 use pipkin_core::*;
 
@@ -82,6 +84,45 @@ fn reply(s: &mut AppState, out: Outcome, event: LocalCliEvent) {
 }
 
 #[test]
+fn composer_backend_label_is_authoritative_not_the_requested_connection() {
+    let mut s = AppState::new(
+        Bootstrap {
+            projects: vec![Project {
+                id: ProjectId(1),
+                name: "project".into(),
+                path: "/project".into(),
+            }],
+            models: vec![],
+            conversations: vec![(ConversationId(1), ProjectId(1), "chat".into(), 1)],
+            now: 1,
+        },
+        Prefs::default(),
+    );
+    s.mode = Mode::Real;
+    s.selected = Some(ConversationId(1));
+    s.prefs.provider_model = Some(ProviderModel::ClaudeCli(CliModel::Sonnet));
+    assert!(conversation_backend_label(&s).contains("unverified"));
+    for (profile, expected) in [
+        (ExecutionProfile::NativeAgent, "Pipkin providers"),
+        (
+            ExecutionProfile::LocalCliChatOnly,
+            "Claude Code · local CLI",
+        ),
+    ] {
+        s.apply_event(BackendEvent {
+            conversation: ConversationId(1),
+            generation: s.conversations[0].generation,
+            op: None,
+            kind: EventKind::ExecutionContext {
+                profile,
+                execution_blocked: None,
+            },
+        });
+        assert!(conversation_backend_label(&s).contains(expected));
+    }
+}
+
+#[test]
 fn availability_labels_and_demo_marker_are_honest() {
     let mut s = state();
     assert!(s.local_cli_availability().begin);
@@ -103,13 +144,9 @@ fn availability_labels_and_demo_marker_are_honest() {
     assert!(!s.local_cli_availability().begin);
     assert!(availability_label(&s).contains("Demo · simulated agent"));
     let commands = super::super::commands::build(&s, None);
-    assert!(
-        !commands
-            .iter()
-            .find(|c| c.title == NEW_LABEL)
-            .unwrap()
-            .enabled
-    );
+    assert!(!commands.iter().any(|c| c.title == NEW_LABEL
+        || c.title == REAPPROVE_LABEL
+        || c.title == "Resume Local CLI setup…"));
     assert!(BILLING.contains("unverified") && BILLING.contains("already-enabled extra usage"));
     assert!(LEASE.contains("five minutes after Inspect"));
     assert!(LEASE.contains("stops active work") && LEASE.contains("fresh conversation"));
@@ -258,6 +295,8 @@ fn reapproval_captures_backend_id_and_metadata_never_unlocks_composer(cx: &mut T
         w.open_local_cli(true, window, cx);
         assert!(matches!(&w.state(cx).local_cli.target, Some(LocalCliTarget::Existing { conversation, session, .. }) if *conversation == ConversationId(41) && session.0 == "exact-backend-uuid"));
         w.model.update(cx, |m, cx| {
+            // Retire the new read-only hint request before simulating a metadata-only label.
+            m.state.dispatch(CoreCommand::LocalCli(C::Cancel));
             m.state.local_cli.stage = LocalCliStage::Verified;
             cx.notify();
         });
@@ -521,7 +560,7 @@ fn core_capabilities_gate_picker_shortcuts_attachments_and_cli_labels(cx: &mut T
                 w.open_overlay(overlay, window, cx);
                 assert_eq!(
                     w.overlay,
-                    if caps.model_settings {
+                    if overlay != Overlay::Effort || caps.model_settings {
                         overlay
                     } else {
                         Overlay::None
@@ -550,7 +589,7 @@ fn core_capabilities_gate_picker_shortcuts_attachments_and_cli_labels(cx: &mut T
                     .find(|c| c.title == "Choose model…")
                     .unwrap()
                     .enabled,
-                caps.model_settings
+                w.state(cx).provider_picker_available()
             );
             assert_eq!(w.state(cx).prefs.model.as_deref(), Some("native-model"));
         });

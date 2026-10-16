@@ -1,4 +1,6 @@
 use pipkin_core::*;
+#[path = "execution_profiles/connection_choice.rs"]
+mod connection_choice;
 mod support;
 
 const A: ConversationId = ConversationId(1);
@@ -421,7 +423,11 @@ fn cli_requires_ready_text_without_attachments_and_keeps_safe_actions() {
     let mut s = state();
     context(&mut s, ExecutionProfile::LocalCliChatOnly, true);
     no_execution(&s.dispatch(Command::Submit));
-    assert!(s.availability().load_older && s.availability().new_conversation);
+    assert!(s.availability().load_older);
+    assert!(
+        !s.availability().new_conversation,
+        "missing CLI model identity cannot default New to native"
+    );
     s.dispatch(Command::EditDraft("new draft".into()));
     assert_eq!(s.current().unwrap().draft.text, "new draft");
     assert!(
@@ -430,15 +436,7 @@ fn cli_requires_ready_text_without_attachments_and_keeps_safe_actions() {
             .iter()
             .any(|e| matches!(e, Effect::Backend(BackendRequest::LoadOlder { .. })))
     );
-    assert!(
-        s.dispatch(Command::NewConversation)
-            .effects
-            .iter()
-            .any(|e| matches!(
-                e,
-                Effect::Backend(BackendRequest::CreateConversation { .. })
-            ))
-    );
+    no_execution(&s.dispatch(Command::NewConversation));
     context(&mut s, ExecutionProfile::LocalCliChatOnly, false);
     s.dispatch(Command::EditDraft("   ".into()));
     assert!(!s.availability().submit);

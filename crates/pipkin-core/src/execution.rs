@@ -33,8 +33,10 @@ impl ExecutionProfile {
         match command {
             Command::Submit | Command::Cancel | Command::RetryStop => self.is_local_cli(),
             // Local editing/navigation, historical reads, app configuration and creation of
-            // a fresh native conversation do not execute work in this conversation.
+            // a fresh conversation do not execute work in this conversation.
             Command::LocalCli(_)
+            | Command::SelectProviderModel(_)
+            | Command::KeepConversationProvider
             | Command::SelectProject(_)
             | Command::SelectConversation(_)
             | Command::NewConversation
@@ -111,6 +113,11 @@ impl ExecutionProfile {
 }
 
 impl AppState {
+    /// Authoritative conversation identity; unresolved real contexts are unsupported, not native.
+    pub fn current_execution_profile(&self) -> Option<ExecutionProfile> {
+        self.current().map(|c| c.execution_profile(self.mode))
+    }
+
     /// Use for model/thinking controls and attachment affordances, not UI-side profile rules.
     /// Unknown real contexts fail closed; Demo retains its native simulated capabilities.
     pub fn execution_capabilities(&self) -> ExecutionCapabilities {
@@ -149,6 +156,11 @@ impl AppState {
         attachments: usize,
         out: &mut Outcome,
     ) -> bool {
+        if self.provider_selection_pending(id) {
+            self.notice = Some("Not sent: this conversation has an unfinished provider change. Complete it or explicitly keep the original provider; no fallback was used.".into());
+            out.notes.push(Note::Other);
+            return true;
+        }
         let allowed = self.conversation(id).is_some_and(|c| {
             c.execution_profile(self.mode)
                 .allows_intent(origin, text, attachments)

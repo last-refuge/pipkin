@@ -377,6 +377,13 @@ fn qualify(exe: &str, mode: &str, budget: &Path, summary: &mut Value) -> Result<
         },
     )?;
     summary["metadata_verified"] = json!(true);
+    let Reply::LocalCliSession(view) = rt.call(Call::LocalCliSessionStatus {
+        session: session.clone(),
+    })?
+    else {
+        return Err("unexpected CLI version identity reply".into());
+    };
+    summary["cli_version"] = json!(view.cli_version);
     let result = if mode == "inspect" {
         Ok(())
     } else {
@@ -463,7 +470,7 @@ fn main() {
         .create_new(true)
         .open(&output)
         .expect("new qualification summary only");
-    let mut summary = json!({"cli_version":pipkin_engine::execution::claude_cli::policy::QUALIFIED_VERSION,"mode":args[4],"prompt_attempts":0,"outcomes":[],"billing_verified":false,"crash_containment_verified":false,"general_production_enabled":false,"runtime_host_opts_enabled_for_qualification":true});
+    let mut summary = json!({"cli_version":null,"qualification_baseline":pipkin_engine::execution::claude_cli::policy::QUALIFIED_VERSION,"mode":args[4],"prompt_attempts":0,"outcomes":[],"billing_verified":false,"crash_containment_verified":false,"general_production_enabled":false,"runtime_host_opts_enabled_for_qualification":true});
     let result = qualify(&args[2], &args[4], Path::new(&args[6]), &mut summary);
     summary["passed"] = json!(result.is_ok());
     if let Err(reason) = &result {

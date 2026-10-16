@@ -285,8 +285,7 @@ impl Workspace {
                 .on_click(move |window, cx| {
                     this.update(cx, |this, cx| {
                         this.close_panel(window, cx);
-                        this.dispatch(Command::NewConversation, cx);
-                        this.focus_composer(window, cx);
+                        this.begin_conversation(window, cx);
                     })
                 })
         };
@@ -454,7 +453,6 @@ impl Workspace {
                             .child(new_btn),
                     ),
             )
-            .child(self.local_cli_entry("nav-local-cli-new", false, cx))
             .when(search_visible, |d| {
                 d.child(
                     div().px(px(12.0)).child(

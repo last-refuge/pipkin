@@ -219,6 +219,18 @@ impl Model {
         cx.notify();
     }
 
+    pub fn native_conversation_created(
+        &mut self,
+        request: &pipkin_core::RequestId,
+        conversation: pipkin_core::ConversationId,
+        cx: &mut Context<Self>,
+    ) {
+        let out = self
+            .state
+            .native_conversation_created(request, conversation);
+        self.finish(out, cx);
+    }
+
     pub fn engine_model_selected(&mut self, model: Option<String>, cx: &mut Context<Self>) {
         self.engine_selected_model = model.clone();
         self.mutate(|state| state.set_engine_model(model), cx);

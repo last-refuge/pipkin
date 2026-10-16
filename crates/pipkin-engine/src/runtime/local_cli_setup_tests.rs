@@ -93,10 +93,48 @@ fn expire(shared: &Shared, setup: &str) {
 }
 
 #[test]
+fn setup_failures_expose_only_closed_actionable_login_and_version_categories() {
+    for (from, to, expected) in [
+        (
+            "2.1.299 (Claude Code)",
+            "2.1.298 (Claude Code)",
+            VERSION_FAILURE,
+        ),
+        ("\"loggedIn\":true", "\"loggedIn\":false", LOGIN_FAILURE),
+        (
+            "2.1.299 (Claude Code)",
+            "PRIVATE_UNTRUSTED_ERROR_BODY",
+            VERSION_FAILURE,
+        ),
+    ] {
+        let fake = Fake::new();
+        let script = fs::read_to_string(&fake.executable)
+            .unwrap()
+            .replace(from, to);
+        fs::write(&fake.executable, script).unwrap();
+        let engine = fake.engine();
+        let inspected = fake.inspect(engine.handle.shared(), 1);
+        let checked = check(engine.handle.shared(), 1, &inspected.setup);
+        assert_eq!(checked.stage, Stage::Failed);
+        assert_eq!(checked.reason.as_deref(), Some(expected));
+        assert!(
+            !checked
+                .reason
+                .unwrap()
+                .contains("PRIVATE_UNTRUSTED_ERROR_BODY")
+        );
+    }
+}
+
+#[test]
 #[cfg(target_os = "linux")]
 fn public_coding_setup_is_immutable_metadata_and_chat_switch_cannot_enable_it() {
     use pipkin_engine_protocol::Call;
     let fake = Fake::new();
+    let script = fs::read_to_string(&fake.executable)
+        .unwrap()
+        .replace("2.1.299 (Claude Code)", "2.1.301 (Claude Code)");
+    fs::write(&fake.executable, script).unwrap();
     let provider = Scripted::echo("must not execute");
     let mut config = fake.fixture.config();
     config.enable_local_claude_cli = true;
@@ -161,6 +199,7 @@ fn public_coding_setup_is_immutable_metadata_and_chat_switch_cannot_enable_it() 
         let shared = engine.handle.shared().clone();
         let binding = shared.store.cli_binding(id).unwrap().unwrap();
         assert_eq!(binding_mode(&binding.identity.launch_policy), mode);
+        assert_eq!(binding.identity.cli_version, "2.1.301");
         let existing = || Target::Existing {
             session: id.into(),
             model: LocalCliModel::Sonnet,
@@ -190,6 +229,7 @@ fn public_coding_setup_is_immutable_metadata_and_chat_switch_cannot_enable_it() 
             panic!()
         };
         assert_eq!(status.mode, mode);
+        assert_eq!(status.cli_version, "2.1.301");
         assert_eq!(status.summary.local_cli_mode, Some(mode));
         assert_eq!(engine.snapshot(id).summary.local_cli_mode, Some(mode));
         let Reply::Sessions { sessions } = engine.call(Call::ListSessions).unwrap() else {

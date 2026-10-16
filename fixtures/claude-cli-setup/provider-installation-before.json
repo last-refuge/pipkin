@@ -1,0 +1,12 @@
+{
+  "executable": "/home/jason/.local/lib/pipkin/versions/1.1.0-native-d43630fc7e1d/usr/bin/pipkin",
+  "sha256": "d43630fc7e1d350f51a429c1b7f713798c7976e9bfa73aa1a174dce3c97781f7",
+  "version": "pipkin 1.1.0 (source 6e8c85b459f30d1e351d775d1c3fe763dc0b953b, dirty: true, engine native 1.1.0, engine protocol 40, engine schema 25, schema 10)",
+  "versions": [
+    "1.1.0-native-03e216f64579",
+    "1.1.0-native-c0d0d0f1b997",
+    "1.1.0-native-c820caa101f3",
+    "1.1.0-native-d43630fc7e1d"
+  ],
+  "live_budget_sha256": "bf794518e35d7f1ce3a50b3058c4191bb9401e568fc645d77e10b0f404cf1f22"
+}

@@ -72,6 +72,7 @@ impl Workspace {
             return;
         }
         if self.overlay == Overlay::LocalCli
+            && (self.local_cli_advanced || !self.state(cx).local_cli.guided)
             && (self.local_cli_executable.read(cx).is_composing()
                 || self.local_cli_project.read(cx).is_composing())
         {

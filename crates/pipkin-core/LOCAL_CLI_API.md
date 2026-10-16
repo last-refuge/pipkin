@@ -14,9 +14,46 @@ Both may be reapproved, but a different mode still requires a fresh conversation
 
 ## Conversation capability handoff (review 47)
 
-UI model/thinking settings and attachment affordances use the pure **`AppState::execution_capabilities()`** query (`ExecutionCapabilities { model_settings, attachments }`). These are profile capabilities, not transient readiness: combine with existing availability/read-only state for enabled controls. Do not duplicate profile comparisons in UI. Both fields are false for CLI chat, unsupported profiles, no selection, and real conversations without an authoritative `ExecutionContext`. Demo retains simulated native capabilities. Native contexts retain model settings and attachments. Core also rejects adding attachments to restricted profiles; existing saved attachments remain removable and block CLI submission until removed.
+Native in-place model/effort and attachment capabilities use the pure **`AppState::execution_capabilities()`** query (`ExecutionCapabilities { model_settings, attachments }`). These are profile capabilities, not transient readiness: combine with existing availability/read-only state for enabled controls. Do not duplicate profile comparisons in UI. Both fields are false for CLI chat, unsupported profiles, no selection, and real conversations without an authoritative `ExecutionContext`. Demo retains simulated native capabilities. Native contexts retain model settings and attachments. Core also rejects adding attachments to restricted profiles; existing saved attachments remain removable and block CLI submission until removed.
 
 Catalog entries, restored caches, `Opened`, and history/status events do not grant execution capabilities. The core records receipt of a generation-correct, operation-free `ExecutionContext`; before that, real conversation commands fail closed (including MCP Test/Reconnect). Adapters must send this context for native sessions too. Explicit CLI submissions journal and send `model: None`, irrespective of saved native model preferences; those preferences are not changed.
+
+## Shared provider/model routing
+
+`provider_models()` combines native catalog entries and typed CLI aliases; `ProviderModel` never
+infers backend from string prefixes. `SelectProviderModel` uses the normal picker. Native model
+changes await scoped authoritative `ConversationModel`; cross-provider/CLI-alias changes create
+separate conversations without forwarding source text. Native creation selects only its correlated
+request/session receipt, never the newest catalog row. CLI retains immutable model/mode/tools.
+
+`BeginProviderSetup` configures/checks CLI only: it neither selects a provider nor creates a session.
+Pending selections are namespace-isolated per-source preferences, not authority. Failed/cancelled
+changes block only that source (including journal-delay release); `KeepConversationProvider` is an
+explicit opt-out. Other conversations remain usable. `next_provider_model()` follows the current
+conversation or its pending choice; only a blank workspace uses the last choice. Unknown identities
+fail closed. The former global `ConversationBackend` switch is removed, with read-only migration.
+
+Adapters publish generation/op-guarded `ConversationModel` after `ExecutionContext`; UI labels
+use that authoritative identity. While CLI is open, fetch the global native model catalog without
+applying its default to CLI. The open picker captures typed rows so catalog changes cannot retarget
+a selected index. Native thinking/attachment restrictions remain separate from picker availability.
+
+## Guided desktop setup (protocol 40)
+
+`BeginGuided` captures the current project and last CLI model preference, then issues a guarded
+`Discover` request. Engine-owned discovery is filesystem-only (saved choice, absolute PATH,
+bounded known installation locations); it never runs a shell, manager, CLI or login probe.
+One candidate proceeds to metadata-only Inspect; multiple candidates await explicit selection.
+`Configure` invalidates prior tickets/consent before inspecting the edited scope. File-picker
+results must match `LocalCliState::input_revision()` and the captured draft.
+
+`ConfirmAndConnect { setup }` explicitly approves BOTH visible canonical paths for the exact
+captured ticket. A nonpersisted one-shot continuation coordinates Check followed by one journaled
+Create or Return. Only a correlated successful Checked event can consume it; Status lookup cannot.
+Failure, cancellation, expiry, editing and disconnect retire the continuation. No prompt or Write
+approval is generated. `BeginGuidedExisting` reads saved hints and inspects them, without trust or
+CLI execution. Saved namespace-isolated executable/model/tool-mode preferences are suggestions,
+not grants. The manual APIs below remain available for advanced/recovery clients.
 
 ## Routing contract
 
@@ -40,6 +77,7 @@ activation and installed CLI/desktop qualification remain pending.
 
 | Core request | Native service | Success event |
 | --- | --- | --- |
+| `Discover { saved, project }` | DiscoverLocalCli | `Discovered(Vec<String>)` |
 | `Inspect { mode, executable, target }` | InspectLocalCli | `Inspected(LocalCliSetupView)` |
 | `Check { setup, trust_executable, trust_project }` | CheckLocalCli | `Checked(LocalCliSetupView)` |
 | `Status { setup }` | LocalCliSetupStatus | `Status(LocalCliSetupView)` |

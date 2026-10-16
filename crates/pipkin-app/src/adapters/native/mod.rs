@@ -996,7 +996,17 @@ impl Live {
 
     /// Re-read the models (for `session`, or the open one) and say which is selected.
     fn refresh_models(&mut self, worker: &mut Worker, session: Option<String>) {
-        let session = session.or_else(|| self.current.as_ref().map(|c| c.session.clone()));
+        let mut session = session.or_else(|| self.current.as_ref().map(|c| c.session.clone()));
+        // CLI's scoped Models view intentionally contains no native models. Keep the
+        // other providers in the shared picker without applying their default to CLI.
+        if session.as_ref().is_some_and(|id| {
+            self.sessions.iter().any(|(_, s)| {
+                &s.id == id
+                    && s.execution_backend != pipkin_engine_protocol::ExecutionBackend::NativeAgent
+            })
+        }) {
+            session = None;
+        }
         match self.call(Call::Models {
             session: session.clone(),
         }) {
@@ -1265,6 +1275,11 @@ impl Live {
                             current.generation,
                             mapping::execution_context(&self.index[&id]),
                         );
+                        worker.emit(
+                            id,
+                            current.generation,
+                            mapping::conversation_model(&self.index[&id]),
+                        );
                     }
                     (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
                 }
@@ -1355,7 +1370,18 @@ impl Live {
             Touched::HasOlder(has_older) => {
                 worker.emit(conversation, generation, EventKind::HasOlder(has_older))
             }
-            Touched::Model(model) => (worker.sink)(LifecycleEvent::ModelSelected(model)),
+            Touched::Model(model) => {
+                if let Some(summary) = self.index.get(&conversation) {
+                    let mut summary = summary.clone();
+                    summary.model = model.clone();
+                    worker.emit(
+                        conversation,
+                        generation,
+                        mapping::conversation_model(&summary),
+                    );
+                }
+                (worker.sink)(LifecycleEvent::ModelSelected(model));
+            }
             Touched::Lost => {
                 self.resync(worker);
             }
@@ -2436,19 +2462,42 @@ impl Live {
                     Err(error) => worker.notice(format!("Could not change effort: {error}")),
                 }
             }
-            BackendRequest::CreateConversation { cwd, request, .. } => {
-                match self.call(Call::CreateSession {
+            BackendRequest::CreateConversation {
+                cwd,
+                request,
+                model,
+                ..
+            } => {
+                let result = self.call(Call::CreateSession {
                     cwd,
-                    request: request.0,
-                }) {
-                    Ok(_) => {
+                    request: request.0.clone(),
+                });
+                match result {
+                    Ok(Reply::Session { summary }) if summary.execution_backend == pipkin_engine_protocol::ExecutionBackend::NativeAgent => {
+                        if let Some(model) = model {
+                            // Set only the exact returned native session before exposing it as the
+                            // selected new conversation. Never send CLI aliases to this operation.
+                            // Publish no UI selection yet, but populate the authoritative index
+                            // used by the shared native-execution guard for the new session.
+                            if self.refresh_sessions().is_err() {
+                                worker.notice("The conversation was created but its identity could not be refreshed. No message was sent.".into());
+                                return;
+                            }
+                            let confirmation = self.call(Call::SetModel { session: summary.id.clone(), model });
+                            if !matches!(confirmation, Ok(Reply::Ok)) {
+                                worker.notice("The conversation was created but its selected model could not be confirmed. No message was sent; inspect the conversation before continuing.".into());
+                                return;
+                            }
+                        }
                         if self.refresh_sessions().is_ok() {
+                            if let Some(conversation) = self.conversation_of(&summary.id) {
+                                (worker.sink)(LifecycleEvent::NativeConversationCreated { request, conversation });
+                            }
                             (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
                         }
                     }
-                    Err(error) => {
-                        worker.notice(format!("Could not create the conversation: {error}"))
-                    }
+                    Ok(_) => worker.notice("Could not confirm the created conversation's backend; no message was sent.".into()),
+                    Err(error) => worker.notice(format!("Could not create the conversation: {error}")),
                 }
             }
             BackendRequest::LoadOlder {
@@ -3159,6 +3208,11 @@ impl Live {
             conversation,
             generation,
             mapping::execution_context(&snapshot.summary),
+        );
+        worker.emit(
+            conversation,
+            generation,
+            mapping::conversation_model(&snapshot.summary),
         );
         let mirror = Mirror::new(snapshot);
         let mapped = transcript::map_entries_with_origin(

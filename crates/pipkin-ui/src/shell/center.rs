@@ -538,6 +538,8 @@ impl Workspace {
                 Some(live_activity(&cv.items, &cv.jobs, s.now())),
             )
         };
+        let backend_label = super::local_cli::conversation_backend_label(self.state(cx));
+        let connection_mismatch = self.state(cx).provider_selection_notice();
         let _ = retry_hint;
         let stop_error = self
             .state(cx)
@@ -623,6 +625,16 @@ impl Workspace {
             }
         } else {
             model_name
+        };
+        let model_name = match self.state(cx).selected_provider_model() {
+            Some(selection @ pipkin_core::ProviderModel::ClaudeCli(_)) => self
+                .state(cx)
+                .provider_models()
+                .into_iter()
+                .find(|m| m.selection == selection)
+                .map(|m| m.name)
+                .unwrap_or(model_name),
+            _ => model_name,
         };
         let this = cx.entity();
 
@@ -1019,7 +1031,7 @@ impl Workspace {
                                 self.overlay,
                                 Overlay::ModelSettings | Overlay::Model | Overlay::Effort
                             ))
-                            .disabled(no_models || !capabilities.model_settings)
+                            .disabled(!self.state(cx).provider_picker_available())
                             .on_click(move |window, cx| {
                                 this.update(cx, |t, cx| {
                                     t.open_overlay(Overlay::ModelSettings, window, cx)
@@ -1097,6 +1109,39 @@ impl Workspace {
                     .max_w(px(760.0 * t.scale.max(1.0)))
                     .flex()
                     .flex_col()
+                    .child(
+                        div()
+                            .id("conversation-backend")
+                            .role(Role::Status)
+                            .aria_label(backend_label)
+                            .text_size(t.small_size())
+                            .text_color(c.text_muted)
+                            .px(px(12.0))
+                            .py(px(4.0))
+                            .child(backend_label),
+                    )
+                    .children(connection_mismatch.map(|reason| {
+                        strip(
+                            cx,
+                            "circle-alert",
+                            c.danger,
+                            "Provider selection pending",
+                            reason,
+                            vec![
+                                Btn::new("keep-conversation-provider")
+                                    .label("Keep this conversation’s provider")
+                                    .on_click({
+                                        let this = cx.entity();
+                                        move |_, cx| {
+                                            this.update(cx, |w, cx| {
+                                                w.dispatch(Command::KeepConversationProvider, cx)
+                                            })
+                                        }
+                                    })
+                                    .into_any_element(),
+                            ],
+                        )
+                    }))
                     .children(not_sent)
                     .children(plan_strip.map(|detail| {
                         strip(

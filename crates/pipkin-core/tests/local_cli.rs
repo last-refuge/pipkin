@@ -4,6 +4,8 @@ use pipkin_core::*;
 mod assistance;
 #[path = "local_cli/creation_recovery.rs"]
 mod creation_recovery;
+#[path = "local_cli/guided.rs"]
+mod guided;
 
 fn boot(ids: &[u64]) -> Bootstrap {
     Bootstrap {

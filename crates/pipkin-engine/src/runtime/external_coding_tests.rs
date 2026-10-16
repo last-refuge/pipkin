@@ -206,6 +206,19 @@ fn coding_fixture_child() {
         .await
         .unwrap();
         if behavior == "disconnect" {
+            // The post-review disconnect test must not race actor shutdown against review
+            // delivery. Immediate disconnect is tested separately and may produce no review.
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            while !std::path::Path::new("disconnect-after-review").exists() {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "review barrier timed out"
+                );
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            return None;
+        }
+        if behavior == "disconnect-immediate" {
             return None;
         }
         wire::read_reply(
@@ -920,6 +933,9 @@ fn coding_disconnect_is_unknown_and_shutdown_tracks_pending_cleanup() {
             CancellationToken::new(),
         );
         let r = review(&shared, &mut reviews);
+        if !shutdown {
+            std::fs::write(f.project.join("disconnect-after-review"), b"now").unwrap();
+        }
         if shutdown {
             engine.handle.shutdown(Duration::from_secs(3));
             assert!(shared.external_tasks.is_empty());
@@ -930,6 +946,30 @@ fn coding_disconnect_is_unknown_and_shutdown_tracks_pending_cleanup() {
         wait(|| shared.external_tasks.is_empty());
         no_native(&shared, &provider);
     }
+}
+
+#[test]
+fn coding_immediate_disconnect_is_unknown_whether_or_not_review_was_delivered() {
+    let f = Fixture::new();
+    let provider = Scripted::echo("never");
+    let _engine = f.start(&provider);
+    let shared = _engine.handle.shared().clone();
+    let cli = fake(&f, "disconnect-immediate");
+    seed(&cli, &shared);
+    let (control, mut reviews) = submit(
+        &cli,
+        &shared,
+        f.dir.path().into(),
+        "p",
+        CancellationToken::new(),
+    );
+    assert_eq!(settled(&shared, "p").state, ExternalRunState::Unknown);
+    if let Ok(r) = reviews.try_recv() {
+        assert!(control.decide(7, &r.ticket, Decision::AllowOnce).is_err());
+    }
+    assert!(!f.project.join("effect").exists());
+    wait(|| shared.external_tasks.is_empty());
+    no_native(&shared, &provider);
 }
 
 #[test]

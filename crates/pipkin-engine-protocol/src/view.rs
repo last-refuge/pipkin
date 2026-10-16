@@ -953,7 +953,12 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 39);
+        assert_eq!(crate::PROTOCOL_VERSION, 40);
+        let discovery = round_trip(&Call::DiscoverLocalCli {
+            saved: None,
+            project: "/project".into(),
+        });
+        assert_eq!(discovery["call"], "discoverLocalCli");
         let servers = Call::McpServers {
             session: Some("s1".into()),
         };

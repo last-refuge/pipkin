@@ -150,6 +150,7 @@ pub struct Workspace {
     pub(super) setup_input: Entity<ComposerEditor>,
     pub(super) local_cli_executable: Entity<ComposerEditor>,
     pub(super) local_cli_project: Entity<ComposerEditor>,
+    pub(super) local_cli_advanced: bool,
     pub(super) cli_approval_panel: super::cli_approvals::Panel,
     pub(super) cli_approval_text: Entity<super::cli_approvals::ApprovalText>,
     pub(super) cli_dialog_scroll: ScrollHandle,
@@ -183,6 +184,7 @@ pub struct Workspace {
     pub(super) last_entry: onboarding::EntrySurface,
     pub(super) overlay: Overlay,
     pub(super) overlay_sel: usize,
+    pub(super) provider_menu: Vec<pipkin_core::ProviderModelChoice>,
     pub(super) settings_section: super::settings::SettingsSection,
     /// Questions the person put aside; they are not offered again on their own.
     pub(super) question_dismissed: Vec<String>,
@@ -377,6 +379,7 @@ impl Workspace {
             setup_input,
             local_cli_executable,
             local_cli_project,
+            local_cli_advanced: false,
             cli_approval_panel: Default::default(),
             cli_approval_text,
             cli_dialog_scroll: ScrollHandle::new(),
@@ -403,6 +406,7 @@ impl Workspace {
             last_entry: initial_entry,
             overlay: Overlay::None,
             overlay_sel: 0,
+            provider_menu: Vec::new(),
             settings_section: super::settings::SettingsSection::default(),
             question_dismissed: Vec::new(),
             restore_focus: None,
@@ -490,10 +494,10 @@ impl Workspace {
     // ------------------------------------------------------------ model → view
 
     fn on_model(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(
-            self.overlay,
-            Overlay::Model | Overlay::ModelSettings | Overlay::Effort
-        ) && !self.state(cx).execution_capabilities().model_settings
+        if (matches!(self.overlay, Overlay::Model | Overlay::ModelSettings)
+            && !self.state(cx).provider_picker_available())
+            || (self.overlay == Overlay::Effort
+                && !self.state(cx).execution_capabilities().model_settings)
         {
             self.close_overlay(window, cx);
         }
@@ -565,6 +569,12 @@ impl Workspace {
         }
         self.retain_cli_navigation(window, cx);
         self.reconcile_local_cli_inputs(cx);
+        if self.overlay == Overlay::LocalCli
+            && self.state(cx).local_cli.guided
+            && self.state(cx).local_cli.stage == LocalCliStage::Created
+        {
+            self.close_overlay(window, cx);
+        }
         self.reconcile_cli_approval_text(cx);
         match current {
             Some((id, epoch, text)) => {
@@ -956,8 +966,9 @@ impl Workspace {
     // ----------------------------------------------------------------- overlays
 
     pub(super) fn open_overlay(&mut self, o: Overlay, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(o, Overlay::Model | Overlay::ModelSettings | Overlay::Effort)
-            && !self.state(cx).execution_capabilities().model_settings
+        if (matches!(o, Overlay::Model | Overlay::ModelSettings)
+            && !self.state(cx).provider_picker_available())
+            || (o == Overlay::Effort && !self.state(cx).execution_capabilities().model_settings)
         {
             return;
         }
@@ -1009,12 +1020,12 @@ impl Workspace {
                 window.focus(&h, cx);
             }
             Overlay::Model => {
-                let cur = self.state(cx).prefs.model.clone();
+                self.provider_menu = self.state(cx).provider_models();
+                let cur = self.state(cx).selected_provider_model();
                 self.overlay_sel = self
-                    .state(cx)
-                    .models
+                    .provider_menu
                     .iter()
-                    .position(|m| Some(&m.id) == cur.as_ref())
+                    .position(|m| Some(&m.selection) == cur.as_ref())
                     .unwrap_or(0);
                 self.menu_scroll.scroll_to_item(self.overlay_sel);
                 window.focus(&self.menu_focus, cx);
@@ -1029,8 +1040,12 @@ impl Workspace {
                 window.focus(&self.menu_focus, cx);
             }
             Overlay::LocalCli => {
-                let handle = self.local_cli_executable.read(cx).focus_handle(cx);
-                window.focus(&handle, cx);
+                if self.state(cx).local_cli.guided && !self.local_cli_advanced {
+                    window.focus(&self.menu_focus, cx);
+                } else {
+                    let handle = self.local_cli_executable.read(cx).focus_handle(cx);
+                    window.focus(&handle, cx);
+                }
             }
             Overlay::ModelSettings
             | Overlay::Project
@@ -1244,8 +1259,6 @@ impl Workspace {
                 window.dispatch_action(a, cx);
             }
             Run::Dispatch(c) => self.dispatch(c.clone(), cx),
-            Run::LocalCli(existing) => self.open_local_cli(*existing, window, cx),
-            Run::ResumeLocalCli => self.open_overlay(Overlay::LocalCli, window, cx),
             Run::CliApprovals => self.open_cli_approvals(window, cx),
             Run::InspectSubagent(child) => {
                 self.dispatch(Command::SelectSubagent(*child), cx);
@@ -1296,8 +1309,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.close_panel(window, cx);
-        self.dispatch(Command::NewConversation, cx);
-        self.focus_composer(window, cx);
+        self.begin_conversation(window, cx);
     }
     fn on_toggle_nav(&mut self, _: &ToggleNav, window: &mut Window, cx: &mut Context<Self>) {
         if self.nav_docked(window) {
@@ -1703,6 +1715,9 @@ mod diagnostics_tests {
         cx.update(crate::text::init);
         cx.update(super::super::actions::bind_keys);
         for (welcome, real) in [(false, false), (true, false), (false, true), (true, true)] {
+            let creation =
+                std::rc::Rc::new(std::cell::RefCell::new(None::<pipkin_core::RequestId>));
+            let captured = creation.clone();
             let window = cx.add_window(|window, cx| {
                 let mut state = AppState::new(
                     Bootstrap {
@@ -1726,6 +1741,14 @@ mod diagnostics_tests {
                 }
                 let model = cx.new(|_| {
                     let mut model = Model::new(state);
+                    model.set_effect_handler(Box::new(move |effect, _| {
+                        if let pipkin_core::Effect::Backend(
+                            pipkin_core::BackendRequest::CreateConversation { request, .. },
+                        ) = effect
+                        {
+                            *captured.borrow_mut() = Some(request);
+                        }
+                    }));
                     if welcome {
                         model.entry = onboarding::EntrySurface::Welcome;
                     }
@@ -1773,6 +1796,11 @@ mod diagnostics_tests {
                 }));
                 root.update(visual, |workspace, cx| {
                     workspace.model.update(cx, |model, cx| {
+                        model.native_conversation_created(
+                            creation.borrow().as_ref().unwrap(),
+                            ConversationId(1),
+                            cx,
+                        );
                         model.mutate(
                             |state| {
                                 state.apply_catalog(Bootstrap {

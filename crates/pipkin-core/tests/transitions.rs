@@ -1247,6 +1247,7 @@ fn a_new_conversation_is_requested_from_the_backend_and_selected_when_it_arrives
             cwd,
             project,
             request,
+            ..
         }) => {
             assert_eq!(cwd, "/work/app");
             assert_eq!(*project, project_id_for_path("/work/app"));
@@ -1259,7 +1260,8 @@ fn a_new_conversation_is_requested_from_the_backend_and_selected_when_it_arrives
     assert!(!s.availability().new_conversation);
     assert!(s.dispatch(Command::NewConversation).effects.is_empty());
 
-    // The backend's catalog brings the new session: it becomes the selection.
+    // Only the exact creation receipt plus catalog can select the new session.
+    s.native_conversation_created(request.as_ref().unwrap(), ConversationId(11));
     let project = project_id_for_path("/work/app");
     let out = s.apply_catalog(Bootstrap {
         projects: vec![],

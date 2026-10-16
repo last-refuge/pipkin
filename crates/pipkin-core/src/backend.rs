@@ -14,6 +14,10 @@ pub enum LifecycleEvent {
     CliApprovalsAvailable(bool),
     /// Projects, models and conversation summaries known to the backend.
     Catalog(Bootstrap),
+    NativeConversationCreated {
+        request: crate::RequestId,
+        conversation: ConversationId,
+    },
     /// The model the engine reports as selected (`provider/modelId`), which is authoritative.
     ModelSelected(Option<String>),
     /// Volatile, per-client OAuth state. The URL and challenge must never be persisted or logged.

@@ -6,6 +6,9 @@ use crate::onboarding::{SignInAnswer, SignInProvider};
 /// User intents issued by the UI or command palette.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
+    SelectProviderModel(crate::ProviderModel),
+    /// Explicitly abandon this conversation's unfinished provider change, not other sessions.
+    KeepConversationProvider,
     LocalCli(crate::local_cli::LocalCliCommand),
     CliApproval(crate::CliApprovalCommand),
     RemoveSignIn(SignInProvider),
@@ -434,6 +437,7 @@ pub enum BackendRequest {
     },
     /// Ask the backend to create a conversation whose agent works in `cwd`.
     CreateConversation {
+        model: Option<String>,
         project: ProjectId,
         cwd: String,
         request: RequestId,
@@ -559,6 +563,7 @@ pub enum EventKind {
     /// Execution contract and temporary readiness from an authoritative session snapshot,
     /// emitted before its history/goal events. Attachment-scoped (`op` must be `None`).
     /// Map unknown identities to `Unsupported`; never infer the profile from readiness.
+    ConversationModel(Option<crate::ProviderModel>),
     ExecutionContext {
         execution_blocked: Option<String>,
         profile: ExecutionProfile,

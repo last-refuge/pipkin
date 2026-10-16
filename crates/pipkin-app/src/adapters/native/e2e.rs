@@ -688,6 +688,12 @@ impl Harness {
                     out.merge(self.state.select_initial());
                     out
                 }
+                LifecycleEvent::NativeConversationCreated {
+                    request,
+                    conversation,
+                } => self
+                    .state
+                    .native_conversation_created(&request, conversation),
                 LifecycleEvent::ModelSelected(m) => self.state.set_engine_model(m),
                 LifecycleEvent::SignIn(_) | LifecycleEvent::SetupSaved(_) => Outcome::default(),
                 LifecycleEvent::Notice(message) => {
@@ -753,11 +759,19 @@ impl Harness {
             }
             assert!(
                 Instant::now() < deadline,
-                "timed out waiting for: {what}\n  connection: {:?}\n  notices: {:?}\n  run: {:?}\n  items: {:?}",
+                "timed out waiting for: {what}\n  connection: {:?}\n  notices: {:?}\n  run: {:?}\n  items: {:?}\n  CLI setup: {:?}\n  selected profile: {:?}",
                 self.state.connection,
                 self.notices,
                 self.state.current().map(|c| c.run.clone()),
                 self.state.current().map(|c| c.items.clone()),
+                self.state.local_cli,
+                self.state.current().map(|c| (
+                    c.id,
+                    c.generation,
+                    c.opened,
+                    c.profile,
+                    &c.execution_blocked
+                )),
             );
             thread::sleep(Duration::from_millis(5));
         }

@@ -82,10 +82,7 @@ impl Workspace {
         let demo = cx.try_global::<DemoControls>();
         let mut scored: Vec<(usize, Cmd)> = commands::build(self.state(cx), demo)
             .into_iter()
-            .filter_map(|mut c| {
-                if let super::commands::Run::LocalCli(existing) = &c.run {
-                    c.enabled = self.local_cli_entry_enabled(*existing, cx);
-                }
+            .filter_map(|c| {
                 commands::fuzzy_score(q.trim(), &format!("{} {}", c.group, c.title)).map(|s| (s, c))
             })
             .collect();
@@ -96,7 +93,7 @@ impl Workspace {
     pub(super) fn overlay_len(&self, cx: &gpui::App) -> usize {
         match self.overlay {
             Overlay::Palette => self.palette_items(cx).len(),
-            Overlay::Model => self.state(cx).models.len(),
+            Overlay::Model => self.provider_menu.len(),
             Overlay::ModelSettings => 2,
             Overlay::Effort => self
                 .state(cx)
@@ -154,9 +151,14 @@ impl Workspace {
                 }
             }
             Overlay::Model => {
-                if let Some(m) = self.state(cx).models.get(sel).map(|m| m.id.clone()) {
-                    self.dispatch(Command::SetModel(m), cx);
+                if let Some(model) = self.provider_menu.get(sel).map(|m| m.selection.clone()) {
+                    let same = self.state(cx).selected_provider_model().as_ref() == Some(&model);
                     self.close_overlay(window, cx);
+                    self.dispatch(Command::SelectProviderModel(model.clone()), cx);
+                    if matches!(model, pipkin_core::ProviderModel::ClaudeCli(_)) && !same {
+                        self.open_overlay(Overlay::Prefs, window, cx);
+                        self.settings_section = super::settings::SettingsSection::Connections;
+                    }
                 }
             }
             Overlay::Project => {
@@ -825,14 +827,15 @@ impl Workspace {
         let model_settings = self.state(cx).execution_capabilities().model_settings;
         let (model, effort, has_effort) = {
             let s = self.state(cx);
-            let model = super::local_cli::restricted_model_label(s)
-                .map(str::to_owned)
+            let model = s
+                .provider_models()
+                .into_iter()
+                .find(|m| Some(&m.selection) == s.selected_provider_model().as_ref())
+                .map(|m| m.name)
                 .unwrap_or_else(|| {
-                    s.models
-                        .iter()
-                        .find(|m| Some(&m.id) == s.prefs.model.as_ref())
-                        .map(|m| m.name.clone())
-                        .unwrap_or_else(|| "Choose model".into())
+                    super::local_cli::restricted_model_label(s)
+                        .unwrap_or("Choose model")
+                        .into()
                 });
             let effort = s
                 .current()
@@ -865,7 +868,12 @@ impl Workspace {
             .occlude()
             .children(
                 [
-                    (0, "Model", model, model_settings),
+                    (
+                        0,
+                        "Provider / model",
+                        model,
+                        self.state(cx).provider_picker_available(),
+                    ),
                     (1, "Effort", effort, has_effort && model_settings),
                 ]
                 .into_iter()
@@ -1035,13 +1043,13 @@ impl Workspace {
         let entries: Vec<(String, String, bool)> = {
             let s = self.state(cx);
             if model_mode {
-                s.models
+                self.provider_menu
                     .iter()
                     .map(|m| {
                         (
                             m.name.clone(),
-                            m.note.clone(),
-                            Some(&m.id) == s.prefs.model.as_ref(),
+                            m.detail.clone(),
+                            Some(&m.selection) == s.selected_provider_model().as_ref(),
                         )
                     })
                     .collect()

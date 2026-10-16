@@ -64,6 +64,22 @@ pub fn execution_context(summary: &SessionSummary) -> EventKind {
     }
 }
 
+pub fn conversation_model(summary: &SessionSummary) -> EventKind {
+    use pipkin_core::{CliModel, ProviderModel};
+    use pipkin_engine_protocol::ExecutionBackend;
+    let model = match summary.execution_backend {
+        ExecutionBackend::NativeAgent => summary.model.clone().map(ProviderModel::Native),
+        ExecutionBackend::LocalClaudeCli => match summary.model.as_deref() {
+            Some("haiku") => Some(ProviderModel::ClaudeCli(CliModel::Haiku)),
+            Some("sonnet") => Some(ProviderModel::ClaudeCli(CliModel::Sonnet)),
+            Some("opus") => Some(ProviderModel::ClaudeCli(CliModel::Opus)),
+            _ => None,
+        },
+        ExecutionBackend::Unsupported => None,
+    };
+    EventKind::ConversationModel(model)
+}
+
 fn created_secs(summary: &SessionSummary) -> i64 {
     summary.created_at_ms.div_euclid(1000)
 }

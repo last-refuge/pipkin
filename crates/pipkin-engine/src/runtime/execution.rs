@@ -91,6 +91,7 @@ fn native_execution_session(call: &Call) -> Option<&str> {
         | ListSessions
         | CreateSession { .. }
         // Explicit setup may establish ephemeral trust only under the config opt-in.
+        | DiscoverLocalCli { .. }
         | InspectLocalCli { .. }
         | CheckLocalCli { .. }
         | LocalCliSetupStatus { .. }

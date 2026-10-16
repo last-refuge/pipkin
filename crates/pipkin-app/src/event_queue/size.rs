@@ -109,6 +109,7 @@ fn cli_event(event: &LocalCliEvent) -> usize {
             LocalCliFailure::Expired | LocalCliFailure::Conflict => 0,
         },
         LocalCliEvent::Revoked => 0,
+        LocalCliEvent::Discovered(paths) => paths.iter().map(String::len).sum(),
     }
 }
 
@@ -117,6 +118,8 @@ pub(super) fn event_bytes(event: &BackendEvent) -> usize {
         + match &event.kind {
             EventKind::LocalCli(event) => cli_event(event),
             EventKind::CliApproval(event) => size_of::<CliApprovalEvent>() + approval_event(event),
+            EventKind::ConversationModel(Some(pipkin_core::ProviderModel::Native(id))) => id.len(),
+            EventKind::ConversationModel(_) => 0,
             EventKind::ExecutionContext {
                 execution_blocked, ..
             } => strings(execution_blocked),

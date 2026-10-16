@@ -5,6 +5,15 @@ use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn fake_cli_inspect_check_create_keeps_execution_disabled_and_uses_exact_root() {
+    fake_metadata_setup(false);
+}
+
+#[test]
+fn guided_cli_discovers_and_connects_without_typed_values_or_inference() {
+    fake_metadata_setup(true);
+}
+
+fn fake_metadata_setup(guided: bool) {
     let fx = Fixture::start(|_, _| panic!("setup must never request native inference"));
     let executable = fx.root.join("fake-cli");
     let marker = fx.root.join("metadata-calls");
@@ -16,6 +25,8 @@ fn fake_cli_inspect_check_create_keeps_execution_disabled_and_uses_exact_root() 
         marker.display(),
     )).unwrap();
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::create_dir_all(fx.root.join(".local/bin")).unwrap();
+    std::os::unix::fs::symlink(&executable, fx.root.join(".local/bin/claude")).unwrap();
     let mut config = fx.config();
     assert!(
         !config.enable_local_claude_cli,
@@ -45,13 +56,18 @@ fn fake_cli_inspect_check_create_keeps_execution_disabled_and_uses_exact_root() 
     h.until("Hello setup capability", |s| {
         s.connection.is_ready() && s.local_cli.available
     });
-    h.dispatch(Command::LocalCli(C::BeginNew(LocalCliDraft {
-        mode: pipkin_core::CliMode::ChatOnly,
-        executable: executable.display().to_string(),
-        project: fx.project.display().to_string(),
-        model: CliModel::Opus,
-    })));
-    h.dispatch(Command::LocalCli(C::Inspect));
+    if guided {
+        h.dispatch(Command::AddProject(fx.project.display().to_string()));
+        h.dispatch(Command::LocalCli(C::BeginGuided));
+    } else {
+        h.dispatch(Command::LocalCli(C::BeginNew(LocalCliDraft {
+            mode: pipkin_core::CliMode::ChatOnly,
+            executable: executable.display().to_string(),
+            project: fx.project.display().to_string(),
+            model: CliModel::Opus,
+        })));
+        h.dispatch(Command::LocalCli(C::Inspect));
+    }
     h.until("inspected without executing", |s| {
         s.local_cli.stage == LocalCliStage::AwaitingTrust
     });
@@ -64,15 +80,21 @@ fn fake_cli_inspect_check_create_keeps_execution_disabled_and_uses_exact_root() 
     assert_eq!(ticket.executable, executable.display().to_string());
     let root = ticket.root_candidate.clone().unwrap();
     assert_eq!(root.0, format!("cli-{}", ticket.setup.0));
-    h.dispatch(Command::LocalCli(C::TrustExecutable(true)));
-    h.dispatch(Command::LocalCli(C::TrustProject(true)));
-    h.dispatch(Command::LocalCli(C::Check));
-    h.until("metadata verified", |s| {
-        s.local_cli.stage == LocalCliStage::Verified
-    });
-    assert_eq!(std::fs::read_to_string(&marker).unwrap().lines().count(), 3);
-    assert!(fx.requests().is_empty());
-    h.dispatch(Command::LocalCli(C::Create));
+    if guided {
+        h.dispatch(Command::LocalCli(C::ConfirmAndConnect {
+            setup: ticket.setup.clone(),
+        }));
+    } else {
+        h.dispatch(Command::LocalCli(C::TrustExecutable(true)));
+        h.dispatch(Command::LocalCli(C::TrustProject(true)));
+        h.dispatch(Command::LocalCli(C::Check));
+        h.until("metadata verified", |s| {
+            s.local_cli.stage == LocalCliStage::Verified
+        });
+        assert_eq!(std::fs::read_to_string(&marker).unwrap().lines().count(), 3);
+        assert!(fx.requests().is_empty());
+        h.dispatch(Command::LocalCli(C::Create));
+    }
     h.until("exact CLI conversation attached", |s| {
         s.local_cli.stage == LocalCliStage::Created && s.current().is_some_and(|c| c.opened)
     });
@@ -118,7 +140,8 @@ impl FakeShell {
         };
         let help = pipkin_engine::execution::claude_cli::policy::REQUIRED_FLAGS.join("\n")
             + "\n--settings";
-        let version = pipkin_engine::execution::claude_cli::policy::QUALIFIED_VERSION;
+        // Exercise newer-version setup, Create, fresh/resumed turns and provider routing.
+        let version = "2.1.301";
         std::fs::write(
             &fake.executable,
             format!(
@@ -308,7 +331,7 @@ fn coding_setup_crosses_core_adapter_engine_but_never_gains_chat_authority() {
 }
 
 #[test]
-fn fake_cli_chat_revoke_reapprove_resumes_exact_root_without_native_inference() {
+fn configured_cli_new_conversation_and_resumed_prompt_never_use_native_provider() {
     let fx = Fixture::start(|_, _| panic!("CLI chat must never request native inference"));
     let fake = FakeShell::install(&fx);
     let db = fx.root.join("chat-desktop.db");
@@ -317,6 +340,8 @@ fn fake_cli_chat_revoke_reapprove_resumes_exact_root_without_native_inference() 
     let storage = Storage::open(&db, NAMESPACE).unwrap();
     storage.save_prefs(&pipkin_core::Prefs {
         model: Some("scripted/scripted".into()),
+        cli_executable: Some(fake.executable.to_string_lossy().into_owned()),
+        provider_model: Some(pipkin_core::ProviderModel::ClaudeCli(CliModel::Sonnet)),
         ..Default::default()
     });
     storage.shutdown();
@@ -327,10 +352,24 @@ fn fake_cli_chat_revoke_reapprove_resumes_exact_root_without_native_inference() 
             && s.models.iter().any(|m| m.id == "scripted/scripted")
     });
     assert_eq!(h.state.prefs.model.as_deref(), Some("scripted/scripted"));
-    h.dispatch(Command::LocalCli(C::BeginNew(fake.draft(&fx))));
+    h.dispatch(Command::AddProject(
+        fx.project.to_string_lossy().into_owned(),
+    ));
+    let selected = h
+        .state
+        .provider_models()
+        .into_iter()
+        .find(|m| m.selection == pipkin_core::ProviderModel::ClaudeCli(CliModel::Sonnet))
+        .unwrap();
+    assert!(
+        h.state
+            .provider_models()
+            .iter()
+            .any(|m| m.selection == pipkin_core::ProviderModel::Native("scripted/scripted".into()))
+    );
+    h.dispatch(Command::SelectProviderModel(selected.selection));
     fake.assert_counts(0, 0);
-    h.dispatch(Command::LocalCli(C::Inspect));
-    h.until("fresh inspection", |s| {
+    h.until("configured CLI discovery and inspection", |s| {
         s.local_cli.stage == LocalCliStage::AwaitingTrust
     });
     fake.assert_counts(0, 0);
@@ -338,14 +377,9 @@ fn fake_cli_chat_revoke_reapprove_resumes_exact_root_without_native_inference() 
     let ticket = h.state.local_cli.ticket.clone().unwrap();
     let root = ticket.root_candidate.clone().unwrap();
     assert_eq!(root.0, format!("cli-{}", ticket.setup.0));
-    h.dispatch(Command::LocalCli(C::TrustExecutable(true)));
-    h.dispatch(Command::LocalCli(C::TrustProject(true)));
-    h.dispatch(Command::LocalCli(C::Check));
-    h.until("fresh metadata approval", |s| {
-        s.local_cli.stage == LocalCliStage::Verified
-    });
-    fake.assert_counts(3, 0);
-    h.dispatch(Command::LocalCli(C::Create));
+    h.dispatch(Command::LocalCli(C::ConfirmAndConnect {
+        setup: ticket.setup.clone(),
+    }));
     h.until("authoritative CLI attachment ready", |s| {
         s.local_cli.stage == LocalCliStage::Created
             && s.current().is_some_and(|c| {
@@ -394,38 +428,29 @@ fn fake_cli_chat_revoke_reapprove_resumes_exact_root_without_native_inference() 
         pipkin_core::ExecutionProfile::LocalCliChatOnly
     );
     fake.assert_counts(6, 1);
-    h.dispatch(Command::LocalCli(C::BeginExisting {
+    h.dispatch(Command::LocalCli(C::BeginGuidedExisting {
         conversation,
         session: root.clone(),
     }));
-    h.dispatch(Command::LocalCli(C::Edit(fake.draft(&fx))));
-    h.dispatch(Command::LocalCli(C::Inspect));
     h.until("existing exact-root inspection", |s| {
         s.local_cli.stage == LocalCliStage::AwaitingTrust
     });
-    let reapproval = h.state.local_cli.ticket.as_ref().unwrap();
+    let reapproval = h.state.local_cli.ticket.as_ref().unwrap().clone();
     assert_eq!(
         reapproval.target,
         pipkin_core::local_cli::LocalCliInspectTarget::Existing {
             session: root.clone(),
-            model: CliModel::Opus,
+            model: CliModel::Sonnet,
         }
     );
     assert!(reapproval.root_candidate.is_none());
     assert_ne!(reapproval.setup, ticket.setup);
     assert!(!h.state.local_cli.trust_executable && !h.state.local_cli.trust_project);
     fake.assert_counts(6, 1);
-    h.dispatch(Command::LocalCli(C::TrustExecutable(true)));
-    h.dispatch(Command::LocalCli(C::TrustProject(true)));
-    h.dispatch(Command::LocalCli(C::Check));
-    h.until("existing metadata reapproved", |s| {
-        s.local_cli.stage == LocalCliStage::Verified
-    });
-    fake.assert_counts(9, 1);
-    assert!(!h.state.local_cli_availability().create);
-    assert!(h.state.local_cli_availability().return_to_conversation);
     let generation = h.state.current().unwrap().generation;
-    h.dispatch(Command::LocalCli(C::ReturnToConversation));
+    h.dispatch(Command::LocalCli(C::ConfirmAndConnect {
+        setup: reapproval.setup,
+    }));
     h.until("new attachment restores authoritative CLI readiness", |s| {
         s.selected == Some(conversation)
             && s.current().is_some_and(|c| {
@@ -495,6 +520,55 @@ fn fake_cli_chat_revoke_reapprove_resumes_exact_root_without_native_inference() 
         "no native fallback on either turn"
     );
     assert_eq!(h.state.prefs.model.as_deref(), Some("scripted/scripted"));
+    assert_eq!(
+        h.state.selected_provider_model(),
+        Some(pipkin_core::ProviderModel::ClaudeCli(CliModel::Sonnet))
+    );
+    assert!(
+        h.state
+            .provider_models()
+            .iter()
+            .any(|m| m.selection == pipkin_core::ProviderModel::Native("scripted/scripted".into())),
+        "native provider stays listed while CLI is open"
+    );
+    h.dispatch(Command::SelectProviderModel(
+        pipkin_core::ProviderModel::Native("scripted/scripted".into()),
+    ));
+    h.until(
+        "native provider chosen through the same catalog creates a separate conversation",
+        |s| {
+            s.selected != Some(conversation)
+                && s.current().is_some_and(|c| {
+                    c.opened && c.profile == pipkin_core::ExecutionProfile::NativeAgent
+                })
+        },
+    );
+    assert_eq!(
+        h.state.selected_provider_model(),
+        Some(pipkin_core::ProviderModel::Native(
+            "scripted/scripted".into()
+        ))
+    );
+    assert_eq!(
+        h.state.conversation(conversation).unwrap().profile,
+        pipkin_core::ExecutionProfile::LocalCliChatOnly
+    );
+    h.dispatch(Command::SelectConversation(conversation));
+    h.until(
+        "existing CLI conversation remains usable alongside native provider",
+        |s| {
+            s.current()
+                .is_some_and(|c| c.id == conversation && c.opened && c.execution_blocked.is_none())
+        },
+    );
+    assert_eq!(
+        h.state.next_provider_model(),
+        Some(pipkin_core::ProviderModel::ClaudeCli(CliModel::Sonnet))
+    );
+    h.dispatch(Command::EditDraft("not submitted".into()));
+    assert!(h.state.availability().submit);
+    fake.assert_counts(12, 2);
+    assert!(fx.requests().is_empty());
     h.stop();
     assert_eq!(
         open_requests(&db),

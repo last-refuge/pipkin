@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Source setup contracts with disposable files and mocked subprocesses; never desktop/owner installs."""
 import importlib.util
+import errno
 from pathlib import Path
 import sys
 import tempfile
@@ -44,11 +45,24 @@ with tempfile.TemporaryDirectory() as scratch:
             if '--probe' in args:
                 assert set(kwargs['env']) == {'HOME', 'TMPDIR', 'PATH'}
                 assert kwargs['env']['PATH'] == '/usr/bin:/bin:/usr/sbin:/sbin'
-                assert kwargs['env']['HOME'].startswith('/tmp/')
+                profile = Path(kwargs['env']['HOME'])
+                assert profile.parent == base and profile.is_dir()
+                assert profile.stat().st_mode & 0o777 == 0o700
+                assert kwargs['env']['TMPDIR'] == str(profile)
+                assert Path(args[-1]) == profile / 'app-data'
                 if fail_probe:
                     raise RuntimeError('injected failed probe')
 
-        with patch.object(setup, 'run', side_effect=command), patch.object(setup, 'preflight'), patch.object(setup.platform, 'system', return_value='Linux'), patch.object(setup.platform, 'machine', return_value='x86_64'), patch.object(sys, 'argv', ['setup.py']):
+        temporary_directory = tempfile.TemporaryDirectory
+
+        def quota_limited_tmp(*args, **kwargs):
+            # Reproduce a machine whose /tmp can create directories but cannot
+            # hold the probe database. Setup must not depend on that filesystem.
+            if kwargs.get('dir') in (None, '/tmp'):
+                raise OSError(errno.EDQUOT, 'Disk quota exceeded')
+            return temporary_directory(*args, **kwargs)
+
+        with patch.object(setup.tempfile, 'TemporaryDirectory', side_effect=quota_limited_tmp), patch.object(setup, 'run', side_effect=command), patch.object(setup, 'preflight'), patch.object(setup.platform, 'system', return_value='Linux'), patch.object(setup.platform, 'machine', return_value='x86_64'), patch.object(sys, 'argv', ['setup.py']):
             setup.main()
             first = (base / 'current').resolve()
             assert (first / 'bin/pipkin').is_file()
@@ -63,6 +77,7 @@ with tempfile.TemporaryDirectory() as scratch:
                 raise AssertionError('failed probe accepted')
             except RuntimeError:
                 assert (base / 'current').resolve() == second
+        assert not list(base.glob('probe-*')), 'successful and failed probes clean up their private profiles'
         assert not any('--install' in call or 'sudo' in call for call in calls)
 assert not any(any(token in str(arg) for token in ['npm', 'nodejs', 'build-engine', 'stage-node', 'pi-fork']) for call in calls for arg in call)
-print('source setup: native targets, Rust-only build, isolated probe, immutable rebuilds and failed-build recovery verified')
+print('source setup: native targets, Rust-only build, isolated probe despite /tmp quota exhaustion, immutable rebuilds and failed-build recovery verified')

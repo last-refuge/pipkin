@@ -214,10 +214,59 @@ mod unix {
         assert_eq!(f.calls(), 0);
     }
     #[tokio::test]
-    async fn unqualified_version_never_runs_auth_or_inference() {
-        let f = Fixture::new("9.9.9 (Claude Code)", "must-not-read");
+    async fn old_or_malformed_version_never_runs_auth_or_inference() {
+        for version in [
+            "2.1.298 (Claude Code)",
+            "2.1.301 unknown",
+            "999999999999999999999.0.0 (Claude Code)",
+        ] {
+            let f = Fixture::new(version, "must-not-read");
+            assert!(check(f.request(), CancellationToken::new()).await.is_err());
+            assert_eq!(f.calls(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn newer_version_keeps_actual_identity_and_other_preflight_checks() {
+        let auth = r#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"fixture@example.invalid","orgId":"fixture-org"}"#;
+        for launch_policy in [LaunchPolicy::ChatOnly, LaunchPolicy::RestrictedWrite] {
+            if launch_policy == LaunchPolicy::RestrictedWrite && !cfg!(target_os = "linux") {
+                continue;
+            }
+            let f = Fixture::new("2.1.301 (Claude Code)", auth);
+            let script = std::fs::read_to_string(&f.exe).unwrap().replace(
+                "--safe-mode fixture",
+                "--safe-mode fixture\n--settings fixture",
+            );
+            std::fs::write(&f.exe, script).unwrap();
+            let prepared = check_for_policy(f.request(), CancellationToken::new(), launch_policy)
+                .await
+                .unwrap();
+            let binding = prepared
+                .checked_binding("11111111-1111-4111-8111-111111111111")
+                .unwrap();
+            assert_eq!(binding.cli_version, "2.1.301");
+            assert_eq!(f.calls(), 3);
+            let mut changed = binding;
+            changed.cli_version = policy::QUALIFIED_VERSION.into();
+            assert!(
+                prepared.validate_binding(&changed).is_err(),
+                "new releases cannot silently change an existing session identity"
+            );
+        }
+        let f = Fixture::new("2.1.301 (Claude Code)", auth);
+        let script = std::fs::read_to_string(&f.exe)
+            .unwrap()
+            .replace("--safe-mode fixture", "missing flag");
+        std::fs::write(&f.exe, script).unwrap();
         assert!(check(f.request(), CancellationToken::new()).await.is_err());
-        assert_eq!(f.calls(), 1);
+        assert_eq!(f.calls(), 2, "missing capabilities must stop before auth");
+        let f = Fixture::new(
+            "2.1.301 (Claude Code)",
+            r#"{"loggedIn":false,"authMethod":"none"}"#,
+        );
+        assert!(check(f.request(), CancellationToken::new()).await.is_err());
+        assert_eq!(f.calls(), 3, "a newer version does not bypass login");
     }
     #[tokio::test]
     async fn prepared_metadata_is_bound_and_only_builds_a_no_tools_stdin_request() {

@@ -1,4 +1,5 @@
 //! Local CLI presentation only. Core owns tickets, trust, identity and uncertain mutations.
+mod guided;
 #[cfg(test)]
 mod tests;
 use gpui::{App, Context, IntoElement, ParentElement, Role, Styled, Window, div, prelude::*, px};
@@ -13,9 +14,9 @@ use super::{
 };
 use crate::{text::ComposerEvent, theme::ActiveTheme};
 
-pub(super) const NEW_LABEL: &str = "New Local CLI conversation…";
-pub(super) const REAPPROVE_LABEL: &str = "Reapprove Local CLI…";
-const LIMITS: &str = "Chat only: no Pipkin tools, queued follow-ups, or model changes. Uses Claude Code’s own CLI login, not Pipkin Connections.";
+pub(super) const NEW_LABEL: &str = "Configure provider…";
+pub(super) const REAPPROVE_LABEL: &str = "Reconnect Claude Code…";
+const LIMITS: &str = "Chat only: no Pipkin tools, queued follow-ups, or model changes. Uses Claude Code’s own CLI login, not Pipkin's native provider connections.";
 const WRITE_LIMITS: &str = "Write only · available by default in Pipkin's own engine; execution still needs fresh trust/check and exact approval. Attached engines control their own availability. No Read/Edit/Bash/MCP parity, no sandbox, no guarantee every CLI action needs a hook. A different mode requires a fresh conversation.";
 const LEASE: &str = "Approval expires five minutes after Inspect. Create also requires preflight checked within 30 seconds: create promptly after Check. An uncertain creation requires explicit read-only lookup, never blind resubmission. Expiry or revocation stops active work; an interrupted CLI context requires a fresh conversation. Metadata verification alone does not enable execution.";
 const BILLING: &str = "Billing unverified: may consume account allowance or already-enabled extra usage. Check your CLI account settings.";
@@ -31,6 +32,29 @@ pub(super) fn availability_label(state: &AppState) -> &'static str {
         "Local CLI setup is read-only"
     } else {
         "Explicit paths and approval required; no automatic checks"
+    }
+}
+
+pub(super) fn conversation_backend_label(state: &AppState) -> &'static str {
+    let Some(profile) = state.current_execution_profile() else {
+        return "Backend: none";
+    };
+    if state.mode == Mode::Demo {
+        return "Backend: Demo · simulated agent";
+    }
+    match profile {
+        pipkin_core::ExecutionProfile::NativeAgent => {
+            "Backend: Pipkin providers · native agent (not Claude CLI)"
+        }
+        pipkin_core::ExecutionProfile::LocalCliChatOnly => {
+            "Backend: Claude Code · local CLI · chat only"
+        }
+        pipkin_core::ExecutionProfile::LocalCliRestrictedWrite => {
+            "Backend: Claude Code · local CLI · Write with approval"
+        }
+        pipkin_core::ExecutionProfile::Unsupported => {
+            "Backend: unverified or unsupported · sending unavailable"
+        }
     }
 }
 
@@ -68,6 +92,9 @@ fn stage_label(stage: LocalCliStage) -> &'static str {
 impl Workspace {
     pub(super) fn local_cli_entry_enabled(&self, existing: bool, cx: &App) -> bool {
         let s = self.state(cx);
+        if !existing && s.pending_cli_conversation_setup() {
+            return true; // Viewing an existing flow/recovery does not execute or restart it.
+        }
         if !s.local_cli_availability().begin {
             return false;
         }
@@ -88,17 +115,22 @@ impl Workspace {
         if !self.local_cli_entry_enabled(existing, cx) {
             return;
         }
+        if !existing && self.state(cx).pending_cli_conversation_setup() {
+            self.open_overlay(Overlay::LocalCli, window, cx);
+            return;
+        }
         let command = if existing {
             // Capture both IDs before dispatch/async work; never consult selection on reply.
             let id = self.state(cx).current().unwrap().id;
             let session = self.model.read(cx).local_cli_session(id).unwrap().clone();
-            C::BeginExisting {
+            C::BeginGuidedExisting {
                 conversation: id,
                 session,
             }
         } else {
-            C::BeginNew(LocalCliDraft::default())
+            C::BeginProviderSetup
         };
+        self.local_cli_advanced = false;
         self.dispatch(CoreCommand::LocalCli(command), cx);
         self.reconcile_local_cli_inputs(cx);
         self.open_overlay(Overlay::LocalCli, window, cx);
@@ -112,7 +144,13 @@ impl Workspace {
     ) -> Btn {
         let this = cx.entity();
         Btn::new(id)
-            .label(if existing { REAPPROVE_LABEL } else { NEW_LABEL })
+            .label(if existing {
+                REAPPROVE_LABEL
+            } else if self.state(cx).pending_cli_conversation_setup() {
+                "Continue conversation setup…"
+            } else {
+                NEW_LABEL
+            })
             .disabled(!self.local_cli_entry_enabled(existing, cx))
             .on_click(move |window, cx| {
                 this.update(cx, |w, cx| w.open_local_cli(existing, window, cx))
@@ -253,6 +291,9 @@ impl Workspace {
     }
 
     pub(super) fn render_local_cli(&self, cx: &Context<Self>) -> impl IntoElement {
+        if self.state(cx).local_cli.guided && !self.local_cli_advanced {
+            return self.render_guided_cli(cx).into_any_element();
+        }
         let state = self.state(cx);
         let s = &state.local_cli;
         let a = state.local_cli_availability();
@@ -260,6 +301,7 @@ impl Workspace {
         let this = cx.entity();
         let mut panel = elevated(cx)
             .id("local-cli-setup")
+            .occlude()
             .track_focus(&self.menu_focus.clone().tab_index(0).tab_stop(false))
             .tab_group().tab_stop(false)
             .track_scroll(&self.cli_dialog_scroll)
@@ -308,6 +350,20 @@ impl Workspace {
                 "Explicit project path"
             })
             .child(self.local_cli_project.clone());
+        if s.guided {
+            let back = cx.entity();
+            panel = panel.child(
+                Btn::new("cli-simple")
+                    .label("Back to simple setup")
+                    .on_click(move |window, cx| {
+                        back.update(cx, |w, cx| {
+                            w.local_cli_advanced = false;
+                            window.focus(&w.menu_focus, cx);
+                            cx.notify();
+                        })
+                    }),
+            );
+        }
         let mut modes = div().flex().gap(px(8.0)).child("Immutable mode:");
         for (id, label, mode) in [
             ("cli-chat-mode", "Chat only", CliMode::ChatOnly),
@@ -391,7 +447,7 @@ impl Workspace {
                 .child("2 · Captured inspection — approve these exact resolved paths")
                 .child(format!("Executable: {}", ticket.executable))
                 .child(format!("Project: {}", ticket.project))
-                .child(format!("Qualified version: {}", ticket.qualified_version))
+                .child(format!("Minimum CLI version: {}", ticket.qualified_version))
                 .child(format!("Captured mode: {:?}", ticket.mode))
                 .child(self.cli_trust(true, s.trust_executable, a.trust, cx))
                 .child(self.cli_trust(false, s.trust_project, a.trust, cx));
@@ -440,6 +496,6 @@ impl Workspace {
         if let Some(error) = &s.error {
             panel = panel.child(format!("Setup result: {error:?}"));
         }
-        panel
+        panel.into_any_element()
     }
 }

@@ -1,9 +1,21 @@
 # Local CLI setup and approval UI integration
 
-Normal owned native desktop engines now enable chat/Write hosting by default. The sidebar,
-palette and Connections entry points require no experimental launcher flags. This is host
+Normal owned native desktop engines now enable chat/Write hosting by default. Setup is only in
+Settings → Connections, with no dedicated sidebar or palette setup actions and no Ctrl+N chooser. This is host
 availability only: path trust, setup checks and exact Write approvals remain explicit; existing
 conversation backends are unchanged. Demo remains disabled and attached engines own their policy.
+
+Connections offers **Claude Code · local CLI** separately from native providers. The explicit
+choice is persisted as routing intent, not trust. New conversation follows that choice; for CLI,
+Ctrl+N prepares filesystem-only setup and opens Connections for review, never a native creation.
+The composer shows its authoritative backend and blocks sending if it differs from the explicit
+choice, including after failed/cancelled setup and across journal delays/restart. The core captures the
+selected project, discovers installations through the engine, inspects metadata, then waits for
+one scoped **Trust these paths and connect** confirmation. Login/version Check and one journaled
+metadata-only Create/Return are coordinated by a nonpersisted core continuation—not UI rendering.
+Model/tool selectors and native executable/folder pickers replace required path typing. Picker
+replies are revision/draft guarded. Reconnect loads saved hints without restoring trust. Advanced
+manual controls and recovery remain available; their historical contracts below still apply.
 
 The UI owns presentation only. All setup effects are `Command::LocalCli` → core → the installed controller effect handler. No UI filesystem, path resolution, login, provider, subprocess, or transport calls are added.
 
@@ -24,7 +36,7 @@ in `crates/pipkin-core/CLI_APPROVAL_API.md`.
 
 ## UX and recovery
 
-Ctrl+N remains native. Navigation, the palette, and Settings → Connections offer “New Local CLI conversation…”. Settings and the palette offer reapproval and “Resume setup…”. Resume and closing are presentation-only; neither dispatches a probe or discards pending mutation state.
+Only Settings → Connections offers CLI setup/reapproval/recovery. Ctrl+N follows the selected connection, without a backend chooser. Reviewing existing setup and closing are presentation-only; neither dispatches a probe, re-enables a mismatched native composer, or discards pending mutation state.
 
 Executable/project inputs are dedicated ComposerEditors with retained subscriptions. Only user Changed events dispatch Edit. Reconciliation uses silent set_text, preserving core trust. Alias choices are separate from the native model picker. Existing-session aliases come from explicit saved-hint loading.
 

@@ -121,6 +121,7 @@ pub struct LocalCliSetupView {
     pub selected_executable: String,
     pub executable: String,
     pub project: String,
+    /// Legacy wire name: minimum supported version, not the observed executable version.
     pub qualified_version: String,
     pub stage: LocalCliSetupStage,
     pub reason: Option<String>,

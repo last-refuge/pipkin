@@ -489,6 +489,15 @@ impl TextSize {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Prefs {
+    /// Last explicit model choice, used for new conversations; never an app-wide send gate.
+    pub provider_model: Option<crate::ProviderModel>,
+    /// Unfinished provider changes block only their source conversation, never other providers.
+    pub pending_provider_models: std::collections::BTreeMap<u64, crate::ProviderModel>,
+    pub cli_provider_configured: bool,
+    /// Non-authoritative CLI defaults; never credentials, trust or execution grants.
+    pub cli_executable: Option<String>,
+    pub cli_model: crate::CliModel,
+    pub cli_mode: crate::CliMode,
     /// Set only after the user enters a verified, usable first conversation.
     pub setup_completed: bool,
     pub theme: Theme,
@@ -507,6 +516,12 @@ pub struct Prefs {
 impl Default for Prefs {
     fn default() -> Self {
         Prefs {
+            provider_model: None,
+            pending_provider_models: Default::default(),
+            cli_provider_configured: false,
+            cli_executable: None,
+            cli_model: crate::CliModel::Sonnet,
+            cli_mode: crate::CliMode::ChatOnly,
             setup_completed: false,
             theme: Theme::Dark,
             text_size: TextSize::Normal,
@@ -582,6 +597,8 @@ pub enum IntentOrigin {
 /// until the journal acknowledges the commit.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PendingIntent {
+    /// A later provider/model choice must not revive this unsent intent after its guard clears.
+    pub provider_changed: bool,
     pub request: RequestId,
     pub origin: IntentOrigin,
     pub text: String,

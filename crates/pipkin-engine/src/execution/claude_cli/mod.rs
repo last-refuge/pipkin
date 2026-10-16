@@ -1,6 +1,7 @@
 //! Version-qualified local CLI transport. No credential extraction or native fallback.
 //! The caller owns trust, admission and durable settlement; transport is not authority.
 
+pub mod discovery;
 pub mod events;
 pub mod permission;
 pub mod permission_helper;

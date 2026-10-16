@@ -917,6 +917,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                     storage.journal_intent_with_origin(
                         conversation,
                         PendingIntent {
+                            provider_changed: false,
                             request,
                             origin,
                             text,
@@ -1279,6 +1280,10 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                             cx,
                         );
                     }
+                    LifecycleEvent::NativeConversationCreated {
+                        request,
+                        conversation,
+                    } => m.native_conversation_created(&request, conversation, cx),
                     LifecycleEvent::ModelSelected(model) => m.engine_model_selected(model, cx),
                     LifecycleEvent::SignIn(snapshot) => m.set_sign_in(snapshot, cx),
                     LifecycleEvent::SetupSaved(result) => m.setup_saved(result, cx),

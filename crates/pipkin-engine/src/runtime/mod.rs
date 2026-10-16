@@ -856,6 +856,38 @@ async fn dispatch_call(
         Call::DecideLocalCliApproval { id, decision } => {
             shared.decide_local_cli_approval(client, id, decision)
         }
+        Call::DiscoverLocalCli { saved, project } => {
+            if project.len() > 4096 || saved.as_ref().is_some_and(|s| s.len() > 4096) {
+                return Err(ProtoError::new(
+                    ErrorCode::Invalid,
+                    "Discovery path is too long.",
+                ));
+            }
+            let mut env: crate::execution::claude_cli::policy::Environment =
+                if shared.config.env.ambient {
+                    std::env::vars_os().collect()
+                } else {
+                    Default::default()
+                };
+            env.extend(
+                shared
+                    .config
+                    .env
+                    .vars
+                    .iter()
+                    .map(|(k, v)| (k.into(), v.into())),
+            );
+            let paths = tokio::task::spawn_blocking(move || {
+                crate::execution::claude_cli::discovery::discover(
+                    saved.as_deref().map(std::path::Path::new),
+                    std::path::Path::new(&project),
+                    &env,
+                )
+            })
+            .await
+            .map_err(|_| ProtoError::new(ErrorCode::Internal, "Discovery unavailable."))?;
+            Ok(Reply::LocalCliCandidates { paths })
+        }
         Call::InspectLocalCli {
             executable,
             target,
