@@ -16,6 +16,9 @@ pub struct ConversationState {
     pub subagents: SubagentState,
     /// The engine's plan for this session; the UI projects it and sends edits back.
     pub plan: PlanState,
+    /// Local view choice retained across reattachment, not a plan mutation or execution grant.
+    /// New plans have fresh monotonically allocated task IDs beyond this dismissed scope.
+    dismissed_plan_through: Option<u64>,
     /// Background jobs as the engine reports them.
     pub jobs: crate::jobs::JobsState,
     /// The engine's own measurements for this session (OBS-1), fetched on request.
@@ -32,6 +35,7 @@ pub struct ConversationState {
     pub provider_model: Option<crate::ProviderModel>,
     /// Only an authoritative ExecutionContext grants real conversation capabilities.
     pub(crate) execution_context_known: bool,
+    pub(crate) lifecycle_ready: bool,
     /// Temporary readiness failure. Clearing it never changes the execution profile.
     pub execution_blocked: Option<String>,
     /// Attachment generation. Events carrying another generation are dropped.
@@ -47,6 +51,8 @@ pub struct ConversationState {
     /// The engine owns this conversation's goal (it advertised `goals` and reported one, or
     /// none). The desktop runner is then disabled for it.
     pub goal_native: bool,
+    /// A native start/resume whose exact receipt has not arrived. Unknown outcomes stay visible.
+    pub(crate) goal_start_pending: Option<(RequestId, u64)>,
     /// A desktop-kept goal offered to the engine under this key; retired once the engine
     /// reports a goal.
     goal_migration: Option<String>,
@@ -107,6 +113,18 @@ pub struct ConversationState {
 }
 
 impl ConversationState {
+    pub fn plan_banner_visible(&self) -> bool {
+        self.plan.available
+            && self.plan.counts.open() > 0
+            && self.dismissed_plan_through.is_none_or(|last| {
+                self.plan
+                    .tasks
+                    .iter()
+                    .filter(|task| !task.archived)
+                    .all(|task| task.id > last)
+            })
+    }
+
     pub fn new(id: ConversationId, project: ProjectId, title: String, updated_at: i64) -> Self {
         ConversationState {
             id,
@@ -116,6 +134,7 @@ impl ConversationState {
             items: Vec::new(),
             subagents: SubagentState::default(),
             plan: PlanState::default(),
+            dismissed_plan_through: None,
             jobs: Default::default(),
             diagnostics: Default::default(),
             web_sources: Vec::new(),
@@ -126,6 +145,7 @@ impl ConversationState {
             profile: ExecutionProfile::default(),
             provider_model: None,
             execution_context_known: false,
+            lifecycle_ready: false,
             execution_blocked: None,
             generation: 0,
             run: RunState::Idle,
@@ -134,6 +154,7 @@ impl ConversationState {
             goal: None,
             goal_op: None,
             goal_native: false,
+            goal_start_pending: None,
             goal_migration: None,
             recovery_notice: false,
             stop_error: None,
@@ -404,8 +425,19 @@ impl AppState {
         }
         let selected = prefs
             .selected_conversation
-            .filter(|id| conversations.iter().any(|c| c.id == *id))
-            .or_else(|| conversations.first().map(|c| c.id));
+            .filter(|id| {
+                !prefs.closed_conversations.contains(&id.0)
+                    && conversations.iter().any(|c| c.id == *id)
+            })
+            .or_else(|| {
+                conversations
+                    .iter()
+                    .find(|c| {
+                        !prefs.closed_conversations.contains(&c.id.0)
+                            && prefs.selected_project.is_none_or(|p| p == c.project)
+                    })
+                    .map(|c| c.id)
+            });
         let mut cli_approvals = crate::cli_approvals::CliApprovals::default();
         cli_approvals.tick(boot.now.saturating_mul(1000));
         AppState {
@@ -502,7 +534,7 @@ impl AppState {
         let mut v: Vec<_> = self
             .conversations
             .iter()
-            .filter(|c| Some(c.project) == project)
+            .filter(|c| Some(c.project) == project && !self.conversation_is_closed(c.id))
             .filter(|c| q.is_empty() || c.title.to_lowercase().contains(&q))
             .collect();
         v.sort_by_key(|c| std::cmp::Reverse(c.updated_at));
@@ -603,6 +635,9 @@ impl AppState {
         {
             c.waiting_question = waiting;
             out.notes.push(Note::Other);
+        }
+        if waiting {
+            out.merge(self.reveal_conversation_activity(conversation));
         }
         out
     }
@@ -743,6 +778,18 @@ impl AppState {
 
     /// Select the remembered (or first) conversation, if nothing is selected, so its history loads.
     pub fn select_initial(&mut self) -> Outcome {
+        let mut out = Outcome::default();
+        let reveal: Vec<_> = self
+            .conversations
+            .iter()
+            .filter(|c| {
+                self.conversation_is_closed(c.id) && self.unsettled_conversation_reason(c).is_some()
+            })
+            .map(|c| c.id)
+            .collect();
+        for id in reveal {
+            self.reveal_unsettled_conversation(id, &mut out);
+        }
         if self.selected.is_some()
             || self.pending_native_creation()
             || (self.mode == Mode::Real
@@ -754,17 +801,26 @@ impl AppState {
         {
             // A blank workspace with an explicit provider choice is not consent to open an
             // unrelated catalog row, including after interrupted creation/restart.
-            return Outcome::default();
+            return out;
         }
         let id = self
             .prefs
             .selected_conversation
-            .filter(|id| self.conversation(*id).is_some())
-            .or_else(|| self.conversations.first().map(|c| c.id));
-        match id {
-            Some(id) => self.dispatch(Command::SelectConversation(id)),
-            None => Outcome::default(),
+            .filter(|id| self.conversation(*id).is_some() && !self.conversation_is_closed(*id))
+            .or_else(|| {
+                self.conversations
+                    .iter()
+                    .find(|c| {
+                        !self.conversation_is_closed(c.id)
+                            && self.prefs.selected_project.is_none_or(|p| p == c.project)
+                    })
+                    .map(|c| c.id)
+            });
+        if let Some(id) = id {
+            out.merge(self.dispatch(Command::SelectConversation(id)));
         }
+        self.coalesce_provider_prefs(&mut out);
+        out
     }
 
     pub fn set_connection(&mut self, connection: Connection) -> Outcome {
@@ -778,6 +834,7 @@ impl AppState {
                 self.local_cli_disconnected();
                 self.set_cli_approvals_available(false);
                 for c in &mut self.conversations {
+                    c.lifecycle_ready = false;
                     c.ui_requests.clear();
                     c.ui_answering.clear();
                     c.diagnostics.reset();
@@ -1270,11 +1327,53 @@ impl AppState {
                 match first {
                     Some(id) => out.merge(self.dispatch(Command::SelectConversation(id))),
                     None => {
+                        if let Some(id) = self.selected {
+                            out.merge(self.flush_draft(id));
+                        }
                         self.selected = None;
+                        self.prefs.selected_conversation = None;
                         out.notes.push(Note::SelectionChanged);
                     }
                 }
                 out.effects.push(Effect::SavePrefs(self.prefs.clone()));
+            }
+            Command::CloseConversation {
+                conversation,
+                generation,
+            } => {
+                if self
+                    .conversation(conversation)
+                    .is_none_or(|c| c.generation != generation)
+                {
+                    return out;
+                }
+                if let Some(reason) = self.close_conversation_reason(conversation) {
+                    self.notice = Some(reason.into());
+                    out.notes.push(Note::Other);
+                    return out;
+                }
+                self.prefs.closed_conversations.insert(conversation.0);
+                if self.selected == Some(conversation) {
+                    let project = self.conversation(conversation).unwrap().project;
+                    self.prefs.selected_project.get_or_insert(project);
+                    self.selected = None;
+                    self.prefs.selected_conversation = None;
+                    self.search_return = None;
+                    let next = self.visible_conversations().first().map(|c| c.id);
+                    if let Some(id) = next {
+                        out.merge(self.dispatch(Command::SelectConversation(id)));
+                    }
+                    out.notes.push(Note::SelectionChanged);
+                } else if self.prefs.selected_conversation == Some(conversation) {
+                    self.prefs.selected_conversation = self.selected;
+                }
+                out.notes.push(Note::ConversationsChanged);
+                out.effects.push(Effect::SavePrefs(self.prefs.clone()));
+                self.coalesce_provider_prefs(&mut out);
+            }
+            Command::ReopenConversation(id) => {
+                // An explicit reopen is navigation, not a fresh session or a prompt.
+                out.merge(self.dispatch(Command::SelectConversation(id)));
             }
             Command::SelectConversation(id) => {
                 let real = self.mode == Mode::Real;
@@ -1283,6 +1382,11 @@ impl AppState {
                     return out;
                 };
                 let project = c.project;
+                // Explicit navigation (including a saved-history search hit) reopens a closed
+                // conversation. Automatic selection filters closed rows before reaching here.
+                if self.prefs.closed_conversations.remove(&id.0) {
+                    out.notes.push(Note::ConversationsChanged);
+                }
                 // Flush the outgoing draft before leaving it.
                 if let Some(prev) = prev.filter(|p| *p != id) {
                     out.merge(self.flush_draft(prev));
@@ -1298,9 +1402,10 @@ impl AppState {
                 }
                 // A real engine is attached to one session at a time, so coming back to a
                 // conversation attaches it again; the demo keeps what it already loaded.
-                if !c.opened || (real && prev != Some(id)) {
+                if !c.opened || (real && (prev != Some(id) || c.goal_start_pending.is_some())) {
                     c.generation += 1;
                     if real {
+                        c.lifecycle_ready = false;
                         c.changes_state = ChangesState::Unscanned;
                         c.status_check_pending = false;
                     }
@@ -1502,6 +1607,26 @@ impl AppState {
                     && c.plan.available
                 {
                     c.plan.history_open = !c.plan.history_open;
+                    out.notes.push(Note::Other);
+                }
+            }
+            Command::DismissPlanBanner {
+                conversation,
+                generation,
+                revision,
+            } => {
+                if let Some(c) = self.conv_mut(conversation)
+                    && c.generation == generation
+                    && c.plan.revision == revision
+                    && c.plan_banner_visible()
+                {
+                    c.dismissed_plan_through = c
+                        .plan
+                        .tasks
+                        .iter()
+                        .filter(|task| !task.archived)
+                        .map(|task| task.id)
+                        .max();
                     out.notes.push(Note::Other);
                 }
             }
@@ -1915,11 +2040,19 @@ impl AppState {
                 if !text.is_empty()
                     && let Some(id) = self.selected
                 {
-                    if let Some(c) = self.conv_mut(id).filter(|c| c.goal_native) {
-                        // The engine owns scheduling; its GoalChanged shows the result.
+                    if self.conversation(id).is_some_and(|c| c.goal_native) {
+                        let request = self.alloc_request();
+                        let c = self.conv_mut(id).unwrap();
+                        if c.goal_start_pending.is_some() {
+                            return out;
+                        }
+                        c.goal_start_pending = Some((request.clone(), c.generation));
+                        out.notes.push(Note::Other);
+                        // The engine owns scheduling; the exact receipt fences Close.
                         out.effects.push(Effect::Backend(BackendRequest::SetGoal {
                             conversation: id,
                             generation: c.generation,
+                            request,
                             objective: text,
                         }));
                         return out;
@@ -1969,6 +2102,7 @@ impl AppState {
                             .push(Effect::Backend(BackendRequest::GoalControl {
                                 conversation: id,
                                 generation: c.generation,
+                                request: None,
                                 action: GoalControlAction::Archive,
                             }));
                         if stop_run && self.availability().cancel {
@@ -2011,6 +2145,7 @@ impl AppState {
                         .push(Effect::Backend(BackendRequest::GoalControl {
                             conversation: id,
                             generation: c.generation,
+                            request: None,
                             action: GoalControlAction::SetLimits {
                                 max_turns,
                                 max_tokens,
@@ -2028,6 +2163,7 @@ impl AppState {
                         .push(Effect::Backend(BackendRequest::GoalControl {
                             conversation: id,
                             generation: c.generation,
+                            request: None,
                             action: GoalControlAction::SetAudit(required),
                         }));
                 }
@@ -2041,6 +2177,7 @@ impl AppState {
                         .push(Effect::Backend(BackendRequest::GoalControl {
                             conversation: id,
                             generation: c.generation,
+                            request: None,
                             action: GoalControlAction::SkipAudit,
                         }));
                 }
@@ -2054,6 +2191,7 @@ impl AppState {
                         .push(Effect::Backend(BackendRequest::GoalControl {
                             conversation: id,
                             generation: c.generation,
+                            request: None,
                             action: GoalControlAction::SetCriteria(criteria),
                         }));
                 }
@@ -2061,6 +2199,8 @@ impl AppState {
             Command::PauseGoal | Command::ResumeGoal => {
                 let pause = matches!(cmd, Command::PauseGoal);
                 let Some(id) = self.selected else { return out };
+                let request = (!pause && self.conversation(id).is_some_and(|c| c.goal_native))
+                    .then(|| self.alloc_request());
                 let Some(c) = self.conv_mut(id) else {
                     return out;
                 };
@@ -2080,10 +2220,18 @@ impl AppState {
                     };
                     let _ = wanted;
                     if applies {
+                        if !pause {
+                            if c.goal_start_pending.is_some() {
+                                return out;
+                            }
+                            c.goal_start_pending = request.clone().map(|r| (r, c.generation));
+                            out.notes.push(Note::Other);
+                        }
                         out.effects
                             .push(Effect::Backend(BackendRequest::GoalControl {
                                 conversation: id,
                                 generation: c.generation,
+                                request,
                                 action: if pause {
                                     GoalControlAction::Pause
                                 } else {
@@ -2842,7 +2990,9 @@ impl AppState {
 
     pub fn apply_event(&mut self, ev: BackendEvent) -> Outcome {
         let before = self.reconcile_cli_approvals();
+        let id = ev.conversation;
         let mut out = self.apply_event_scoped(ev);
+        self.reveal_unsettled_conversation(id, &mut out);
         if self.reconcile_cli_approvals() || before {
             out.notes.push(Note::Other);
         }
@@ -2915,7 +3065,9 @@ impl AppState {
         // A delayed op event must not clear or replace the gate, even for a live op.
         if matches!(
             ev.kind,
-            EventKind::ExecutionContext { .. } | EventKind::ConversationModel(_)
+            EventKind::ExecutionContext { .. }
+                | EventKind::ConversationModel(_)
+                | EventKind::ConversationLifecycleReady(_)
         ) && ev.op.is_some()
         {
             return out;
@@ -2937,6 +3089,7 @@ impl AppState {
                 | EventKind::QueueAckLost { .. }
                 | EventKind::QueueCancelled { .. }
                 | EventKind::EngineState { .. }
+                | EventKind::ConversationLifecycleReady(_)
                 | EventKind::OlderFailed { .. }
                 | EventKind::HasOlder(_)
                 | EventKind::ToolOutputFull { .. }
@@ -2965,6 +3118,7 @@ impl AppState {
                 | EventKind::PlanEditApplied { .. }
                 | EventKind::PlanEditFailed { .. }
                 | EventKind::GoalSynced { .. }
+                | EventKind::GoalStartConfirmed { .. }
                 | EventKind::GoalRefused { .. }
         );
         if scoped && ev.op != c.run.op() {
@@ -3067,6 +3221,22 @@ impl AppState {
             } => {
                 if c.opened {
                     c.plan.sync(revision, tasks, counts, truncated);
+                    if c.dismissed_plan_through.is_some_and(|last| {
+                        c.plan
+                            .tasks
+                            .iter()
+                            .any(|task| !task.archived && task.id <= last)
+                    }) {
+                        // Adding tasks or trimming completed rows within the same plan must
+                        // not undo a dismissal. A fresh plan has no overlapping live IDs.
+                        c.dismissed_plan_through = c
+                            .plan
+                            .tasks
+                            .iter()
+                            .filter(|task| !task.archived)
+                            .map(|task| task.id)
+                            .max();
+                    }
                     out.notes.push(Note::Other);
                 }
             }
@@ -3147,9 +3317,25 @@ impl AppState {
                     out.notes.push(Note::Other);
                 }
             }
+            EventKind::GoalStartConfirmed { request } => {
+                if c.lifecycle_ready
+                    && c.goal_start_pending.as_ref() == Some(&(request, c.generation))
+                {
+                    c.goal_start_pending = None;
+                    out.notes.push(Note::Other);
+                }
+            }
             EventKind::GoalSynced { goal } => {
                 if !c.opened {
                     return out;
+                }
+                // Reattachment reads current engine state; an old attachment's receipts
+                // cannot clear a newer start, and ordinary pre-receipt projections cannot either.
+                if c.goal_start_pending
+                    .as_ref()
+                    .is_some_and(|(_, generation)| *generation != c.generation)
+                {
+                    c.goal_start_pending = None;
                 }
                 let first = !c.goal_native;
                 c.goal_native = true;
@@ -3717,6 +3903,10 @@ impl AppState {
                         );
                     }
                 }
+                out.notes.push(Note::Other);
+            }
+            EventKind::ConversationLifecycleReady(ready) => {
+                c.lifecycle_ready = ready;
                 out.notes.push(Note::Other);
             }
             EventKind::EngineState { busy, queue } => {

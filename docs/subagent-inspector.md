@@ -1,9 +1,9 @@
 # Subagent inspector
 
-Subagents and workspace Changes are separate inspector tabs. The conversation header and
-command palette provide a direct **Show subagent tasks** entry point, including when the
-inspector is closed or uses a narrow-window drawer. Opening activity never moves the
-composer away from the main conversation.
+Subagents and workspace Changes are separate inspector tabs. Use the right-pane Subagents
+tab, or the command palette's **Show subagent tasks** entry point when the inspector is closed
+or uses a narrow-window drawer. There is no duplicate Subagents button in the conversation
+header. Opening activity never moves the composer away from the main conversation.
 
 ## Presentation contract
 
@@ -18,7 +18,7 @@ composer away from the main conversation.
   Failed and Stopped have explicit text and library icons; unknown statuses remain Unknown.
 - Counts cover the whole available directory. Current work is visible by default; Completed,
   Failed and Stopped tasks move into **Show finished tasks (N)** history, collapsed initially.
-  Unknown statuses stay visible rather than being mistaken for success. The header/tab badge
+  Unknown statuses stay visible rather than being mistaken for success. The tab badge
   counts active tasks, not accumulated history, and has no number when none are active.
 - History is a UI projection, not deletion of engine records. Expanding it shows the latest
   available directory entries first (reverse engine order), bounded to 100 finished rows.

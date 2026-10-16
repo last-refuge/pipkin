@@ -19,6 +19,9 @@ pub fn relative_time(now: i64, at: i64) -> String {
     }
 }
 
+#[cfg(test)]
+mod tests;
+
 impl Workspace {
     pub(super) fn render_nav(
         &mut self,
@@ -43,7 +46,10 @@ impl Workspace {
                         (
                             i,
                             s.conversation(h.conversation)
-                                .map_or_else(|| "Conversation".into(), |c| c.title.clone()),
+                                .map_or_else(|| "Conversation".into(), |c| {
+                                    if s.conversation_is_closed(c.id) { format!("{} · Closed (reopens when selected)", c.title) }
+                                    else { c.title.clone() }
+                                }),
                             h.snippet.clone(),
                         )
                     })
@@ -87,7 +93,10 @@ impl Workspace {
                     "Start one with New conversation.".to_string(),
                 )
             } else if search_empty {
-                ("Nothing here".to_string(), String::new())
+                (
+                    "No open conversations".to_string(),
+                    "Reopen one from Closed, or start a new conversation.".into(),
+                )
             } else {
                 (
                     format!("No conversations match “{query}”"),
@@ -97,6 +106,8 @@ impl Workspace {
             div()
                 .flex()
                 .flex_col()
+                .flex_1()
+                .min_h_0()
                 .gap(px(4.0))
                 .px(px(12.0))
                 .py(px(20.0))
@@ -193,6 +204,99 @@ impl Workspace {
                         )
                 }))
                 .into_any_element()
+        };
+
+        let closed = {
+            let state = self.state(cx);
+            let rows = state.closed_conversations();
+            let count = rows.len();
+            let visible: Vec<_> = rows
+                .into_iter()
+                .take(self.closed_conversations_limit)
+                .map(|c| (c.id, c.title.clone()))
+                .collect();
+            (count > 0).then(|| {
+                let this = cx.entity();
+                div()
+                    .flex_none()
+                    .flex()
+                    .flex_col()
+                    .px(px(8.0))
+                    .child(
+                        div()
+                            .debug_selector(|| "toggle-closed-conversations".into())
+                            .child(
+                                Btn::new("toggle-closed-conversations")
+                                    .icon(if self.closed_conversations_open {
+                                        "chevron-down"
+                                    } else {
+                                        "chevron-right"
+                                    })
+                                    .label(format!("Closed ({count})"))
+                                    .aria("Show or hide closed conversations")
+                                    .tab_stop(true)
+                                    .on_click({
+                                        let this = this.clone();
+                                        move |_, cx| {
+                                            this.update(cx, |w, cx| {
+                                                w.closed_conversations_open =
+                                                    !w.closed_conversations_open;
+                                                cx.notify();
+                                            })
+                                        }
+                                    }),
+                            ),
+                    )
+                    .when(self.closed_conversations_open, |d| {
+                        d.child(
+                            div()
+                                .id("closed-conversation-list")
+                                .role(Role::List)
+                                .aria_label("Closed conversations")
+                                .flex()
+                                .flex_col()
+                                .max_h(px(240.0))
+                                .overflow_y_scroll()
+                                .children(visible.into_iter().map(|(id, title)| {
+                                    let this = this.clone();
+                                    menu_row(("closed-conv", id.0 as usize), false, cx)
+                                        .debug_selector(move || {
+                                            format!("reopen-conversation-{}", id.0)
+                                        })
+                                        .role(Role::Button)
+                                        .aria_label(format!("Reopen {title}"))
+                                        .on_click(move |_, window, cx| {
+                                            this.update(cx, |w, cx| {
+                                                w.close_panel(window, cx);
+                                                w.dispatch(Command::ReopenConversation(id), cx);
+                                            })
+                                        })
+                                        .child(div().flex_1().min_w_0().truncate().child(title))
+                                        .child(
+                                            div()
+                                                .text_size(t.small_size())
+                                                .text_color(c.text_faint)
+                                                .child("Reopen"),
+                                        )
+                                }))
+                                .when(count > self.closed_conversations_limit, |d| {
+                                    d.child(
+                                        Btn::new("more-closed-conversations")
+                                            .label("Show more closed conversations")
+                                            .tab_stop(true)
+                                            .on_click(move |_, cx| {
+                                                this.update(cx, |w, cx| {
+                                                    w.closed_conversations_limit = w
+                                                        .closed_conversations_limit
+                                                        .saturating_add(50);
+                                                    cx.notify();
+                                                })
+                                            }),
+                                    )
+                                }),
+                        )
+                    })
+            })
         };
 
         let found_el = found.map(|(hits, coverage)| {
@@ -473,6 +577,7 @@ impl Workspace {
             })
             .children(found_el)
             .child(list)
+            .children(closed)
             .child(
                 div()
                     .px(px(12.0))

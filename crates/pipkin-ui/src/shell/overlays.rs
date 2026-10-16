@@ -645,7 +645,13 @@ impl Workspace {
                 );
             }
             if let Some(preview) = &question.preview {
-                block = block.child(preview_blocks(preview, &t));
+                block = block.child(preview_blocks(
+                    self.form_previews
+                        .get(preview)
+                        .map(Vec::as_slice)
+                        .unwrap_or_default(),
+                    &t,
+                ));
             }
             for option in &question.options {
                 let i = flat;
@@ -699,7 +705,13 @@ impl Workspace {
                     );
                 }
                 if let Some(preview) = &option.preview {
-                    text = text.child(preview_blocks(preview, &t));
+                    text = text.child(preview_blocks(
+                        self.form_previews
+                            .get(preview)
+                            .map(Vec::as_slice)
+                            .unwrap_or_default(),
+                        &t,
+                    ));
                 }
                 row = row.child(text);
                 block = block.child(row);
@@ -1689,10 +1701,9 @@ fn field_box(editor: gpui::Entity<crate::text::ComposerEditor>, cx: &App) -> Div
         .child(div().flex_1().min_w_0().child(editor))
 }
 
-/// A bounded Markdown preview as blocks: headings, paragraphs, list items and code, in the
-/// transcript's parser. Inline styles are not drawn; the text is shown as given.
-fn preview_blocks(markdown: &str, t: &crate::theme::Theme) -> Div {
-    use crate::transcript::markdown::{BlockKind, parse};
+/// A pre-parsed, bounded Markdown preview, including table layout. Inline styles are not drawn.
+fn preview_blocks(blocks: &[crate::transcript::markdown::Block], t: &crate::theme::Theme) -> Div {
+    use crate::transcript::markdown::BlockKind;
     let c = &t.colors;
     let mut out = div()
         .flex()
@@ -1700,7 +1711,27 @@ fn preview_blocks(markdown: &str, t: &crate::theme::Theme) -> Div {
         .gap(px(4.0))
         .py(px(4.0))
         .text_size(t.small_size());
-    for block in parse(markdown) {
+    let mut bi = 0;
+    while bi < blocks.len() {
+        if matches!(blocks[bi].kind, BlockKind::TableCell(_)) {
+            let end = crate::transcript::tables::end(blocks, bi);
+            out = out.child(crate::transcript::tables::grid(
+                gpui::ElementId::NamedInteger("preview-table".into(), bi as u64),
+                &blocks[bi..end],
+                t,
+                |_, block| {
+                    let BlockKind::TableCell(meta) = block.kind else {
+                        unreachable!()
+                    };
+                    crate::transcript::tables::cell(meta, t)
+                        .child(block.text.clone())
+                        .into_any_element()
+                },
+            ));
+            bi = end;
+            continue;
+        }
+        let block = blocks[bi].clone();
         out = out.child(match block.kind {
             BlockKind::Rule => div().my(px(4.0)).h(px(1.0)).w_full().bg(c.border_strong),
             BlockKind::Code { .. } => div()
@@ -1719,7 +1750,9 @@ fn preview_blocks(markdown: &str, t: &crate::theme::Theme) -> Div {
             BlockKind::Paragraph => div()
                 .when(block.quote, |d| d.text_color(c.text_muted))
                 .child(block.text),
+            BlockKind::TableCell(_) => unreachable!(),
         });
+        bi += 1;
     }
     out
 }

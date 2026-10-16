@@ -1,5 +1,128 @@
 # Scorecard
 
+## Streaming table stability
+
+- **Reproduced:** native streaming publishes `Synced` snapshots. `ItemsReset` discarded the
+  Markdown cache and all measured list heights, so the deferred parsing path painted an empty,
+  collapsed transcript before repainting the table at full height on every update. The new
+  per-paint regression failed before the fix (job242, prefix 1/frame 0, zero registered blocks;
+  retained `/home/jason/.pg.tckrjF`). Earlier table tests checked settled frames/token events
+  and missed this snapshot-path regression.
+- **Changed:** snapshots retain unchanged parses, refresh changed cached items outside render,
+  and prune removed identities without eagerly parsing cold history or promoting unread cache
+  entries. Surviving list identities retain measured height hints; structural differences use
+  splices and content updates remeasure without resetting the list. Deferred misses keep the
+  previous same-kind/expansion presentation until prepared; attachment generations fence that
+  fallback. Selection survives updates to retained identities and clears on removal/reattachment.
+- **Measured:** targeted244 passed 85 transcript tests and strict workspace/all-target Clippy.
+  Per-frame tests cover the exact sample table streamed character by character through snapshots:
+  no missing header frames, fixed column widths and bounded single-character vertical displacement.
+  Additional tests cover an anchored reader inside a growing table, selection through completion,
+  deferred cache misses, generation isolation, deleted identities, bounded refresh and LRU order.
+  Full245 passed workspace tests (UI217), strict all-target Clippy and fmt/diff checks. The live
+  CLI ledger remains `bf794518e35d7f1ce3a50b3058c4191bb9401e568fc645d77e10b0f404cf1f22`.
+  Nonempty owned test directory `/home/jason/.pg.0WZLv2` was retained; the job exited successfully.
+- **Unverified:** real compositor presentation/frame pacing and native pointer/keyboard/AT-SPI
+  interaction. No native input, live CLI prompts, release packaging, installation, commit or push;
+  the user handles rebuilding. All earlier uncommitted work is retained.
+
+## Streamed Markdown tables
+
+- **Changed:** GFM tables are parsed into row-major, individually selectable cells, including
+  empty headers and missing cells. The transcript renders bordered grids with header emphasis,
+  column alignment, wrapped inline formatting/links, and horizontal scrolling when columns
+  cannot fit. Plain-text copy uses tabs between cells and newlines between rows.
+- **Changed:** table hit testing follows the actual alignment of each shaped visual line and
+  excludes clipped cells; blank space in a short cell still belongs to that cell. Link activation
+  uses the same coordinate correction. Transcript Markdown cache misses are coalesced and prepared
+  outside render, reading current content rather than installing captured stale text. Streaming
+  refreshes the working set before painting; same-length replacements invalidate cached content.
+  Questionnaire previews share the grid layout and are prepared outside render as well.
+- **Measured:** full241 passed workspace tests (UI211), strict all-target Clippy and fmt/diff checks.
+  Parser/document tests cover the Subagent vs Background job example, partial streaming prefixes,
+  escaped pipes, inline styles, Unicode, empty cells, tabular copy, cache bounds and same-length
+  replacements. Four new GPUI tests cover narrow/wide layouts, aligned selection/link activation,
+  actual mouse-drag selection, horizontal scrolling/clipping, streaming remeasurement, tail following
+  and preservation of an earlier scroll anchor. Existing 10,000-message boundedness tests pass.
+  The live CLI ledger remains `bf794518e35d7f1ce3a50b3058c4191bb9401e568fc645d77e10b0f404cf1f22`.
+  Nonempty owned test directory `/home/jason/.pg.PjDw3p` was retained; the job exited successfully.
+- **Development failures, retained:** 234/236/239 caught compile-time integration/test issues.
+  237/238 caught test assumptions about URL normalization, cache item counts and visible drag
+  endpoints. The corrected fixtures assert the literal URL, single streaming-item revision,
+  visible drag endpoints and exact cross-cell copy; targeted240 and full241 pass.
+- **Unverified:** native pointer/keyboard, screen-reader and display-scale interaction for tables.
+  No native input, live CLI prompts, release packaging, installation, commit or push; the user
+  handles rebuilding. Earlier uncommitted label, plan and conversation-lifecycle work is retained.
+
+## Conversation header simplification
+
+- Close is now icon-only (×), retaining its tooltip, accessible name, keyboard focus and
+  lifecycle/IME guards. The duplicate Subagents header button is removed; the right-pane tab
+  and command-palette entry remain.
+- Full233 passed workspace tests (UI200), strict all-target Clippy and fmt/diff checks.
+  The close/reopen GPUI regression also checks the icon-only square control. No native input,
+  live CLI prompts, release packaging or installation; the user handles rebuilding.
+
+## Reversible Close / Closed conversations
+
+- **Changed:** header Close moves a settled conversation out of the active list into a collapsible,
+  project-filtered Closed section with explicit Reopen. Saved history-search hits identify closed
+  results and explicitly reopen them. Namespaced, bounded preference IDs retain history, drafts,
+  execution profile/model and plans; Close never calls RemoveSession, Cancel, Create or Submit.
+- **Changed:** core guards cover incomplete/offline snapshots, active/unknown runs, pending/queued
+  inputs, questions, subagents/jobs, active goals, provider changes, creation/approval uncertainty
+  and unsaved drafts/storage errors. A complete attachment-scoped lifecycle barrier prevents Close
+  between partial snapshot projections. Native goal start/resume uses exact request receipts after
+  a fresh same-attachment snapshot; unknown results are not replayed. A later explicit reattachment
+  refreshes their state. Global activity/question hints only restore visibility; they cannot select
+  a conversation or grant execution authority.
+- **Changed:** Close has a disabled-reason tooltip and an actual keyboard tab stop; Closed rows are
+  bounded initially to 50 with Show more. IME composition prevents the Close control from acting.
+  Closing the last active row retains the project and an empty workspace across catalog/restart.
+- **Measured:** full232 passed workspace tests (UI200), strict all-target Clippy, fmt and diff checks.
+  Coverage includes native snapshot ordering/nonselected activity, namespaced SQLite persistence,
+  CLI close/restart/reopen with the same identity/draft and zero additional fake CLI probes or native
+  inference, native completed-goal reopening without restarting it, and GPUI busy-close/reopen clicks.
+  The live ledger remains `bf794518e35d7f1ce3a50b3058c4191bb9401e568fc645d77e10b0f404cf1f22`.
+  Job232 exited 1 only after those gates passed: final `rmdir` found leftover test directories;
+  `/home/jason/.pg.O3IgmS` was retained, not recursively deleted. Follow-up fmt/diff checks passed.
+- **Failed during development, retained:** targeted226 exposed missing CLI policy admission and
+  constructor filtering; targeted227 exposed lost project selection when closing the initial/demo
+  conversation; targeted228 stopped at snapshot-marker byte accounting. Full229 caught a shared
+  button keyboard-focus regression from explicitly setting tab-stop false; optional opt-in now
+  leaves existing focus behavior untouched, and the keyboard regressions pass. Full230 stopped at
+  a test-only protocol variant typo. Full231 passed tests/Clippy but caught formatting of a late
+  accessibility-label edit, normalized before full232. No assertions or timeouts were weakened.
+- **Unverified:** real native keyboard/pointer/IME/accessibility interaction; no native input, live CLI
+  prompts, release packaging or installation performed. The user rebuilds/installs. Prior uncommitted
+  label and plan changes are retained; no new commit or push requested.
+
+## Plan banner lifecycle and finished-plan rollover
+
+- **Changed:** the banner requires open tasks, has an accessible dismiss button, and hides completed,
+  skipped or cancelled-only plans. Dismissal is a conversation-local view choice, survives snapshot
+  refreshes, and does not cancel work or remove inspector access. New plans use fresh task IDs and
+  get a new banner; stale revisions/captured close actions cannot hide or revive the wrong plan.
+- **Changed:** an independent batch of new tasks after all current tasks finish atomically archives
+  the old plan. IDs, evidence and history remain; unfinished plans and explicit old-ID continuations
+  are untouched. Old archived counts are omitted from the composer banner.
+- **Measured:** targeted222 passed core plan, engine domain/runtime and GPUI pointer-click tests,
+  including restart persistence and idempotent rollover. Full223 passed workspace tests (UI199),
+  strict all-target Clippy and fmt/diff checks. Native accessibility interaction remains unverified. No release rebuild, packaging or installation requested/performed;
+  the user handles rebuilding. Earlier backend-label removal remains uncommitted alongside this work.
+
+## Conversation Backend label removal
+
+- Removed the redundant Backend status row above the composer for all providers. The model
+  picker remains authoritative; pending-provider warnings, send guards and the Demo marker remain.
+- Full220 passed workspace tests (UI198), strict all-target Clippy and fmt/diff checks. The updated
+  regression checks actual model identity rather than the removed label. No live CLI prompts or
+  native interaction verification. Package/install221 completed as `1.1.0-native-da223967949e`,
+  with isolated probes and synthetic installed workflow passing; previous versions and running
+  session retained. Evidence: `/home/jason/.pg.yRLVzm/installation-observation.json`. Changes uncommitted.
+- The user subsequently requested handling rebuilds themselves: do not package/rebuild/install
+  future changes unless explicitly asked.
+
 ## CLI minimum-version policy (current)
 
 - **User-reported acceptance:** the user reports that everything works and they can test, and

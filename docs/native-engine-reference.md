@@ -23,7 +23,8 @@ engine and is available without an external runtime or network access.
   Cross-provider or CLI-alias changes create a separate conversation; no history/draft is forwarded.
   Failed/cancelled changes block only their source until completed or explicitly kept; other chats
   remain usable. New follows the current conversation's model, or its explicit pending choice.
-  The composer shows the actual immutable backend/model, never a silent GPT/native fallback.
+  The composer's model picker shows the actual model, with no separate Backend label or silent
+  GPT/native fallback.
   Filesystem-only discovery finds the installation
   and captures the selected project; saved model/path preferences are not grants. Review canonical
   paths, then explicitly confirm Trust these paths and connect. Provider configuration stops
@@ -69,6 +70,17 @@ engine and is available without an external runtime or network access.
   changes or other effects already performed. Check status after an uncertain submission
   instead of blindly sending it again. Restart recovers durable work; interrupted tools may
   have partially changed files and should be inspected before being repeated.
+- Close in the conversation header moves a settled conversation into the sidebar's Closed section.
+  Reopen restores the same conversation, history, draft and provider identity; nothing is deleted,
+  cancelled or resubmitted. Closed membership persists locally, separately for each backend.
+  Active/uncertain work, queued input, pending approvals, active goals and unsaved drafts must be
+  resolved first. Current engine state must be fully loaded. Reported new activity restores a closed
+  conversation's visibility without selecting it or replaying work. Selecting a closed history-search
+  result explicitly reopens it.
+- The Plan banner appears only while tasks are open and can be dismissed without cancelling work.
+  A new independent task batch after all current tasks finish archives the previous plan; history
+  remains readable. Explicit references to prior task IDs continue that plan instead. Unfinished
+  work is never silently discarded. The plan inspector remains accessible after banner dismissal.
 - Compaction summarizes earlier context while preserving browsable history. Model and
   thinking selections are conversation-specific. Usage includes provider-reported tokens;
   estimates and missing provider fields are not exact billing records.

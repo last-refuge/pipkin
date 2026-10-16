@@ -39,6 +39,8 @@ impl ExecutionProfile {
             | Command::KeepConversationProvider
             | Command::SelectProject(_)
             | Command::SelectConversation(_)
+            | Command::CloseConversation { .. }
+            | Command::ReopenConversation(_)
             | Command::NewConversation
             | Command::RenameConversation(..)
             | Command::SetSearch(_)

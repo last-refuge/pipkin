@@ -48,6 +48,8 @@ pub struct Btn {
     on_click: Option<Handler>,
     aria: Option<SharedString>,
     compact: bool,
+    hint: Option<SharedString>,
+    tab_stop: bool,
 }
 
 impl Btn {
@@ -63,6 +65,8 @@ impl Btn {
             on_click: None,
             aria: None,
             compact: false,
+            hint: None,
+            tab_stop: false,
         }
     }
     pub fn label(mut self, l: impl Into<SharedString>) -> Self {
@@ -97,9 +101,34 @@ impl Btn {
         self.aria = Some(a.into());
         self
     }
+    pub fn hint(mut self, text: impl Into<SharedString>) -> Self {
+        self.hint = Some(text.into());
+        self
+    }
+    pub fn tab_stop(mut self, enabled: bool) -> Self {
+        self.tab_stop = enabled;
+        self
+    }
     pub fn on_click(mut self, f: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Rc::new(f));
         self
+    }
+}
+
+struct ControlHint(SharedString);
+impl gpui::Render for ControlHint {
+    fn render(&mut self, _: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        div()
+            .max_w(px(320.0))
+            .p(px(8.0))
+            .rounded(px(6.0))
+            .border_1()
+            .border_color(theme.colors.border)
+            .bg(theme.colors.bg_pane)
+            .text_size(theme.small_size())
+            .text_color(theme.colors.text)
+            .child(self.0.clone())
     }
 }
 
@@ -154,10 +183,14 @@ impl RenderOnce for Btn {
             .font_family(t.ui_font())
             .role(gpui::Role::Button)
             .when_some(aria, |d, a| d.aria_label(a))
+            .when_some(self.hint, |d, hint| {
+                d.tooltip(move |_, cx| cx.new(|_| ControlHint(hint.clone())).into())
+            })
             .when(disabled, |d| d.opacity(0.4).cursor_not_allowed())
             .when(!disabled, |d| {
                 d.cursor_pointer()
                     .tab_index(0)
+                    .when(self.tab_stop, |d| d.tab_stop(true))
                     .hover(move |s| s.bg(hover_bg))
                     .active(move |s| s.bg(active_bg))
                     .focus_visible(move |s| s.border_2().border_color(ring))

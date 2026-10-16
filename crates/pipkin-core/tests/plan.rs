@@ -98,6 +98,115 @@ fn backend_requests(out: &Outcome) -> Vec<&BackendRequest> {
 }
 
 #[test]
+fn banner_disappears_for_finished_work_and_late_revisions_cannot_revive_it() {
+    let mut s = state();
+    opened(&mut s);
+    assert!(!s.current().unwrap().plan_banner_visible());
+    for (i, status) in [
+        PlanTaskStatus::Active,
+        PlanTaskStatus::Pending,
+        PlanTaskStatus::Blocked,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        s.apply_event(event(&s, synced(vec![task(1, status)], i as u64 + 1)));
+        assert!(s.current().unwrap().plan_banner_visible());
+    }
+    s.apply_event(event(
+        &s,
+        synced(
+            vec![
+                task(1, PlanTaskStatus::Completed),
+                task(2, PlanTaskStatus::Skipped),
+                task(3, PlanTaskStatus::Cancelled),
+            ],
+            4,
+        ),
+    ));
+    assert!(!s.current().unwrap().plan_banner_visible());
+    assert_eq!(
+        s.current().unwrap().plan.tasks.len(),
+        3,
+        "completion keeps inspector history"
+    );
+    s.apply_event(event(&s, synced(vec![task(1, PlanTaskStatus::Active)], 3)));
+    assert_eq!(s.current().unwrap().plan.revision, 4);
+    assert!(!s.current().unwrap().plan_banner_visible());
+}
+
+#[test]
+fn dismissal_is_scoped_non_destructive_and_survives_updates_and_reattachment() {
+    let mut s = state();
+    opened(&mut s);
+    s.apply_event(event(&s, synced(vec![task(1, PlanTaskStatus::Active)], 1)));
+    let c = s.current().unwrap();
+    let dismiss = Command::DismissPlanBanner {
+        conversation: c.id,
+        generation: c.generation,
+        revision: c.plan.revision,
+    };
+    assert!(s.dispatch(dismiss.clone()).effects.is_empty());
+    assert!(!s.current().unwrap().plan_banner_visible());
+    s.dispatch(Command::TogglePlanTask(1));
+    assert_eq!(s.current().unwrap().plan.expanded, Some(1));
+    let continuing = || {
+        synced(
+            vec![
+                task(1, PlanTaskStatus::Completed),
+                task(2, PlanTaskStatus::Active),
+            ],
+            2,
+        )
+    };
+    s.apply_event(event(&s, continuing()));
+    assert!(
+        !s.current().unwrap().plan_banner_visible(),
+        "ordinary progress does not reopen a dismissed banner"
+    );
+    opened(&mut s);
+    s.apply_event(event(&s, continuing()));
+    assert!(
+        !s.current().unwrap().plan_banner_visible(),
+        "snapshot refresh keeps dismissal"
+    );
+    s.apply_event(event(&s, synced(vec![task(2, PlanTaskStatus::Active)], 3)));
+    assert!(
+        !s.current().unwrap().plan_banner_visible(),
+        "archiving completed rows within the same plan does not reopen it"
+    );
+    s.dispatch(Command::SelectConversation(ConversationId(2)));
+    opened(&mut s);
+    s.apply_event(event(&s, synced(vec![task(1, PlanTaskStatus::Active)], 1)));
+    assert!(
+        s.current().unwrap().plan_banner_visible(),
+        "same task ID in another conversation is independent"
+    );
+    s.dispatch(dismiss.clone());
+    assert!(s.current().unwrap().plan_banner_visible());
+    s.dispatch(Command::SelectConversation(ConversationId(1)));
+    opened(&mut s);
+    s.apply_event(event(&s, synced(vec![task(3, PlanTaskStatus::Active)], 3)));
+    assert!(
+        s.current().unwrap().plan_banner_visible(),
+        "fresh work after archival gets a fresh banner"
+    );
+    s.dispatch(dismiss);
+    assert!(
+        s.current().unwrap().plan_banner_visible(),
+        "a stale close cannot hide the new plan"
+    );
+    let c = s.current().unwrap();
+    let stale_attachment = Command::DismissPlanBanner {
+        conversation: c.id,
+        generation: c.generation + 1,
+        revision: c.plan.revision,
+    };
+    s.dispatch(stale_attachment);
+    assert!(s.current().unwrap().plan_banner_visible());
+}
+
+#[test]
 fn a_plan_is_unavailable_until_an_opened_session_reports_one() {
     let mut s = state();
     assert!(!s.current().unwrap().plan.available);

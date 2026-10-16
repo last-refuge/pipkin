@@ -349,6 +349,43 @@ impl Workspace {
                 })
         };
 
+        let close_conversation = self.state(cx).current().map(|cv| {
+            let id = cv.id;
+            let generation = cv.generation;
+            let reason = if self.composer.read(cx).is_composing() {
+                Some("Finish text composition before closing.")
+            } else {
+                self.state(cx).close_conversation_reason(id)
+            };
+            let this = cx.entity();
+            div().debug_selector(|| "close-conversation".into()).child(
+                Btn::new("close-conversation")
+                    .icon("x")
+                    .tab_stop(true)
+                    .hint(reason.unwrap_or(
+                        "Move to Closed. History and drafts are kept; reopen from the sidebar.",
+                    ))
+                    .aria(format!(
+                        "Close conversation — {}",
+                        reason.unwrap_or("keep history and drafts in Closed")
+                    ))
+                    .disabled(reason.is_some())
+                    .on_click(move |_, cx| {
+                        this.update(cx, |w, cx| {
+                            if !w.composer.read(cx).is_composing() {
+                                w.dispatch(
+                                    Command::CloseConversation {
+                                        conversation: id,
+                                        generation,
+                                    },
+                                    cx,
+                                );
+                            }
+                        })
+                    }),
+            )
+        });
+
         let header = div()
             .flex()
             .flex_none()
@@ -402,23 +439,7 @@ impl Workspace {
                     .is_some_and(|c| self.state(cx).cli_approval_panel_available(c.id)),
                 |d| d.child(self.cli_approval_entry(cx)),
             )
-            .when(self.subagent_rows.total > 0, |d| {
-                d.child(
-                    Btn::new("show-subagent-tasks")
-                        .label(self.subagent_rows.tab_label())
-                        .aria(format!(
-                            "Show subagent tasks, {} active",
-                            self.subagent_rows.active
-                        ))
-                        .selected(
-                            self.inspector_tab == super::subagents::InspectorTab::Subagents
-                                && (insp_docked || self.temp_panel == Some(Panel::Inspector)),
-                        )
-                        .on_click(|window, cx| {
-                            window.dispatch_action(Box::new(super::actions::ShowSubagents), cx)
-                        }),
-                )
-            })
+            .children(close_conversation)
             .child(insp_toggle);
 
         let body = if has_conv {
@@ -538,7 +559,6 @@ impl Workspace {
                 Some(live_activity(&cv.items, &cv.jobs, s.now())),
             )
         };
-        let backend_label = super::local_cli::conversation_backend_label(self.state(cx));
         let connection_mismatch = self.state(cx).provider_selection_notice();
         let _ = retry_hint;
         let stop_error = self
@@ -567,9 +587,9 @@ impl Workspace {
         let plan_strip = self
             .state(cx)
             .current()
-            .map(|cv| &cv.plan)
-            .filter(|p| p.available && p.counts.live() > 0)
-            .map(|p| {
+            .filter(|cv| cv.plan_banner_visible())
+            .map(|cv| {
+                let p = &cv.plan;
                 let mut titles: Vec<String> = p
                     .tasks
                     .iter()
@@ -586,12 +606,21 @@ impl Workspace {
                             .map(|t| t.title.clone()),
                     );
                 }
-                let mut detail = super::plan::counts_line(&p.counts);
+                let mut counts = p.counts;
+                counts.archived = 0; // Prior plans are history, not current banner progress.
+                let mut detail = super::plan::counts_line(&counts);
                 if !titles.is_empty() {
                     detail.push_str(" · ");
                     detail.push_str(&titles.join(" · "));
                 }
-                detail
+                (
+                    detail,
+                    Command::DismissPlanBanner {
+                        conversation: cv.id,
+                        generation: cv.generation,
+                        revision: p.revision,
+                    },
+                )
             });
         let capabilities = self.state(cx).execution_capabilities();
         let restricted_model = super::local_cli::restricted_model_label(self.state(cx));
@@ -1109,17 +1138,6 @@ impl Workspace {
                     .max_w(px(760.0 * t.scale.max(1.0)))
                     .flex()
                     .flex_col()
-                    .child(
-                        div()
-                            .id("conversation-backend")
-                            .role(Role::Status)
-                            .aria_label(backend_label)
-                            .text_size(t.small_size())
-                            .text_color(c.text_muted)
-                            .px(px(12.0))
-                            .py(px(4.0))
-                            .child(backend_label),
-                    )
                     .children(connection_mismatch.map(|reason| {
                         strip(
                             cx,
@@ -1143,8 +1161,8 @@ impl Workspace {
                         )
                     }))
                     .children(not_sent)
-                    .children(plan_strip.map(|detail| {
-                        strip(
+                    .children(plan_strip.map(|(detail, dismiss)| {
+                        div().debug_selector(|| "plan-banner".into()).child(strip(
                             cx,
                             "circle-check",
                             c.text_muted,
@@ -1167,8 +1185,28 @@ impl Workspace {
                                         }
                                     })
                                     .into_any_element(),
+                                div()
+                                    .flex_none()
+                                    .flex()
+                                    .debug_selector(|| "dismiss-plan-banner".into())
+                                    .child(
+                                        Btn::new("dismiss-plan-banner")
+                                            .icon("x")
+                                            .aria("Dismiss plan banner")
+                                            .kind(BtnKind::Subtle)
+                                            .compact()
+                                            .on_click({
+                                                let this = this.clone();
+                                                move |_, cx| {
+                                                    this.update(cx, |w, cx| {
+                                                        w.dispatch(dismiss.clone(), cx)
+                                                    })
+                                                }
+                                            }),
+                                    )
+                                    .into_any_element(),
                             ],
-                        )
+                        ))
                     }))
                     .children(goal.map(|goal| {
                         let state = goal

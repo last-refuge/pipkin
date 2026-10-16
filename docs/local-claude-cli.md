@@ -70,8 +70,8 @@ normal workspace. No installation or billing/account changes are performed by th
    separate CLI conversation and opens Connections for fresh scoped confirmation, then one
    journaled metadata-only creation. No prompt or Write is authorized. Preferences remember
    paths/model/tool-mode hints, never grants or credentials. Native provider sign-in stays separate.
-3. Wait for the conversation's authoritative readiness before sending. The composer must say
-   **Backend: Claude Code · local CLI**, not Pipkin providers. Choosing Claude does not convert
+3. Wait for the conversation's authoritative readiness before sending. The composer's model
+   picker shows the actual **Claude Code CLI** model; there is no separate Backend label. Choosing Claude does not convert
    an old GPT/native chat. A failed/cancelled model change blocks only its initiating conversation;
    use **Keep this conversation’s provider** to abandon that change explicitly. Other conversations
    remain usable. Switching to a native provider or another CLI alias creates a separate chat,

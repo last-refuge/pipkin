@@ -1,3 +1,5 @@
+mod tables;
+
 use std::ops::Range;
 
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px};

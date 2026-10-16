@@ -510,6 +510,8 @@ pub struct Prefs {
     pub window_size: Option<(f32, f32)>,
     pub selected_project: Option<ProjectId>,
     pub selected_conversation: Option<ConversationId>,
+    /// Desktop-local organization, namespaced by backend; never deletion or execution authority.
+    pub closed_conversations: std::collections::BTreeSet<u64>,
     pub model: Option<String>,
 }
 
@@ -532,6 +534,7 @@ impl Default for Prefs {
             window_size: None,
             selected_project: None,
             selected_conversation: None,
+            closed_conversations: Default::default(),
             model: None,
         }
     }
@@ -978,6 +981,9 @@ impl PlanState {
         counts: PlanCounts,
         truncated: bool,
     ) {
+        if self.available && revision < self.revision {
+            return; // A late projection cannot resurrect an earlier plan/banner.
+        }
         self.available = true;
         self.revision = revision;
         self.tasks = tasks;

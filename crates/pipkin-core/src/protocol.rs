@@ -24,6 +24,12 @@ pub enum Command {
     },
     SelectProject(ProjectId),
     SelectConversation(ConversationId),
+    /// Move a settled conversation to Closed without deleting its data or stopping work.
+    CloseConversation {
+        conversation: ConversationId,
+        generation: u64,
+    },
+    ReopenConversation(ConversationId),
     /// Navigate the selected session's read-only child transcript, or back to its parent.
     SelectSubagent(Option<u64>),
     /// This session's engine setting, not an app-local visibility preference.
@@ -48,6 +54,12 @@ pub enum Command {
     TogglePlanTask(u64),
     /// List or hide the plan's finished tasks (a projection, not deletion).
     TogglePlanHistory,
+    /// Hide only the captured plan banner; preserve tasks and inspector access.
+    DismissPlanBanner {
+        conversation: ConversationId,
+        generation: u64,
+        revision: u64,
+    },
     /// Change a task's status from the plan view, through the engine's plan service.
     EditPlanTask {
         task: u64,
@@ -298,12 +310,15 @@ pub enum BackendRequest {
     SetGoal {
         conversation: ConversationId,
         generation: u64,
+        request: RequestId,
         objective: String,
     },
     /// Pause, resume or archive the engine-owned goal.
     GoalControl {
         conversation: ConversationId,
         generation: u64,
+        /// Start/resume receipts fence closing while the published goal catches up.
+        request: Option<RequestId>,
         action: GoalControlAction,
     },
     /// Offer a desktop-kept goal record to the engine, as paused, once per key.
@@ -642,6 +657,10 @@ pub enum EventKind {
     GoalSynced {
         goal: Option<crate::Goal>,
     },
+    /// Exact successful start/resume receipt, after refreshing the authoritative snapshot.
+    GoalStartConfirmed {
+        request: RequestId,
+    },
     /// The engine refused a goal command.
     GoalRefused {
         reason: String,
@@ -798,6 +817,9 @@ pub enum EventKind {
         id: String,
         reason: String,
     },
+    /// Attachment-scoped barrier: the complete snapshot's run, questions, children, goal
+    /// and jobs have been published. No execution capabilities are granted by this marker.
+    ConversationLifecycleReady(bool),
     /// The engine's own view of the run and its queue. Not tied to any operation: it is how a
     /// run started elsewhere, or before this window opened, becomes visible and how it ends.
     EngineState {

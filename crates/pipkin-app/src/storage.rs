@@ -32,9 +32,10 @@ pub const INJECTED_FAILURE: &str = "injected write failure";
 pub const DEMO_NAMESPACE: &str = "demo";
 
 /// Preference keys that refer to backend-owned identities rather than to the application.
-const SESSION_PREF_KEYS: [&str; 10] = [
+const SESSION_PREF_KEYS: [&str; 11] = [
     "selected_project",
     "selected_conversation",
+    "closed_conversations",
     "model",
     "cli_executable",
     "cli_model",
@@ -544,6 +545,13 @@ impl Storage {
             .map_err(sql_err)?;
         for row in rows {
             let (key, value) = row.map_err(sql_err)?;
+            // Reject oversized Closed preferences before allocating a parsed JSON tree.
+            // Invalid organization metadata must reveal conversations, never hide them.
+            if key == "closed_conversations"
+                && value.len() > pipkin_core::MAX_CLOSED_CONVERSATIONS * 32 + 2
+            {
+                continue;
+            }
             if let Ok(v) = serde_json::from_str::<Value>(&value) {
                 apply_pref(&mut prefs, &key, &v);
             } else if key == "provider_model" || key == "pending_provider_models" {
@@ -1735,6 +1743,7 @@ fn write_prefs(conn: &mut Connection, ns: &str, p: &Prefs) -> Result<(), String>
             json!(p.selected_conversation.map(|i| i.0)),
         ),
         ("model", json!(p.model)),
+        ("closed_conversations", json!(p.closed_conversations)),
         ("conversation_backend", Value::Null),
         (
             "provider_model",
@@ -1821,6 +1830,17 @@ fn parse_provider_model(v: &Value) -> pipkin_core::ProviderModel {
 
 fn apply_pref(p: &mut Prefs, key: &str, v: &Value) {
     match key {
+        "closed_conversations" => {
+            p.closed_conversations = v
+                .as_array()
+                .filter(|ids| ids.len() <= pipkin_core::MAX_CLOSED_CONVERSATIONS)
+                .and_then(|ids| {
+                    ids.iter()
+                        .map(|id| id.as_u64().filter(|id| *id > 0))
+                        .collect::<Option<_>>()
+                })
+                .unwrap_or_default();
+        }
         "setup_completed" => p.setup_completed = v.as_bool().unwrap_or(p.setup_completed),
         "theme" => match v.as_str() {
             Some("light") => p.theme = Theme::Light,
@@ -2207,6 +2227,7 @@ mod tests {
             window_size: Some((1280.0, 800.0)),
             selected_project: Some(ProjectId(2)),
             selected_conversation: Some(ConversationId(11)),
+            closed_conversations: [3, 40].into(),
             model: Some("pi-opus".into()),
             provider_model: Some(pipkin_core::ProviderModel::ClaudeCli(
                 pipkin_core::CliModel::Haiku,
@@ -2417,6 +2438,7 @@ mod tests {
             theme: Theme::Light,
             selected_conversation: Some(ConversationId(3)),
             model: Some("demo-model".into()),
+            closed_conversations: [3, 4].into(),
             ..Prefs::default()
         };
         {
@@ -2431,12 +2453,14 @@ mod tests {
         assert!(loaded.conversations.is_empty());
         assert_eq!(loaded.prefs.selected_conversation, None);
         assert_eq!(loaded.prefs.model, None);
+        assert!(loaded.prefs.closed_conversations.is_empty());
         assert_eq!(loaded.prefs.theme, Theme::Light, "app prefs are shared");
 
         save_and_wait(&real, 3, "real draft", 1).unwrap();
         real.save_prefs(&Prefs {
             selected_conversation: Some(ConversationId(3)),
             model: Some("real-model".into()),
+            closed_conversations: [3, 5].into(),
             ..Prefs::default()
         });
         real.shutdown();
@@ -2446,6 +2470,36 @@ mod tests {
             .unwrap();
         assert_eq!(back.drafts[0].text, "demo draft");
         assert_eq!(back.prefs.model.as_deref(), Some("demo-model"));
+        assert_eq!(back.prefs.closed_conversations, [3, 4].into());
+        let native = Storage::open(&path, "pi:local")
+            .unwrap()
+            .load_all()
+            .unwrap();
+        assert_eq!(native.prefs.closed_conversations, [3, 5].into());
+        assert_eq!(native.drafts[0].text, "real draft");
+    }
+
+    #[test]
+    fn closed_conversation_preferences_are_bounded_and_malformed_ids_hide_nothing() {
+        let mut prefs = Prefs::default();
+        apply_pref(
+            &mut prefs,
+            "closed_conversations",
+            &json!([1, 2, 2, u64::MAX]),
+        );
+        assert_eq!(prefs.closed_conversations, [1, 2, u64::MAX].into());
+        for invalid in [
+            json!(null),
+            json!({"1":true}),
+            json!([1, -2]),
+            json!([1, 0]),
+            json!(["1"]),
+            json!([1, 1.5]),
+            json!(vec![1; pipkin_core::MAX_CLOSED_CONVERSATIONS + 1]),
+        ] {
+            apply_pref(&mut prefs, "closed_conversations", &invalid);
+            assert!(prefs.closed_conversations.is_empty());
+        }
     }
 
     #[test]

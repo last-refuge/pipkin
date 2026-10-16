@@ -5,6 +5,7 @@ pub mod document;
 pub mod highlight;
 mod links;
 pub mod markdown;
+pub(crate) mod tables;
 pub mod tools;
 pub mod view;
 

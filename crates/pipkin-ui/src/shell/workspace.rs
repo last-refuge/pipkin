@@ -171,6 +171,9 @@ pub struct Workspace {
     /// draft key and kept, with their text, while that questionnaire stays open.
     pub(super) form_editors: Vec<(String, Entity<ComposerEditor>)>,
     pub(super) form_editors_key: Option<String>,
+    /// Only the current bounded questionnaire's previews; prepared on model/overlay updates.
+    pub(super) form_previews:
+        std::collections::HashMap<String, Vec<crate::transcript::markdown::Block>>,
     /// The Trace export settings page's fields and its content-level choice.
     pub(super) export_endpoint: Entity<ComposerEditor>,
     pub(super) export_service: Entity<ComposerEditor>,
@@ -200,6 +203,8 @@ pub struct Workspace {
     size_task: Option<Task<()>>,
     /// The conversation search box is showing (it also shows while it holds a query).
     pub(super) search_open: bool,
+    pub(super) closed_conversations_open: bool,
+    pub(super) closed_conversations_limit: usize,
     pub(super) toast: Option<String>,
     toast_task: Option<Task<()>>,
     pub(super) diff_scroll: UniformListScrollHandle,
@@ -394,6 +399,7 @@ impl Workspace {
             subagent_task,
             form_editors: Vec::new(),
             form_editors_key: None,
+            form_previews: Default::default(),
             export_endpoint,
             export_service,
             export_header,
@@ -419,6 +425,8 @@ impl Workspace {
             flush_task: None,
             size_task: None,
             search_open: false,
+            closed_conversations_open: false,
+            closed_conversations_limit: 50,
             toast: None,
             toast_task: None,
             diff_scroll: UniformListScrollHandle::new(),
@@ -1099,12 +1107,30 @@ impl Workspace {
             .and_then(|c| c.open_form())
             .map(|(request, form)| (request.draft_key().to_owned(), form.clone()));
         let Some((key, form)) = form else {
+            self.form_previews.clear();
             if self.form_editors_key.take().is_some() {
                 self.form_editors.clear();
                 cx.notify();
             }
             return;
         };
+        let previews: std::collections::HashSet<&str> = form
+            .questions
+            .iter()
+            .flat_map(|q| {
+                q.preview
+                    .as_deref()
+                    .into_iter()
+                    .chain(q.options.iter().filter_map(|o| o.preview.as_deref()))
+            })
+            .collect();
+        self.form_previews
+            .retain(|source, _| previews.contains(source.as_str()));
+        for source in previews {
+            self.form_previews
+                .entry(source.to_owned())
+                .or_insert_with(|| crate::transcript::markdown::parse(source));
+        }
         if self.form_editors_key.as_deref() == Some(&key) {
             return;
         }

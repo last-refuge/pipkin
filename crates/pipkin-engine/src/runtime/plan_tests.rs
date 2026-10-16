@@ -495,6 +495,70 @@ fn the_plan_survives_a_restart_and_compaction_does_not_touch_it() {
 }
 
 #[test]
+fn finished_plan_rollover_is_durable_and_idempotent() {
+    let fx = Fixture::new();
+    let provider = Scripted::echo("unused");
+    let session;
+    let receipt;
+    let new_work = || json!([{"op":"create", "title":"New work", "status":"active"}]);
+    {
+        let mut e = fx.start(&provider);
+        session = e.create(&fx.project, "plan rollover");
+        update(
+            &mut e,
+            &session,
+            "old",
+            json!([
+                {"op":"create", "title":"Old work"},
+                {"op":"update", "task":1, "status":"completed"}
+            ]),
+            None,
+        )
+        .unwrap();
+        assert!(
+            update(
+                &mut e,
+                &session,
+                "bad",
+                json!([{"op":"create", "title":""}]),
+                Some(1)
+            )
+            .is_err()
+        );
+        assert_eq!(plan_of(&mut e, &session).counts.archived, 0);
+        receipt = update(&mut e, &session, "new", new_work(), Some(1)).unwrap();
+        assert_eq!(receipt.changed, [1, 2]);
+        assert_eq!(e.snapshot(&session).plan.tasks[0].id, 2);
+        assert_eq!(plan_of(&mut e, &session).counts.archived, 1);
+        e.handle.shutdown(Duration::from_millis(200));
+    }
+    let mut e = fx.start(&provider);
+    let current = plan_of(&mut e, &session);
+    assert_eq!(current.tasks.len(), 1);
+    assert_eq!(current.tasks[0].id, 2);
+    assert_eq!(current.counts.completed, 0);
+    assert_eq!(current.counts.archived, 1);
+    assert_eq!(
+        update(&mut e, &session, "new", new_work(), Some(1)).unwrap(),
+        receipt
+    );
+    assert_eq!(plan_of(&mut e, &session), current);
+    let Reply::Plan(history) = e
+        .call(Call::Plan {
+            session: session.clone(),
+            include_archived: true,
+        })
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(history.tasks.len(), 2);
+    assert!(history.tasks[0].archived);
+    assert_eq!(history.tasks[0].status, TaskStatus::Completed);
+    assert!(provider.requests().is_empty());
+}
+
+#[test]
 fn a_child_session_has_its_own_plan() {
     let fx = Fixture::new();
     let provider = Scripted::new(|req: &ProviderRequest, _| {

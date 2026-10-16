@@ -8,7 +8,35 @@
 
 use std::ops::Range;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TableAlignment {
+    None,
+    Left,
+    Center,
+    Right,
+}
+
+impl From<pulldown_cmark::Alignment> for TableAlignment {
+    fn from(value: pulldown_cmark::Alignment) -> Self {
+        match value {
+            pulldown_cmark::Alignment::None => Self::None,
+            pulldown_cmark::Alignment::Left => Self::Left,
+            pulldown_cmark::Alignment::Center => Self::Center,
+            pulldown_cmark::Alignment::Right => Self::Right,
+        }
+    }
+}
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+
+/// Cells remain individual document blocks in row-major order, including empty cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TableCell {
+    pub table: usize,
+    pub row: usize,
+    pub column: usize,
+    pub columns: usize,
+    pub alignment: TableAlignment,
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SpanStyle {
@@ -35,6 +63,18 @@ pub enum BlockKind {
         lang: Option<String>,
     },
     Rule,
+    TableCell(TableCell),
+}
+
+/// Plain-text copy keeps a table's row/column structure without Markdown delimiters.
+pub fn separator(previous: &BlockKind, next: &BlockKind) -> &'static str {
+    match (previous, next) {
+        (BlockKind::TableCell(a), BlockKind::TableCell(b)) if a.table == b.table => {
+            if a.row == b.row { "\t" } else { "\n" }
+        }
+        (BlockKind::ListItem, BlockKind::ListItem) => "\n",
+        _ => "\n\n",
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,6 +108,13 @@ struct Builder {
     marker_only: bool,
 }
 
+struct Table {
+    id: usize,
+    row: usize,
+    column: usize,
+    alignments: Vec<TableAlignment>,
+}
+
 #[derive(Default)]
 struct Parse {
     out: Vec<Block>,
@@ -79,6 +126,8 @@ struct Parse {
     /// One entry per open list: next number for ordered lists, None for bullets.
     lists: Vec<Option<u64>>,
     quote_depth: u32,
+    table: Option<Table>,
+    next_table: usize,
 }
 
 impl Parse {
@@ -95,7 +144,7 @@ impl Parse {
     fn flush(&mut self) {
         if let Some(b) = self.cur.take() {
             let keep = b.block.is_code()
-                || matches!(b.block.kind, BlockKind::Rule)
+                || matches!(b.block.kind, BlockKind::Rule | BlockKind::TableCell(_))
                 || !b.block.text.trim().is_empty();
             if keep {
                 self.out.push(b.block);
@@ -145,7 +194,7 @@ impl Parse {
 }
 
 pub fn parse(source: &str) -> Vec<Block> {
-    let opts = Options::ENABLE_STRIKETHROUGH;
+    let opts = Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES;
     let mut p = Parse::default();
     for event in Parser::new_ext(source, opts) {
         match event {
@@ -190,6 +239,38 @@ pub fn parse(source: &str) -> Vec<Block> {
                     b.block.text.push_str(&marker);
                     b.marker_only = true;
                 }
+                Tag::Table(alignments) => {
+                    p.flush();
+                    p.table = Some(Table {
+                        id: p.next_table,
+                        row: 0,
+                        column: 0,
+                        alignments: alignments.into_iter().map(Into::into).collect(),
+                    });
+                    p.next_table += 1;
+                }
+                Tag::TableHead | Tag::TableRow => {
+                    if let Some(t) = &mut p.table {
+                        t.column = 0;
+                    }
+                }
+                Tag::TableCell => {
+                    if let Some(t) = &mut p.table {
+                        let cell = TableCell {
+                            table: t.id,
+                            row: t.row,
+                            column: t.column,
+                            columns: t.alignments.len(),
+                            alignment: t
+                                .alignments
+                                .get(t.column)
+                                .copied()
+                                .unwrap_or(TableAlignment::None),
+                        };
+                        t.column += 1;
+                        p.begin(BlockKind::TableCell(cell));
+                    }
+                }
                 Tag::Emphasis => p.italic += 1,
                 Tag::Strong => p.bold += 1,
                 Tag::Strikethrough => p.strike += 1,
@@ -216,6 +297,17 @@ pub fn parse(source: &str) -> Vec<Block> {
                 TagEnd::List(_) => {
                     p.flush();
                     p.lists.pop();
+                }
+                TagEnd::TableCell => p.flush(),
+                TagEnd::TableHead | TagEnd::TableRow => {
+                    p.flush();
+                    if let Some(t) = &mut p.table {
+                        t.row += 1;
+                    }
+                }
+                TagEnd::Table => {
+                    p.flush();
+                    p.table = None;
                 }
                 TagEnd::Emphasis => p.italic = p.italic.saturating_sub(1),
                 TagEnd::Strong => p.bold = p.bold.saturating_sub(1),
@@ -246,8 +338,109 @@ pub fn parse(source: &str) -> Vec<Block> {
 }
 
 #[cfg(test)]
+pub(crate) const TABLE_EXAMPLE: &str = "| | Subagent | Background job |\n|---|:---:|---:|\n| **What it is** | An AI worker with its own context. | A command/process. |\n| **What you give it** | An objective and tools. | A command to execute. |\n| **What it does** | Reasons and uses tools. | Runs the command. |\n| **Result** | A report. | Logs and an exit status. |";
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comparison_table_preserves_empty_header_coordinates_and_styles() {
+        let blocks = parse(TABLE_EXAMPLE);
+        assert_eq!(blocks.len(), 15);
+        for (i, block) in blocks.iter().enumerate() {
+            assert_eq!(
+                block.kind,
+                BlockKind::TableCell(TableCell {
+                    table: 0,
+                    row: i / 3,
+                    column: i % 3,
+                    columns: 3,
+                    alignment: [
+                        TableAlignment::None,
+                        TableAlignment::Center,
+                        TableAlignment::Right
+                    ][i % 3],
+                })
+            );
+        }
+        assert_eq!(blocks[0].text, "");
+        assert_eq!(blocks[2].text, "Background job");
+        assert_eq!(blocks[3].text, "What it is");
+        assert!(blocks[3].spans[0].style.bold);
+    }
+
+    #[test]
+    fn table_cells_keep_inline_styles_escaped_pipes_and_missing_cells() {
+        let blocks = parse(
+            "| L | C | R |\n|:---|:---:|---:|\n| *é* | `a\\|b` | [link](https://example.com) |\n| ~~gone~~ |\\| |\n| short |\n",
+        );
+        assert_eq!(blocks.len(), 12);
+        assert_eq!(blocks[3].text, "é");
+        assert!(blocks[3].spans[0].style.italic);
+        assert_eq!(blocks[4].text, "a|b");
+        assert!(blocks[4].spans[0].style.code);
+        assert_eq!(
+            blocks[5].spans[0].style.link.as_deref(),
+            Some("https://example.com")
+        );
+        assert!(blocks[6].spans[0].style.strike);
+        assert_eq!(blocks[7].text, "|");
+        assert_eq!(blocks[8].text, "");
+        assert_eq!(blocks[10].text, "");
+        assert_eq!(blocks[11].text, "");
+    }
+
+    #[test]
+    fn every_streaming_prefix_is_safe_and_recognized_rows_are_rectangular() {
+        let source = format!("{TABLE_EXAMPLE}\n| Unicode | 👨‍👩‍👧‍👦 é | `a\\|b` |\n\nAfter");
+        for end in (0..=source.len()).filter(|end| source.is_char_boundary(*end)) {
+            let blocks = parse(&source[..end]);
+            let cells: Vec<_> = blocks
+                .iter()
+                .filter_map(|b| match b.kind {
+                    BlockKind::TableCell(c) => Some(c),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(cells.len() % 3, 0, "prefix {end}");
+            for (i, c) in cells.iter().enumerate() {
+                assert_eq!((c.row, c.column), (i / 3, i % 3));
+            }
+            for b in blocks {
+                for span in b.spans {
+                    assert!(b.text.get(span.range).is_some());
+                }
+            }
+        }
+        assert!(
+            !parse("| A | B |\n")
+                .iter()
+                .any(|b| matches!(b.kind, BlockKind::TableCell(_)))
+        );
+        assert!(matches!(
+            parse("| A | B |\n|---|---|")[0].kind,
+            BlockKind::TableCell(_)
+        ));
+    }
+
+    #[test]
+    fn distinct_tables_quotes_and_literal_pipes() {
+        let blocks = parse(
+            "before\n\n> | A | B |\n> |---|---|\n> | c | d |\n\nafter\n\n| E | F |\n|---|---|\n\n```text\n| G | H |\n|---|---|\n```\n\nliteral | pipes",
+        );
+        assert!(blocks[1].quote);
+        assert!(matches!(
+            blocks[1].kind,
+            BlockKind::TableCell(TableCell { table: 0, .. })
+        ));
+        assert!(matches!(
+            blocks[6].kind,
+            BlockKind::TableCell(TableCell { table: 1, .. })
+        ));
+        assert!(blocks[8].is_code());
+        assert_eq!(blocks[9].text, "literal | pipes");
+    }
 
     #[test]
     fn paragraph_with_inline_styles() {

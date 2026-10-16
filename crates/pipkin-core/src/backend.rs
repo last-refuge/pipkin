@@ -39,6 +39,8 @@ pub enum LifecycleEvent {
         conversation: ConversationId,
         waiting: bool,
     },
+    /// Global visibility hint only; never a run-state update or execution grant.
+    ConversationAttention(ConversationId),
     /// The engine's trace exporter state (OBS-2).
     ExportHealth(crate::diagnostics::ExportHealth),
     /// An example export payload at a content level (OBS-3).

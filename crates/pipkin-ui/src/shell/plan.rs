@@ -652,6 +652,77 @@ mod tests {
         }
     }
 
+    #[gpui::test]
+    fn banner_can_be_closed_without_deleting_tasks_and_new_work_gets_a_new_banner(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use pipkin_core::{
+            AppState, BackendEvent, Bootstrap, EventKind, Prefs, Project, ProjectId,
+        };
+        cx.update(crate::text::init);
+        let mut state = AppState::new(
+            Bootstrap {
+                projects: vec![Project {
+                    id: ProjectId(1),
+                    name: "Project".into(),
+                    path: "/project".into(),
+                }],
+                conversations: vec![(ConversationId(1), ProjectId(1), "Chat".into(), 1)],
+                models: vec![],
+                now: 1,
+            },
+            Prefs::default(),
+        );
+        state.selected = Some(ConversationId(1));
+        state.conversations[0].opened = true;
+        state.conversations[0].plan = plan(vec![task(1, PlanTaskStatus::Active, &[])]);
+        let window = cx.add_window(|window, cx| {
+            let model = cx.new(|_| crate::model::Model::new(state));
+            model.update(cx, |m, cx| m.explore_workspace(cx));
+            Workspace::new(model, Default::default(), window, cx)
+        });
+        let root = window.root(cx).unwrap();
+        let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+        visual.run_until_parked();
+        assert!(visual.debug_bounds("plan-banner").is_some());
+        let close = visual.debug_bounds("dismiss-plan-banner").unwrap();
+        visual.simulate_click(close.center(), Default::default());
+        visual.run_until_parked();
+        assert!(visual.debug_bounds("plan-banner").is_none());
+        root.update(&mut visual, |w, cx| {
+            assert_eq!(w.state(cx).current().unwrap().plan.tasks.len(), 1);
+            assert_eq!(
+                w.state(cx).current().unwrap().plan.tasks[0].status,
+                PlanTaskStatus::Active
+            );
+            w.dispatch(Command::TogglePlanTask(1), cx);
+            assert_eq!(w.state(cx).current().unwrap().plan.expanded, Some(1));
+        });
+        for (revision, status, visible) in [
+            (2, PlanTaskStatus::Active, true),
+            (3, PlanTaskStatus::Completed, false),
+        ] {
+            let p = plan(vec![task(2, status, &[])]);
+            root.update(&mut visual, |w, cx| {
+                let c = w.state(cx).current().unwrap();
+                let event = BackendEvent {
+                    conversation: c.id,
+                    generation: c.generation,
+                    op: None,
+                    kind: EventKind::PlanSynced {
+                        revision,
+                        tasks: p.tasks,
+                        counts: p.counts,
+                        truncated: false,
+                    },
+                };
+                w.model.update(cx, |m, cx| m.apply_event(event, cx));
+            });
+            visual.run_until_parked();
+            assert_eq!(visual.debug_bounds("plan-banner").is_some(), visible);
+        }
+    }
+
     #[test]
     fn open_work_is_listed_and_finished_work_is_counted_until_opened() {
         let key = Some((ConversationId(1), 1));

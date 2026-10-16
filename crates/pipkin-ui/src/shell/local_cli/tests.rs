@@ -84,7 +84,7 @@ fn reply(s: &mut AppState, out: Outcome, event: LocalCliEvent) {
 }
 
 #[test]
-fn composer_backend_label_is_authoritative_not_the_requested_connection() {
+fn composer_model_is_authoritative_not_the_requested_connection() {
     let mut s = AppState::new(
         Bootstrap {
             projects: vec![Project {
@@ -101,12 +101,15 @@ fn composer_backend_label_is_authoritative_not_the_requested_connection() {
     s.mode = Mode::Real;
     s.selected = Some(ConversationId(1));
     s.prefs.provider_model = Some(ProviderModel::ClaudeCli(CliModel::Sonnet));
-    assert!(conversation_backend_label(&s).contains("unverified"));
+    assert_eq!(s.selected_provider_model(), None);
     for (profile, expected) in [
-        (ExecutionProfile::NativeAgent, "Pipkin providers"),
+        (
+            ExecutionProfile::NativeAgent,
+            ProviderModel::Native("native/model".into()),
+        ),
         (
             ExecutionProfile::LocalCliChatOnly,
-            "Claude Code · local CLI",
+            ProviderModel::ClaudeCli(CliModel::Haiku),
         ),
     ] {
         s.apply_event(BackendEvent {
@@ -118,7 +121,13 @@ fn composer_backend_label_is_authoritative_not_the_requested_connection() {
                 execution_blocked: None,
             },
         });
-        assert!(conversation_backend_label(&s).contains(expected));
+        s.apply_event(BackendEvent {
+            conversation: ConversationId(1),
+            generation: s.conversations[0].generation,
+            op: None,
+            kind: EventKind::ConversationModel(Some(expected.clone())),
+        });
+        assert_eq!(s.selected_provider_model(), Some(expected));
     }
 }
 

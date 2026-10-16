@@ -2,6 +2,7 @@
 //! event gaps and a lost link, without a real engine.
 
 mod cli_approvals;
+mod conversations;
 mod execution;
 mod local_cli;
 

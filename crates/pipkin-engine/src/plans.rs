@@ -647,7 +647,37 @@ impl Batch<'_> {
     }
 }
 
-/// Apply `ops` to `state` atomically.
+/// A fresh, independent task batch replaces a finished plan in the current view. Explicit
+/// references to prior tasks are continuations, not a request to archive those tasks.
+fn starts_new_work(state: &PlanState, ops: &[PlanOp]) -> bool {
+    let new_ref = |r: &TaskRef| matches!(r, TaskRef::New(_));
+    state.tasks.iter().any(|t| !t.archived)
+        && state
+            .tasks
+            .iter()
+            .all(|t| t.archived || t.status.is_terminal())
+        && ops.iter().any(|op| matches!(op, PlanOp::Create { .. }))
+        && ops.iter().all(|op| match op {
+            PlanOp::Create {
+                depends_on, parent, ..
+            } => depends_on.iter().chain(parent.iter()).all(new_ref),
+            PlanOp::Update {
+                task,
+                depends_on,
+                parent,
+                ..
+            } => std::iter::once(task)
+                .chain(depends_on.iter().flatten())
+                .chain(parent.iter())
+                .all(new_ref),
+            PlanOp::Reorder { task, after } => {
+                std::iter::once(task).chain(after.iter()).all(new_ref)
+            }
+            PlanOp::Archive { .. } | PlanOp::ArchiveFinished => false,
+        })
+}
+
+/// Apply `ops` to `state` atomically, including retirement of a previous finished plan.
 pub fn apply(
     state: &PlanState,
     ops: &[PlanOp],
@@ -697,6 +727,11 @@ pub fn apply(
         op: 0,
         ops,
     };
+    if starts_new_work(state, ops) {
+        batch
+            .archive_finished()
+            .map_err(|message| reject(ErrorCode::Invalid, None, message))?;
+    }
     for (i, op) in ops.iter().enumerate() {
         batch.op = i;
         let step = match op {

@@ -35,29 +35,6 @@ pub(super) fn availability_label(state: &AppState) -> &'static str {
     }
 }
 
-pub(super) fn conversation_backend_label(state: &AppState) -> &'static str {
-    let Some(profile) = state.current_execution_profile() else {
-        return "Backend: none";
-    };
-    if state.mode == Mode::Demo {
-        return "Backend: Demo · simulated agent";
-    }
-    match profile {
-        pipkin_core::ExecutionProfile::NativeAgent => {
-            "Backend: Pipkin providers · native agent (not Claude CLI)"
-        }
-        pipkin_core::ExecutionProfile::LocalCliChatOnly => {
-            "Backend: Claude Code · local CLI · chat only"
-        }
-        pipkin_core::ExecutionProfile::LocalCliRestrictedWrite => {
-            "Backend: Claude Code · local CLI · Write with approval"
-        }
-        pipkin_core::ExecutionProfile::Unsupported => {
-            "Backend: unverified or unsupported · sending unavailable"
-        }
-    }
-}
-
 /// Profile is used only for wording; the core capability query controls availability.
 pub(super) fn restricted_model_label(state: &AppState) -> Option<&'static str> {
     if state.execution_capabilities().model_settings {

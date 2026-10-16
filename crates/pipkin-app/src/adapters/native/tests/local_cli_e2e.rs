@@ -117,6 +117,50 @@ fn fake_metadata_setup(guided: bool) {
         "Create cannot rerun metadata or inference"
     );
     assert!(fx.requests().is_empty());
+    let id = current.id;
+    h.until("complete lifecycle allows organization", |s| {
+        s.close_conversation_reason(id).is_none()
+    });
+    let model = h.state.current().unwrap().provider_model.clone();
+    h.dispatch(Command::EditDraft("keep this unsent CLI draft".into()));
+    h.dispatch(Command::FlushDraft(id));
+    let generation = h.state.current().unwrap().generation;
+    h.dispatch(Command::CloseConversation {
+        conversation: id,
+        generation,
+    });
+    assert!(h.state.conversation_is_closed(id));
+    assert_eq!(h.state.selected, None);
+    h.stop();
+    let mut h = Harness::start(&fx, &fx.root.join("desktop.db"));
+    h.until("closed catalog restored without auto-opening", |s| {
+        s.connection.is_ready() && s.conversation(id).is_some()
+    });
+    assert!(h.state.conversation_is_closed(id));
+    assert_eq!(h.state.selected, None);
+    h.dispatch(Command::ReopenConversation(id));
+    h.until("same closed CLI conversation reopened", |s| {
+        s.current().is_some_and(|c| c.id == id && c.opened)
+            && s.close_conversation_reason(id).is_none()
+    });
+    let current = h.state.current().unwrap();
+    assert_eq!(
+        current.profile,
+        pipkin_core::ExecutionProfile::LocalCliChatOnly
+    );
+    assert_eq!(current.provider_model, model);
+    assert_eq!(current.draft.text, "keep this unsent CLI draft");
+    assert_eq!(
+        h.state.conversations.len(),
+        1,
+        "no replacement session was created"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&marker).unwrap().lines().count(),
+        3,
+        "Close/Reopen never probe or launch the CLI"
+    );
+    assert!(fx.requests().is_empty(), "no native fallback or inference");
     h.stop();
 }
 

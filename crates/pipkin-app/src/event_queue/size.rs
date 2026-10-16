@@ -146,6 +146,7 @@ pub(super) fn event_bytes(event: &BackendEvent) -> usize {
                             + e.note.as_ref().map_or(0, String::capacity)
                     })
             }),
+            EventKind::GoalStartConfirmed { request } => request.0.capacity(),
             EventKind::GoalSynced { goal } => goal.as_ref().map_or(0, |g| {
                 g.text.capacity() + g.paused.as_ref().map_or(0, String::capacity)
             }),
@@ -262,6 +263,7 @@ pub(super) fn event_bytes(event: &BackendEvent) -> usize {
             | EventKind::Cancelled
             | EventKind::SteerAccepted
             | EventKind::QueueCancelled { .. }
-            | EventKind::HasOlder(_) => 0,
+            | EventKind::HasOlder(_)
+            | EventKind::ConversationLifecycleReady(_) => 0,
         }
 }

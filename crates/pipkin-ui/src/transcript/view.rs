@@ -87,6 +87,7 @@ struct ConvView {
     list: ListState,
     /// Message identities for restoring the reading anchor after an engine snapshot.
     item_ids: Vec<ItemId>,
+    generation: u64,
     doc: Document,
     expanded: HashSet<ItemId>,
     /// Runs of tool steps shown in full, by the id of the run's first step. A run not in here
@@ -108,7 +109,26 @@ impl ConvView {
             .and_then(|id| item_ids.iter().position(|candidate| candidate == id))
             .map(|i| i + 1)
             .unwrap_or_else(|| top.item_ix.min(item_ids.len()));
-        self.list.reset(item_ids.len() + 1);
+        // Engine streaming delivers snapshots, not just token events. Keep measured
+        // height hints for surviving identities instead of resetting the entire list.
+        let prefix = self
+            .item_ids
+            .iter()
+            .zip(&item_ids)
+            .take_while(|(a, b)| a == b)
+            .count();
+        let suffix = self.item_ids[prefix..]
+            .iter()
+            .rev()
+            .zip(item_ids[prefix..].iter().rev())
+            .take_while(|(a, b)| a == b)
+            .count();
+        let old_end = self.item_ids.len() - suffix;
+        let new_end = item_ids.len() - suffix;
+        if prefix != old_end || prefix != new_end {
+            self.list.splice(prefix + 1..old_end + 1, new_end - prefix);
+        }
+        self.list.remeasure_items(0..item_ids.len() + 1);
         if following {
             self.list.scroll_to_end();
         } else {
@@ -142,6 +162,7 @@ pub struct TranscriptView {
     last_following: bool,
     tick: u64,
     resolved: Option<super::document::Resolved>,
+    preparing: RefCell<HashSet<(ConversationId, ItemId, bool)>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -287,6 +308,7 @@ impl TranscriptView {
             last_following: true,
             tick: 0,
             resolved: None,
+            preparing: RefCell::default(),
             _subscriptions: vec![sub],
         }
     }
@@ -501,6 +523,12 @@ impl TranscriptView {
     fn ensure_conv(&mut self, conv: ConversationId, cx: &mut Context<Self>) {
         self.tick += 1;
         let total = self.total_rows(conv, cx);
+        let generation = self
+            .model
+            .read(cx)
+            .state
+            .conversation(conv)
+            .map_or(0, |c| c.generation);
         if !self.convs.contains_key(&conv) {
             if self.convs.len() >= MAX_CONVERSATION_VIEWS {
                 let victim = self
@@ -520,6 +548,7 @@ impl TranscriptView {
                 ConvView {
                     list,
                     item_ids,
+                    generation,
                     doc: Document::default(),
                     expanded: HashSet::new(),
                     steps_open: HashSet::new(),
@@ -532,6 +561,11 @@ impl TranscriptView {
         let item_ids = needs_reset.then(|| self.item_ids(conv, cx));
         let cv = self.convs.get_mut(&conv).unwrap();
         cv.last_used = self.tick;
+        if cv.generation != generation {
+            cv.generation = generation;
+            cv.doc = Document::default();
+            cv.selection = None;
+        }
         if let Some(item_ids) = item_ids {
             // A missed note must not take the reader back to the tail either.
             cv.reset_items(item_ids);
@@ -541,11 +575,26 @@ impl TranscriptView {
     fn on_note(&mut self, note: &Note, cx: &mut Context<Self>) {
         match note {
             Note::ItemsReset(c) => {
-                let item_ids = self.item_ids(*c, cx);
-                if let Some(cv) = self.convs.get_mut(c) {
-                    cv.reset_items(item_ids);
-                    cv.selection = None;
-                    cv.doc = Document::default();
+                let model = self.model.clone();
+                if let Some(conv) = model.read(cx).state.conversation(*c)
+                    && let Some(cv) = self.convs.get_mut(c)
+                {
+                    if cv.generation != conv.generation {
+                        cv.generation = conv.generation;
+                        cv.doc = Document::default();
+                        cv.selection = None;
+                    }
+                    // Refresh the current working set *before* another frame can paint.
+                    // Clearing the cache here used to paint a collapsed/empty transcript
+                    // on every native snapshot, followed by a second, full-height frame.
+                    cv.doc.refresh_cached(&conv.items, &cv.expanded);
+                    let ids: HashSet<_> = conv.items.iter().map(|item| item.id).collect();
+                    cv.selection = cv
+                        .selection
+                        .filter(|s| ids.contains(&s.anchor.item) && ids.contains(&s.head.item));
+                    cv.expanded.retain(|id| ids.contains(id));
+                    cv.steps_open.retain(|id| ids.contains(id));
+                    cv.reset_items(conv.items.iter().map(|item| item.id).collect());
                 }
             }
             Note::ItemsAppended(c, _) => {
@@ -567,6 +616,17 @@ impl TranscriptView {
                 if let Some(cv) = self.convs.get(c)
                     && i + 1 < cv.list.item_count()
                 {
+                    if let Some(item) = self
+                        .model
+                        .read(cx)
+                        .state
+                        .conversation(*c)
+                        .and_then(|c| c.items.get(*i))
+                        && cv.doc.has_item(item.id)
+                    {
+                        // Refresh the working set before the next streaming frame.
+                        cv.doc.blocks(item, cv.expanded.contains(&item.id));
+                    }
                     cv.list.remeasure_items(i + 1..i + 2);
                 }
             }
@@ -816,7 +876,7 @@ impl TranscriptView {
         // Vertical movement follows visual lines when the head block is mounted.
         if matches!(step, Step::BlockUp | Step::BlockDown)
             && let Some(hit) = registry.borrow().find(sel.head.item, sel.head.block)
-            && let Some(p) = hit.layout.position_for_index(sel.head.offset)
+            && let Some(p) = hit.position_for_index(sel.head.offset)
         {
             let lh = hit.layout.line_height();
             let y = if step == Step::BlockUp {
@@ -824,9 +884,9 @@ impl TranscriptView {
             } else {
                 p.y + lh
             };
-            let b = hit.bounds;
+            let b = hit.layout.bounds();
             if y >= b.top() && y < b.bottom() {
-                let (Ok(i) | Err(i)) = hit.layout.index_for_position(point(p.x, y));
+                let (Ok(i) | Err(i)) = hit.index_for_position(point(p.x, y));
                 head = Some(DocPos {
                     offset: i.min(hit.text_len),
                     ..sel.head
@@ -1183,7 +1243,7 @@ impl TranscriptView {
             Delivery::Rejected => Some(("Not sent".to_string(), c.danger)),
         };
         let label = if steer { "You (steering)" } else { "You" };
-        let blocks = self.blocks_for(ctx.conv, item, ctx.expanded);
+        let blocks = self.blocks_for(ctx.conv, item, ctx.expanded, cx);
         let mut card = div()
             .w_full()
             .bg(c.bg_card)
@@ -1271,13 +1331,26 @@ impl TranscriptView {
     ) -> AnyElement {
         let theme = &ctx.theme;
         let c = &theme.colors;
-        let blocks = self.blocks_for(ctx.conv, item, ctx.expanded);
+        let blocks = self.blocks_for(ctx.conv, item, ctx.expanded, cx);
         let mut col = div().w_full().flex().flex_col();
         if show_label {
             let status = streaming.then(|| ("Writing…".to_string(), c.text_faint));
             col = col.child(self.author_line("Pipkin", item.at, status, theme));
         }
-        for (bi, block) in blocks.iter().enumerate() {
+        let mut bi = 0;
+        while bi < blocks.len() {
+            let block = &blocks[bi];
+            if matches!(block.kind, BlockKind::TableCell(_)) {
+                let end = super::tables::end(&blocks, bi);
+                col = col.child(super::tables::grid(
+                    ElementId::NamedInteger("table".into(), element_key(item.id, bi as u32)),
+                    &blocks[bi..end],
+                    theme,
+                    |offset, block| self.block_element(ctx, item, item_ix, bi + offset, block, cx),
+                ));
+                bi = end;
+                continue;
+            }
             // A run of list items reads as one section, with breathing room around the
             // whole list rather than a repeated card around every point.
             if matches!(block.kind, BlockKind::ListItem)
@@ -1293,6 +1366,7 @@ impl TranscriptView {
             {
                 col = col.child(div().h(px(6.0 * theme.scale)));
             }
+            bi += 1;
         }
         if streaming {
             // Static indicator: no animation, identical under reduced motion.
@@ -1396,7 +1470,7 @@ impl TranscriptView {
             );
         if expanded {
             let mut details = div().w_full().min_w_0().px(px(12.0)).pb(px(10.0));
-            for (bi, block) in self.blocks_for(ctx.conv, item, true).iter().enumerate() {
+            for (bi, block) in self.blocks_for(ctx.conv, item, true, cx).iter().enumerate() {
                 details = details.child(self.block_element(ctx, item, item_ix, bi, block, cx));
             }
             report = report.child(details);
@@ -1526,7 +1600,7 @@ impl TranscriptView {
                 .gap(px(6.0))
                 .text_size(theme.small_size());
             // The command is part of the document, so it can be selected and copied.
-            for (bi, block) in self.blocks_for(ctx.conv, item, true).iter().enumerate() {
+            for (bi, block) in self.blocks_for(ctx.conv, item, true, cx).iter().enumerate() {
                 details = details.child(self.block_element(ctx, item, item_ix, bi, block, cx));
             }
             let mut facts = vec![format!("in {}", job.cwd)];
@@ -1695,7 +1769,7 @@ impl TranscriptView {
             }
             col = col.child(line);
             if expanded {
-                let blocks = self.blocks_for(ctx.conv, item, true);
+                let blocks = self.blocks_for(ctx.conv, item, true, cx);
                 let mut full = div().w_full().pl(px(30.0)).pr(px(6.0)).pb(px(4.0));
                 for (bi, block) in blocks.iter().enumerate() {
                     full = full.child(self.block_element(ctx, item, item_ix, bi, block, cx));
@@ -1718,7 +1792,7 @@ impl TranscriptView {
             NoticeLevel::Info => ("circle-help", c.text_muted, c.bg_hover),
             NoticeLevel::Error => ("circle-alert", c.danger, c.danger_bg),
         };
-        let blocks = self.blocks_for(ctx.conv, item, ctx.expanded);
+        let blocks = self.blocks_for(ctx.conv, item, ctx.expanded, cx);
         let mut body = div().flex_1().min_w_0().text_color(tint);
         for (bi, block) in blocks.iter().enumerate() {
             body = body.child(self.block_element(ctx, item, item_ix, bi, block, cx));
@@ -1950,7 +2024,7 @@ impl TranscriptView {
         }
         col = col.child(header);
         if expanded {
-            let blocks = self.blocks_for(conv, item, true);
+            let blocks = self.blocks_for(conv, item, true, cx);
             let mut body = div().w_full().pl(px(22.0)).pt(px(4.0));
             if blocks.is_empty() {
                 body = body.child(
@@ -2052,11 +2126,41 @@ impl TranscriptView {
         conv: ConversationId,
         item: &TranscriptItem,
         expanded: bool,
+        cx: &mut Context<Self>,
     ) -> super::document::Blocks {
-        match self.convs.get(&conv) {
-            Some(cv) => cv.doc.blocks(item, expanded),
-            None => Document::default().blocks(item, expanded),
+        if let Some(blocks) = self
+            .convs
+            .get(&conv)
+            .and_then(|cv| cv.doc.cached(item, expanded))
+        {
+            return blocks;
         }
+        let key = (conv, item.id, expanded);
+        if self.preparing.borrow_mut().insert(key) {
+            // Coalesce misses and prepare outside layout/render. Read the current model
+            // here, not captured text: resets, streaming and reattachments cannot install
+            // an obsolete parse. Only demanded rows/endpoints enter the bounded cache.
+            let weak = cx.entity().downgrade();
+            cx.defer(move |cx| {
+                weak.update(cx, |this, cx| {
+                    this.preparing.borrow_mut().remove(&key);
+                    let model = this.model.clone();
+                    if let Some(c) = model.read(cx).state.conversation(conv)
+                        && let Some(ix) = Document::index_of(&c.items, key.1)
+                        && let Some(cv) = this.convs.get(&conv)
+                    {
+                        cv.doc.blocks(&c.items[ix], expanded);
+                        cv.list.remeasure_items(ix + 1..ix + 2);
+                        cx.notify();
+                    }
+                })
+                .ok();
+            });
+        }
+        self.convs
+            .get(&conv)
+            .and_then(|cv| cv.doc.previous(item, expanded))
+            .unwrap_or_default()
     }
 
     fn block_element(
@@ -2145,7 +2249,11 @@ impl TranscriptView {
                 theme.body_size(),
                 theme.body_line_height(),
                 if block.quote { c.text_muted } else { c.text },
-                FontWeight::NORMAL,
+                if matches!(block.kind, BlockKind::TableCell(cell) if cell.row == 0) {
+                    FontWeight::SEMIBOLD
+                } else {
+                    FontWeight::NORMAL
+                },
             ),
         };
         let base = BaseText {
@@ -2164,34 +2272,61 @@ impl TranscriptView {
             let ranges: Vec<Range<usize>> = clicks.iter().map(|(r, _)| r.clone()).collect();
             let actions: Vec<Click> = clicks.into_iter().map(|(_, a)| a).collect();
             let model = self.model.clone();
-            InteractiveText::new(ElementId::NamedInteger("tb".into(), key), styled)
-                .on_click(ranges, move |i, window, cx| match &actions[i] {
-                    Click::Url(u) => {
-                        let project = model
-                            .read(cx)
-                            .state
-                            .current_project()
-                            .map(|p| p.path.as_str());
-                        match super::links::target(u, project) {
-                            Ok(uri) => cx.open_url(&uri),
-                            Err(reason) => {
-                                drop(window.prompt(
-                                    gpui::PromptLevel::Warning,
-                                    "Cannot open document",
-                                    Some(&reason),
-                                    &["OK"],
-                                    cx,
-                                ));
-                            }
+            let activate = move |i: usize, window: &mut Window, cx: &mut App| match &actions[i] {
+                Click::Url(u) => {
+                    let project = model
+                        .read(cx)
+                        .state
+                        .current_project()
+                        .map(|p| p.path.as_str());
+                    match super::links::target(u, project) {
+                        Ok(uri) => cx.open_url(&uri),
+                        Err(reason) => {
+                            drop(window.prompt(
+                                gpui::PromptLevel::Warning,
+                                "Cannot open document",
+                                Some(&reason),
+                                &["OK"],
+                                cx,
+                            ));
                         }
                     }
-                    Click::Change(ix) => {
-                        let ix = *ix;
-                        model.update(cx, |m, cx| m.dispatch(Command::SelectChange(ix), cx));
-                    }
-                })
-                .into_any_element()
+                }
+                Click::Change(ix) => {
+                    let ix = *ix;
+                    model.update(cx, |m, cx| m.dispatch(Command::SelectChange(ix), cx));
+                }
+            };
+            let id = ElementId::NamedInteger("tb".into(), key);
+            if let BlockKind::TableCell(meta) = block.kind {
+                super::blocks::aligned_link_text(id, styled, meta.alignment, ranges, activate)
+            } else {
+                InteractiveText::new(id, styled)
+                    .on_click(ranges, activate)
+                    .into_any_element()
+            }
         };
+        if let BlockKind::TableCell(meta) = block.kind {
+            // Register the whole stretched cell, not just its text. Clicking the empty
+            // lower half of a short cell must not select a taller neighbouring cell.
+            let cell = super::tables::cell(meta, theme)
+                .font_family(family)
+                .text_size(size)
+                .line_height(line_height)
+                .text_color(color)
+                .child(div().w_full().child(inner));
+            return BlockText::new(
+                layout,
+                cell.into_any_element(),
+                self.registry.clone(),
+                item.id,
+                item_ix,
+                bi as u32,
+                block.text.len(),
+            )
+            .aligned(meta.alignment)
+            .into_any_element();
+        }
         let text = BlockText::new(
             layout,
             inner,
@@ -2332,15 +2467,29 @@ impl Render for TranscriptView {
         self.resolved = None;
         if let Some(id) = self.current {
             self.ensure_conv(id, cx);
+            let mut prepare = Vec::new();
             let model = self.model.clone();
             if let Some(conv) = model.read(cx).state.conversation(id) {
                 empty = conv.items.is_empty() && !conv.has_older;
                 run_label = conv.run.label();
                 if let Some(cv) = self.convs.get(&id) {
+                    if let Some(selection) = cv.selection {
+                        for pos in [selection.anchor, selection.head] {
+                            if let Some(ix) = Document::index_of(&conv.items, pos.item) {
+                                let expanded = cv.expanded.contains(&pos.item);
+                                if cv.doc.cached(&conv.items[ix], expanded).is_none() {
+                                    prepare.push((conv.items[ix].clone(), expanded));
+                                }
+                            }
+                        }
+                    }
                     self.resolved = cv
                         .selection
-                        .and_then(|s| cv.doc.resolve(&conv.items, &cv.expanded, &s));
+                        .and_then(|s| cv.doc.resolve_cached(&conv.items, &cv.expanded, &s));
                 }
+            }
+            for (item, expanded) in prepare {
+                self.blocks_for(id, &item, expanded, cx);
             }
             self.maybe_load_older_deferred(cx);
         }
@@ -2607,6 +2756,8 @@ impl Element for FrameProbe {
             }
         });
         self.child.as_mut().unwrap().paint(window, cx);
+        #[cfg(test)]
+        self.registry.borrow_mut().record_frame();
         self.stats
             .borrow_mut()
             .record(*prepaint_cost + start.elapsed());

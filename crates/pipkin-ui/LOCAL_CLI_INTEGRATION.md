@@ -8,8 +8,8 @@ conversation backends are unchanged. Demo remains disabled and attached engines 
 Connections offers **Claude Code · local CLI** separately from native providers. The explicit
 choice is persisted as routing intent, not trust. New conversation follows that choice; for CLI,
 Ctrl+N prepares filesystem-only setup and opens Connections for review, never a native creation.
-The composer shows its authoritative backend and blocks sending if it differs from the explicit
-choice, including after failed/cancelled setup and across journal delays/restart. The core captures the
+The composer's model picker shows its authoritative model, without a separate Backend label.
+Sending is blocked if the provider differs from the explicit choice, including after failed/cancelled setup and across journal delays/restart. The core captures the
 selected project, discovers installations through the engine, inspects metadata, then waits for
 one scoped **Trust these paths and connect** confirmation. Login/version Check and one journaled
 metadata-only Create/Return are coordinated by a nonpersisted core continuation—not UI rendering.

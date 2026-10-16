@@ -121,11 +121,13 @@ fn ready_cli_still_refuses_native_only_backend_requests() {
         BackendRequest::SetGoal {
             conversation,
             generation: 1,
+            request: RequestId("goal".into()),
             objective: "no".into(),
         },
         BackendRequest::GoalControl {
             conversation,
             generation: 1,
+            request: Some(RequestId("resume".into())),
             action: GoalControlAction::Resume,
         },
         BackendRequest::MigrateGoal {

@@ -1190,6 +1190,37 @@ impl Live {
         change: SessionChange,
     ) {
         self.mark_child(&session, &change);
+        // An unselected/closed conversation still receives visibility hints. These do not
+        // adopt a run, change attachment generations or grant any execution authority.
+        if self.current.as_ref().is_none_or(|c| c.session != session) {
+            let attention = match &change {
+                SessionChange::RunChanged { run } => run.is_some(),
+                SessionChange::QueueChanged { queue } => !queue.is_empty(),
+                SessionChange::QueueAdmitted { .. } => true,
+                SessionChange::SubagentsChanged { subagents } => subagents
+                    .children
+                    .iter()
+                    .any(|c| !pipkin_core::subagent_finished(&c.status)),
+                SessionChange::JobsChanged { jobs } => {
+                    jobs.active > 0
+                        || jobs
+                            .jobs
+                            .iter()
+                            .any(|j| j.state == pipkin_engine_protocol::JobState::Unknown)
+                }
+                SessionChange::GoalChanged { goal } => goal.as_ref().is_some_and(|g| {
+                    matches!(
+                        g.state,
+                        pipkin_engine_protocol::GoalState::Active
+                            | pipkin_engine_protocol::GoalState::Verifying
+                    )
+                }),
+                _ => false,
+            };
+            if attention && let Some(id) = self.conversation_of(&session) {
+                (worker.sink)(LifecycleEvent::ConversationAttention(id));
+            }
+        }
         // Control-lane permission follows committed activity even for an unselected session.
         if let Some(conversation) = self.conversation_of(&session) {
             match &change {
@@ -1420,6 +1451,30 @@ impl Live {
 
     /// The engine-owned goal of the open session (or none); its arrival disables the
     /// desktop runner for the conversation.
+    fn confirm_goal_start(
+        &mut self,
+        worker: &mut Worker,
+        conversation: ConversationId,
+        generation: u64,
+        request: pipkin_core::RequestId,
+    ) {
+        // A reply's goal projection may already be older than committed activity. Refresh
+        // the same attachment before releasing the Close fence; never steal selection from
+        // another attachment. Opening later obtains the authoritative state in that case.
+        if self
+            .current
+            .as_ref()
+            .is_some_and(|c| c.conversation == conversation && c.generation == generation)
+            && self.open(worker, conversation, generation, false)
+        {
+            worker.emit(
+                conversation,
+                generation,
+                EventKind::GoalStartConfirmed { request },
+            );
+        }
+    }
+
     fn emit_goal(&self, worker: &Worker) {
         let Some(c) = &self.current else { return };
         worker.emit(
@@ -1878,25 +1933,37 @@ impl Live {
             BackendRequest::SetGoal {
                 conversation,
                 generation,
+                request,
                 objective,
             } => {
                 let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
                     return worker.notice("This conversation is not known to the engine.".into());
                 };
-                // The published goal (GoalChanged), not this reply, shows the result.
-                if let Err(error) = self.call(Call::SetGoal { session, objective }) {
-                    worker.emit(
+                match self.call(Call::SetGoal { session, objective }) {
+                    Ok(Reply::Goal(_)) => {
+                        self.confirm_goal_start(worker, conversation, generation, request)
+                    }
+                    Err(error) => worker.emit(
                         conversation,
                         generation,
                         EventKind::GoalRefused {
                             reason: error.to_string(),
                         },
-                    );
+                    ),
+                    _ => worker.emit(
+                        conversation,
+                        generation,
+                        EventKind::GoalRefused {
+                            reason: "Goal start returned an unexpected reply; refresh its status."
+                                .into(),
+                        },
+                    ),
                 }
             }
             BackendRequest::GoalControl {
                 conversation,
                 generation,
+                request,
                 action,
             } => {
                 let Some(session) = self.session_of(conversation).map(|s| s.id.clone()) else {
@@ -1926,14 +1993,28 @@ impl Live {
                     }
                     GoalControlAction::SkipAudit => pipkin_engine_protocol::GoalAction::SkipAudit,
                 };
-                if let Err(error) = self.call(Call::GoalControl { session, action }) {
-                    worker.emit(
+                match self.call(Call::GoalControl { session, action }) {
+                    Ok(Reply::Goal(_)) => {
+                        if let Some(request) = request {
+                            self.confirm_goal_start(worker, conversation, generation, request);
+                        }
+                    }
+                    Err(error) => worker.emit(
                         conversation,
                         generation,
                         EventKind::GoalRefused {
                             reason: error.to_string(),
                         },
-                    );
+                    ),
+                    _ => worker.emit(
+                        conversation,
+                        generation,
+                        EventKind::GoalRefused {
+                            reason:
+                                "Goal control returned an unexpected reply; refresh its status."
+                                    .into(),
+                        },
+                    ),
                 }
             }
             BackendRequest::MigrateGoal {
@@ -3202,6 +3283,11 @@ impl Live {
             .current
             .take()
             .filter(|c| c.conversation == conversation);
+        worker.emit(
+            conversation,
+            generation,
+            EventKind::ConversationLifecycleReady(false),
+        );
         // Publish the snapshot's gate before history can trigger goal continuations
         // or migrations. Never infer execution from the catalogue's origin/provider.
         worker.emit(
@@ -3336,6 +3422,11 @@ impl Live {
         self.emit_jobs(worker);
         self.emit_context(worker);
         self.emit_web_sources(worker);
+        worker.emit(
+            conversation,
+            generation,
+            EventKind::ConversationLifecycleReady(true),
+        );
         self.schedule_changes(worker, conversation, generation);
         true
     }

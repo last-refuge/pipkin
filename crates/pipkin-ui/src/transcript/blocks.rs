@@ -10,6 +10,7 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::time::Duration;
 
+use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Bounds, Element, ElementId, FontStyle, FontWeight, GlobalElementId, Hsla,
     InspectorElementId, IntoElement, LayoutId, Pixels, Point, SharedString, StrikethroughStyle,
@@ -17,8 +18,94 @@ use gpui::{
 };
 use pipkin_core::ItemId;
 
+pub(super) fn aligned_link_text(
+    id: ElementId,
+    styled: gpui::StyledText,
+    alignment: TableAlignment,
+    ranges: Vec<Range<usize>>,
+    activate: impl Fn(usize, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    let layout = styled.layout().clone();
+    gpui::div()
+        .id(id)
+        .w_full()
+        .cursor_pointer()
+        .on_click(move |event, window, cx| {
+            let gpui::ClickEvent::Mouse(event) = event else {
+                return;
+            };
+            if event.up.button != gpui::MouseButton::Left {
+                return;
+            }
+            let delta = event.up.position - event.down.position;
+            if delta.x.abs() > px(3.) || delta.y.abs() > px(3.) {
+                return;
+            }
+            if let (Ok(down), Ok(up)) = (
+                aligned_index(&layout, alignment, event.down.position),
+                aligned_index(&layout, alignment, event.up.position),
+            ) && let Some(i) = ranges
+                .iter()
+                .position(|r| r.contains(&down) && r.contains(&up))
+            {
+                activate(i, window, cx);
+            }
+        })
+        .child(styled)
+        .into_any_element()
+}
+
 use super::highlight::{self, Token};
-use super::markdown::{Block, BlockKind};
+use super::markdown::{Block, BlockKind, TableAlignment};
+
+// GPUI paints text alignment but TextLayout's coordinate helpers remain left-origin.
+// Translate using each visual row's shaped advance, including wrapped rows.
+fn alignment_offset(layout: &TextLayout, alignment: TableAlignment, y: Pixels) -> Pixels {
+    if matches!(alignment, TableAlignment::None | TableAlignment::Left) {
+        return px(0.);
+    }
+    let bounds = layout.bounds();
+    let height = layout.line_height();
+    let mut row = (f32::from((y - bounds.top()).max(px(0.))) / f32::from(height)).floor() as usize;
+    for line in layout.line_layouts() {
+        let count = line.wrap_boundaries.len() + 1;
+        if row >= count {
+            row -= count;
+            continue;
+        }
+        let x = |boundary: &gpui::WrapBoundary| {
+            line.runs()[boundary.run_ix].glyphs[boundary.glyph_ix]
+                .position
+                .x
+        };
+        let start = row
+            .checked_sub(1)
+            .map(|i| x(&line.wrap_boundaries[i]))
+            .unwrap_or(px(0.));
+        let end = line
+            .wrap_boundaries
+            .get(row)
+            .map(x)
+            .unwrap_or(line.unwrapped_layout.width);
+        let spare = bounds.size.width - (end - start);
+        return if alignment == TableAlignment::Center {
+            spare / 2.
+        } else {
+            spare
+        };
+    }
+    px(0.)
+}
+
+pub(super) fn aligned_index(
+    layout: &TextLayout,
+    alignment: TableAlignment,
+    mut point: Point<Pixels>,
+) -> Result<usize, usize> {
+    point.x -= alignment_offset(layout, alignment, point.y);
+    layout.index_for_position(point)
+}
+
 use crate::theme::Theme;
 
 /// One painted block, as of the last frame.
@@ -30,16 +117,44 @@ pub struct BlockHit {
     pub text_len: usize,
     pub layout: TextLayout,
     pub bounds: Bounds<Pixels>,
+    pub visible_bounds: Bounds<Pixels>,
+    alignment: TableAlignment,
+}
+
+impl BlockHit {
+    pub fn position_for_index(&self, index: usize) -> Option<Point<Pixels>> {
+        let mut point = self.layout.position_for_index(index)?;
+        point.x += alignment_offset(
+            &self.layout,
+            self.alignment,
+            point.y + self.layout.line_height() / 2.,
+        );
+        Some(point)
+    }
+
+    pub fn index_for_position(&self, point: Point<Pixels>) -> Result<usize, usize> {
+        aligned_index(&self.layout, self.alignment, point)
+    }
 }
 
 #[derive(Default)]
 pub struct HitRegistry {
     pub blocks: Vec<BlockHit>,
+    /// Opt-in paint history: tests must inspect intermediate frames, not just settled geometry.
+    #[cfg(test)]
+    pub recorded_frames: Option<Vec<Vec<BlockHit>>>,
 }
 
 pub type SharedRegistry = Rc<RefCell<HitRegistry>>;
 
 impl HitRegistry {
+    #[cfg(test)]
+    pub(super) fn record_frame(&mut self) {
+        if let Some(frames) = &mut self.recorded_frames {
+            frames.push(self.blocks.clone());
+        }
+    }
+
     pub fn clear(&mut self) {
         self.blocks.clear();
     }
@@ -56,7 +171,10 @@ impl HitRegistry {
     pub fn hit_test(&self, position: Point<Pixels>) -> Option<(ItemId, u32, usize)> {
         let mut best: Option<(&BlockHit, f32, f32)> = None;
         for hit in &self.blocks {
-            let b = hit.bounds;
+            let b = hit.visible_bounds;
+            if b.size.width <= px(0.) || b.size.height <= px(0.) {
+                continue;
+            }
             let dy = if position.y < b.top() {
                 f32::from(b.top() - position.y)
             } else if position.y > b.bottom() {
@@ -86,7 +204,7 @@ impl HitRegistry {
         } else if position.y > b.bottom() {
             hit.text_len
         } else {
-            match hit.layout.index_for_position(position) {
+            match hit.index_for_position(position) {
                 Ok(i) | Err(i) => i.min(hit.text_len),
             }
         };
@@ -104,6 +222,8 @@ pub struct BlockText {
     item_ix: usize,
     block: u32,
     text_len: usize,
+    alignment: TableAlignment,
+    clip: bool,
 }
 
 impl BlockText {
@@ -124,7 +244,15 @@ impl BlockText {
             item_ix,
             block,
             text_len,
+            alignment: TableAlignment::None,
+            clip: false,
         }
+    }
+
+    pub fn aligned(mut self, alignment: TableAlignment) -> Self {
+        self.alignment = alignment;
+        self.clip = true;
+        self
     }
 }
 
@@ -188,6 +316,12 @@ impl Element for BlockText {
             text_len: self.text_len,
             layout: self.layout.clone(),
             bounds,
+            visible_bounds: if self.clip {
+                bounds.intersect(&window.content_mask().bounds)
+            } else {
+                bounds
+            },
+            alignment: self.alignment,
         });
     }
 }

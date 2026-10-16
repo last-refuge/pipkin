@@ -309,12 +309,20 @@ fn an_engine_that_owns_goals_disables_the_desktop_runner_and_takes_intent() {
         s.current().unwrap().goal.is_none(),
         "the engine's report shows it"
     );
-    s.apply_event(unscoped(
-        &s,
+    let BackendRequest::SetGoal { request, .. } = backend(&out)[0] else {
+        panic!("missing goal request")
+    };
+    for kind in [
         EventKind::GoalSynced {
             goal: Some(native_goal("count to two", GoalState::Active, None)),
         },
-    ));
+        EventKind::ConversationLifecycleReady(true),
+        EventKind::GoalStartConfirmed {
+            request: request.clone(),
+        },
+    ] {
+        s.apply_event(unscoped(&s, kind));
+    }
     let goal = s.current().unwrap().goal.clone().unwrap();
     assert!(goal.native && goal.paused.is_none());
     // Pause and clear are engine controls; Stop does not pause locally.

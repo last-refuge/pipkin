@@ -1312,6 +1312,9 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                         |state| state.set_question_waiting(conversation, waiting),
                         cx,
                     ),
+                    LifecycleEvent::ConversationAttention(conversation) => {
+                        m.mutate(|state| state.reveal_conversation_activity(conversation), cx)
+                    }
                     LifecycleEvent::ExportHealth(health) => {
                         m.mutate(|state| state.set_export_health(health), cx)
                     }

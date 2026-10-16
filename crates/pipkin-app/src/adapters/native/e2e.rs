@@ -709,6 +709,9 @@ impl Harness {
                     conversation,
                     waiting,
                 } => self.state.set_question_waiting(conversation, waiting),
+                LifecycleEvent::ConversationAttention(conversation) => {
+                    self.state.reveal_conversation_activity(conversation)
+                }
                 LifecycleEvent::ExportHealth(health) => self.state.set_export_health(health),
                 LifecycleEvent::ExportPreview { content, payload } => {
                     self.state.export_previewed(content, payload)
@@ -3304,6 +3307,32 @@ fn an_engine_owned_goal_runs_to_completion_without_the_desktop_runner() {
         users,
         ["count to two", "count to two"],
         "goal prompts show as their objective"
+    );
+    let id = h.state.current().unwrap().id;
+    h.until("settled native goal can be closed", |s| {
+        s.close_conversation_reason(id).is_none()
+    });
+    let generation = h.state.current().unwrap().generation;
+    h.dispatch(Command::CloseConversation {
+        conversation: id,
+        generation,
+    });
+    assert!(h.state.conversation_is_closed(id));
+    assert_eq!(h.state.selected, None);
+    h.dispatch(Command::ReopenConversation(id));
+    h.until("native goal history reopened without running again", |s| {
+        s.current().is_some_and(|c| {
+            c.opened
+                && c.goal
+                    .as_ref()
+                    .is_some_and(|g| g.state == Some(pipkin_core::GoalState::Completed))
+        }) && s.close_conversation_reason(id).is_none()
+    });
+    assert_eq!(h.user_messages(), users);
+    assert_eq!(
+        fx.requests().len(),
+        2,
+        "reopening must not restart a finished goal"
     );
     h.dispatch(Command::ClearGoal);
     h.until("archived", |s| {

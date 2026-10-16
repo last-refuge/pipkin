@@ -44,6 +44,85 @@ fn chain() -> PlanState {
     )
 }
 
+fn finished_plan() -> PlanState {
+    applied(
+        &chain(),
+        &[
+            json!({"op":"update", "task":1, "status":"completed", "add_evidence":[{"kind":"test", "reference":"retained evidence"}]}),
+            json!({"op":"update", "task":2, "status":"completed"}),
+            json!({"op":"update", "task":3, "status":"completed"}),
+        ],
+    )
+}
+
+#[test]
+fn new_independent_work_archives_finished_plan_atomically_without_reusing_ids() {
+    let old = finished_plan();
+    let snapshot = old.clone();
+    let operations = ops(&[
+        json!({"op":"create", "ref":"new", "title":"New work", "status":"active"}),
+        json!({"op":"create", "ref":"verify", "title":"Verify", "dependsOn":["new"]}),
+        json!({"op":"update", "task":"verify", "detail":"New plan details"}),
+    ]);
+    let result = apply(&old, &operations, Some(old.revision), 2_000).unwrap();
+    assert_eq!(old, snapshot);
+    assert_eq!(result.state.next_id, 6);
+    assert_eq!(result.receipt.changed, [1, 2, 3, 4, 5]);
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|e| e.kind == "archived")
+            .count(),
+        3
+    );
+    let current = view(&result.state, false);
+    assert_eq!(
+        current.tasks.iter().map(|t| t.id).collect::<Vec<_>>(),
+        [4, 5]
+    );
+    assert_eq!(current.counts.completed, 0);
+    assert_eq!(current.counts.archived, 3);
+    assert_eq!(task(&result.state, 1).evidence, task(&old, 1).evidence);
+    assert_eq!(view(&result.state, true).tasks.len(), 5);
+    assert!(
+        apply(
+            &old,
+            &ops(&[json!({"op":"create", "title":""})]),
+            None,
+            2_000
+        )
+        .is_err()
+    );
+    assert_eq!(
+        old, snapshot,
+        "a rejected new plan cannot retire the old one"
+    );
+    assert!(apply(&old, &operations, Some(old.revision - 1), 2_000).is_err());
+}
+
+#[test]
+fn new_tasks_do_not_archive_unfinished_work_or_explicit_continuations() {
+    let continuing = applied(&chain(), &[json!({"op":"create", "title":"More work"})]);
+    assert!(continuing.tasks.iter().all(|t| !t.archived));
+    let old = finished_plan();
+    for op in [
+        json!({"op":"create", "title":"Dependent continuation", "dependsOn":[1]}),
+        json!({"op":"create", "title":"Child continuation", "parent":1}),
+    ] {
+        let continued = applied(&old, &[op]);
+        assert!(continued.tasks.iter().all(|t| !t.archived));
+    }
+    let reopened = applied(
+        &old,
+        &[
+            json!({"op":"update", "task":3, "status":"pending", "reason":"more work"}),
+            json!({"op":"create", "title":"Additional task"}),
+        ],
+    );
+    assert!(reopened.tasks.iter().all(|t| !t.archived));
+}
+
 #[test]
 fn creation_allocates_stable_ids_and_resolves_refs_within_the_batch() {
     let state = chain();
