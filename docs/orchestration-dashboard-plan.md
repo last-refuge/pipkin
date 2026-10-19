@@ -13,6 +13,10 @@ full context/workflows and the approved public model route remain. These offline
 qualify installed CLI orchestration, live dashboard publication or any dashboard UI/control.
 Baseline: `826615e` on `main`.
 
+Milestone 1 (UX and contracts) is drafted in
+[orchestration-dashboard-contracts.md](orchestration-dashboard-contracts.md); its open owner
+decisions are listed in §10 of that document. Nothing is implemented yet.
+
 ## Objective
 
 Make Pipkin's **Orchestration** dashboard the single place to observe and direct agents across
