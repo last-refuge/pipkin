@@ -84,8 +84,8 @@ impl AppState {
                 ticket.setup == identity.setup
                     && ticket.root_candidate.as_ref() == Some(&identity.session)
                     && ticket.mode == self.local_cli.draft.mode
-                    && matches!(&ticket.target, LocalCliInspectTarget::New { project, model }
-                        if project == &self.local_cli.draft.project && *model == self.local_cli.draft.model)
+                    && matches!(&ticket.target, LocalCliInspectTarget::New { project, model, thinking }
+                        if project == &self.local_cli.draft.project && *model == self.local_cli.draft.model && thinking == &self.local_cli.draft.thinking)
                     && ticket.stage == LocalCliMetadataStage::MetadataVerified
                     && ticket.expires_at.is_none_or(|t| self.now() < t)
             });

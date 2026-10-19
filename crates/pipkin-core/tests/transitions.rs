@@ -1011,6 +1011,62 @@ fn failed_queue_journal_write_puts_the_prompt_back() {
 }
 
 #[test]
+fn failed_settlement_keeps_a_synced_diagnostic_without_a_transient_duplicate() {
+    for (level, prior_text, expected_len) in [
+        (NoticeLevel::Error, "unconfirmed output", 1),
+        (NoticeLevel::Info, "unconfirmed output", 2),
+        (NoticeLevel::Error, "different failure", 2),
+    ] {
+        let mut s = state();
+        let mut opened = ev(
+            &s,
+            EventKind::Opened {
+                items: vec![],
+                has_older: false,
+                changes: vec![],
+            },
+        );
+        opened.op = None;
+        s.apply_event(opened);
+        let op = run_started(&mut s, "prompt");
+        let item = TranscriptItem {
+            native_only: false,
+            id: ItemId(100),
+            at: 1,
+            kind: ItemKind::Notice {
+                text: prior_text.into(),
+                level,
+            },
+        };
+        let mut synced = ev(
+            &s,
+            EventKind::Synced {
+                items: vec![item.clone()],
+            },
+        );
+        synced.op = None;
+        s.apply_event(synced.clone());
+        let failed = ev(
+            &s,
+            EventKind::Failed {
+                message: "unconfirmed output".into(),
+            },
+        );
+        assert_eq!(failed.op, Some(op));
+        s.apply_event(failed);
+        assert_eq!(s.current().unwrap().items.len(), expected_len);
+        assert_eq!(s.current().unwrap().items[0], item);
+        assert!(
+            matches!(&s.current().unwrap().run, RunState::Failed { message } if message == "unconfirmed output")
+        );
+        if expected_len == 1 {
+            s.apply_event(synced);
+            assert_eq!(s.current().unwrap().items, vec![item]);
+        }
+    }
+}
+
+#[test]
 fn synced_replaces_items_only_once_opened() {
     let mut s = state();
     let item = |id: u64, text: &str| TranscriptItem {

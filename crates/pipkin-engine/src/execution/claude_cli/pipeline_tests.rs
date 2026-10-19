@@ -114,7 +114,7 @@ async fn run(
             observed
                 .try_lock()
                 .map_err(|_| "projection busy")?
-                .feed(bytes, |event| tx.try_send(event))
+                .feed(bytes, |event| tx.try_send(event).map_err(|_| ()))
                 .map_err(|_| "projection rejected")
         })),
     )
@@ -124,7 +124,7 @@ async fn run(
         Ok(decoder) => decoder.into_inner().ok().unwrap(),
         Err(_) => panic!("observer retained after report"),
     };
-    let summary = decoder.finish(|event| final_tx.try_send(event));
+    let summary = decoder.finish(|event| final_tx.try_send(event).map_err(|_| ()));
     drop(final_tx);
     let mut events = vec![];
     while let Some(event) = rx.recv().await {

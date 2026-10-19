@@ -108,6 +108,26 @@ pub struct JobIntent<'a> {
 }
 
 impl Store {
+    /// None is a still-pending native result; false is missing/failed/retired handoff.
+    pub(crate) fn cli_job_handoff(
+        &self,
+        session: &str,
+        call: &str,
+        run: u64,
+    ) -> Result<Option<bool>> {
+        self.read(|c|Ok(c.query_row("SELECT CASE WHEN bc.state='completed' AND t.state='done' AND json_extract(bc.result,'$.isError')=0 THEN 1 WHEN bc.state='intent' AND t.state='intent' THEN NULL ELSE 0 END FROM jobs j JOIN cli_bridge_calls bc ON bc.session=j.session AND bc.call_id=j.call_id JOIN cli_tool_bridges b ON b.id=bc.bridge AND b.session=j.session AND b.run=j.run JOIN tool_calls t ON t.session=j.session AND t.call_id=j.call_id AND t.run=j.run WHERE j.session=?1 AND j.call_id=?2 AND j.run=?3 AND bc.name='job_start' AND t.name=bc.name",params![session,call,run],|r|r.get::<_,Option<bool>>(0)).optional()?.unwrap_or(Some(false))))
+    }
+    /// Recovery may stop a marked process and settle evidence, never launch/resume it.
+    /// A CLI session name alone is insufficient: join the durable authenticated native
+    /// job_start call, native tool/run and immutable CLI binding that admitted this job.
+    pub(crate) fn cli_job_cleanup_owned(c: &Connection, row: &JobRow) -> Result<bool> {
+        Ok(c.query_row("SELECT EXISTS(SELECT 1 FROM sessions s JOIN cli_agent_bindings a ON a.session=s.id
+            JOIN cli_tool_bridges b ON b.session=s.id JOIN cli_bridge_calls bc ON bc.bridge=b.id AND bc.session=s.id
+            JOIN tool_calls t ON t.session=s.id AND t.call_id=bc.call_id
+            WHERE s.id=?1 AND s.execution_backend='claudeCliAgent' AND bc.call_id=?2 AND b.run=?3
+            AND t.run=b.run AND bc.name='job_start' AND t.name='job_start')",
+            params![row.session,row.call_id,row.run.map(|v|v as i64)],|r|r.get(0))?)
+    }
     /// Record the launch intent (state `starting`, no pid yet).
     pub fn job_create(
         tx: &Connection,

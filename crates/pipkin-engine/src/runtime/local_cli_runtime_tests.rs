@@ -83,6 +83,7 @@ EOF
             }
         } else {
             LocalCliSetupTarget::New {
+                thinking: None,
                 project: self.fixture.project.display().to_string(),
                 model: LocalCliModel::Sonnet,
             }

@@ -40,7 +40,7 @@ use crate::store::{RequestState, Store, TaskRow};
 use crate::tools::{SubagentLaunch, Tool, ToolCtx, ToolError, ToolHost, ToolOutput};
 use crate::util::now_ms;
 
-pub const SUBAGENT_DESCRIPTION: &str = "Delegate a self-contained task to a subagent and get its answer back. Give it everything it needs to know: by default it starts without this conversation (context \"fresh\"); context \"inherit\" adds a bounded excerpt of recent messages. Profiles: \"worker\" (default: every tool a child can have), \"reviewer\" (read-only: read, plan_read, web_read), \"scout\" (reads plus web search and fetch; cannot change the workspace), or a profile defined in settings. A child never delegates further or asks the person. Set wait to false to keep working while the child runs in the background: the call returns its child number at once; by default you get a follow-up message when it finishes (wake), and subagent_status, subagent_wait and subagent_result report on it.";
+pub const SUBAGENT_DESCRIPTION: &str = "Delegate a self-contained task to a subagent and get its answer back. Give it everything it needs to know: by default it starts without this conversation (context \"fresh\"); context \"inherit\" adds a bounded excerpt of recent messages. Profiles: \"worker\" (default: every tool a child can have), \"reviewer\" (read-only: read, plan_read, web_read), \"scout\" (reads plus web search and fetch; cannot change the workspace), or a profile defined in settings. For CLI orchestration, set child to a completed child number to continue its existing session; omit profile/context/model overrides. A child never delegates further or asks the person. Set wait to false to keep working while the child runs in the background: the call returns its child number at once; by default you get a follow-up message when it finishes (wake), and subagent_status, subagent_wait and subagent_result report on it.";
 
 /// The note a person's Stop leaves on the task row (shown to the parent and the inspector).
 pub const STOPPED_BY_PERSON: &str = "Stopped by the person";
@@ -63,6 +63,7 @@ impl Tool for SubagentTool {
                 "type": "object",
                 "properties": {
                     "task": {"type": "string", "description": "What the subagent should do"},
+                    "child": {"type":"integer","minimum":1,"description":"CLI orchestration: continue a completed child with this next task; omit profile, context and model overrides"},
                     "profile": {"type": "string", "description": "worker (default), reviewer, scout, or a settings-defined profile"},
                     "context": {"type": "string", "description": "fresh (default) or inherit: whether the child sees a bounded excerpt of this conversation"},
                     "wait": {"type": "boolean", "description": "true (default): wait for the answer. false: return at once with the child number and keep working while it runs"},
@@ -103,7 +104,25 @@ impl Tool for SubagentTool {
             };
             let wait = args.get("wait").and_then(Value::as_bool).unwrap_or(true);
             let wake = args.get("wake").and_then(Value::as_bool).unwrap_or(true);
+            let child = args
+                .get("child")
+                .map(|v| {
+                    v.as_u64()
+                        .filter(|id| *id > 0)
+                        .ok_or_else(|| ToolError::new("child must be a positive integer"))
+                })
+                .transpose()?;
+            if child.is_some()
+                && ["profile", "context", "model", "thinking"]
+                    .iter()
+                    .any(|key| args.get(*key).is_some())
+            {
+                return Err(ToolError::new(
+                    "A continuation keeps the original child's profile, context, model and thinking; omit overrides",
+                ));
+            }
             let launch = SubagentLaunch {
+                child,
                 task: task.to_owned(),
                 profile,
                 context,
@@ -586,6 +605,9 @@ impl Shared {
         origin: &str,
         delivery: &str,
     ) -> Result<(TaskRow, bool), String> {
+        if launch.child.is_some() {
+            return Err("Child continuation requires the CLI orchestration host".into());
+        }
         self.require_native_execution(parent)
             .map_err(|e| e.message)?;
         let parent_row = self
@@ -1020,7 +1042,7 @@ impl Shared {
         self.publish_subagents(&task.root);
     }
 
-    fn subagent_wake_text(&self, task: &TaskRow) -> String {
+    pub(super) fn subagent_wake_text(&self, task: &TaskRow) -> String {
         let excerpt: String = task
             .task
             .lines()
@@ -1146,7 +1168,7 @@ impl Shared {
     // ---------------------------------------------------------------------- person controls
 
     /// The task row for `(root, child)`, refusing a number from any other session.
-    fn authorized_child(&self, root: &str, child: u64) -> Result<TaskRow, ProtoError> {
+    pub(super) fn authorized_child(&self, root: &str, child: u64) -> Result<TaskRow, ProtoError> {
         self.store
             .session(root)?
             .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "Unknown session"))?;
@@ -1155,7 +1177,7 @@ impl Shared {
             .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "Not a subagent of this session"))
     }
 
-    fn subagent_row(&self, root: &str, child: u64) -> Result<SubagentRow, ProtoError> {
+    pub(super) fn subagent_row(&self, root: &str, child: u64) -> Result<SubagentRow, ProtoError> {
         Ok(row_view(&self.authorized_child(root, child)?))
     }
 
@@ -1297,6 +1319,7 @@ impl Shared {
         };
         let parent_session = self.session(session)?;
         let launch = SubagentLaunch {
+            child: None,
             task,
             profile: profile
                 .map(|p| p.trim().to_owned())

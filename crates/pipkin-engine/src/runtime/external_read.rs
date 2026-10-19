@@ -15,7 +15,7 @@ impl Shared {
             .session(session)?
             .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "Session does not exist"))?;
         match row.execution_backend {
-            ExecutionBackend::NativeAgent => Ok(self
+            ExecutionBackend::NativeAgent | ExecutionBackend::ClaudeCliAgent => Ok(self
                 .store
                 .request(session, request)?
                 .map(|r| r.lookup())
@@ -49,7 +49,7 @@ impl Shared {
             .session(session)?
             .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "Session does not exist"))?;
         match row.execution_backend {
-            ExecutionBackend::NativeAgent => Ok(self.store.prompt_result(session, request)?),
+            ExecutionBackend::NativeAgent | ExecutionBackend::ClaudeCliAgent => Ok(self.store.prompt_result(session, request)?),
             ExecutionBackend::LocalClaudeCli => Ok(match self.store.external_prompt(session, request)? {
                 None => PromptState::Unknown,
                 Some(receipt) => match receipt.result {

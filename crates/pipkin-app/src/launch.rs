@@ -359,14 +359,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("out.txt");
         let script = dir.path().join("fake-editor");
-        std::fs::write(
-            &script,
-            format!(
+        // Publish the executable in a separate process: an unrelated concurrent fork
+        // must not inherit a writable script descriptor and cause ETXTBSY at launch.
+        let status = Command::new("/bin/sh")
+            .env_clear()
+            .args(["-c", "printf '%s' \"$2\" > \"$1\"", "fixture-writer"])
+            .arg(&script)
+            .arg(format!(
                 "#!/bin/sh\npwd > {out}\nfor a in \"$@\"; do echo \"arg:$a\" >> {out}; done\n",
                 out = out.display()
-            ),
-        )
-        .unwrap();
+            ))
+            .status()
+            .unwrap();
+        assert!(status.success());
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         let file = dir.path().join("hello world.txt");
         std::fs::write(&file, "x").unwrap();

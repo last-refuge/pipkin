@@ -1,123 +1,135 @@
-# Use Claude CLI in Pipkin
+# Use Claude Code CLI in Pipkin
 
-Local Claude CLI chat and Write-only hosting is **on by default in normal Pipkin desktop
-launches**, for both the child and in-process native engine. Open Pipkin normally, then choose
-**Settings → Connections → Claude Code · local CLI → Configure provider…**. Select a CLI model
-in the ordinary model picker alongside native providers; there is no exclusive application mode.
-You can also start directly from the model picker: select a CLI alias, then use **Continue
-conversation setup…** in Connections. Do not start provider configuration again; the chosen
-conversation flow is already prepared. **Find Claude again** only refreshes discovery within that
-flow, clears old path consent and keeps the dialog open. Outside-click or Close dismisses it.
-There is no dedicated sidebar action or Ctrl+N chooser. No experimental launch flags or typed configuration paths are
-needed for a detected installation and selected project. Existing conversations retain their backend; enabling the feature does
-not automatically inspect an executable, trust a project, send a prompt or approve a Write.
+Choose **Claude Code CLI · Haiku / Sonnet / Opus** in the ordinary model picker. New CLI
+conversations use the installed CLI's **default coding tools**, including file reads, search,
+edits, writes, shell commands and CLI-owned agents. Setup also offers an explicit
+**Pipkin orchestration** choice on Linux (see below). There is no new legacy chat/Write selector and
+**no per-tool approval dialog**. The CLI runs unattended with `bypassPermissions` and
+`--dangerously-skip-permissions`; submitted tasks can modify files and run commands with your
+user's privileges. This is not a sandbox. Stop cannot undo effects.
 
-This selectable provider runs your installed, unmodified Claude CLI using its normal login.
-Its external execution backend is not Pipkin's native tool runner, a sandbox, or full tool parity. Exact path trust and per-Write approval
-remain required. If Pipkin was already running when updated, fully quit and reopen it so the old
-worker is not reused.
+The CLI uses its own normal login, not Pipkin's native subscription credentials or an API-key
+fallback. Its tools execute inside the CLI, not through interpretation of transcript text.
+Printed `<invoke>` or similar text is just text. Pipkin observes structured CLI tool calls and
+results and retains them as external activity; it never turns them into native tool commands.
 
-## Qualified configuration
+## Pipkin orchestration
 
-- Linux/Wayland desktop, built `pipkin` app with its native worker/helper.
-- **Claude CLI 2.1.299 or newer** (stable numeric releases). The minimum is compared numerically,
-  not by exact equality. Required capabilities, scoped trust and normal CLI login are still checked.
-  Each conversation binds the actual observed version; an executable/version change cannot silently
-  rewrite an existing binding. Live qualification evidence remains limited to 2.1.299; accepting
-  newer versions is a compatibility policy, not a claim that every newer release was live-tested.
-- Fixed `haiku`, `sonnet`, or `opus` aliases. Live qualification used `haiku`.
-- Chat fresh/resume; restricted Write fresh/resume; explicit Allow once, Deny and Stop.
-- Write accepts only the closed `Write(file_path, content)` shape. Read, Edit, Bash, MCP,
-  subagents, attachments, native tools/goals/queues/retries and in-place native model changes are
-  unavailable in these conversations. CLI output is inert external history, not model context.
+In **Settings → Connections → Claude Code · local CLI → Configure provider…**, choose
+**Pipkin orchestration**, review the executable/project/model and confirm the connection.
+Then select a CLI model to create a separate orchestration conversation and confirm that
+conversation's setup. Existing Coding conversations retain their original policy.
 
-## Normal use and optional isolated testing
+Claude uses its own login for inference while Pipkin executes tools and owns goals, children,
+questions, queues, plans and jobs. Native attachments, steering, follow-ups and their history
+are available. Reconnect requires explicit confirmation and never resends the previous message.
+The selected CLI alias is fixed for the conversation; choose a separate conversation for a
+new model. New orchestration setup offers Default, Low, Medium, High, Extra high and Max
+requested effort. Effort is also fixed for that conversation; effective limits remain CLI-owned.
 
-Start the installed **Pipkin** desktop entry or run `pipkin`. Use your normal profile and project;
-no test launcher is required. Build from source with `cargo build -p pipkin-app` if needed.
-For optional isolated testing, choose a short, unused private data location under your home
-directory and an existing disposable project:
+This desktop route has offline regression coverage. Broader installed-CLI and real-window
+qualification remains outstanding. Child launch supports fresh or inherited context; steering
+reaches an active child at its next native tool-result boundary. If it finishes first, Pipkin
+reports non-delivery without restarting it. Independent auditors cannot be steered. MCP
+settings use the selected conversation's project; Skip-audit records your explicit decision
+and stops the matching auditor without cancelling the conversation's approval.
+See [the capability checklist](claude-cli-native-orchestration.md) for the exact scope.
 
-```sh
-mkdir -m 700 "$HOME/.pipkin-cli-test"
-./target/debug/pipkin --engine native \
-  --data-dir "$HOME/.pipkin-cli-test" \
-  --project /absolute/path/to/scratch-project
-```
+## Connect once, then select the model normally
 
-Use `--disable-local-claude-cli-write` for chat-only hosting, or `--disable-local-claude-cli`
-to disable both. These process-local switches do not persist trust or approvals or change
-existing conversation identities. Demo has no CLI execution; attached engines control their
-own policy and reject desktop host overrides. Standalone servers and the engine library retain
-explicit opt-in defaults. Legacy experimental enable flags remain accepted for old launch scripts
-(execution alone retains its old chat-only meaning), but are unnecessary for daily desktop use.
-Permission sockets require private, trusted ancestry;
-`/tmp` is deliberately rejected. Do not reuse the retained qualification fixtures as your
-normal workspace. No installation or billing/account changes are performed by this flow.
+1. Open **Settings → Connections → Claude Code · local CLI → Configure provider…** if the
+   provider has not been configured. Discovery reads filesystem metadata without executing
+   candidates, shells or package managers. Select the installed executable if necessary and
+   use **Connect Claude Code**. This checks the selected installation and its normal login;
+   provider configuration does not send a prompt or select a model.
+2. Select a CLI model in the regular model picker. For the configured executable, Pipkin
+   coordinates fresh checks and conversation creation automatically, without another path
+   confirmation. If discovery finds a *different* executable, it does not execute it silently.
+3. Send your coding instruction normally. Read/search/edit/shell tools do not wait for an
+   approval panel. The model picker shows the actual CLI alias; there is no silent native/GPT
+   fallback. Configured-provider reconnect similarly checks and returns without another
+   confirmation, but does not submit or repeat a prompt.
+4. Inspect actual files and **Refresh workspace changes** as needed. Changes shows project
+   Git state, including unrelated edits; it is not proof that a particular CLI action caused them.
 
-1. If first-run setup offers native provider sign-in, choose **Explore the workspace**; a native
-   API account is not required. In **Settings → Connections**, use **Claude Code · local CLI →
-   Configure provider…**. This configures an independent provider, not an application-wide mode.
-   Pipkin captures the selected project and finds the executable on the engine host using a saved
-   choice, absolute PATH entries and known installation locations (including mise). Discovery
-   does not run Claude, a shell or a package manager. Multiple installations require a choice;
-   missing installations use **Choose executable…**. **Change project…** opens a folder picker.
-2. Review the resolved paths, model (last-used CLI preference, otherwise Sonnet) and tools
-   (**Chat only** by default, or **Write with approval**). Select **Trust these paths and connect**
-   only if you trust both the executable and project shown. Provider configuration checks CLI
-   login/version but selects no model and creates no conversation. Choose **Claude Code CLI ·
-   Haiku/Sonnet/Opus** in the normal model picker, alongside native models. Selection prepares a
-   separate CLI conversation and opens Connections for fresh scoped confirmation, then one
-   journaled metadata-only creation. No prompt or Write is authorized. Preferences remember
-   paths/model/tool-mode hints, never grants or credentials. Native provider sign-in stays separate.
-3. Wait for the conversation's authoritative readiness before sending. The composer's model
-   picker shows the actual **Claude Code CLI** model; there is no separate Backend label. Choosing Claude does not convert
-   an old GPT/native chat. A failed/cancelled model change blocks only its initiating conversation;
-   use **Keep this conversation’s provider** to abandon that change explicitly. Other conversations
-   remain usable. Switching to a native provider or another CLI alias creates a separate chat,
-   without transferring source history/draft. `Ctrl+N` follows this conversation's model (or its
-   pending choice); a blank workspace uses the last saved choice. CLI setup/reapproval/recovery
-   stays in Connections. Execution authority never persists. You no longer need to
-   race the 30-second preflight freshness window or manually sequence Inspect/Check/Create.
-   The limits remain enforced internally; expired or uncertain operations do not automatically
-   retry or renew consent. Unsupported versions and signed-out CLI status have actionable errors.
-   Advanced path editing, diagnostics and recovery remain available.
-4. Send one small request in the scratch project. For Write, open **Review CLI approvals…**,
-   explicitly **Refresh reviews**, inspect the full escaped arguments, and decide once.
-   **Ctrl+Shift+C** copies the complete current review without deciding. Tab/Shift+Tab navigates;
-   Page Up/Down scrolls, including the focused argument region. Do not approve by guessing
-   a tab count. A consumed receipt is not proof of delivery, completion or the file effect.
-5. Inspect the actual file and **Refresh workspace changes**. Changes reports captured-project
-   Git state and can include unrelated work; it is not action attribution.
+The selected project is the CLI working directory. Changing backend or CLI alias creates a
+separate conversation; source history and drafts are not forwarded. New follows the current
+model or pending explicit model choice. A failed/cancelled switch affects only its source and
+can be abandoned with **Keep this conversation's provider**.
 
-## Reapproval, uncertainty and disabling
+**Existing legacy chat-only and approval-backed Write conversations keep their immutable
+policy and history.** Their model label now identifies the limitation. Click **Use coding model**
+in the composer, or select the same CLI alias again in the normal model picker, to open a ready
+coding conversation. Selecting the same alias no longer silently keeps the tool-disabled route.
+New also uses the coding provider. Source history and unsent drafts stay in the old conversation;
+nothing is forwarded, rebound or replayed. Legacy approval recovery remains for old receipts only.
 
-After restart, use **Reconnect Claude Code…**. Saved session metadata is loaded and inspected
-without executing Claude. Review the captured paths and confirm again to check and return to the
-same conversation. Hints and preferences are not approval. If an older uncertain creation blocks setup, **Resume Local CLI setup…**, select its
-exact recovery identity when necessary, and **Look up creation (read-only)**. Only after an
-explicit absence result may you **Keep recovery record and start another setup**. Do not
-blindly repeat Create; absence is not proof an earlier request can never finish.
+## Compatibility and host policy
 
-An uncertain prompt or approval must never be resent. Retained Unknown runs remain Unknown;
-compatibility fixes do not upgrade them. Resume requires independently completed context.
-Stop revokes authority and supervises cancellation but cannot undo effects or guarantee all
-descendants died. After a crash inspect processes and files before starting separate work.
-Original-owner approval uncertainty can remain unresolvable; reopening does not restore authority.
+- The built Linux desktop accepts stable numeric CLI versions **2.1.299 or newer**, subject to
+  the required flags, captured executable/project identity and normal CLI login checks. A
+  binding records the actual version. Changed identities are not rewritten automatically.
+- Normal owned desktop engines enable hosting by default. `--disable-local-claude-cli` disables
+  new CLI execution; the retained `--disable-local-claude-cli-write` switch disables coding/tool
+  execution (including legacy Write). Neither deletes history or login credentials.
+- Demo does not execute the CLI. Attached hosts own their policy; standalone server/library
+  defaults remain off. Legacy server opt-ins remain available.
+- CLI tools are not Pipkin-native tools, goals, queues or subagents. Native orchestration
+  commands, native retries, image attachments and in-place model changes are not advertised
+  for these conversations. CLI-owned agents are part of CLI execution, not native worker rows.
+  A separate in-development authenticated native-tool driver and immutable storage bindings
+  have offline tests, but no approved runtime creator/CLI launch or enabled capability; see
+  [implementation status](claude-cli-native-orchestration.md). It does not change this policy.
+- Additional configured MCP servers and hooks are not activated by this provider. The fixed
+  launch uses empty MCP configuration, disabled hooks and empty setting sources, without
+  modifying the installed CLI or its configuration. Normal CLI login remains separate.
+- New coding turns have a bounded 30-minute execution deadline, cancellable throughout tools
+  and output backpressure. Legacy chat/Write turns retain their three-minute bound. Setup
+  freshness (five minutes, with 30-second Create preflight freshness) is not connection lifetime.
 
-To disable execution, exit and relaunch with `--disable-local-claude-cli` (or disable only Write
-with `--disable-local-claude-cli-write`). History, CLI sessions and login credentials are not deleted. Do not bypass an unsupported-version, ownership or readiness gate.
+## Stop, restart and uncertainty
 
-## Evidence and limits
+Stop/disconnect revokes the owned connection/turn and supervises process cleanup. It cannot undo
+file effects or prove every descendant died. Inspect files/processes after a crash before
+repeating work. Existing Unknown turns remain Unknown; compatibility changes never upgrade them.
 
-[Qualification evidence](claude-cli-bridge-evidence.md) and
-[the append-only ten-run record](../fixtures/claude-cli-probe/2.1.299/README.md) separate successes
-from failures. Native146 fresh Write completed but **failed its review interaction**; native158
-resumed Write passed exact copied-review validation before Allow, clean completion, independent
-file verification and Changes listing. No authorization remains for additional live qualification.
+An uncertain prompt, creation or old approval decision must not be resent. Duplicate request
+IDs resolve to their existing receipts, not a second launch. For uncertain creation use the
+explicit read-only lookup in Connections; absence alone never triggers automatic recreation.
+Fresh work requires a new instruction, not a retry of an uncertain operation.
 
-Billing/plan allowance/extra usage, managed-policy isolation, complete descendant containment,
-live qualification of the redesigned installed setup, real IME/accessibility and display-presentation latency
-remain unverified. Native navigation used short arguments; nonzero long-argument scrolling is
-headless-tested, not a measured native overflow case. This is experimental testing readiness,
-not production or universal platform/tool qualification.
+A confirmed success can continue. An explicit CLI-reported error can accept a new instruction
+only with independently finished transport/exit and resolved action evidence. Missing terminal
+results, identity conflicts, storage failures and unconfirmed cleanup remain conservative.
+
+Streaming presentation is separate from execution. Completed blocks repair previews; optional
+telemetry and CLI-owned child observations do not establish root completion. Tool output previews
+are bounded, with truncation/warnings instead of terminating a build because its output is large.
+Root tool IDs/results stay correlated, including tools newly reported in the CLI's default
+inventory. No arbitrary markup or output becomes execution authority.
+
+Diagnostics retain bounded event/error/block facts, not raw rejected frames, account data or
+stderr. Existing settled receipts are never rewritten. See [the scorecard](scorecard.md).
+
+## Optional isolated testing and evidence
+
+Normal use needs no test launcher. For an isolated profile, use a short private directory under
+HOME and a disposable project; do not reuse retained qualification fixtures or the user's live
+profile for experiments. No installation/account/billing changes are performed by setup.
+
+[Historical qualification](claude-cli-bridge-evidence.md) and the
+[ten-run ledger](../fixtures/claude-cli-probe/2.1.299/README.md) concern CLI2.1.299 chat/restricted
+Write, not unattended coding. A separately authorized [three-prompt follow-up](../fixtures/claude-cli-probe/unattended-coding-followup.md)
+passed on **CLI2.1.301 / Sonnet**: real Read/Write calls through the engine and the desktop
+core/adapter path, same-alias legacy-to-coding selection, fresh/resumed turns, exact file contents,
+zero approval rows and zero native-provider requests. All three prompts are used; no further live
+inference is authorized. This is not a native-window interaction test or full Pipkin orchestration
+parity. Bash/Edit/CLI-agent execution, other aliases/releases, billing/extra usage, managed policy,
+full descendant containment and native accessibility remain unverified live.
+
+The official [CLI reference](https://code.claude.com/docs/en/cli-reference) documents `--tools
+default`, bypass mode and the static system supplement. The [unattended-run guidance](https://code.claude.com/docs/en/headless#turn-off-permission-prompts-in-unattended-runs)
+explains that `--permission-prompts none` denies otherwise-unresolved prompts instead of waiting;
+the chosen permission mode decides tools first. This is documentation evidence, not a live test.
+The earlier offline implementation passed frozen-source workspace/Clippy/fmt gate269. The
+follow-up's routing/live evidence and final gate status are recorded in [the scorecard](scorecard.md).

@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 25;
+pub const SCHEMA_VERSION: u32 = 32;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -478,9 +478,16 @@ const V22: &str = include_str!("external/prompts.sql");
 const V23: &str = include_str!("external/session_shape.sql");
 const V24: &str = include_str!("external/permissions.sql");
 const V25: &str = include_str!("external/action_projection.sql");
+const V26: &str = include_str!("cli_bridge.sql");
+const V27: &str = include_str!("cli_agent.sql");
+const V28: &str = include_str!("cli_agent_turns.sql");
+const V29: &str = include_str!("cli_agent_children.sql");
+const V30: &str = include_str!("cli_agent_inputs.sql");
+const V31: &str = include_str!("cli_agent_input_deliveries.sql");
+const V32: &str = include_str!("cli_agent_person_children.sql");
 const MIGRATIONS: &[&str] = &[
     V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19, V20, V21,
-    V22, V23, V24, V25,
+    V22, V23, V24, V25, V26, V27, V28, V29, V30, V31, V32,
 ];
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {

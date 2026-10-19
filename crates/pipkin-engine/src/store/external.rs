@@ -144,7 +144,7 @@ pub struct ExternalAction {
     pub updated_at_ms: i64,
 }
 
-fn token(s: &str) -> bool {
+pub(super) fn token(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 128
         && s.bytes()
@@ -161,7 +161,7 @@ fn canonical_path(s: &str) -> bool {
         && !s.contains('\\')
 }
 
-fn validate_spec(s: &CliBindingSpec) -> Result<()> {
+pub(super) fn validate_spec(s: &CliBindingSpec) -> Result<()> {
     let uuid = s.cli_session_id.as_bytes();
     let canonical_uuid = uuid.len() == 36
         && uuid.iter().enumerate().all(|(i, b)| {

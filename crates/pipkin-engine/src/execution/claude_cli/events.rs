@@ -1,26 +1,22 @@
-//! Pure, bounded display projection of the CLI 2.1.296 stream-json shapes.
+//! Bounded CLI provider framing, lifecycle observations and inert display normalization.
 //!
-//! Qualification source: the adjacent phase-0 `stream.rs`, the probe and
-//! `docs/claude-cli-bridge-evidence.md`. Tests are synthetic, not live qualification.
-//! This is deliberately NOT a native message/tool-call decoder or execution authority.
-//! Inputs, signatures, account metadata, stderr and terminal answer summaries are
-//! discarded. Nothing here performs I/O, resolves credentials, or executes tools.
+//! CLI assistant envelopes contain completed *blocks*, not whole-message finals. Match
+//! stream blocks by API message/index, deduplicate SDK envelope IDs, and reconcile complete
+//! blocks with previews. Without previews, distinct envelopes append distinct blocks.
+//! Unknown telemetry is discarded. A malformed/unsupported presentation record marks display
+//! incomplete, not execution failed; complete blocks/final result text can repair the display.
 //!
-//! Contract: deltas are ordered, exactly-once byte-offset appends keyed by message ID
-//! and block index. The transport must not replay delta records (they have no reliable
-//! sequence number). A first assistant snapshot replaces differing partial blocks;
-//! identical blocks emit nothing. Identical repeated final snapshots are no-ops;
-//! conflicting repeated finals and deltas after a final fail closed. A replacement
-//! MUST replace, never append. Events remain provisional until `finish` succeeds AND
-//! the supervisor independently validates process exit. Sink acceptance is synchronous:
-//! no internal event queue, retry, or silent drop. Any error permanently poisons the
-//! decoder; previously accepted events cannot be rolled back by this module.
+//! Identity, init/inventory, tool correlation, resource bounds, terminal contradictions and
+//! sink errors remain hard failures. Only an explicit result plus independent supervised
+//! exit/drain/permission evidence can establish execution completion. EOF never does.
+//! Trailing system telemetry is drained after a result. No prompt/delta is replayed.
 //!
-//! One decoder is one turn. Unknown envelopes are counted, never terminal; unknown
-//! content mutations and nested/subagent streams are unsupported and fail closed.
-//! Tool results must follow an observed, inventory-authorized call; orphan results
-//! are rejected immediately (no untrusted pending-result buffer). Tool observations
-//! contain no arguments. Debug output is redacted, even for display payloads.
+//! The runtime is the sole production framing consumer and supplies bounded asynchronous
+//! backpressure; the phase-0 smoke decoder is not a second production validator. This module
+//! does no I/O, permission decisions, native tool execution or credential access. Tool input,
+//! signatures and account metadata are discarded; Debug never exposes display content.
+//! Offline fixtures follow the official SDK message-flow contract; they are not live
+//! qualification. See docs/claude-cli-provider-review.md and docs/scorecard.md.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
@@ -88,6 +84,17 @@ pub enum RecordClass {
     #[serde(other)]
     Unknown,
 }
+/// Bounded sequence facts only: no message IDs, content, schema labels or arbitrary values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StreamDiagnostic {
+    pub problem: Error,
+    pub record: RecordClass,
+    pub block_index: Option<usize>,
+    pub active_message: bool,
+    pub known_blocks: usize,
+    pub block_finalized: Option<bool>,
+}
+
 /// Deserialization diagnostics never contain error text, scalar values or schema labels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ParseFailureKind {
@@ -196,6 +203,36 @@ fn parse_failure(bytes: &[u8]) -> Option<ParseFailure> {
     })
 }
 
+/// On a rejected presentation record, never degrade an uncorrelated tool observation
+/// into a harmless display warning. Permission authority lives on a different channel.
+fn tool_record(bytes: &[u8]) -> bool {
+    fn tool(value: &serde_json::Value) -> bool {
+        value
+            .get("type")
+            .and_then(|v| v.as_str())
+            .is_some_and(|kind| {
+                matches!(
+                    kind,
+                    "tool_use"
+                        | "server_tool_use"
+                        | "tool_result"
+                        | "server_tool_result"
+                        | "input_json_delta"
+                )
+            })
+            || (value.get("name").is_some() && value.get("id").is_some())
+    }
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return true;
+    };
+    value
+        .pointer("/message/content")
+        .and_then(|v| v.as_array())
+        .is_some_and(|blocks| blocks.iter().any(tool))
+        || value.pointer("/event/content_block").is_some_and(tool)
+        || value.pointer("/event/delta").is_some_and(tool)
+}
+
 fn record_class(bytes: &[u8]) -> RecordClass {
     #[derive(Deserialize)]
     struct Inner {
@@ -240,12 +277,18 @@ pub struct Usage {
     pub output_tokens: Option<u64>,
     pub cache_read_input_tokens: Option<u64>,
     pub cache_creation_input_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
+    pub cache_write_1h: Option<u64>,
 }
 
 /// Display-only payloads: intentionally no Serialize or native protocol conversion.
 /// Consumers may inspect fields for UI display, but must not log their contents.
 #[derive(PartialEq, Eq)]
 pub enum Event {
+    Context {
+        tokens: Option<u64>,
+        compact_pre_tokens: Option<u64>,
+    },
     Initialized,
     BlockDelta {
         message_id: String,
@@ -276,6 +319,7 @@ pub enum Event {
     Terminal {
         outcome: Outcome,
         usage: Option<Usage>,
+        metadata: Option<super::usage_metadata::Metadata>,
     },
 }
 
@@ -283,6 +327,7 @@ impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Initialized => "Initialized",
+            Self::Context { .. } => "Context",
             Self::BlockDelta { .. } => "BlockDelta(<redacted>)",
             Self::BlockSnapshot { .. } => "BlockSnapshot(<redacted>)",
             Self::ExternalToolObserved { .. } => "ExternalToolObserved(<redacted>)",
@@ -299,6 +344,8 @@ pub struct Summary {
     pub unknown_records: u64,
     pub projected_bytes: usize,
     pub outcome: Option<Outcome>,
+    /// Display loss is not execution uncertainty. No raw rejected content is retained.
+    pub presentation_incomplete: bool,
 }
 
 /// No Default: the caller must supply the expected canonical lowercase CLI UUID.
@@ -308,21 +355,32 @@ pub struct Decoder {
     allowlist: HashSet<String>,
     inventory: HashSet<String>,
     line: Vec<u8>,
+    max_line_bytes: usize,
+    max_projected_bytes: usize,
     messages: HashMap<String, MessageState>,
     tools: HashMap<String, ToolState>,
     active: Option<String>,
+    preview_unreliable: HashSet<String>,
+    snapshots: HashMap<String, [u8; 32]>,
+    last_text: Option<(String, usize)>,
+    tool_preview_limit: Option<usize>,
+    cli_inventory: bool,
+    exact_inventory: bool,
+    last_text_snapshot: u64,
+    last_presentation_problem: u64,
     blocks: usize,
     summary: Summary,
     failed: Option<Error>,
     failed_record: Option<RecordClass>,
     parse_failure: Option<ParseFailure>,
+    diagnostic: Option<StreamDiagnostic>,
 }
 
 #[derive(Default)]
 struct MessageState {
     blocks: BTreeMap<usize, BlockState>,
     started: bool,
-    finalized: bool,
+    ended: bool,
 }
 
 #[derive(PartialEq, Eq)]
@@ -334,12 +392,13 @@ struct BlockState {
     kind: BlockKind,
     text: String,
     stopped: bool,
+    finalized: bool,
 }
 struct ToolState {
     message_id: String,
     index: usize,
     name: String,
-    result: Option<(Option<bool>, String)>,
+    result: Option<(Option<bool>, [u8; 32])>,
 }
 
 impl Decoder {
@@ -360,14 +419,25 @@ impl Decoder {
             allowlist,
             inventory: HashSet::new(),
             line: Vec::new(),
+            max_line_bytes: MAX_LINE_BYTES,
+            max_projected_bytes: MAX_PROJECTED_BYTES,
             messages: HashMap::new(),
             tools: HashMap::new(),
             active: None,
+            preview_unreliable: HashSet::new(),
+            snapshots: HashMap::new(),
+            last_text: None,
+            tool_preview_limit: None,
+            cli_inventory: false,
+            exact_inventory: false,
+            last_text_snapshot: 0,
+            last_presentation_problem: 0,
             blocks: 0,
             summary: Summary::default(),
             failed: None,
             failed_record: None,
             parse_failure: None,
+            diagnostic: None,
         })
     }
 
@@ -380,6 +450,21 @@ impl Decoder {
     }
     pub fn parse_failure(&self) -> Option<ParseFailure> {
         self.parse_failure
+    }
+    /// Native orchestration cannot silently omit catalog tools or inherit Coding's policy.
+    pub(super) fn with_exact_inventory(mut self) -> Self {
+        self.exact_inventory = true;
+        self.max_line_bytes = super::orchestration_policy::MAX_STREAM_LINE_BYTES;
+        self.max_projected_bytes = super::orchestration_policy::MAX_PROJECTED_BYTES;
+        self
+    }
+    pub fn with_cli_tools(mut self) -> Self {
+        self.cli_inventory = true;
+        self.tool_preview_limit = Some(8192);
+        self
+    }
+    pub fn diagnostic(&self) -> Option<StreamDiagnostic> {
+        self.diagnostic
     }
 
     /// LF/CRLF records; the line bound excludes LF and includes CR. Arbitrarily
@@ -396,7 +481,7 @@ impl Decoder {
         while !bytes.is_empty() {
             let newline = bytes.iter().position(|byte| *byte == b'\n');
             let count = newline.unwrap_or(bytes.len());
-            if count > MAX_LINE_BYTES - self.line.len() {
+            if count > self.max_line_bytes - self.line.len() {
                 return self.poison(Error::Limit);
             }
             self.line.reserve_exact(count);
@@ -451,8 +536,15 @@ impl Decoder {
                 return Err(Error::MalformedRecord);
             }
             let header: Header = parse(line)?;
-            if self.summary.outcome.is_some() {
-                return Err(Error::Sequence);
+            if let Some(parent) = &header.parent_tool_use_id {
+                // Opaque CLI-owned child telemetry may have its own session identity.
+                // It must name an observed root call and can never mutate the root's
+                // transcript, actions or completion, including after the root result.
+                if !self.cli_inventory || !self.tools.contains_key(parent) {
+                    return Err(Error::Identity);
+                }
+                increment(&mut self.summary.records)?;
+                return increment(&mut self.summary.unknown_records);
             }
             if let Some(session) = &header.session_id
                 && session != &self.session
@@ -466,10 +558,17 @@ impl Decoder {
             if known && header.session_id.as_deref() != Some(self.session.as_str()) {
                 return Err(Error::Identity);
             }
-            if header.parent_tool_use_id.is_some() {
-                return Err(Error::UnsupportedContent);
-            }
             increment(&mut self.summary.records)?;
+            // Result ends execution, not the stdout stream. Drain trailing telemetry,
+            // but never accept another result, content mutation or a changed identity.
+            if self.summary.outcome.is_some() {
+                if matches!(header.kind.as_str(), "system" | "rate_limit_event")
+                    && header.subtype.as_deref() != Some("init")
+                {
+                    return increment(&mut self.summary.unknown_records);
+                }
+                return Err(Error::Sequence);
+            }
             if header.kind == "system" && header.subtype.as_deref() == Some("init") {
                 if self.summary.initialized {
                     return Err(Error::Sequence);
@@ -479,15 +578,56 @@ impl Decoder {
                     return Err(Error::Limit);
                 }
                 for tool in init.tools {
-                    if !self.allowlist.contains(&tool) || !self.inventory.insert(tool) {
+                    if !valid_id(&tool)
+                        || (!self.cli_inventory && !self.allowlist.contains(&tool))
+                        || !self.inventory.insert(tool)
+                    {
                         return Err(Error::UnsupportedTool);
                     }
                 }
                 if header.mutates() {
                     return Err(Error::UnsupportedContent);
                 }
+                if self.exact_inventory && self.inventory != self.allowlist {
+                    return Err(Error::UnsupportedTool);
+                }
                 self.summary.initialized = true;
                 return emit(sink, Event::Initialized);
+            }
+            if self.exact_inventory
+                && header.kind == "system"
+                && header.subtype.as_deref() == Some("compact_boundary")
+            {
+                if !self.summary.initialized {
+                    return Err(Error::MissingInit);
+                }
+                if header.mutates() {
+                    return Err(Error::UnsupportedContent);
+                }
+                #[derive(Deserialize)]
+                struct Boundary {
+                    compact_metadata: Metadata,
+                }
+                #[derive(Deserialize)]
+                struct Metadata {
+                    trigger: String,
+                    pre_tokens: u64,
+                }
+                let boundary: Boundary = parse(line)?;
+                if !matches!(
+                    boundary.compact_metadata.trigger.as_str(),
+                    "auto" | "manual"
+                ) || boundary.compact_metadata.pre_tokens > i64::MAX as u64
+                {
+                    return Err(Error::MalformedRecord);
+                }
+                return emit(
+                    sink,
+                    Event::Context {
+                        tokens: None,
+                        compact_pre_tokens: Some(boundary.compact_metadata.pre_tokens),
+                    },
+                );
             }
             match header.kind.as_str() {
                 "assistant" | "user" | "stream_event" | "result" => {
@@ -496,8 +636,10 @@ impl Decoder {
                     }
                 }
                 _ => {
+                    // Unknown observability is never execution authority.
+                    self.summary.presentation_incomplete |= header.mutates();
                     if header.mutates() {
-                        return Err(Error::UnsupportedContent);
+                        self.last_presentation_problem = self.summary.records;
                     }
                     return increment(&mut self.summary.unknown_records);
                 }
@@ -514,7 +656,27 @@ impl Decoder {
             match header.kind.as_str() {
                 "assistant" => {
                     let record: MessageEnvelope = parse(line)?;
-                    self.snapshot(record.message, sink)
+                    if let Some(uuid) = &record.uuid {
+                        if !valid_id(uuid) {
+                            return Err(Error::Identity);
+                        }
+                        let digest: [u8; 32] = Sha256::digest(line.as_bytes()).into();
+                        if let Some(prior) = self.snapshots.get(uuid) {
+                            return if prior == &digest {
+                                Ok(())
+                            } else {
+                                Err(Error::Sequence)
+                            };
+                        }
+                        if self.snapshots.len() >= MAX_ENTRIES {
+                            return Err(Error::Limit);
+                        }
+                        self.snapshot(record.message, sink)?;
+                        self.snapshots.insert(uuid.clone(), digest);
+                        Ok(())
+                    } else {
+                        self.snapshot(record.message, sink)
+                    }
                 }
                 "user" => {
                     let record: UserEnvelope = parse(line)?;
@@ -552,17 +714,32 @@ impl Decoder {
                         | "error_max_structured_output_retries" => Outcome::Error,
                         _ => Outcome::Unknown,
                     };
-                    if self.active.is_some()
-                        || (outcome == Outcome::Success
-                            && self.tools.values().any(|tool| tool.result.is_none()))
+                    if outcome == Outcome::Success
+                        && self.tools.values().any(|tool| tool.result.is_none())
                     {
-                        return Err(Error::Sequence);
+                        return Err(Error::OrphanToolResult);
+                    }
+                    if self.active.take().is_some() {
+                        self.summary.presentation_incomplete = true;
+                    }
+                    if self.summary.presentation_incomplete || self.last_text.is_none() {
+                        match record.result {
+                            Some(serde_json::Value::String(text)) => {
+                                self.reconcile_result(text, sink)?
+                            }
+                            None | Some(serde_json::Value::Null) => {}
+                            Some(_) => self.summary.presentation_incomplete = true,
+                        }
                     }
                     emit(
                         sink,
                         Event::Terminal {
                             outcome,
                             usage: record.usage,
+                            metadata: self
+                                .exact_inventory
+                                .then(|| super::usage_metadata::parse(line))
+                                .flatten(),
                         },
                     )?;
                     self.summary.outcome = Some(outcome);
@@ -571,16 +748,124 @@ impl Decoder {
                 _ => unreachable!(),
             }
         })();
-        if result.is_err() {
+        if let Err(problem) = result {
+            #[derive(Deserialize)]
+            struct Index {
+                index: Option<usize>,
+            }
+            #[derive(Deserialize)]
+            struct Envelope {
+                event: Option<Index>,
+            }
+            let index = serde_json::from_slice::<Envelope>(&bytes)
+                .ok()
+                .and_then(|e| e.event.and_then(|e| e.index))
+                .filter(|i| *i < MAX_ENTRIES);
+            let message = self.active.as_ref().and_then(|id| self.messages.get(id));
+            self.diagnostic = Some(StreamDiagnostic {
+                problem,
+                record: record_class(&bytes),
+                block_index: index,
+                active_message: message.is_some(),
+                known_blocks: message.map_or(0, |m| m.blocks.len()),
+                block_finalized: index
+                    .and_then(|i| message.and_then(|m| m.blocks.get(&i)))
+                    .map(|b| b.finalized),
+            });
             self.failed_record = Some(record_class(&bytes));
             if result == Err(Error::MalformedRecord) {
                 self.parse_failure = parse_failure(&bytes);
             }
         }
+        // Only presentation failures are recoverable. Identity, tool authority,
+        // terminal contradictions, resource bounds and sink/storage failure stay hard.
+        let recoverable = self.summary.initialized
+            && self.summary.outcome.is_none()
+            && matches!(
+                result,
+                Err(Error::MalformedRecord | Error::Sequence | Error::UnsupportedContent)
+            )
+            && !tool_record(&bytes)
+            && serde_json::from_slice::<Header>(&bytes).is_ok_and(|h| {
+                matches!(h.kind.as_str(), "assistant" | "stream_event")
+                    && h.session_id.as_deref() == Some(self.session.as_str())
+                    && h.parent_tool_use_id.is_none()
+            });
+        if recoverable {
+            self.summary.presentation_incomplete = true;
+            self.last_presentation_problem = self.summary.records;
+            if let Some(id) = &self.active {
+                self.preview_unreliable.insert(id.clone());
+            }
+        }
         bytes.fill(0);
         bytes.clear();
         self.line = bytes;
-        result
+        if recoverable { Ok(()) } else { result }
+    }
+
+    fn reconcile_result<E>(
+        &mut self,
+        text: String,
+        sink: &mut impl FnMut(Event) -> Result<(), E>,
+    ) -> Result<(), Error> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        let last = self
+            .last_text
+            .as_ref()
+            .and_then(|(id, index)| self.messages.get(id).and_then(|m| m.blocks.get(index)));
+        // Prefer complete per-block output received after the presentation problem.
+        // A result string can combine several text blocks; never append it to the last
+        // complete block or overwrite an earlier complete message after later display loss.
+        if last.is_some_and(|block| {
+            block.finalized && self.last_text_snapshot > self.last_presentation_problem
+        }) {
+            return Ok(());
+        }
+        let replace_preview = last.is_some_and(|block| !block.finalized);
+        let (message_id, block_index) = if replace_preview {
+            self.last_text.clone().ok_or(Error::Sequence)?
+        } else {
+            let mut id = "pipkin_cli_result".to_owned();
+            while self.messages.contains_key(&id) {
+                id.push('_');
+            }
+            if !valid_id(&id) {
+                return Err(Error::Limit);
+            }
+            (id, 0)
+        };
+        self.charge(text.len())?;
+        emit(
+            sink,
+            Event::BlockSnapshot {
+                message_id: message_id.clone(),
+                block_index,
+                kind: TextKind::Text,
+                text,
+            },
+        )?;
+        // Final result text replaces the message's text preview as a whole, while
+        // thinking/tool blocks retain their identities. No content-based deduplication.
+        if replace_preview && let Some(message) = self.messages.get(&message_id) {
+            for (&index, block) in &message.blocks {
+                if index != block_index && matches!(block.kind, BlockKind::Display(TextKind::Text))
+                {
+                    emit(
+                        sink,
+                        Event::BlockSnapshot {
+                            message_id: message_id.clone(),
+                            block_index: index,
+                            kind: TextKind::Text,
+                            text: String::new(),
+                        },
+                    )?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn message(&mut self, id: &str) -> Result<(), Error> {
@@ -597,7 +882,7 @@ impl Decoder {
     }
 
     fn charge(&mut self, bytes: usize) -> Result<(), Error> {
-        if bytes > MAX_PROJECTED_BYTES - self.summary.projected_bytes {
+        if bytes > self.max_projected_bytes - self.summary.projected_bytes {
             return Err(Error::Limit);
         }
         self.summary.projected_bytes += bytes;
@@ -677,6 +962,22 @@ impl Decoder {
             return Err(Error::UnsupportedContent);
         }
         self.message(&message.id)?;
+        if self.exact_inventory {
+            let usage = message.usage.unwrap_or_default();
+            let tokens = usage
+                .input_tokens
+                .zip(usage.cache_read_input_tokens)
+                .zip(usage.cache_creation_input_tokens)
+                .and_then(|((a, b), c)| a.checked_add(b)?.checked_add(c))
+                .filter(|n| *n <= i64::MAX as u64);
+            emit(
+                sink,
+                Event::Context {
+                    tokens,
+                    compact_pre_tokens: None,
+                },
+            )?;
+        }
         // Another message's final while a stream is active is ambiguous.
         if self.active.as_deref().is_some_and(|id| id != message.id) {
             return Err(Error::Identity);
@@ -685,28 +986,63 @@ impl Decoder {
             return Err(Error::Limit);
         }
         let old = &self.messages[&message.id];
-        if old
-            .blocks
-            .keys()
-            .any(|index| *index >= message.content.len())
-            || (old.finalized && old.blocks.len() != message.content.len())
-        {
-            return Err(Error::Sequence);
-        }
-        let finalized = old.finalized;
-        for (index, content) in message.content.into_iter().enumerate() {
+        // CLI assistant envelopes finalize individual blocks, before block_stop.
+        // Combined snapshots remain supported for saved/older fixture envelopes.
+        let existing_tool = message.content.first().and_then(|content| match content {
+            ContentBlock::ToolUse { id, .. } => self
+                .tools
+                .get(id)
+                .filter(|tool| tool.message_id == message.id)
+                .map(|tool| tool.index),
+            _ => None,
+        });
+        let base = if message.content.len() == 1 {
+            if let Some(index) = existing_tool {
+                index
+            } else if old.started && !self.preview_unreliable.contains(&message.id) {
+                old.blocks.last_key_value().map_or(0, |(i, _)| *i)
+            } else {
+                old.blocks
+                    .iter()
+                    .find(|(_, b)| !b.finalized)
+                    .map_or(old.blocks.len(), |(i, _)| *i)
+            }
+        } else {
+            0
+        };
+        for (offset, content) in message.content.into_iter().enumerate() {
+            let index = base + offset;
+            if index >= 256 {
+                return Err(Error::Limit);
+            }
             let mut block = content.into_state();
             let previous = self.messages[&message.id].blocks.get(&index);
             if previous.is_none() && self.blocks == MAX_ENTRIES {
                 return Err(Error::Limit);
             }
             if let Some(previous) = previous {
-                if previous.kind != block.kind || (finalized && previous.text != block.text) {
+                if previous.kind != block.kind {
+                    return Err(
+                        if matches!(previous.kind, BlockKind::Tool { .. })
+                            || matches!(block.kind, BlockKind::Tool { .. })
+                        {
+                            Error::Identity
+                        } else {
+                            Error::Sequence
+                        },
+                    );
+                }
+                if previous.finalized && previous.text != block.text {
                     return Err(Error::Sequence);
                 }
                 block.stopped = previous.stopped;
             }
+            block.finalized = true;
             let changed = previous.is_none_or(|previous| previous.text != block.text);
+            if block.kind == BlockKind::Display(TextKind::Text) {
+                self.last_text = Some((message.id.clone(), index));
+                self.last_text_snapshot = self.summary.records;
+            }
             match &block.kind {
                 BlockKind::Display(kind) if changed => {
                     self.charge(block.text.len())?;
@@ -735,10 +1071,6 @@ impl Decoder {
                 self.insert_block(&message.id, index, block)?;
             }
         }
-        self.messages
-            .get_mut(&message.id)
-            .ok_or(Error::Sequence)?
-            .finalized = true;
         Ok(())
     }
 
@@ -759,34 +1091,41 @@ impl Decoder {
             }
             self.message(&message.id)?;
             let state = self.messages.get_mut(&message.id).ok_or(Error::Sequence)?;
-            if state.started || state.finalized {
+            if state.started || state.ended {
                 return Err(Error::Sequence);
             }
             state.started = true;
             self.active = Some(message.id);
             return Ok(());
         }
-        if matches!(event, StreamEvent::Ping) {
+        if matches!(event, StreamEvent::Ping | StreamEvent::Unknown) {
             return Ok(());
         }
         let id = self.active.clone().ok_or(Error::Sequence)?;
+        if self.preview_unreliable.contains(&id) {
+            if matches!(event, StreamEvent::MessageStop) {
+                self.messages.get_mut(&id).ok_or(Error::Sequence)?.ended = true;
+                self.active = None;
+            }
+            return Ok(());
+        }
         match event {
             StreamEvent::ContentBlockStart {
                 index,
                 content_block,
             } => {
                 let state = &self.messages[&id];
-                if state.finalized
-                    || state.blocks.contains_key(&index)
-                    || index != state.blocks.len()
-                {
+                if state.ended || state.blocks.contains_key(&index) || index != state.blocks.len() {
                     return Err(Error::Sequence);
                 }
-                if index >= MAX_ENTRIES || self.blocks == MAX_ENTRIES {
+                if index >= 256 || self.blocks == MAX_ENTRIES {
                     return Err(Error::Limit);
                 }
                 let mut block = content_block.into_state();
                 block.stopped = false;
+                if block.kind == BlockKind::Display(TextKind::Text) {
+                    self.last_text = Some((id.clone(), index));
+                }
                 match &block.kind {
                     BlockKind::Display(kind) => {
                         self.charge(block.text.len())?;
@@ -810,12 +1149,12 @@ impl Decoder {
             StreamEvent::ContentBlockDelta { index, delta } => {
                 let state = &self.messages[&id];
                 let block = state.blocks.get(&index).ok_or(Error::Sequence)?;
-                if state.finalized || block.stopped {
+                if state.ended || block.stopped || block.finalized {
                     return Err(Error::Sequence);
                 }
                 let (kind, text) = match delta {
                     Delta::Text { text } => (TextKind::Text, text),
-                    Delta::Thinking { thinking } => (TextKind::Thinking, thinking),
+                    Delta::Thinking { thinking, .. } => (TextKind::Thinking, thinking),
                     Delta::InputJson { .. } if matches!(block.kind, BlockKind::Tool { .. }) => {
                         return Ok(());
                     }
@@ -878,6 +1217,7 @@ impl Decoder {
                 {
                     return Err(Error::Sequence);
                 }
+                self.messages.get_mut(&id).ok_or(Error::Sequence)?.ended = true;
                 self.active = None;
                 Ok(())
             }
@@ -902,19 +1242,44 @@ impl Decoder {
             .tools
             .get(&tool_use_id)
             .ok_or(Error::OrphanToolResult)?;
-        let text = content.display_text();
+        let mut text = content.display_text();
+        let digest: [u8; 32] = Sha256::digest(text.as_bytes()).into();
         if let Some((old_error, old_text)) = &previous.result {
-            return if old_error == &is_error && old_text == &text {
+            return if old_error == &is_error && old_text == &digest {
                 Ok(())
             } else {
                 Err(Error::Sequence)
             };
         }
+        // Native orchestration presents the actual durable MCP receipt. Keep the
+        // SDK correlation digest, but do not duplicate or charge its echoed output.
+        if self.exact_inventory {
+            text.clear();
+        }
+        if let Some(limit) = self.tool_preview_limit {
+            // Reserve half the projection budget for action identities and the final
+            // answer. Verbose build/search output must not terminate useful tool work.
+            let available = limit
+                .min((self.max_projected_bytes / 2).saturating_sub(self.summary.projected_bytes));
+            if text.len() > available {
+                const NOTE: &str = "\n[CLI tool output truncated]";
+                let mut end = available.saturating_sub(NOTE.len());
+                while !text.is_char_boundary(end) {
+                    end -= 1;
+                }
+                text.truncate(end);
+                if available >= NOTE.len() {
+                    text.push_str(NOTE);
+                }
+                self.summary.presentation_incomplete = true;
+                self.last_presentation_problem = self.summary.records;
+            }
+        }
         self.charge(text.len())?;
         self.tools
             .get_mut(&tool_use_id)
             .ok_or(Error::OrphanToolResult)?
-            .result = Some((is_error, text.clone()));
+            .result = Some((is_error, digest));
         emit(
             sink,
             Event::ExternalToolResult {
@@ -970,9 +1335,29 @@ where
     de.deserialize_map(Object(std::marker::PhantomData))
 }
 fn optional_usage<'de, D: Deserializer<'de>>(de: D) -> Result<Option<Usage>, D::Error> {
-    #[derive(Deserialize)]
-    struct ObjectUsage(#[serde(deserialize_with = "object")] Usage);
-    Ok(Option::<ObjectUsage>::deserialize(de)?.map(|usage| usage.0))
+    let value = serde_json::Value::deserialize(de)?;
+    if !value.is_object() {
+        return Ok(None);
+    }
+    let count = |v: Option<&serde_json::Value>| {
+        v.and_then(serde_json::Value::as_u64)
+            .filter(|n| *n <= i64::MAX as u64)
+    };
+    let output_tokens = count(value.get("output_tokens"));
+    let cache_creation_input_tokens = count(value.get("cache_creation_input_tokens"));
+    let reasoning_tokens = count(value.pointer("/output_tokens_details/thinking_tokens"))
+        .filter(|n| output_tokens.is_some_and(|total| *n <= total));
+    let cache_write_1h = count(value.pointer("/cache_creation/ephemeral_1h_input_tokens"))
+        .filter(|n| cache_creation_input_tokens.is_some_and(|total| *n <= total));
+    let usage = Usage {
+        input_tokens: count(value.get("input_tokens")),
+        output_tokens,
+        cache_read_input_tokens: count(value.get("cache_read_input_tokens")),
+        cache_creation_input_tokens,
+        reasoning_tokens,
+        cache_write_1h,
+    };
+    Ok((usage != Usage::default()).then_some(usage))
 }
 
 // Typed deserialization deliberately skips unknown metadata rather than allocating
@@ -1036,11 +1421,14 @@ struct Init {
 }
 #[derive(Deserialize)]
 struct MessageEnvelope {
+    uuid: Option<String>,
     #[serde(deserialize_with = "object")]
     message: AssistantMessage,
 }
 #[derive(Deserialize)]
 struct AssistantMessage {
+    #[serde(default, deserialize_with = "optional_usage")]
+    usage: Option<Usage>,
     id: String,
     role: Option<String>,
     content: Vec<ContentBlock>,
@@ -1072,6 +1460,7 @@ impl ContentBlock {
             kind,
             text,
             stopped: true,
+            finalized: false,
         }
     }
 }
@@ -1080,7 +1469,7 @@ struct StreamEnvelope {
     event: StreamEvent,
 }
 #[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "snake_case")]
 enum StreamEvent {
     MessageStart {
         #[serde(deserialize_with = "object")]
@@ -1098,105 +1487,34 @@ enum StreamEvent {
         index: usize,
     },
     MessageDelta {
-        #[serde(rename = "delta", deserialize_with = "object")]
-        _delta: StopDelta,
+        #[serde(rename = "delta")]
+        _delta: IgnoredAny,
         #[serde(rename = "usage")]
         _usage: Option<IgnoredAny>,
         // CLI-owned context telemetry, never native compaction/content or authority.
-        #[serde(
-            default,
-            rename = "context_management",
-            deserialize_with = "discard_context_management"
-        )]
-        _context_management: (),
-        #[serde(
-            default,
-            rename = "input_transformations",
-            deserialize_with = "empty_transformations"
-        )]
-        _input_transformations: (),
+        #[serde(default, rename = "context_management")]
+        _context_management: Option<IgnoredAny>,
+        #[serde(default, rename = "input_transformations")]
+        _input_transformations: Option<IgnoredAny>,
     },
     MessageStop,
     Ping,
-}
-fn discard_context_management<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
-    // Published BetaContextManagementResponse. Only known closed numeric telemetry
-    // is accepted; no text, tool arguments or executable instructions are retained.
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Metadata {
-        applied_edits: Vec<Edit>,
-    }
-    #[derive(Deserialize)]
-    #[serde(tag = "type", deny_unknown_fields)]
-    enum Edit {
-        #[serde(rename = "clear_thinking_20251015")]
-        Thinking {
-            #[serde(rename = "cleared_input_tokens")]
-            _tokens: u64,
-            #[serde(rename = "cleared_thinking_turns")]
-            _turns: u64,
-        },
-        #[serde(rename = "clear_tool_uses_20250919")]
-        Tools {
-            #[serde(rename = "cleared_input_tokens")]
-            _tokens: u64,
-            #[serde(rename = "cleared_tool_uses")]
-            _uses: u64,
-        },
-    }
-    #[derive(Deserialize)]
-    struct ObjectMetadata(#[serde(deserialize_with = "object")] Metadata);
-    let metadata = Option::<ObjectMetadata>::deserialize(deserializer)?;
-    if metadata.is_some_and(|m| m.0.applied_edits.len() > MAX_ENTRIES) {
-        return Err(serde::de::Error::custom("context metadata limit exceeded"));
-    }
-    Ok(())
-}
-
-fn empty_transformations<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
-    let value = Option::<Vec<IgnoredAny>>::deserialize(deserializer)?;
-    if value.is_none_or(|items| items.is_empty()) {
-        Ok(())
-    } else {
-        Err(serde::de::Error::custom(
-            "nonempty input transformations are unqualified",
-        ))
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct StopDelta {
-    #[serde(default, rename = "container")]
-    _container: (),
-    #[serde(default, rename = "stop_details")]
-    _stop_details: (),
-    #[serde(
-        default,
-        rename = "stop_reason",
-        deserialize_with = "discard_optional_text"
-    )]
-    _stop_reason: (),
-    #[serde(
-        default,
-        rename = "stop_sequence",
-        deserialize_with = "discard_optional_text"
-    )]
-    _stop_sequence: (),
-}
-fn discard_optional_text<'de, D: Deserializer<'de>>(de: D) -> Result<(), D::Error> {
-    // Stop metadata is discarded immediately after deserialization.
-    let _ = Option::<String>::deserialize(de)?;
-    Ok(())
+    #[serde(other)]
+    Unknown,
 }
 #[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "snake_case")]
 enum Delta {
     #[serde(rename = "text_delta")]
     Text { text: String },
     #[serde(rename = "thinking_delta")]
-    Thinking { thinking: String },
+    Thinking {
+        thinking: String,
+        // Display telemetry is not usage, content or authority. Discard it without
+        // imposing a schema on values this adapter never consumes.
+        #[serde(default, rename = "estimated_tokens")]
+        _estimated_tokens: Option<IgnoredAny>,
+    },
     #[serde(rename = "input_json_delta")]
     InputJson {
         #[serde(rename = "partial_json", deserialize_with = "discard_text")]
@@ -1244,7 +1562,11 @@ enum ResultContent {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ResultText {
-    Text { text: String },
+    Text {
+        text: String,
+    },
+    #[serde(other)]
+    Other,
 }
 impl ResultContent {
     fn display_text(self) -> String {
@@ -1252,9 +1574,16 @@ impl ResultContent {
             Self::Text(text) => text,
             Self::Blocks(blocks) => {
                 let mut text = String::new();
-                for ResultText::Text { text: part } in blocks {
-                    text.reserve_exact(part.len());
-                    text.push_str(&part);
+                for block in blocks {
+                    match block {
+                        ResultText::Text { text: part } => {
+                            text.reserve_exact(part.len());
+                            text.push_str(&part);
+                        }
+                        ResultText::Other => {
+                            text.push_str("\n[Non-text CLI tool output omitted]\n")
+                        }
+                    }
                 }
                 text
             }
@@ -1267,8 +1596,8 @@ struct TerminalRecord {
     is_error: bool,
     #[serde(default, deserialize_with = "optional_usage")]
     usage: Option<Usage>,
-    #[serde(default, rename = "result", deserialize_with = "discard_text")]
-    _result: (),
+    #[serde(default)]
+    result: Option<serde_json::Value>,
 }
 
 #[cfg(test)]

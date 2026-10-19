@@ -192,6 +192,11 @@ impl ConversationState {
         }
     }
 
+    /// A goal mutation has no confirmed receipt yet. Refresh before offering another start.
+    pub fn goal_start_unconfirmed(&self) -> bool {
+        self.goal_start_pending.is_some()
+    }
+
     fn import_prompt_history(&mut self, older: bool) {
         // Streaming assistant updates must not repeatedly clone and merge every old prompt.
         let mut signature = (0, None, None);
@@ -896,7 +901,10 @@ impl AppState {
             && self.read_only.is_none()
             && self.current().is_some_and(|c| {
                 c.opened
-                    && c.execution_profile(self.mode) == ExecutionProfile::NativeAgent
+                    && matches!(
+                        c.execution_profile(self.mode),
+                        ExecutionProfile::NativeAgent | ExecutionProfile::ClaudeCliAgent
+                    )
                     && c.plan.available
                     && c.plan.pending_edit.is_none()
                     && !self.owned_elsewhere(c.id)
@@ -928,14 +936,22 @@ impl AppState {
         };
         let has_text = !c.draft.text.trim().is_empty();
         let attachments_ok = c.draft.attachments.iter().all(|a| a.error.is_none());
-        let ready = has_text && attachments_ok;
+        let ready = (has_text
+            || (c.profile == ExecutionProfile::ClaudeCliAgent && !c.draft.attachments.is_empty()))
+            && attachments_ok;
         let idle =
             matches!(c.run, RunState::Idle | RunState::Failed { .. }) && c.pending_intent.is_none();
         let profile = c.execution_profile(self.mode);
-        let native = profile == ExecutionProfile::NativeAgent;
+        let native = matches!(
+            profile,
+            ExecutionProfile::NativeAgent | ExecutionProfile::ClaudeCliAgent
+        );
         let can_stop = match profile {
             ExecutionProfile::NativeAgent => c.execution_blocked.is_none(),
-            ExecutionProfile::LocalCliChatOnly | ExecutionProfile::LocalCliRestrictedWrite => true,
+            ExecutionProfile::ClaudeCliAgent
+            | ExecutionProfile::LocalCliCoding
+            | ExecutionProfile::LocalCliChatOnly
+            | ExecutionProfile::LocalCliRestrictedWrite => true,
             ExecutionProfile::Unsupported => false,
         };
         let can_send = !self.provider_selection_pending(c.id)
@@ -966,7 +982,9 @@ impl AppState {
                     RunState::Running { .. } | RunState::Submitting { .. }
                 )
                 && ready,
-            refresh_models: native && self.mode == Mode::Real && c.opened,
+            refresh_models: profile == ExecutionProfile::NativeAgent
+                && self.mode == Mode::Real
+                && c.opened,
             refresh_changes: self.mode == Mode::Real
                 && c.opened
                 && c.changes_state != ChangesState::Loading,
@@ -990,7 +1008,7 @@ impl AppState {
                 && c.opened
                 && matches!(c.run, RunState::Stopping { .. })
                 && c.stop_error.is_some(),
-            retry: native
+            retry: profile == ExecutionProfile::NativeAgent
                 && can_send
                 && c.last_submission.is_some()
                 && c.pending_intent.is_none()
@@ -2199,6 +2217,28 @@ impl AppState {
             Command::PauseGoal | Command::ResumeGoal => {
                 let pause = matches!(cmd, Command::PauseGoal);
                 let Some(id) = self.selected else { return out };
+                if !pause
+                    && self
+                        .conversation(id)
+                        .is_some_and(|c| c.goal_native && c.goal_start_unconfirmed())
+                {
+                    // A lost start/resume receipt is not permission to resend it. Reattach
+                    // with a fresh generation, just as explicit navigation does. Repeated
+                    // clicks (including after a failed read) only request fresh observations.
+                    out.merge(self.dispatch(Command::SelectConversation(id)));
+                    out.merge(self.set_notice("Checking the goal's current status; no goal command was resent. If it is still paused after loading, choose Resume again.".into()));
+                    return out;
+                }
+                if !pause
+                    && self
+                        .conversation(id)
+                        .is_some_and(|c| c.goal_native && !c.lifecycle_ready)
+                {
+                    return self.set_notice(
+                        "Wait for the goal's current status to finish loading before resuming."
+                            .into(),
+                    );
+                }
                 let request = (!pause && self.conversation(id).is_some_and(|c| c.goal_native))
                     .then(|| self.alloc_request());
                 let Some(c) = self.conv_mut(id) else {
@@ -2208,22 +2248,13 @@ impl AppState {
                     return out;
                 };
                 if c.goal_native {
-                    let wanted = if pause {
-                        GoalState::Active
-                    } else {
-                        GoalState::Paused
-                    };
                     let applies = match goal.state {
                         Some(GoalState::Active) => pause,
                         Some(state) if state.resumable() => !pause,
                         _ => false,
                     };
-                    let _ = wanted;
                     if applies {
                         if !pause {
-                            if c.goal_start_pending.is_some() {
-                                return out;
-                            }
                             c.goal_start_pending = request.clone().map(|r| (r, c.generation));
                             out.notes.push(Note::Other);
                         }
@@ -3184,7 +3215,10 @@ impl AppState {
                 }
                 c.subagents.error = None;
                 if (!real || c.execution_context_known)
-                    && c.profile == ExecutionProfile::NativeAgent
+                    && matches!(
+                        c.profile,
+                        ExecutionProfile::NativeAgent | ExecutionProfile::ClaudeCliAgent
+                    )
                     && let Some(child) = c.subagents.selected
                     && !c.subagents.loading
                     && c.subagents.viewed != Some(child)
@@ -3248,7 +3282,10 @@ impl AppState {
                     }
                     if refetch
                         && (!real || c.execution_context_known)
-                        && c.profile == ExecutionProfile::NativeAgent
+                        && matches!(
+                            c.profile,
+                            ExecutionProfile::NativeAgent | ExecutionProfile::ClaudeCliAgent
+                        )
                         && let Some(id) = c.jobs.expanded
                         && let Some((offset, limit)) = c.jobs.tail_request(id)
                     {
@@ -3530,6 +3567,12 @@ impl AppState {
                             request: c.current_request.clone(),
                         }));
                 }
+            }
+            EventKind::OpenFailed { message } if c.goal_start_unconfirmed() => {
+                if c.cached_at.is_some() {
+                    c.stale_reason = Some(message.clone());
+                }
+                out.merge(self.set_notice(format!("Could not check goal status: {message}. Choose Check status to try again; no goal command was resent.")));
             }
             EventKind::OpenFailed { message } if c.cached_at.is_some() => {
                 // The saved copy stays, labelled with why the engine's own state is missing.
@@ -3977,15 +4020,22 @@ impl AppState {
                     message: message.clone(),
                 };
                 journal(c, id, JournalState::Failed, &mut out);
+                // A backend may commit the diagnostic before publishing settlement.
+                // Keep that durable item instead of flashing a duplicate until the next sync.
+                let diagnostic_present = c.items.last().is_some_and(|item| {
+                    matches!(&item.kind, ItemKind::Notice { text, level: NoticeLevel::Error } if text == &message)
+                });
                 self.finish_streaming(id, &mut out);
-                self.push_item(
-                    id,
-                    ItemKind::Notice {
-                        text: message,
-                        level: NoticeLevel::Error,
-                    },
-                    &mut out,
-                );
+                if !diagnostic_present {
+                    self.push_item(
+                        id,
+                        ItemKind::Notice {
+                            text: message,
+                            level: NoticeLevel::Error,
+                        },
+                        &mut out,
+                    );
+                }
                 out.notes.push(Note::Other);
             }
             EventKind::Cancelled => {

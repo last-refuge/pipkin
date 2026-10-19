@@ -11,9 +11,14 @@ engine and is available without an external runtime or network access.
   credentials remain distinct from API keys; failed refresh does not silently switch billing.
 - Experimental local Claude CLI conversations use an installed, unmodified CLI and its own
   normal login, separately from native subscription sign-in. The built Linux desktop accepts
-  stable CLI versions 2.1.299 or newer for chat and restricted Write, subject to capability, trust
-  and login checks. Bindings record the actual version; existing identities are not rewritten.
-  Live qualification evidence is limited to 2.1.299, not every accepted newer release. Normal owned
+  stable CLI versions 2.1.299 or newer, subject to capability, identity and login checks.
+  New conversations use the CLI's default coding tools automatically, including edits and shell
+  commands, without per-tool approval dialogs (`bypassPermissions`). This is not a sandbox.
+  Bindings record actual versions. Legacy chat/Write identities are not rewritten: their labels
+  show the limitation, and Use coding model (or reselecting the same CLI alias) opens a coding
+  conversation without forwarding history/drafts or replaying work. New also uses coding tools.
+  Separate live evidence covers2.1.301/Sonnet Read/Write, normal desktop model selection and
+  fresh/resumed turns; other tools, aliases and newer releases are not thereby qualified. Normal owned
   desktop engines enable CLI hosting by default, without granting trust or readiness. Use
   `--disable-local-claude-cli` or `--disable-local-claude-cli-write` to opt out. Demo stays disabled;
   attached hosts own their policy, and standalone server/library defaults remain off. Choose
@@ -25,15 +30,23 @@ engine and is available without an external runtime or network access.
   remain usable. New follows the current conversation's model, or its explicit pending choice.
   The composer's model picker shows the actual model, with no separate Backend label or silent
   GPT/native fallback.
-  Filesystem-only discovery finds the installation
-  and captures the selected project; saved model/path preferences are not grants. Review canonical
-  paths, then explicitly confirm Trust these paths and connect. Provider configuration stops
-  after Check; connecting a conversation coordinates Check and one metadata-only Create/Return,
-  not a prompt. Uncertain outcomes never automatically replay.
-  Reconnect loads saved hints but requires fresh confirmation. Only Write is supported
-  in the coding slice, not Read/Edit/Bash/MCP or native tools/goals/queues/retries. Review complete
-  arguments before Allow once; Ctrl+Shift+C copies the current review without deciding. Unknown
-  prompts/decisions must not be replayed. Billing, managed policy and full crash containment remain
+  Filesystem-only discovery finds the installation and captures the selected project without
+  executing candidates. Connect the installed provider once; normal model selection and reconnect
+  then coordinate fresh checks and one metadata-only Create/Return without another confirmation.
+  A different discovered executable is never run silently. No tool-mode selector is required.
+  Native credentials, tools/goals/queues/retries and orchestration are not substituted for CLI
+  execution. CLI-owned agents/tools remain external activity; printed XML is never executable.
+  Connections also offers an explicitly approved Pipkin orchestration mode on owned Linux
+  desktop hosts. It uses the installed CLI for inference and Pipkin's native tools, goals,
+  children, queues, plans and jobs. Model and requested effort are fixed at creation; changing
+  either requires a separate conversation. Person-launched children support fresh or inherited
+  context and active-turn steering at native tool-result boundaries. Undelivered child steering
+  is reported without automatically restarting the child. Session MCP settings use the selected
+  project. Skip audit records the person's decision and cancels the matching auditor.
+  These orchestration controls have offline fixture coverage; wider installed-CLI and real-window
+  qualification remains outstanding. Additional CLI MCP configuration and hooks stay disabled;
+  orchestration's MCP services run through Pipkin's native tool host. Old Write approval recovery remains only
+  for legacy conversations. Unknown prompts/creations/decisions must not be replayed. Billing, managed policy and full crash containment remain
   unverified. See docs/local-claude-cli.md for isolated testing and recovery.
 - Amazon Bedrock supports AWS IAM Identity Center profiles and the AWS CLI SSO token cache.
   Run `aws sso login --profile <profile>` to establish the session, then select that profile

@@ -23,11 +23,79 @@ impl ConversationState {
 
 impl ExecutionProfile {
     pub fn is_local_cli(self) -> bool {
-        matches!(self, Self::LocalCliChatOnly | Self::LocalCliRestrictedWrite)
+        matches!(
+            self,
+            Self::LocalCliCoding
+                | Self::LocalCliChatOnly
+                | Self::LocalCliRestrictedWrite
+                | Self::ClaudeCliAgent
+        )
     }
 
     pub(crate) fn allows_command(self, command: &Command) -> bool {
         if self == Self::NativeAgent {
+            return true;
+        }
+        if self == Self::ClaudeCliAgent
+            && matches!(command, Command::SetModel(_) | Command::SetThinkingLevel(_))
+        {
+            return false;
+        }
+        if self == Self::ClaudeCliAgent
+            && matches!(
+                command,
+                Command::AddAttachments(_)
+                    | Command::Steer
+                    | Command::QueueFollowUp
+                    | Command::RemoveQueued(_)
+                    | Command::SetGoal(_)
+                    | Command::PauseGoal
+                    | Command::ResumeGoal
+                    | Command::ClearGoal
+                    | Command::SetGoalLimits { .. }
+                    | Command::SetGoalCriteria(_)
+                    | Command::SetGoalAudit(_)
+                    | Command::SkipGoalAudit
+                    | Command::LaunchSubagent(_)
+                    | Command::SteerSubagent { .. }
+                    | Command::McpRefresh
+                    | Command::McpAddServer(_)
+                    | Command::McpRemoveServer(_)
+                    | Command::McpTestServer(_)
+                    | Command::McpReconnectServer(_)
+                    | Command::McpSetToolEnabled { .. }
+                    | Command::McpSignIn(_)
+                    | Command::McpAnswerSignIn { .. }
+                    | Command::McpCancelSignIn(_)
+                    | Command::McpSignOut(_)
+                    | Command::McpPreviewImport(_)
+                    | Command::McpToggleImportEntry(_)
+                    | Command::McpApplyImport(_)
+                    | Command::McpDismissImport
+                    | Command::McpToggleTools(_)
+                    | Command::McpDismissNotice
+                    | Command::SelectSubagent(_)
+                    | Command::SetSubagentsEnabled(_)
+                    | Command::StopSubagent(_)
+                    | Command::ToggleSubagentHistory
+                    | Command::ShowMoreSubagentHistory
+                    | Command::LoadOlderSubagent
+                    | Command::ToggleJobHistory
+                    | Command::ToggleJob(_)
+                    | Command::RefreshJobLog(_)
+                    | Command::CancelJob(_)
+                    | Command::MarkJobsSeen
+                    | Command::DismissJobError
+                    | Command::AnswerUiRequest { .. }
+                    | Command::CancelUiRequest(_)
+                    | Command::ToggleFormOption { .. }
+                    | Command::TogglePlanTask(_)
+                    | Command::TogglePlanHistory
+                    | Command::DismissPlanBanner { .. }
+                    | Command::EditPlanTask { .. }
+                    | Command::DismissPlanError
+            )
+        {
             return true;
         }
         match command {
@@ -105,8 +173,8 @@ impl ExecutionProfile {
         attachments: usize,
     ) -> bool {
         match self {
-            Self::NativeAgent => true,
-            Self::LocalCliChatOnly | Self::LocalCliRestrictedWrite => {
+            Self::NativeAgent | Self::ClaudeCliAgent => true,
+            Self::LocalCliCoding | Self::LocalCliChatOnly | Self::LocalCliRestrictedWrite => {
                 origin == IntentOrigin::Draft && !text.trim().is_empty() && attachments == 0
             }
             Self::Unsupported => false,
@@ -128,7 +196,8 @@ impl AppState {
             .is_some_and(|c| c.execution_profile(self.mode) == ExecutionProfile::NativeAgent);
         ExecutionCapabilities {
             model_settings: native,
-            attachments: native,
+            attachments: native
+                || self.current_execution_profile() == Some(ExecutionProfile::ClaudeCliAgent),
         }
     }
 
@@ -166,14 +235,16 @@ impl AppState {
         let allowed = self.conversation(id).is_some_and(|c| {
             c.execution_profile(self.mode)
                 .allows_intent(origin, text, attachments)
-                && (c.execution_profile(self.mode) == ExecutionProfile::NativeAgent
-                    || (self.connection.is_ready()
-                        && self.read_only.is_none()
-                        && (self.mode == crate::Mode::Demo || c.opened)
-                        && matches!(
-                            c.run,
-                            crate::RunState::Idle | crate::RunState::Failed { .. }
-                        )))
+                && (matches!(
+                    c.execution_profile(self.mode),
+                    ExecutionProfile::NativeAgent | ExecutionProfile::ClaudeCliAgent
+                ) || (self.connection.is_ready()
+                    && self.read_only.is_none()
+                    && (self.mode == crate::Mode::Demo || c.opened)
+                    && matches!(
+                        c.run,
+                        crate::RunState::Idle | crate::RunState::Failed { .. }
+                    )))
         });
         self.refuse_if_profile_disallows(id, allowed, out)
             || self.refuse_if_execution_blocked(id, out)

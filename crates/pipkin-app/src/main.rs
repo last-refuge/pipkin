@@ -15,6 +15,12 @@ mod platform;
 mod storage;
 
 fn main() {
+    // The native-tool bridge is a dedicated authenticated relay, not an app/engine launch.
+    if let Some(code) =
+        pipkin_engine::execution::claude_cli::orchestration_helper::maybe_run_from_env()
+    {
+        std::process::exit(code);
+    }
     // A CLI command hook is a narrow, fail-closed IPC client: no app/engine startup.
     if let Some(code) =
         pipkin_engine::execution::claude_cli::permission_helper::maybe_run_from_env()
@@ -50,7 +56,7 @@ fn main() {
         Err(message) => {
             eprintln!("pipkin: {message}");
             eprintln!(
-                "usage: pipkin [--version] [--diagnose [--probe]] [--pi-agent-dir <import-source>] [--data-dir <path>]\n       pipkin --engine native [--engine-host child|inprocess | --engine-attach <endpoint-dir>] [--data-dir <path>] [--version | --diagnose [--probe]]\n       pipkin --engine-server <endpoint-dir> --engine-data-dir <path> --engine-config-dir <path>\n       Owned desktop: Local Claude CLI chat/Write hosting is on by default; trust and approvals still required.\n       Opt out: --disable-local-claude-cli | --disable-local-claude-cli-write\n       Standalone server legacy opt-ins: --experimental-local-claude-cli [--experimental-local-claude-cli-write]\n       pipkin --demo <scenario> [--data-dir <path>] [--speed <factor>]"
+                "usage: pipkin [--version] [--diagnose [--probe]] [--pi-agent-dir <import-source>] [--data-dir <path>]\n       pipkin --engine native [--engine-host child|inprocess | --engine-attach <endpoint-dir>] [--data-dir <path>] [--version | --diagnose [--probe]]\n       pipkin --engine-server <endpoint-dir> --engine-data-dir <path> --engine-config-dir <path>\n       Owned desktop: Claude CLI coding is on by default; connect the provider once, then tools run without per-tool approval dialogs.\n       Opt out: --disable-local-claude-cli | --disable-local-claude-cli-write\n       Standalone server legacy opt-ins: --experimental-local-claude-cli [--experimental-local-claude-cli-write]\n       pipkin --demo <scenario> [--data-dir <path>] [--speed <factor>]"
             );
             std::process::exit(2);
         }

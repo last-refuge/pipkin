@@ -3,9 +3,9 @@
 //! goal: that is the person's intent, sent from the desktop.
 //!
 //! `details.goal` (version 1) carries `{outcome: "read" | "updated" | "completed" |
-//! "rejected" | "error", ...}`.
+//! "verifying" | "active" | "paused" | "rejected" | "error", ...}`.
 
-use pipkin_engine_protocol::{Block, CriterionStatus, GoalEvidence, GoalView};
+use pipkin_engine_protocol::{Block, CriterionStatus, GoalEvidence, GoalState, GoalView};
 use serde_json::{Value, json};
 
 use super::{Tool, ToolCtx, ToolError, ToolOutput};
@@ -18,7 +18,7 @@ pub const RESULT_VERSION: u32 = 1;
 
 pub const GET_DESCRIPTION: &str = "Read the conversation's current goal: objective, state, turns and allowances, completion criteria with their status and evidence, and your last note.";
 pub const UPDATE_DESCRIPTION: &str = "Report progress on the goal. status: \"continue\" (more to do now), \"blocked\" (the person's input is needed; give the reason) or \"unreachable\" (give the reason). note: a short progress note. criteria: claims per criterion id with status met/unmet/open and evidence items {kind: toolCall|command|test|file|observation, reference, note?, sha256?}; the engine checks tool calls against its ledger and files against their hash, and counts observations as judgment only. link_tasks: plan task ids this goal covers. This never completes the goal: use propose_goal_completion for that.";
-pub const PROPOSE_DESCRIPTION: &str = "Propose that the goal is met. Give a summary and, per criterion, evidence the engine can check (tool call ids, commands you ran, files with their sha256). It is accepted only when every criterion has accepted mechanical evidence; otherwise the unmet criteria and rejected evidence are returned and the goal stays active. Do not claim what was not done.";
+pub const PROPOSE_DESCRIPTION: &str = "Propose that the goal is met. Give a summary and, per criterion, evidence the engine can check (tool call ids, commands you ran, files with their sha256). It is accepted only when every criterion has accepted mechanical evidence; any required independent audit must also approve. Otherwise the unmet criteria, rejected evidence or audit findings are returned with the actual goal state. Do not claim what was not done.";
 
 /// One claim about a criterion.
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
@@ -322,19 +322,45 @@ impl Tool for ProposeGoalCompletionTool {
                 .await
                 .map_err(ToolError::new)?
             {
-                Ok(goal) => Ok(ToolOutput {
-                    content: Some(vec![Block::text(format!(
-                        "Completion accepted: every criterion has accepted evidence. The goal is marked completed (not audited).\n{}",
-                        render(&goal)
-                    ))]),
-                    details: Some(details(
-                        json!({ "outcome": "completed", "goal": goal_json(&goal) }),
-                    )),
-                    ..ToolOutput::default()
-                }),
+                Ok(goal) => {
+                    let status = match goal.state {
+                        GoalState::Completed
+                            if goal
+                                .audit
+                                .result
+                                .as_ref()
+                                .is_some_and(|r| r.verdict == "approved") =>
+                        {
+                            "Completion accepted: the independent audit approved the checked evidence."
+                        }
+                        GoalState::Completed if goal.audit.required => {
+                            "Completion accepted with the audit explicitly skipped by the person."
+                        }
+                        GoalState::Completed => {
+                            "Completion accepted: every criterion has accepted evidence. The goal is marked completed (not audited)."
+                        }
+                        GoalState::Verifying => {
+                            "Completion claim recorded; the independent audit is running. The goal is not completed yet."
+                        }
+                        GoalState::Active => {
+                            "Completion not approved; the audit requested changes. Continue with its findings."
+                        }
+                        _ => {
+                            "Completion not approved; review the goal's recorded state and audit findings before continuing."
+                        }
+                    };
+                    Ok(ToolOutput {
+                        content: Some(vec![Block::text(format!("{status}\n{}", render(&goal)))]),
+                        details: Some(details(
+                            json!({"outcome":goal.state.as_str(),"goal":goal_json(&goal)}),
+                        )),
+                        ..ToolOutput::default()
+                    })
+                }
                 Err((problems, goal)) => {
-                    let mut lines =
-                        vec!["Completion not accepted; the goal stays active.".to_owned()];
+                    let mut lines = vec![
+                        "Completion not accepted; see the current goal state below.".to_owned(),
+                    ];
                     for p in &problems {
                         lines.push(format!("- {p}"));
                     }

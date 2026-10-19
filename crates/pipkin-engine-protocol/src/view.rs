@@ -953,7 +953,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 40);
+        assert_eq!(crate::PROTOCOL_VERSION, 41);
         let discovery = round_trip(&Call::DiscoverLocalCli {
             saved: None,
             project: "/project".into(),
@@ -1324,10 +1324,11 @@ pub struct PlanRejected {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextUsageView {
-    /// Tokens the next request would carry, when known.
+    /// Tokens the next request would carry, or last CLI request input; see source.
     pub tokens: Option<u64>,
     /// `reported` (the last response's usage, nothing added since), `estimated` (reported
-    /// base plus estimates, or estimates alone) or `unavailable`.
+    /// base plus estimates, or estimates alone), `cli-reported-input` (last CLI model
+    /// request input, excluding output), or `unavailable`.
     pub source: String,
     /// The selected model's context window, when the catalog says.
     pub capacity: Option<u64>,
@@ -1343,7 +1344,8 @@ pub struct ContextUsageView {
     pub measured_model: Option<String>,
     pub stale: bool,
     /// `idle`, `background` (a summary is being prepared alongside work), `blocking`
-    /// (compacting before the next request) or `off` (compaction disabled).
+    /// (compacting before the next request), `off` (compaction disabled),
+    /// `cli-managed` or `cli-compacted` (a clean CLI turn reported a boundary).
     pub compaction: String,
     /// Session revision the figure was computed at.
     pub revision: u64,

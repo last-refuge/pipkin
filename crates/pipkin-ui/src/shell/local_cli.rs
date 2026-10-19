@@ -18,7 +18,7 @@ pub(super) const NEW_LABEL: &str = "Configure provider…";
 pub(super) const REAPPROVE_LABEL: &str = "Reconnect Claude Code…";
 const LIMITS: &str = "Chat only: no Pipkin tools, queued follow-ups, or model changes. Uses Claude Code’s own CLI login, not Pipkin's native provider connections.";
 const WRITE_LIMITS: &str = "Write only · available by default in Pipkin's own engine; execution still needs fresh trust/check and exact approval. Attached engines control their own availability. No Read/Edit/Bash/MCP parity, no sandbox, no guarantee every CLI action needs a hook. A different mode requires a fresh conversation.";
-const LEASE: &str = "Approval expires five minutes after Inspect. Create also requires preflight checked within 30 seconds: create promptly after Check. An uncertain creation requires explicit read-only lookup, never blind resubmission. Expiry or revocation stops active work; an interrupted CLI context requires a fresh conversation. Metadata verification alone does not enable execution.";
+const LEASE: &str = "Setup expires five minutes after Inspect. Create requires preflight checked within 30 seconds. Once connected, scoped permission lasts until disconnect, revocation or engine shutdown—not the setup deadline. Each Write still requires its own approval. Revocation stops active work; uncertain execution requires a fresh conversation. Uncertain creation requires explicit read-only lookup, never resubmission. Metadata verification alone does not enable execution.";
 const BILLING: &str = "Billing unverified: may consume account allowance or already-enabled extra usage. Check your CLI account settings.";
 
 pub(super) fn availability_label(state: &AppState) -> &'static str {
@@ -305,12 +305,13 @@ impl Workspace {
                             }),
                     ),
             )
-            .child(if s.draft.mode == CliMode::ChatOnly {
-                LIMITS
-            } else {
-                WRITE_LIMITS
+            .child(match s.draft.mode {
+                CliMode::Orchestration => "Claude uses Pipkin tools, children, goals and queues. File changes and commands run automatically. Stop does not undo effects.",
+                CliMode::Coding => "Claude Code coding tools run automatically, including file changes and shell commands, without per-tool approval dialogs. Not a sandbox.",
+                CliMode::ChatOnly => LIMITS,
+                _ => WRITE_LIMITS,
             })
-            .child(LEASE)
+            .child(if s.draft.mode == CliMode::Coding { "Setup freshness is separate from connection lifetime. Stop/disconnect cancels owned work but does not undo effects. Uncertain work is never replayed." } else { LEASE })
             .child(BILLING)
             .child(
                 div()
@@ -341,23 +342,7 @@ impl Workspace {
                     }),
             );
         }
-        let mut modes = div().flex().gap(px(8.0)).child("Immutable mode:");
-        for (id, label, mode) in [
-            ("cli-chat-mode", "Chat only", CliMode::ChatOnly),
-            (
-                "cli-write-mode",
-                "Experimental Write only",
-                CliMode::RestrictedWrite,
-            ),
-        ] {
-            let mut draft = s.draft.clone();
-            draft.mode = mode;
-            modes = modes.child(
-                self.cli_button(id, label, a.edit && !existing, C::Edit(draft), cx)
-                    .selected(s.draft.mode == mode),
-            );
-        }
-        panel = panel.child(modes);
+
         let mut aliases = div().flex().gap(px(8.0)).child("Fixed CLI alias:");
         for (id, label, alias) in [
             ("cli-haiku", "Haiku", CliModel::Haiku),
@@ -391,6 +376,7 @@ impl Workspace {
                         "Use saved paths, mode and alias",
                         a.edit && hints.mode != CliMode::Unsupported,
                         C::Edit(LocalCliDraft {
+                            thinking: None,
                             mode: hints.mode,
                             executable: hints.executable.clone(),
                             project: hints.project.clone(),

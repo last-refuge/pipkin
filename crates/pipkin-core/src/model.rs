@@ -6,6 +6,8 @@ use crate::ids::*;
 pub enum ExecutionProfile {
     #[default]
     NativeAgent,
+    LocalCliCoding,
+    ClaudeCliAgent,
     LocalCliChatOnly,
     LocalCliRestrictedWrite,
     Unsupported,
@@ -523,7 +525,7 @@ impl Default for Prefs {
             cli_provider_configured: false,
             cli_executable: None,
             cli_model: crate::CliModel::Sonnet,
-            cli_mode: crate::CliMode::ChatOnly,
+            cli_mode: crate::CliMode::Coding,
             setup_completed: false,
             theme: Theme::Dark,
             text_size: TextSize::Normal,

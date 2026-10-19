@@ -53,6 +53,7 @@ fn setup(fx: &Fixture, executable: &Path) -> Harness {
         s.connection.is_ready() && s.local_cli.available
     });
     h.dispatch(Command::LocalCli(Setup::BeginNew(LocalCliDraft {
+        thinking: None,
         mode: CliMode::RestrictedWrite,
         executable: executable.display().to_string(),
         project: fx.project.display().to_string(),

@@ -762,9 +762,10 @@ superseding job 39 for chat-only integration. Job 48 above is the newer additive
 - Snapshot volatile caches are captured before publication; ephemeral trust is read after
   publication is released. This avoids registry/publication inversions with removal and
   CLI admission. Native stored snapshot fields still use revision checks.
-- The present approval lease expires **five minutes after Inspect**, not after Check or
-  the latest prompt. Expiry/revocation stops active work; interrupted contexts are fenced
-  and require a fresh conversation. The setup UI warns about this limitation.
+- At this historical baseline, approval expired **five minutes after Inspect**, not after
+  Check or the latest prompt, stopping active work. The later [provider repairs](scorecard.md)
+  remove that connection-lifetime coupling while retaining setup freshness, revocation and
+  fencing of uncertain contexts. This does not retroactively qualify the newer behavior.
 - Unknown creation is never automatically retried. Explicit bounded recovery parking keeps
   exact identities while permitting a new setup; restart persistence is still pending.
 - The core→native-adapter→embedded-engine fake-CLI test verifies saved native model

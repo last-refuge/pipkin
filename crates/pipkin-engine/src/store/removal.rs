@@ -71,6 +71,10 @@ impl Store {
                 "INSERT INTO session_removals(root,create_key,requested_at) VALUES (?1,?2,?3)",
                 params![root, key, now],
             )?;
+            let bridges = tx.prepare("SELECT id FROM cli_tool_bridges WHERE session IN (SELECT id FROM sessions WHERE id=?1 OR root=?1) AND state IN ('prepared','connected')")?
+                .query_map([root], |r| r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+            for bridge in bridges { cli_bridge::fence(tx, &bridge, now)?; }
+            cli_agent_turns::retire_group(tx, root, now)?;
             // Removal intent retires unspent authority even if cleanup never succeeds.
             // Consumed receipts record past authorization, not an effect we can undo.
             tx.execute(
@@ -103,7 +107,7 @@ impl Store {
             let group = "SELECT id FROM sessions WHERE id=?1 OR root=?1";
             let affinities = tx.prepare(&format!("SELECT value FROM kv WHERE key='provider_session_id' AND session IN ({group})"))?
                 .query_map([root], |r| r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
-            for table in ["external_projection_actions", "external_projection_messages", "external_prompts", "external_actions", "external_runs", "cli_bindings", "summary_writes", "compactions"] {
+            for table in ["cli_agent_bindings", "cli_bridge_calls", "external_projection_actions", "external_projection_messages", "external_prompts", "external_actions", "external_runs", "cli_bindings", "summary_writes", "compactions"] {
                 tx.execute(&format!("DELETE FROM {table} WHERE session IN ({group})"),[root])?;
             }
             for table in ["tool_boundaries", "generation_state"] {

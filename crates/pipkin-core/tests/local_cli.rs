@@ -37,6 +37,7 @@ fn state() -> AppState {
 }
 fn draft() -> LocalCliDraft {
     LocalCliDraft {
+        thinking: None,
         mode: CliMode::ChatOnly,
         executable: "/bin/claude".into(),
         project: "/project".into(),
@@ -1123,4 +1124,43 @@ fn conflict_is_not_success_or_permission_to_retry() {
     assert_eq!(s.local_cli.creation, identity);
     no_effect(cmd(&mut s, LocalCliCommand::RepeatCreate));
     assert!(s.local_cli_availability().lookup_creation);
+}
+
+#[test]
+fn desktop_controls_effort_change_retires_old_confirmation_and_freezes_new_intent() {
+    let mut s = state();
+    let mut d = draft();
+    d.mode = CliMode::Orchestration;
+    d.thinking = Some("high".into());
+    cmd(&mut s, LocalCliCommand::BeginNew(d.clone()));
+    let first = call(cmd(&mut s, LocalCliCommand::Inspect));
+    let ticket = view(&first);
+    assert!(matches!(&ticket.target,LocalCliInspectTarget::New{thinking:Some(v),..} if v=="high"));
+    answer(&mut s, &first, LocalCliEvent::Inspected(ticket.clone()));
+    d.thinking = Some("max".into());
+    cmd(&mut s, LocalCliCommand::Edit(d));
+    assert!(!s.local_cli.trust_project);
+    assert!(!s.local_cli.trust_executable);
+    assert!(s.local_cli.ticket.is_none());
+    assert!(
+        cmd(
+            &mut s,
+            LocalCliCommand::ConfirmAndConnect {
+                setup: ticket.setup
+            }
+        )
+        .effects
+        .is_empty()
+    );
+    let second = call(cmd(&mut s, LocalCliCommand::Inspect));
+    let ticket = view(&second);
+    assert!(matches!(&ticket.target,LocalCliInspectTarget::New{thinking:Some(v),..} if v=="max"));
+    let mut stale = ticket.clone();
+    if let LocalCliInspectTarget::New { thinking, .. } = &mut stale.target {
+        *thinking = Some("high".into());
+    }
+    answer(&mut s, &second, LocalCliEvent::Inspected(stale));
+    assert!(s.local_cli.ticket.is_none());
+    answer(&mut s, &second, LocalCliEvent::Inspected(ticket));
+    assert!(s.local_cli.ticket.is_some());
 }

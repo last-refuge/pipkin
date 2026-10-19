@@ -583,6 +583,10 @@ impl Workspace {
                 .into_any_element()
         };
         let goal = self.state(cx).current().and_then(|cv| cv.goal.clone());
+        let goal_unconfirmed = self
+            .state(cx)
+            .current()
+            .is_some_and(|cv| cv.goal_start_unconfirmed());
         // The plan strip: task counts only, with the open tasks' titles, never a prediction.
         let plan_strip = self
             .state(cx)
@@ -656,12 +660,9 @@ impl Workspace {
             model_name
         };
         let model_name = match self.state(cx).selected_provider_model() {
-            Some(selection @ pipkin_core::ProviderModel::ClaudeCli(_)) => self
+            Some(pipkin_core::ProviderModel::ClaudeCli(_)) => self
                 .state(cx)
-                .provider_models()
-                .into_iter()
-                .find(|m| m.selection == selection)
-                .map(|m| m.name)
+                .selected_provider_label()
                 .unwrap_or(model_name),
             _ => model_name,
         };
@@ -1160,6 +1161,27 @@ impl Workspace {
                             ],
                         )
                     }))
+                    .children(self.state(cx).legacy_cli_coding_choice().map(|model| {
+                        strip(
+                            cx,
+                            "circle-alert",
+                            c.text_muted,
+                            "Legacy CLI conversation",
+                            "This conversation does not have the coding toolset. Open a coding conversation with the same model; this history and unsent draft stay here.",
+                            vec![Btn::new("use-cli-coding-model")
+                                .label("Use coding model")
+                                .disabled(!self.local_cli_entry_enabled(false, cx))
+                                .on_click({
+                                    let this = cx.entity();
+                                    move |window, cx| this.update(cx, |w, cx| {
+                                        w.dispatch(Command::SelectProviderModel(model.clone()), cx);
+                                        w.open_overlay(Overlay::Prefs, window, cx);
+                                        w.settings_section = super::settings::SettingsSection::Connections;
+                                    })
+                                })
+                                .into_any_element()],
+                        )
+                    }))
                     .children(not_sent)
                     .children(plan_strip.map(|(detail, dismiss)| {
                         div().debug_selector(|| "plan-banner".into()).child(strip(
@@ -1273,11 +1295,11 @@ impl Workspace {
                                     .into_any_element(),
                             );
                         }
-                        if can_resume {
+                        if can_resume || goal_unconfirmed {
                             actions.push(
                                 Btn::new("resume-goal")
-                                    .label("Resume")
-                                    .aria("Resume the goal")
+                                    .label(if goal_unconfirmed { "Check status" } else { "Resume" })
+                                    .aria(if goal_unconfirmed { "Check the unconfirmed goal request" } else { "Resume the goal" })
                                     .compact()
                                     .on_click({
                                         let this = this.clone();

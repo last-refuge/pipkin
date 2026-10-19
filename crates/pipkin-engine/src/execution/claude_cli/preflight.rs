@@ -189,14 +189,18 @@ pub struct Request {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LaunchPolicy {
+    Coding,
     ChatOnly,
     RestrictedWrite,
+    Orchestration,
 }
 impl LaunchPolicy {
     pub(crate) fn id(self) -> &'static str {
         match self {
+            Self::Coding => super::coding_policy::ID,
             Self::ChatOnly => policy::POLICY_ID,
             Self::RestrictedWrite => super::write_policy::ID,
+            Self::Orchestration => super::orchestration_policy::ID,
         }
     }
 }
@@ -215,6 +219,13 @@ pub struct Prepared {
     checked_at: Instant,
 }
 impl Prepared {
+    pub(crate) fn observed_tools(&self) -> &'static [&'static str] {
+        match self.policy {
+            LaunchPolicy::Coding | LaunchPolicy::Orchestration => &[],
+            LaunchPolicy::RestrictedWrite => &["Write"],
+            LaunchPolicy::ChatOnly => &[],
+        }
+    }
     pub(crate) fn requires_permissions(&self) -> bool {
         self.policy == LaunchPolicy::RestrictedWrite
     }
@@ -279,11 +290,19 @@ impl Prepared {
         mode: TurnMode,
         prompt: &str,
     ) -> Result<Spec, &'static str> {
-        if self.policy != LaunchPolicy::ChatOnly {
-            return Err("coding requires an owned permission hook");
+        if matches!(
+            self.policy,
+            LaunchPolicy::RestrictedWrite | LaunchPolicy::Orchestration
+        ) {
+            return Err("this policy requires an independently owned tool channel");
         }
         self.validate_binding(binding)?;
-        let spec = policy::turn_spec(
+        let make = if self.policy == LaunchPolicy::Coding {
+            super::coding_policy::turn_spec
+        } else {
+            policy::turn_spec
+        };
+        let spec = make(
             &self.candidate.executable,
             &self.candidate.project,
             &self.env,
@@ -291,6 +310,121 @@ impl Prepared {
             mode,
             self.model,
             prompt,
+        )?;
+        self.fresh_at(Instant::now())?;
+        Ok(spec)
+    }
+    /// Capture metadata only; the runtime still owes approved creation and durable launch admission.
+    pub fn orchestration_create(
+        &self,
+        session: &str,
+        request_key: &str,
+        uuid: &str,
+        parent: Option<String>,
+    ) -> Result<crate::store::cli_agent::Create, &'static str> {
+        self.orchestration_create_with_thinking(session, request_key, uuid, parent, None)
+    }
+    pub(crate) fn orchestration_create_with_thinking(
+        &self,
+        session: &str,
+        request_key: &str,
+        uuid: &str,
+        parent: Option<String>,
+        thinking: Option<&str>,
+    ) -> Result<crate::store::cli_agent::Create, &'static str> {
+        super::orchestration_input::thinking(thinking)?;
+        if self.policy != LaunchPolicy::Orchestration {
+            return Err("preflight is not for native orchestration");
+        }
+        Ok(crate::store::cli_agent::Create {
+            session: session.into(),
+            request_key: request_key.into(),
+            identity: self.checked_binding(uuid)?,
+            model: self.model.as_str().into(),
+            thinking: thinking.map(str::to_owned),
+            parent,
+        })
+    }
+    /// Captured inputs for a separately approved orchestration lifetime. This is NOT a
+    /// reusable preflight: every turn must run check_orchestration again.
+    pub(crate) fn orchestration_request(&self) -> Result<Request, &'static str> {
+        if self.policy != LaunchPolicy::Orchestration {
+            return Err("preflight is not for native orchestration");
+        }
+        Ok(Request {
+            candidate: self.candidate.clone(),
+            environment: self.env.clone(),
+            model: self.model,
+            trust_executable: true,
+            trust_project: true,
+        })
+    }
+    /// Stored prompt/mode/scope only. This snapshot does not replace fresh approval,
+    /// one-use durable launch intent, or the owner's Stop/deadline/process supervision.
+    pub fn launch_admitted_orchestration_spec(
+        &self,
+        context: &crate::store::cli_agent_turns::LaunchContext,
+        assets: &super::orchestration_policy::Assets,
+    ) -> Result<Spec, &'static str> {
+        let mut spec = self.launch_orchestration_input_spec(
+            context.binding(),
+            context.scope(),
+            context.mode(),
+            context.prompt(),
+            context.images(),
+            assets,
+        )?;
+        if context.compact() {
+            if context.mode() != TurnMode::Resume
+                || !(context.prompt() == "/compact" || context.prompt().starts_with("/compact "))
+                || context.prompt().contains(['\n', '\r'])
+            {
+                return Err("invalid native CLI compaction input");
+            }
+            // Enable only this host-generated built-in command. Bare mode suppresses
+            // discovery; native dispatch separately denies all effects during compaction.
+            spec.args.retain(|a| a != "--disable-slash-commands");
+            spec.args.push("--bare".into());
+        }
+        Ok(spec)
+    }
+    #[cfg(test)]
+    pub(super) fn launch_orchestration_spec(
+        &self,
+        binding: &crate::store::cli_agent::Binding,
+        scope: &super::orchestration_protocol::Scope,
+        mode: TurnMode,
+        prompt: &str,
+        assets: &super::orchestration_policy::Assets,
+    ) -> Result<Spec, &'static str> {
+        self.launch_orchestration_input_spec(binding, scope, mode, prompt, &[], assets)
+    }
+    fn launch_orchestration_input_spec(
+        &self,
+        binding: &crate::store::cli_agent::Binding,
+        scope: &super::orchestration_protocol::Scope,
+        mode: TurnMode,
+        prompt: &str,
+        images: &[pipkin_engine_protocol::ImageInput],
+        assets: &super::orchestration_policy::Assets,
+    ) -> Result<Spec, &'static str> {
+        if self.policy != LaunchPolicy::Orchestration {
+            return Err("preflight is not for native orchestration");
+        }
+        self.validate_binding(&binding.create.identity)?;
+        let spec = super::orchestration_policy::turn_spec(
+            super::orchestration_policy::Turn {
+                executable: &self.candidate.executable,
+                cwd: &self.candidate.project,
+                environment: &self.env,
+                binding,
+                scope,
+                mode,
+                model: self.model,
+                prompt,
+                images,
+            },
+            assets,
         )?;
         self.fresh_at(Instant::now())?;
         Ok(spec)
@@ -360,12 +494,24 @@ pub async fn check(request: Request, cancel: CancellationToken) -> Result<Prepar
     check_for_policy(request, cancel, LaunchPolicy::ChatOnly).await
 }
 
+/// Explicit native-policy metadata check. No RPC/UI route selects this policy yet.
+/// Uses the installed CLI's own normal auth status, never reads credential files.
+pub async fn check_orchestration(
+    request: Request,
+    cancel: CancellationToken,
+) -> Result<Prepared, &'static str> {
+    check_for_policy(request, cancel, LaunchPolicy::Orchestration).await
+}
 pub(crate) async fn check_for_policy(
     request: Request,
     cancel: CancellationToken,
     launch_policy: LaunchPolicy,
 ) -> Result<Prepared, &'static str> {
-    if launch_policy == LaunchPolicy::RestrictedWrite && !cfg!(target_os = "linux") {
+    if matches!(
+        launch_policy,
+        LaunchPolicy::RestrictedWrite | LaunchPolicy::Orchestration
+    ) && !cfg!(target_os = "linux")
+    {
         return Err("coding helper image anchoring is unsupported on this platform");
     }
     if !request.trust_executable {
@@ -406,16 +552,32 @@ pub(crate) async fn check_for_policy(
     if !help.clean_exit() {
         return Err("CLI help probe did not settle cleanly");
     }
-    policy::validate_help(&help.captured)?;
+    if launch_policy == LaunchPolicy::Orchestration {
+        policy::require_flags(&help.captured, super::orchestration_policy::FLAGS)?;
+    } else if launch_policy == LaunchPolicy::Coding {
+        policy::require_flags(&help.captured, super::coding_policy::FLAGS)?;
+    } else {
+        policy::validate_help(&help.captured)?;
+    }
     if launch_policy == LaunchPolicy::RestrictedWrite {
         policy::require_flags(&help.captured, super::write_policy::EXTRA_FLAGS)?;
     }
     candidate.revalidate(&env)?;
     let locations = configuration_locations(&env)?;
     let mut args = match launch_policy {
+        LaunchPolicy::Coding | LaunchPolicy::Orchestration => super::coding_policy::metadata_args(),
         LaunchPolicy::ChatOnly => policy::safety_args(),
         LaunchPolicy::RestrictedWrite => super::write_policy::metadata_args(),
     };
+    if launch_policy == LaunchPolicy::Orchestration {
+        // Some supported CLIs hide --system-prompt-file from help. Exercise the actual
+        // documented parser option here without --print or a model prompt. An unknown
+        // option makes auth status fail; never silently downgrade the launch transport.
+        let system = scratch.path().join("system.txt");
+        std::fs::write(&system, b"Metadata-only capability check; no inference.")
+            .map_err(|_| "cannot prepare CLI system-file capability check")?;
+        args.extend(["--system-prompt-file".into(), system.into_os_string()]);
+    }
     args.extend(["auth", "status", "--json"].into_iter().map(Into::into));
     let mut auth = process::run(
         policy::metadata_spec(&candidate.executable, &candidate.project, &env, args),
@@ -437,7 +599,13 @@ pub(crate) async fn check_for_policy(
     candidate.revalidate(&env)?;
     let mut parts = vec![
         launch_policy.id().as_bytes().to_vec(),
-        request.model.as_str().as_bytes().to_vec(),
+        // Native bindings separately freeze the alias and the native launch checks it.
+        // Shared configuration identity must allow a child to select another CLI alias.
+        if launch_policy == LaunchPolicy::Orchestration {
+            b"native-model-stored-in-binding".to_vec()
+        } else {
+            request.model.as_str().as_bytes().to_vec()
+        },
         candidate.stamp.marker().into_bytes(),
         candidate.project_identity.as_bytes().to_vec(),
     ];

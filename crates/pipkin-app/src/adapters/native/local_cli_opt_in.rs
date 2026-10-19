@@ -92,6 +92,8 @@ impl LocalCliOptIn {
         self.validate()?;
         config.enable_local_claude_cli = self.enabled;
         config.enable_local_claude_cli_write = self.write;
+        config.enable_local_claude_cli_orchestration =
+            self.enabled && self.write && cfg!(target_os = "linux");
         Ok(())
     }
     pub fn flags(self) -> Result<Vec<std::ffi::OsString>, String> {
@@ -157,6 +159,10 @@ mod tests {
         let mut config = EngineConfig::new("unused-data", "unused-config");
         p.apply(&mut config).unwrap();
         assert!(config.enable_local_claude_cli && config.enable_local_claude_cli_write);
+        assert_eq!(
+            config.enable_local_claude_cli_orchestration,
+            cfg!(target_os = "linux")
+        );
         LocalCliOptIn::default().apply(&mut config).unwrap();
         assert!(!config.enable_local_claude_cli && !config.enable_local_claude_cli_write);
     }

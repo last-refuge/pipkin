@@ -71,6 +71,20 @@ impl Shared {
         })
     }
 
+    fn goal_commit_from_tool(
+        &self,
+        session: &str,
+        authority: Option<&super::cli_agent_host::GoalAuthority>,
+        expected: &GoalView,
+        f: impl FnOnce(&rusqlite::Transaction) -> crate::store::Result<()>,
+    ) -> Result<Option<GoalView>, ProtoError> {
+        if let Some(authority) = authority {
+            authority.commit(session, expected, f)
+        } else {
+            self.goal_commit(session, f)
+        }
+    }
+
     fn check_objective(objective: &str) -> Result<String, ProtoError> {
         let objective = objective.trim();
         if objective.is_empty() {
@@ -312,14 +326,14 @@ impl Shared {
 
     /// Tokens reported for the whole conversation tree (input, output and cache).
     /// Dollars the usage ledger reports for the session (zero where models have no price).
-    fn session_cost(&self, session: &str) -> f64 {
+    pub(super) fn session_cost(&self, session: &str) -> f64 {
         self.store
             .usage(session)
             .map(|u| u.models.iter().map(|(_, usage)| usage.cost.total).sum())
             .unwrap_or(0.0)
     }
 
-    fn session_tokens(&self, session: &str) -> u64 {
+    pub(super) fn session_tokens(&self, session: &str) -> u64 {
         self.store
             .usage(session)
             .map(|u| {
@@ -418,10 +432,28 @@ impl Shared {
         session: &str,
         request: GoalUpdateRequest,
     ) -> Result<Result<GoalView, String>, String> {
+        self.goal_update_inner(session, request, None)
+    }
+    pub(super) fn goal_update_cli(
+        &self,
+        session: &str,
+        request: GoalUpdateRequest,
+        authority: &super::cli_agent_host::GoalAuthority,
+    ) -> Result<Result<GoalView, String>, String> {
+        authority.check()?;
+        self.goal_update_inner(session, request, Some(authority))
+    }
+    fn goal_update_inner(
+        &self,
+        session: &str,
+        request: GoalUpdateRequest,
+        authority: Option<&super::cli_agent_host::GoalAuthority>,
+    ) -> Result<Result<GoalView, String>, String> {
         let mut view = match self.active_goal_for_tool(session) {
             Ok(g) => g,
             Err(reason) => return Ok(Err(reason)),
         };
+        let expected = view.clone();
         let cwd = self
             .store
             .session(session)
@@ -488,7 +520,7 @@ impl Shared {
             Err(reason) => return Ok(Err(reason)),
         };
         let id = view.id;
-        let written = self.goal_commit(session, |tx| {
+        let written = self.goal_commit_from_tool(session, authority, &expected, |tx| {
             Store::goal_write_progress(tx, session, &view, now)?;
             if let Some((state, reason)) = &transition {
                 Store::goal_set_state(tx, session, id, *state, Some(reason), now)?;
@@ -510,10 +542,67 @@ impl Shared {
         session: &str,
         proposal: GoalProposal,
     ) -> Result<Result<GoalView, (Vec<String>, Option<GoalView>)>, String> {
+        self.goal_propose_inner(session, proposal, None)
+    }
+    #[allow(clippy::type_complexity)]
+    pub(super) fn goal_propose_cli(
+        &self,
+        session: &str,
+        proposal: GoalProposal,
+        authority: &super::cli_agent_host::GoalAuthority,
+    ) -> Result<Result<GoalView, (Vec<String>, Option<GoalView>)>, String> {
+        authority.check()?;
+        // A worker cannot certify completion while its background inference is still
+        // unsettled. The proposing turn itself is expected to remain active here.
+        if let Some(goal) = self
+            .store
+            .read(|c| Store::goal_current(c, session))
+            .map_err(|e| e.to_string())?
+        {
+            let usage = self
+                .store
+                .read(|c| Store::cli_goal_usage_in(c, session, goal.id))
+                .map_err(|e| e.to_string())?;
+            let owns = self
+                .store
+                .read(|c| Store::cli_run_goals_in(c, session, authority.run()))
+                .map_err(|e| e.to_string())?
+                .contains(&(session.into(), goal.id));
+            if owns
+                && (usage.active > 1
+                    || usage.waiting
+                    || goal.limits.max_tokens.is_some() && usage.uncertain)
+            {
+                return Ok(Err((vec!["Background goal work or token usage is unsettled; wait for its receipts before proposing completion.".into()],Some(goal))));
+            }
+        }
+        self.goal_propose_inner(session, proposal, Some(authority))
+    }
+    #[allow(clippy::type_complexity)]
+    fn goal_propose_inner(
+        &self,
+        session: &str,
+        proposal: GoalProposal,
+        authority: Option<&super::cli_agent_host::GoalAuthority>,
+    ) -> Result<Result<GoalView, (Vec<String>, Option<GoalView>)>, String> {
         let mut view = match self.active_goal_for_tool(session) {
             Ok(g) => g,
             Err(reason) => return Ok(Err((vec![reason], None))),
         };
+        if authority.is_some()
+            && view.audit.required
+            && view.audit.max_rounds > 0
+            && view.audit.rounds >= view.audit.max_rounds
+        {
+            return Ok(Err((
+                vec![
+                    "The independent audit round allowance is used; the person must change it."
+                        .into(),
+                ],
+                Some(view),
+            )));
+        }
+        let expected = view.clone();
         let summary = match goals::bounded("summary", &proposal.summary) {
             Ok(s) => s,
             Err(e) => return Ok(Err((vec![e], Some(view)))),
@@ -615,7 +704,7 @@ impl Shared {
                     child: None,
                 });
                 let summary_text = view.note.clone().unwrap_or_default();
-                let written = self.goal_commit(session, |tx| {
+                let written = self.goal_commit_from_tool(session, authority, &expected, |tx| {
                     Store::goal_write_progress(tx, session, &view, now)?;
                     Store::goal_set_state(
                         tx,
@@ -628,7 +717,9 @@ impl Shared {
                 });
                 return match written {
                     Ok(Some(goal)) => {
-                        if let Some(shared) = self.me.upgrade() {
+                        if authority.is_none()
+                            && let Some(shared) = self.me.upgrade()
+                        {
                             let session = session.to_owned();
                             let audited = goal.clone();
                             self.spawn(async move {
@@ -649,7 +740,7 @@ impl Shared {
                     Err(e) => Err(e.message),
                 };
             }
-            let written = self.goal_commit(session, |tx| {
+            let written = self.goal_commit_from_tool(session, authority, &expected, |tx| {
                 Store::goal_write_progress(tx, session, &view, now)?;
                 Store::goal_set_state(
                     tx,
@@ -667,7 +758,7 @@ impl Shared {
             };
         }
         // Not accepted: keep the checked evidence and claims so the next attempt builds on them.
-        let written = self.goal_commit(session, |tx| {
+        let written = self.goal_commit_from_tool(session, authority, &expected, |tx| {
             Store::goal_write_progress(tx, session, &view, now)
         });
         let goal = match written {
@@ -1085,6 +1176,7 @@ impl Shared {
             .filter(|m| !m.is_empty())
             .map(str::to_owned);
         let launch = SubagentLaunch {
+            child: None,
             task: goals::audit_prompt(&goal, round, &summary),
             profile: Some("auditor".into()),
             context: Some(crate::profiles::ContextMode::Fresh),
@@ -1095,9 +1187,43 @@ impl Shared {
         let outcome = self
             .run_subagent(session, &call_id, launch, CancellationToken::new())
             .await;
+        let result = self.settle_goal_audit(
+            session,
+            &goal,
+            round,
+            &fingerprint,
+            outcome,
+            tokens_start,
+            cost_start,
+            None,
+        );
+        if result
+            .ok()
+            .flatten()
+            .is_some_and(|g| g.state == GoalState::Active)
+        {
+            self.goal_tick(session, None).await;
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn settle_goal_audit(
+        &self,
+        session: &str,
+        goal: &GoalView,
+        round: u32,
+        fingerprint: &str,
+        outcome: Result<(String, serde_json::Value), String>,
+        tokens_start: u64,
+        cost_start: f64,
+        authority: Option<&super::cli_agent_host::GoalAuthority>,
+    ) -> Result<Option<GoalView>, String> {
+        let call_id = authority
+            .map(|a| a.call().to_string())
+            .unwrap_or_else(|| goals::audit_call_id(goal.id, round));
         // Only the audit still pending for this round may settle the goal.
         let Ok(Some(current)) = self.goal_view(session) else {
-            return;
+            return Ok(None);
         };
         if current.id != goal.id
             || current.state != GoalState::Verifying
@@ -1108,7 +1234,7 @@ impl Shared {
                 .as_ref()
                 .is_none_or(|r| r.verdict != "pending")
         {
-            return;
+            return Ok(None);
         }
         let child = self
             .store
@@ -1130,10 +1256,19 @@ impl Shared {
             .unwrap_or(0);
         let now = now_ms();
         let mut view = current.clone();
-        view.usage_tokens = view
-            .usage_tokens
-            .saturating_add(self.session_tokens(session).saturating_sub(tokens_start));
-        view.usage_cost_usd += (self.session_cost(session) - cost_start).max(0.0);
+        // A scheduled CLI turn accounts the whole conversation tree when the worker
+        // settles. Do not charge the same inline auditor twice.
+        let scheduled_cli = authority.is_some()
+            && self
+                .store
+                .read(|c| Store::goal_turn_marks(c, session, goal.id))
+                .is_ok_and(|(_, tokens, _)| tokens.is_some());
+        if !scheduled_cli {
+            view.usage_tokens = view
+                .usage_tokens
+                .saturating_add(self.session_tokens(session).saturating_sub(tokens_start));
+            view.usage_cost_usd += (self.session_cost(session) - cost_start).max(0.0);
+        }
         let (verdict, findings, auditor_summary) = match &outcome {
             Ok((text, _)) => match goals::parse_audit_verdict(text) {
                 Some(v) => (
@@ -1215,17 +1350,15 @@ impl Shared {
                 reason: Some(reason.clone()),
             });
         }
-        let written = self.goal_commit(session, |tx| {
+        let written = self.goal_commit_from_tool(session, authority, &current, |tx| {
             Store::goal_write_progress(tx, session, &view, now)?;
             Store::goal_set_state(tx, session, goal.id, state, Some(&reason), now)
         });
-        if written.is_ok() && state == GoalState::Active {
-            self.goal_tick(session, None).await;
-        }
+        written.map_err(|e| e.message)
     }
 
     /// `goals.stallTurns` from settings (default 3, at least 1).
-    fn goal_stall_threshold(&self, session: &str) -> u32 {
+    pub(super) fn goal_stall_threshold(&self, session: &str) -> u32 {
         self.settings_for(session)
             .other
             .get("goals")

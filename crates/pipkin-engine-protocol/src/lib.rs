@@ -47,7 +47,7 @@ pub use view::*;
 // Version 34 adds explicit, metadata-only local CLI setup and immutable creation calls.
 // Version 36 adds inert CLI-reported action blocks, never native tool calls.
 // Version 37 captures immutable CLI setup mode. 38 adds owner-scoped external approvals.
-pub const PROTOCOL_VERSION: u32 = 40;
+pub const PROTOCOL_VERSION: u32 = 41;
 
 mod cli_approvals;
 pub use cli_approvals::*;

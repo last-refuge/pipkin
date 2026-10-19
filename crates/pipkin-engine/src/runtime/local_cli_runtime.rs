@@ -16,7 +16,7 @@ use crate::{
 fn unavailable() -> ProtoError {
     ProtoError::new(
         ErrorCode::Unsupported,
-        "Local CLI execution is not enabled or approved.",
+        "Claude Code execution is disabled or its connection is unavailable. Reconnect the configured provider; changed saved identities require a new conversation.",
     )
 }
 struct CancelOnDrop(CancellationToken);
@@ -34,6 +34,10 @@ impl Shared {
         use pipkin_engine_protocol::LocalCliMode;
         self.config.enable_local_claude_cli
             && match mode {
+                LocalCliMode::Orchestration => {
+                    cfg!(target_os = "linux") && self.config.enable_local_claude_cli_orchestration
+                }
+                LocalCliMode::Coding => self.config.enable_local_claude_cli_write,
                 LocalCliMode::ChatOnly => true,
                 LocalCliMode::RestrictedWrite => {
                     cfg!(target_os = "linux") && self.config.enable_local_claude_cli_write
@@ -55,6 +59,11 @@ impl Shared {
             .store
             .session(session)?
             .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "Session does not exist"))?;
+        if row.execution_backend == ExecutionBackend::ClaudeCliAgent {
+            return self
+                .prompt_cli_desktop(owner, session, request, text, images, model)
+                .await;
+        }
         if row.execution_backend == ExecutionBackend::NativeAgent {
             // Preserve the native route, including its existing handling of model.
             return self.prompt(session, request, text, images).await;
@@ -122,14 +131,8 @@ impl Shared {
                     turn.cancel.clone(),
                     turn.grant.policy,
                 );
-                tokio::pin!(check);
-                let checked = tokio::select! {
-                    result = &mut check => result,
-                    _ = tokio::time::sleep_until(turn.grant.expires.into()) => {
-                        turn.cancel.cancel();
-                        check.await
-                    }
-                };
+                // Preflight retains its own bounded probes and the revocable turn token.
+                let checked = check.await;
                 let result = match checked {
                     Ok(prepared) => {
                         #[cfg(unix)]
@@ -166,6 +169,9 @@ impl Shared {
     }
 
     pub async fn stop_by_backend(self: &Arc<Self>, session: &str) -> Result<Reply, ProtoError> {
+        if self.cli_agents.owns_session(session) {
+            return self.stop_cli_agent_root(session).await;
+        }
         let row = self
             .store
             .session(session)?
@@ -210,6 +216,9 @@ impl Shared {
         &self,
         row: &SessionRow,
     ) -> Option<pipkin_engine_protocol::LocalCliMode> {
+        if row.execution_backend == ExecutionBackend::ClaudeCliAgent {
+            return Some(pipkin_engine_protocol::LocalCliMode::Orchestration);
+        }
         (row.execution_backend == pipkin_engine_protocol::ExecutionBackend::LocalClaudeCli).then(
             || {
                 self.store
@@ -228,6 +237,13 @@ impl Shared {
     pub fn execution_summary(&self, row: &SessionRow) -> SessionSummary {
         let mut summary = row.summary();
         summary.local_cli_mode = self.local_cli_summary_mode(row);
+        if row.execution_backend == ExecutionBackend::ClaudeCliAgent {
+            summary.blocked = row
+                .blocked
+                .clone()
+                .or_else(|| Some("Connect Claude orchestration to continue.".into()));
+            return summary;
+        }
         if summary
             .local_cli_mode
             .is_some_and(|mode| self.local_cli_execution_enabled(mode))

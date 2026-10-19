@@ -51,13 +51,17 @@ fn bounded(value: &str) -> Result<(), ProtoError> {
 }
 pub(super) fn binding_mode(id: &str) -> LocalCliMode {
     match id {
+        crate::execution::claude_cli::coding_policy::ID => LocalCliMode::Coding,
         policy::POLICY_ID => LocalCliMode::ChatOnly,
+        crate::store::cli_bridge::ORCHESTRATION_POLICY => LocalCliMode::Orchestration,
         crate::store::EXTERNAL_PERMISSION_POLICY => LocalCliMode::RestrictedWrite,
         _ => LocalCliMode::Unsupported,
     }
 }
 fn launch_policy(mode: LocalCliMode) -> Result<preflight::LaunchPolicy, ProtoError> {
     match mode {
+        LocalCliMode::Orchestration => Ok(preflight::LaunchPolicy::Orchestration),
+        LocalCliMode::Coding => Ok(preflight::LaunchPolicy::Coding),
         LocalCliMode::ChatOnly => Ok(preflight::LaunchPolicy::ChatOnly),
         LocalCliMode::RestrictedWrite => Ok(preflight::LaunchPolicy::RestrictedWrite),
         LocalCliMode::Unsupported => Err(error(
@@ -79,6 +83,7 @@ fn model(target: &Target) -> policy::ModelAlias {
 // Deliberately no Debug/Serialize: the captured environment must never escape.
 struct Ticket {
     owner: u64,
+    native_approval: Option<CancellationToken>,
     expires: Instant,
     view: View,
     candidate: preflight::Candidate,
@@ -108,7 +113,6 @@ pub(super) struct Grant {
     environment: policy::Environment,
     pub model: policy::ModelAlias,
     pub policy: preflight::LaunchPolicy,
-    pub expires: Instant,
     pub cancel: CancellationToken,
 }
 pub(super) struct Turn {
@@ -148,7 +152,7 @@ impl Drop for Turn {
 impl State {
     fn prune(&mut self) {
         self.grants.retain(|_, grant| {
-            if Instant::now() >= grant.expires || grant.cancel.is_cancelled() {
+            if grant.cancel.is_cancelled() {
                 grant.cancel.cancel();
                 false
             } else {
@@ -215,7 +219,7 @@ impl Registry {
             || ticket.cancel.is_cancelled()
             || !matches!(
                 ticket.view.mode,
-                LocalCliMode::ChatOnly | LocalCliMode::RestrictedWrite
+                LocalCliMode::Coding | LocalCliMode::ChatOnly | LocalCliMode::RestrictedWrite
             )
             || binding_mode(&binding.identity.launch_policy) != ticket.view.mode
         {
@@ -229,9 +233,16 @@ impl Registry {
             environment: ticket.environment.clone(),
             model: model(&ticket.view.target),
             policy: launch_policy(ticket.view.mode)?,
-            expires: ticket.expires,
-            cancel: ticket.cancel.child_token(),
+            // Setup freshness ends at connection establishment. Connection consent
+            // is independently revocable and ends on owner disconnect/shutdown.
+            cancel: CancellationToken::new(),
         });
+        if state.grants.len() >= 4096 && !state.grants.contains_key(session) {
+            return Err(error(
+                ErrorCode::Busy,
+                "Local CLI connection capacity reached.",
+            ));
+        }
         if let Some(old) = state.grants.insert(session.into(), grant.clone()) {
             old.cancel.cancel();
         }
@@ -263,9 +274,7 @@ impl Registry {
         state
             .grants
             .get(session)
-            .filter(|grant| {
-                !state.closed && !grant.cancel.is_cancelled() && Instant::now() < grant.expires
-            })
+            .filter(|grant| !state.closed && !grant.cancel.is_cancelled())
             .cloned()
     }
     pub(super) fn owns_grant(&self, owner: u64, session: &str) -> bool {
@@ -322,7 +331,6 @@ impl Registry {
         if let Some(turn) = turn
             && (state.closed
                 || turn.cancel.is_cancelled()
-                || Instant::now() >= turn.grant.expires
                 || !state
                     .grants
                     .get(&turn.session)
@@ -383,10 +391,23 @@ impl Registry {
     }
     fn revoke(&self, owner: u64, setup: &str) -> Result<(), ProtoError> {
         let mut state = self.state.lock().unwrap();
-        state.ticket(owner, setup)?.cancel.cancel();
-        state.tickets.remove(setup);
+        state.prune();
+        if !state
+            .tickets
+            .get(setup)
+            .is_some_and(|ticket| ticket.owner == owner)
+            && !state
+                .grants
+                .values()
+                .any(|grant| grant.setup == setup && grant.owner == owner)
+        {
+            return Err(missing());
+        }
+        if let Some(ticket) = state.tickets.remove(setup) {
+            ticket.cancel.cancel();
+        }
         state.grants.retain(|_, g| {
-            if g.setup == setup {
+            if g.setup == setup && g.owner == owner {
                 g.cancel.cancel();
                 false
             } else {
@@ -500,8 +521,9 @@ impl Registry {
         match result {
             Ok(prepared) => {
                 // Existing-session verification is display-only, not a future turn cache.
-                ticket.prepared =
-                    matches!(ticket.view.target, Target::New { .. }).then(|| Arc::new(prepared));
+                ticket.prepared = (matches!(ticket.view.target, Target::New { .. })
+                    || ticket.view.mode == LocalCliMode::Orchestration)
+                    .then(|| Arc::new(prepared));
                 ticket.view.stage = Stage::MetadataVerified;
             }
             Err(failure) => {
@@ -560,6 +582,19 @@ impl Drop for CheckGuard {
 }
 
 impl Shared {
+    pub(super) fn setup_cli_binding(
+        &self,
+        session: &str,
+    ) -> Result<Option<CliBinding>, StoreError> {
+        if let Some(binding) = self.store.cli_agent_binding(session)? {
+            return Ok(Some(CliBinding {
+                context_valid: self.store.check_cli_agent_ready(&binding).is_ok(),
+                identity: binding.create.identity,
+                generation: 1,
+            }));
+        }
+        self.store.cli_binding(session)
+    }
     fn install_local_cli_grant(
         &self,
         owner: u64,
@@ -569,6 +604,34 @@ impl Shared {
     ) -> Result<(), ProtoError> {
         if !self.local_cli_execution_enabled(binding_mode(&binding.identity.launch_policy)) {
             return Err(missing());
+        }
+        if binding_mode(&binding.identity.launch_policy) == LocalCliMode::Orchestration {
+            let sess = self.session(session)?;
+            let mut state = self.local_cli_setups.state.lock().unwrap();
+            let ticket = state.ticket(owner, setup)?;
+            let prepared = ticket.prepared.as_ref().ok_or_else(missing)?;
+            let expected = self
+                .store
+                .cli_agent_binding(session)
+                .map_err(storage_error)?
+                .ok_or_else(missing)?;
+            self.cli_agents
+                .approve_return(&self.store, owner, prepared, &expected)
+                .map_err(|_| missing())?;
+            ticket.native_approval = self.cli_agents.approval_cancellation(owner, session);
+            let approval = ticket.native_approval.clone();
+            drop(state);
+            if let Err(error) = self.commit(&sess, |tx| {
+                Store::bump(tx, session, now_ms())?;
+                Ok(((), Vec::new()))
+            }) {
+                if let Some(approval) = approval {
+                    approval.cancel();
+                }
+                return Err(error);
+            }
+            self.publish(Event::SessionsChanged);
+            return Ok(());
         }
         let mut installed = None;
         let result = (|| {
@@ -624,7 +687,17 @@ impl Shared {
             return Err(error(ErrorCode::ShuttingDown, "Engine is shutting down."));
         }
         let saved = match &target {
-            Target::New { project, .. } => {
+            Target::New {
+                project, thinking, ..
+            } => {
+                if mode != LocalCliMode::Orchestration && thinking.is_some() {
+                    return Err(error(
+                        ErrorCode::Unsupported,
+                        "Effort selection requires Pipkin orchestration.",
+                    ));
+                }
+                crate::execution::claude_cli::orchestration_input::thinking(thinking.as_deref())
+                    .map_err(|_| error(ErrorCode::Invalid, "Unsupported Claude effort."))?;
                 bounded(project)?;
                 None
             }
@@ -636,8 +709,7 @@ impl Shared {
                     .map_err(storage_error)?
                     .ok_or_else(missing)?;
                 let binding = self
-                    .store
-                    .cli_binding(session)
+                    .setup_cli_binding(session)
                     .map_err(storage_error)?
                     .ok_or_else(missing)?;
                 if !binding.context_valid
@@ -701,6 +773,7 @@ impl Shared {
             .unwrap_or_else(uuid_v4);
         let ticket = Ticket {
             owner: client,
+            native_approval: None,
             expires: Instant::now() + TTL,
             view: View {
                 setup: uuid_v4(),
@@ -736,6 +809,12 @@ impl Shared {
         let completion = self.external_tasks.token();
         if self.stopping.is_cancelled() {
             return Err(error(ErrorCode::ShuttingDown, "Engine is shutting down."));
+        }
+        {
+            let mut state = self.local_cli_setups.state.lock().unwrap();
+            if let Some(approval) = state.ticket(client, setup)?.native_approval.take() {
+                approval.cancel();
+            }
         }
         let work = self
             .local_cli_setups
@@ -782,8 +861,7 @@ impl Shared {
                             return Err(metadata_error(()));
                         };
                         let current = shared
-                            .store
-                            .cli_binding(&session)
+                            .setup_cli_binding(&session)
                             .map_err(storage_error)?
                             .ok_or_else(missing)?;
                         let row = shared
@@ -819,8 +897,7 @@ impl Shared {
                         && let Target::Existing { session, .. } = &view.target
                     {
                         let binding = shared
-                            .store
-                            .cli_binding(session)
+                            .setup_cli_binding(session)
                             .map_err(storage_error)?
                             .ok_or_else(missing)?;
                         shared.install_local_cli_grant(client, &setup, session, binding)?;
@@ -849,7 +926,15 @@ impl Shared {
         client: u64,
         setup: &str,
     ) -> Result<Reply, ProtoError> {
+        let approval = {
+            let mut state = self.local_cli_setups.state.lock().unwrap();
+            state.ticket(client, setup)?.native_approval.clone()
+        };
         self.local_cli_setups.revoke(client, setup)?;
+        if let Some(approval) = approval {
+            approval.cancel();
+            self.publish(Event::SessionsChanged);
+        }
         Ok(Reply::Ok)
     }
     pub(super) fn create_local_cli_session(
@@ -858,6 +943,24 @@ impl Shared {
         session: &str,
         setup: &str,
     ) -> Result<Reply, ProtoError> {
+        // Exact durable lookup never restores a connection grant.
+        if let Some(binding) = self
+            .store
+            .cli_agent_binding(session)
+            .map_err(storage_error)?
+        {
+            if binding.create.request_key != setup {
+                return Err(missing());
+            }
+            let row = self
+                .store
+                .session(session)
+                .map_err(storage_error)?
+                .ok_or_else(missing)?;
+            return Ok(Reply::Session {
+                summary: self.execution_summary(&row),
+            });
+        }
         // Lost acknowledgements survive ticket expiry, disconnect and engine restart.
         if let Some(row) = self
             .store
@@ -883,6 +986,46 @@ impl Shared {
                 model(&ticket.view.target),
             )
         };
+        if prepared.orchestration_request().is_ok() {
+            if !self.local_cli_execution_enabled(LocalCliMode::Orchestration) {
+                return Err(missing());
+            }
+            let mut state = self.local_cli_setups.state.lock().unwrap();
+            let ticket = state.ticket(client, setup)?;
+            if ticket.cancel.is_cancelled()
+                || !ticket
+                    .prepared
+                    .as_ref()
+                    .is_some_and(|p| Arc::ptr_eq(p, &prepared))
+            {
+                return Err(missing());
+            }
+            self.cli_agents
+                .create_approved_with_thinking(
+                    &self.store,
+                    client,
+                    &prepared,
+                    session,
+                    setup,
+                    match &ticket.view.target {
+                        Target::New { thinking, .. } => thinking.as_deref(),
+                        _ => None,
+                    },
+                )
+                .map_err(|_| missing())?;
+            ticket.prepared = None;
+            ticket.native_approval = self.cli_agents.approval_cancellation(client, session);
+            drop(state);
+            let row = self
+                .store
+                .session(session)
+                .map_err(storage_error)?
+                .ok_or_else(missing)?;
+            self.publish(Event::SessionsChanged);
+            return Ok(Reply::Session {
+                summary: self.execution_summary(&row),
+            });
+        }
         // Revalidation performs filesystem work outside the registry lock.
         let binding = prepared.checked_binding(&uuid).map_err(metadata_error)?;
         let (row, created) = {

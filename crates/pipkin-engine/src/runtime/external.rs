@@ -1,7 +1,7 @@
 //! CLI actor. Each public mode requires its host opt-in, fresh preflight and live grant.
-//! Coding additionally owns a receipt-backed broker/listener. Production remains off.
+//! Coding additionally owns a receipt-backed broker/listener. Hosting policy grants no consent.
 //! Shared tracks external tasks through cleanup/settlement. Shutdown cancels first, then
-//! waits concurrently with other teardown within its bounded deadline. Expiry never
+//! waits concurrently with other teardown within its bounded deadline. A deadline never
 //! synthesizes cancellation evidence: startup recovery owns unfinished receipts.
 //!
 //! Never calls the native provider, tools, extensions, goals, compaction or queue driver.
@@ -31,6 +31,8 @@ struct ObservedDecoder {
     error: Option<events::Error>,
     rejected_record: Option<events::RecordClass>,
     parse_failure: Option<events::ParseFailure>,
+    presentation_incomplete: bool,
+    diagnostic: Option<events::StreamDiagnostic>,
 }
 
 #[cfg(test)]
@@ -213,7 +215,8 @@ impl Shared {
     ) -> Result<Reply, ProtoError> {
         let coding = super::external_coding::Admission {
             owner: turn.owner(),
-            expires: turn.grant.expires,
+            // Turn-bound Write authority, independent of the former setup ticket.
+            expires: std::time::Instant::now() + policy::TURN_TIMEOUT,
             revoked: turn.grant.cancel.clone(),
             parent: self.config.data_dir.clone(),
             feedback: super::external_coding::Feedback::PullOnly,
@@ -350,9 +353,16 @@ impl Shared {
                         })?;
                 }
             }
-            let tools: &[&str] = if wants_coding { &["Write"] } else { &[] };
+            let tools = prepared.observed_tools();
             let decoder = events::Decoder::new(&binding.identity.cli_session_id, tools)
                 .map_err(|_| unsupported())?;
+            let decoder = if binding.identity.launch_policy
+                == crate::execution::claude_cli::coding_policy::ID
+            {
+                decoder.with_cli_tools()
+            } else {
+                decoder
+            };
             let op = crate::util::uuid_v4();
             let admission = self.external_commit(&sess, |tx| {
                 if super::request_cancel::is_cancelled() {
@@ -366,9 +376,7 @@ impl Shared {
                 }
                 // Recheck after acquiring the Store transaction as well: time spent
                 // waiting for SQLite or validating filesystem identity consumes TTL.
-                if turn.is_some_and(|turn| {
-                    turn.cancel.is_cancelled() || std::time::Instant::now() >= turn.grant.expires
-                }) {
+                if turn.is_some_and(|turn| turn.cancel.is_cancelled()) {
                     return Ok((Err(unsupported()), vec![]));
                 }
                 #[cfg(unix)]
@@ -544,7 +552,7 @@ impl Shared {
         if launch
             .grant
             .as_ref()
-            .is_some_and(|g| g.cancel.is_cancelled() || std::time::Instant::now() >= g.expires)
+            .is_some_and(|g| g.cancel.is_cancelled())
         {
             // Persist Stop before cancellation; a failed commit fences launch too.
             let _ = self.stop_external_prompt(&receipt.key.session).await;
@@ -624,25 +632,53 @@ impl Shared {
             error: None,
             rejected_record: None,
             parse_failure: None,
+            presentation_incomplete: false,
+            diagnostic: None,
         }));
         let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
         let observed_decoder = decoder.clone();
         let observed_tx = tx.clone();
-        let observer: process::StdoutObserver = Box::new(move |bytes| {
-            // Sole decoder owner during supervision; no SQLite, I/O, or waiting locks.
-            let mut decoder = observed_decoder
-                .try_lock()
-                .map_err(|_| "projection unavailable")?;
-            let inner = decoder.decoder.as_mut().ok_or("projection unavailable")?;
-            if let Err(error) = inner.feed(bytes, |event| observed_tx.try_send(event)) {
-                let rejected_record = inner.failed_record();
-                let parse_failure = inner.parse_failure();
-                decoder.rejected_record = rejected_record;
-                decoder.parse_failure = parse_failure;
-                decoder.error = Some(error);
-                return Err("projection rejected");
-            }
-            Ok(())
+        let observer: process::AsyncStdoutObserver = Box::new(move |bytes| {
+            let observed_decoder = observed_decoder.clone();
+            let observed_tx = observed_tx.clone();
+            Box::pin(async move {
+                // One bounded pipe chunk plus decoder's bounded line/projected-byte budget.
+                // Release the decoder lock before applying asynchronous backpressure.
+                let (events, failed) = {
+                    let mut observed = observed_decoder
+                        .try_lock()
+                        .map_err(|_| "projection unavailable")?;
+                    let inner = observed.decoder.as_mut().ok_or("projection unavailable")?;
+                    let mut events = Vec::new();
+                    let result = inner.feed(&bytes, |event| {
+                        events.push(event);
+                        Ok::<_, ()>(())
+                    });
+                    let warning = inner.summary().presentation_incomplete;
+                    let diagnostic = inner.diagnostic();
+                    if let Err(error) = result {
+                        let record = inner.failed_record();
+                        let failure = inner.parse_failure();
+                        observed.rejected_record = record;
+                        observed.parse_failure = failure;
+                        observed.error = Some(error);
+                    }
+                    observed.presentation_incomplete |= warning;
+                    observed.diagnostic = diagnostic;
+                    (events, result.is_err())
+                };
+                for event in events {
+                    observed_tx
+                        .send(event)
+                        .await
+                        .map_err(|_| "projection unavailable")?;
+                }
+                if failed {
+                    Err("projection rejected")
+                } else {
+                    Ok(())
+                }
+            })
         });
         #[cfg(unix)]
         let before_signal = launch.coding.as_ref().map(|coding| {
@@ -655,7 +691,7 @@ impl Shared {
         let before_signal = None;
         let supervise = async {
             let supervisor =
-                process::run_observed(spec, cancel.clone(), before_signal, Some(observer));
+                process::run_observed_async(spec, cancel.clone(), before_signal, observer);
             tokio::pin!(supervisor);
             let revoked = async {
                 #[cfg(unix)]
@@ -664,10 +700,7 @@ impl Shared {
                     return;
                 }
                 if let Some(grant) = &launch.grant {
-                    tokio::select! {
-                        _ = grant.cancel.cancelled() => {},
-                        _ = tokio::time::sleep_until(grant.expires.into()) => {},
-                    }
+                    grant.cancel.cancelled().await;
                 } else {
                     std::future::pending::<()>().await;
                 }
@@ -687,12 +720,19 @@ impl Shared {
                 }
             };
             // No observer remains active. EOF itself is not evidence of success.
-            let finished = decoder.try_lock().ok().is_some_and(|mut observed| {
+            let mut final_events = Vec::new();
+            let mut finished = decoder.try_lock().ok().is_some_and(|mut observed| {
                 let Some(inner) = observed.decoder.take() else {
                     return false;
                 };
-                match inner.finish(|event| tx.try_send(event)) {
-                    Ok(_) => true,
+                match inner.finish(|event| {
+                    final_events.push(event);
+                    Ok::<_, ()>(())
+                }) {
+                    Ok(summary) => {
+                        observed.presentation_incomplete |= summary.presentation_incomplete;
+                        true
+                    }
                     Err(error) => {
                         observed.error.get_or_insert(error);
                         observed
@@ -702,6 +742,12 @@ impl Shared {
                     }
                 }
             });
+            for event in final_events {
+                if tx.send(event).await.is_err() {
+                    finished = false;
+                    break;
+                }
+            }
             drop(tx);
             (report, finished)
         };
@@ -709,28 +755,54 @@ impl Shared {
             let mut cursor = receipt.cursor;
             let mut projection_ok = true;
             let mut action_results_known = true;
-            while let Some(event) = rx.recv().await {
-                if matches!(
-                    &event,
-                    events::Event::ExternalToolResult { is_error: None, .. }
-                ) {
-                    action_results_known = false;
-                }
-                if !projection_ok {
-                    continue;
-                } // Drain after failure; never retry a delta.
-                let _lock = sess.lock.lock().await;
-                let next = cursor + 1;
-                match self.external_commit(sess, |tx| {
-                    Store::project_external_event_in(tx, &receipt.key, next, &event, now_ms())
-                        .map(|changes| ((), changes))
-                }) {
-                    Ok(()) => cursor = next,
-                    Err(_) => {
-                        projection_ok = false;
-                        cancel.cancel();
+            let mut batch = Vec::with_capacity(EVENT_CAPACITY);
+            while rx.recv_many(&mut batch, EVENT_CAPACITY).await != 0 {
+                action_results_known &= !batch.iter().any(|event| {
+                    matches!(
+                        event,
+                        events::Event::ExternalToolResult { is_error: None, .. }
+                    )
+                });
+                if projection_ok {
+                    let _lock = sess.lock.lock().await;
+                    let next = cursor + batch.len() as u64;
+                    match self.external_commit(sess, |tx| {
+                        let mut changes: Vec<SessionChange> = Vec::new();
+                        let mut entries = std::collections::HashMap::<u64, usize>::new();
+                        for (offset, event) in batch.iter().enumerate() {
+                            for change in Store::project_external_event_in(
+                                tx,
+                                &receipt.key,
+                                cursor + offset as u64 + 1,
+                                event,
+                                now_ms(),
+                            )? {
+                                if let SessionChange::EntryAppended { entry }
+                                | SessionChange::EntryReplaced { entry } = &change
+                                {
+                                    if let Some(position) = entries.get(&entry.id)
+                                        && let SessionChange::EntryAppended { entry: prior }
+                                        | SessionChange::EntryReplaced { entry: prior } =
+                                            &mut changes[*position]
+                                    {
+                                        *prior = entry.clone();
+                                        continue;
+                                    }
+                                    entries.insert(entry.id, changes.len());
+                                }
+                                changes.push(change);
+                            }
+                        }
+                        Ok(((), changes))
+                    }) {
+                        Ok(()) => cursor = next,
+                        Err(_) => {
+                            projection_ok = false;
+                            cancel.cancel();
+                        }
                     }
                 }
+                batch.clear(); // Drain after failure; never retry a delta.
             }
             projection_ok && action_results_known
         };
@@ -768,6 +840,8 @@ impl Shared {
             evidence.projection_error = observed.error;
             evidence.rejected_record = observed.rejected_record;
             evidence.parse_failure = observed.parse_failure;
+            evidence.presentation_incomplete = observed.presentation_incomplete;
+            evidence.stream_diagnostic = observed.diagnostic;
         }
         if let Some((seal, completion_eligible)) = proof {
             evidence.projection_finished &= completion_eligible
@@ -835,12 +909,19 @@ impl Shared {
     }
 }
 
-/// Evidence currently has no `supervisor_clean` field. Until Store grows one,
-/// projection_finished is deliberately conservative, NOT merely decoder metadata:
-/// ANY supervisor stop (including timeout/observer failure with root exit 0) vetoes it.
+/// Completion of delivery/transport, not inferred execution success. A handled CLI
+/// error may exit 1; Store separately requires matching terminal outcome/exit evidence.
+/// Every supervisor stop (even with exit 0) still vetoes completion.
 fn evidence(report: &process::Report, decoder_finished: bool) -> ExternalSettlementEvidence {
     ExternalSettlementEvidence {
-        projection_finished: decoder_finished && report.clean_exit(),
+        projection_finished: decoder_finished
+            && matches!(report.exit_code, Some(0 | 1))
+            && report.stop.is_none()
+            && report.stdin_delivered
+            && report.root_reaped
+            && report.pipes_drained
+            && !report.cleanup_timed_out
+            && report.approval_revocation_confirmed != Some(false),
         input_delivered: report.stdin_delivered,
         root_reaped: report.root_reaped,
         pipes_drained: report.pipes_drained,
@@ -856,5 +937,7 @@ fn evidence(report: &process::Report, decoder_finished: bool) -> ExternalSettlem
         projection_error: None,
         rejected_record: None,
         parse_failure: None,
+        presentation_incomplete: false,
+        stream_diagnostic: None,
     }
 }

@@ -8,8 +8,9 @@
 //!
 //! LF delimits records; CRLF is accepted. The byte limit excludes LF but includes CR.
 //! A complete final JSON object without LF is accepted; an incomplete one is not.
-//! Empty lines, duplicate init, records after result, and malformed envelopes fail
-//! closed. Unknown well-formed envelopes cannot establish success.
+//! Empty lines, duplicate init/results, post-result content and malformed envelopes fail
+//! closed. Trailing system telemetry is drained. Unknown envelopes never establish success.
+//! This is the smoke/probe decoder, not a second validator in the provider runtime.
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -106,13 +107,6 @@ impl Decoder {
         // Validate even ignored text; serde's skipped fields must not bypass UTF-8.
         let line = std::str::from_utf8(&self.line).map_err(|_| "invalid NDJSON UTF-8")?;
         let header: Header = parse(line)?;
-        if self.summary.result_seen {
-            return Err(if header.kind == "result" {
-                "duplicate result record"
-            } else {
-                "record after terminal result"
-            });
-        }
         if let Some(session_id) = &header.session_id {
             if let Some(previous) = &self.summary.session_id {
                 if previous != session_id {
@@ -123,6 +117,16 @@ impl Decoder {
             }
         }
         increment(&mut self.summary.records)?;
+        if self.summary.result_seen {
+            if header.kind == "system" && parse::<Subtype>(line)?.subtype != "init" {
+                return increment(&mut self.summary.unknown_records);
+            }
+            return Err(if header.kind == "result" {
+                "duplicate result record"
+            } else {
+                "record after terminal result"
+            });
+        }
         match header.kind.as_str() {
             "system" => {
                 let system: Subtype = parse(line)?;

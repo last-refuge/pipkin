@@ -15,11 +15,24 @@ pub(super) fn prompt(
     match summary.execution_backend {
         ExecutionBackend::NativeAgent => Ok(()), // Preserve native provider/readiness handling.
         ExecutionBackend::Unsupported => Err(UNKNOWN.into()),
+        ExecutionBackend::ClaudeCliAgent => {
+            if summary.local_cli_mode != Some(pipkin_engine_protocol::LocalCliMode::Orchestration) {
+                return Err(UNKNOWN.into());
+            }
+            if let Some(reason) = &summary.blocked {
+                return Err(reason.clone());
+            }
+            if model {
+                return Err("A different CLI model requires a separate conversation.".into());
+            }
+            Ok(())
+        }
         ExecutionBackend::LocalClaudeCli => {
             if !matches!(
                 summary.local_cli_mode,
                 Some(
-                    pipkin_engine_protocol::LocalCliMode::ChatOnly
+                    pipkin_engine_protocol::LocalCliMode::Coding
+                        | pipkin_engine_protocol::LocalCliMode::ChatOnly
                         | pipkin_engine_protocol::LocalCliMode::RestrictedWrite
                 )
             ) {
@@ -41,7 +54,9 @@ pub(super) fn prompt(
 pub(super) fn stop(summary: &SessionSummary, active: bool) -> bool {
     match summary.execution_backend {
         ExecutionBackend::NativeAgent => true,
-        ExecutionBackend::LocalClaudeCli => active || summary.blocked.is_none(),
+        ExecutionBackend::LocalClaudeCli | ExecutionBackend::ClaudeCliAgent => {
+            active || summary.blocked.is_none()
+        }
         ExecutionBackend::Unsupported => false,
     }
 }
@@ -116,6 +131,51 @@ pub(super) fn guard<'a>(
         _ => return Ok(()),
     };
     if let Some(session) = session
+        && summary(session).is_some_and(|s| {
+            s.execution_backend == ExecutionBackend::ClaudeCliAgent
+                && s.local_cli_mode == Some(pipkin_engine_protocol::LocalCliMode::Orchestration)
+        })
+        && matches!(
+            call,
+            Call::Enqueue { .. }
+                | Call::CancelQueued { .. }
+                | Call::Compact { .. }
+                | Call::SetGoal { .. }
+                | Call::GoalControl { .. }
+                | Call::AnswerQuestion { .. }
+                | Call::CancelQuestion { .. }
+                | Call::DismissNotices { .. }
+                | Call::Subagents { .. }
+                | Call::SubagentHistory { .. }
+                | Call::SubagentResult { .. }
+                | Call::Plan { .. }
+                | Call::GoalHistory { .. }
+                | Call::Jobs { .. }
+                | Call::JobLog { .. }
+                | Call::WebSources { .. }
+                | Call::UpdatePlan { .. }
+                | Call::JobCancel { .. }
+                | Call::SetSubagentsEnabled { .. }
+                | Call::StopSubagent { .. }
+                | Call::LaunchSubagent { .. }
+                | Call::SteerSubagent { .. }
+                | Call::McpServers { .. }
+                | Call::McpUpsertServer { .. }
+                | Call::McpRemoveServer { .. }
+                | Call::McpSetDisabledTools { .. }
+                | Call::McpTestServer { .. }
+                | Call::McpReconnectServer { .. }
+                | Call::McpAuthStart { .. }
+                | Call::McpAuthRevoke { .. }
+                | Call::McpImportPreview { .. }
+                | Call::McpImportApply { .. }
+                | Call::McpAuthAnswer { .. }
+                | Call::McpAuthCancel { .. }
+        )
+    {
+        return Ok(());
+    }
+    if let Some(session) = session
         && !summary(session).is_some_and(|s| s.execution_backend.native_execution())
     {
         return Err(NATIVE_ONLY.into());
@@ -136,8 +196,10 @@ pub(super) fn preserve_identity(
         next.execution_backend = ExecutionBackend::Unsupported;
         next.blocked = Some(UNKNOWN.into());
     }
-    if previous.execution_backend == ExecutionBackend::LocalClaudeCli
-        && previous.local_cli_mode != next.local_cli_mode
+    if matches!(
+        previous.execution_backend,
+        ExecutionBackend::LocalClaudeCli | ExecutionBackend::ClaudeCliAgent
+    ) && previous.local_cli_mode != next.local_cli_mode
     {
         next.execution_backend = ExecutionBackend::Unsupported;
         next.local_cli_mode = Some(pipkin_engine_protocol::LocalCliMode::Unsupported);

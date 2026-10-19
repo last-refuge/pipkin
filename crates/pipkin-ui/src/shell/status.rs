@@ -41,6 +41,7 @@ pub(super) fn context_label(line: &StatusLine) -> Option<String> {
     let tokens = context.tokens?;
     let source = match context.source {
         ContextSource::Reported => "",
+        ContextSource::ReportedInput => " (last request input)",
         ContextSource::Estimated => " ~",
         ContextSource::Unavailable => return None,
     };
@@ -218,7 +219,12 @@ mod tests {
         ctx.compaction = "idle".into();
         assert_eq!(context_label(&line).as_deref(), Some("41.2k ~ tokens"));
         let ctx = line.context.as_mut().unwrap();
-        ctx.source = ContextSource::Unavailable;
+        ctx.source = ContextSource::ReportedInput;
+        assert_eq!(
+            context_label(&line).as_deref(),
+            Some("41.2k (last request input) tokens")
+        );
+        line.context.as_mut().unwrap().source = ContextSource::Unavailable;
         assert_eq!(context_label(&line), None);
     }
 }

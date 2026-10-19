@@ -120,6 +120,8 @@ fn core_model(model: proto::LocalCliModel) -> core::CliModel {
 }
 fn launch_mode(mode: core::CliMode) -> proto::LocalCliMode {
     match mode {
+        core::CliMode::Orchestration => proto::LocalCliMode::Orchestration,
+        core::CliMode::Coding => proto::LocalCliMode::Coding,
         core::CliMode::ChatOnly => proto::LocalCliMode::ChatOnly,
         core::CliMode::RestrictedWrite => proto::LocalCliMode::RestrictedWrite,
         core::CliMode::Unsupported => proto::LocalCliMode::Unsupported,
@@ -127,6 +129,8 @@ fn launch_mode(mode: core::CliMode) -> proto::LocalCliMode {
 }
 fn core_mode(mode: proto::LocalCliMode) -> core::CliMode {
     match mode {
+        proto::LocalCliMode::Orchestration => core::CliMode::Orchestration,
+        proto::LocalCliMode::Coding => core::CliMode::Coding,
         proto::LocalCliMode::ChatOnly => core::CliMode::ChatOnly,
         proto::LocalCliMode::RestrictedWrite => core::CliMode::RestrictedWrite,
         proto::LocalCliMode::Unsupported => core::CliMode::Unsupported,
@@ -134,9 +138,14 @@ fn core_mode(mode: proto::LocalCliMode) -> core::CliMode {
 }
 fn target(target: &core::LocalCliInspectTarget) -> proto::LocalCliSetupTarget {
     match target {
-        core::LocalCliInspectTarget::New { project, model: m } => proto::LocalCliSetupTarget::New {
+        core::LocalCliInspectTarget::New {
+            project,
+            model: m,
+            thinking,
+        } => proto::LocalCliSetupTarget::New {
             project: project.clone(),
             model: model(*m),
+            thinking: thinking.clone(),
         },
         core::LocalCliInspectTarget::Existing { session, model: m } => {
             proto::LocalCliSetupTarget::Existing {
@@ -230,10 +239,15 @@ fn view(view: proto::LocalCliSetupView) -> Result<core::LocalCliSetupView, CallE
         ));
     }
     let (target, root_candidate) = match view.target {
-        proto::LocalCliSetupTarget::New { project, model } => (
+        proto::LocalCliSetupTarget::New {
+            project,
+            model,
+            thinking,
+        } => (
             core::LocalCliInspectTarget::New {
                 project,
                 model: core_model(model),
+                thinking,
             },
             Some(core::EngineSessionId(format!("cli-{}", view.setup))),
         ),
@@ -390,10 +404,12 @@ impl Live {
         if worker.attachment_generations.get(&p.conversation) != Some(&p.generation) {
             return false;
         }
-        let Some(summary) = self
-            .session_of(p.conversation)
-            .filter(|s| s.execution_backend == proto::ExecutionBackend::LocalClaudeCli)
-        else {
+        let Some(summary) = self.session_of(p.conversation).filter(|s| {
+            matches!(
+                s.execution_backend,
+                proto::ExecutionBackend::LocalClaudeCli | proto::ExecutionBackend::ClaudeCliAgent
+            )
+        }) else {
             return false;
         };
         match &p.request {
@@ -533,7 +549,11 @@ impl Live {
             }
             (R::SessionStatus { session }, Reply::LocalCliSession(v))
                 if session.0 == v.summary.id
-                    && v.summary.execution_backend == proto::ExecutionBackend::LocalClaudeCli =>
+                    && matches!(
+                        v.summary.execution_backend,
+                        proto::ExecutionBackend::LocalClaudeCli
+                            | proto::ExecutionBackend::ClaudeCliAgent
+                    ) =>
             {
                 Ok(E::SessionStatus(core::LocalCliSessionView {
                     session: session.clone(),
@@ -557,7 +577,10 @@ impl Live {
         summary: proto::SessionSummary,
     ) -> Result<core::LocalCliCreated, CallError> {
         if summary.id != identity.session.0
-            || summary.execution_backend != proto::ExecutionBackend::LocalClaudeCli
+            || !matches!(
+                summary.execution_backend,
+                proto::ExecutionBackend::LocalClaudeCli | proto::ExecutionBackend::ClaudeCliAgent
+            )
         {
             return Err(CallError::Refused(proto::ProtoError::new(
                 ErrorCode::Conflict,
@@ -573,10 +596,12 @@ impl Live {
             .ok_or_else(|| {
                 CallError::Lost("Created identity is not present in the catalog.".into())
             })?;
-        if self
-            .session_of(conversation)
-            .is_none_or(|s| s.execution_backend != proto::ExecutionBackend::LocalClaudeCli)
-        {
+        if self.session_of(conversation).is_none_or(|s| {
+            !matches!(
+                s.execution_backend,
+                proto::ExecutionBackend::LocalClaudeCli | proto::ExecutionBackend::ClaudeCliAgent
+            )
+        }) {
             return Err(CallError::Refused(proto::ProtoError::new(
                 ErrorCode::Conflict,
                 "Catalog execution identity conflicts with creation.",

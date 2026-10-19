@@ -26,7 +26,7 @@ fn fake(f: &Fixture, behavior: &str) -> FakeCli {
     let script = format!(
         "#!/bin/sh\ncase \"$1\" in\n--version) printf '%s\\n' '2.1.299 (Claude Code)'; exit ;;\n--help) printf '%s' '{help}'; exit ;;\nesac\nfor arg in \"$@\"; do\nif [ \"$arg\" = '--print' ]; then\nprintf '%s\\0' \"$@\" > fake-args\nprintf 'launch\\n' >> launches\nexport PIPKIN_CODING_FIXTURE=1\nexec '{image}' --exact runtime::external_tests::coding::coding_fixture_child --nocapture 3>&1 1>&2\nfi\ndone\nprintf '%s\\n' '{auth}'\n"
     );
-    std::fs::write(&cli.executable, script).unwrap();
+    crate::execution::claude_cli::test_support::write_script(&cli.executable, script).unwrap();
     std::fs::write(f.project.join("behavior"), behavior).unwrap();
     cli
 }

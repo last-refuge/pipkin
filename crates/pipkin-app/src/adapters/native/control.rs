@@ -74,7 +74,7 @@ struct Stop {
 enum Work {
     Stop(Stop),
     Revoke {
-        job: super::local_cli::Job,
+        job: Box<super::local_cli::Job>,
         notify: bool,
     },
 }
@@ -254,9 +254,12 @@ impl Control {
             .iter()
             .filter_map(|(id, policy)| {
                 let policy = lock(policy);
-                (policy.summary.execution_backend
-                    == pipkin_engine_protocol::ExecutionBackend::LocalClaudeCli)
-                    .then(|| (*id, pipkin_core::EngineSessionId(policy.summary.id.clone())))
+                (matches!(
+                    policy.summary.execution_backend,
+                    pipkin_engine_protocol::ExecutionBackend::LocalClaudeCli
+                        | pipkin_engine_protocol::ExecutionBackend::ClaudeCliAgent
+                ))
+                .then(|| (*id, pipkin_core::EngineSessionId(policy.summary.id.clone())))
             })
             .collect()
     }
@@ -281,7 +284,10 @@ impl Control {
     }
 
     fn queue_revoke(&self, job: super::local_cli::Job, notify: bool) {
-        let work = Work::Revoke { job, notify };
+        let work = Work::Revoke {
+            job: Box::new(job),
+            notify,
+        };
         let result = match lock(&self.tx).as_ref() {
             Some(tx) => tx.try_send(work),
             None => Err(mpsc::TrySendError::Disconnected(work)),

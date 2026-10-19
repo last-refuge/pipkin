@@ -1,5 +1,5 @@
 //! Run-level execution identity, independent of model provider and history origin.
-//! Local CLI execution is deliberately unavailable during the storage-only rollout.
+//! CLI readiness is overlaid by the owning connection; wire identity alone grants nothing.
 
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +9,7 @@ pub enum ExecutionBackend {
     #[default]
     NativeAgent,
     LocalClaudeCli,
+    ClaudeCliAgent,
     /// Unknown wire identities must not silently select the native executor.
     #[serde(other)]
     Unsupported,
@@ -25,6 +26,7 @@ impl ExecutionBackend {
             Self::LocalClaudeCli => {
                 Some("Local Claude CLI execution is not enabled yet. History remains available.")
             }
+            Self::ClaudeCliAgent => Some("Connect Claude orchestration to use this conversation."),
             Self::Unsupported => {
                 Some("This execution backend is unsupported. History remains available.")
             }
@@ -73,6 +75,8 @@ pub enum ExternalActionState {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum LocalCliMode {
+    Orchestration,
+    Coding,
     #[default]
     ChatOnly,
     RestrictedWrite,
@@ -95,6 +99,9 @@ pub enum LocalCliSetupTarget {
     New {
         project: String,
         model: LocalCliModel,
+        /// Fixed requested effort; omission uses the CLI default.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thinking: Option<String>,
     },
     Existing {
         session: String,
@@ -150,6 +157,7 @@ mod tests {
             mode: LocalCliMode::ChatOnly,
             executable: "/opt/claude".into(),
             target: LocalCliSetupTarget::New {
+                thinking: None,
                 project: "/project".into(),
                 model: LocalCliModel::Sonnet,
             },

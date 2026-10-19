@@ -27,6 +27,7 @@ fn account_identity_is_hashed_without_retaining_status_payload_or_claiming_billi
 #[cfg(unix)]
 mod unix {
     use super::*;
+    use crate::execution::claude_cli::test_support::write_script;
     use std::{ffi::OsStr, os::unix::fs::PermissionsExt};
     struct Fixture {
         dir: tempfile::TempDir,
@@ -53,7 +54,7 @@ mod unix {
                 help,
                 auth
             );
-            std::fs::write(&exe, script).unwrap();
+            write_script(&exe, script).unwrap();
             std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o700)).unwrap();
             let env = [
                 ("HOME".into(), dir.path().as_os_str().to_owned()),
@@ -92,6 +93,168 @@ mod unix {
     }
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    async fn native_preflight_is_distinct_from_coding_and_cannot_use_generic_launch() {
+        let f = Fixture::good();
+        let extra = super::super::super::coding_policy::FLAGS
+            .iter()
+            .chain(super::super::super::orchestration_policy::FLAGS)
+            .map(|s| format!("{s} fixture"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let script = std::fs::read_to_string(&f.exe).unwrap().replace(
+            "--safe-mode fixture",
+            &format!("{extra}\n--safe-mode fixture"),
+        );
+        write_script(&f.exe, script).unwrap();
+        let coding = check_for_policy(f.request(), CancellationToken::new(), LaunchPolicy::Coding)
+            .await
+            .unwrap();
+        let native = check_orchestration(f.request(), CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(coding.orchestration_request().is_err());
+        assert!(native.orchestration_request().is_ok());
+        let uuid = "11111111-1111-4111-8111-111111111111";
+        let c = coding.checked_binding(uuid).unwrap();
+        let n = native.checked_binding(uuid).unwrap();
+        assert_ne!(c.launch_policy, n.launch_policy);
+        assert_ne!(c.config_ref, n.config_ref);
+        assert!(native.validate_binding(&c).is_err());
+        assert!(coding.validate_binding(&n).is_err());
+        assert!(
+            coding
+                .orchestration_create("s", "create", uuid, None)
+                .is_err()
+        );
+        let captured = native
+            .orchestration_create("s", "create", uuid, None)
+            .unwrap();
+        assert_eq!(captured.model, "sonnet");
+        assert_eq!(captured.identity, n);
+        assert!(
+            native
+                .launch_spec(&n, TurnMode::Fresh, "no native channel")
+                .is_err()
+        );
+        assert_eq!(f.calls(), 6);
+    }
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn native_hidden_system_file_flag_must_be_accepted_by_metadata_parser() {
+        for supported in [true, false] {
+            let f = Fixture::good();
+            let flags = super::super::super::orchestration_policy::FLAGS.join("\n");
+            assert!(!flags.contains("--system-prompt-file"));
+            let check = if supported {
+                r#"found=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --print|-p) exit 92 ;;
+    --system-prompt-file)
+      shift
+      [ -f "$1" ] || exit 93
+      [ "$(cat "$1")" = 'Metadata-only capability check; no inference.' ] || exit 94
+      found=1 ;;
+  esac
+  shift
+done
+[ "$found" = 1 ] || exit 95"#
+            } else {
+                "exit 96"
+            };
+            let script = format!(
+                "#!/bin/sh\ncase \"$1\" in\n--version) printf '2.1.301 (Claude Code)\\n' ;;\n--help) printf '%s\\n' '{flags}' ;;\n--mcp-config)\n{check}\nprintf '%s\\n' '{{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"apiProvider\":\"firstParty\",\"email\":\"fixture@example.invalid\",\"orgId\":\"fixture\"}}' ;;\n*) exit 99 ;;\nesac\n"
+            );
+            crate::execution::claude_cli::test_support::write_script(&f.exe, script).unwrap();
+            let result = check_orchestration(f.request(), CancellationToken::new()).await;
+            assert_eq!(result.is_ok(), supported);
+            if !supported {
+                assert_eq!(
+                    result.err(),
+                    Some(
+                        "CLI auth probe did not settle cleanly; use CLI terminal login if signed out"
+                    )
+                );
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn native_child_alias_changes_preserve_configuration_but_not_model_identity() {
+        let f = Fixture::good();
+        let extra = super::super::super::orchestration_policy::FLAGS
+            .iter()
+            .map(|s| format!("{s} fixture"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let script = std::fs::read_to_string(&f.exe).unwrap().replace(
+            "--safe-mode fixture",
+            &format!("{extra}\n--safe-mode fixture"),
+        );
+        write_script(&f.exe, script).unwrap();
+        let parent = check_orchestration(f.request(), CancellationToken::new())
+            .await
+            .unwrap();
+        let mut request = f.request();
+        request.model = ModelAlias::Haiku;
+        let child = check_orchestration(request, CancellationToken::new())
+            .await
+            .unwrap();
+        let p = parent
+            .orchestration_create(
+                "parent",
+                "p-create",
+                "11111111-1111-4111-8111-111111111111",
+                None,
+            )
+            .unwrap();
+        let c = child
+            .orchestration_create(
+                "child",
+                "c-create",
+                "22222222-2222-4222-8222-222222222222",
+                Some("parent".into()),
+            )
+            .unwrap();
+        assert_eq!(p.identity.config_ref, c.identity.config_ref);
+        assert_eq!(p.model, "sonnet");
+        assert_eq!(c.model, "haiku");
+        let store = crate::store::Store::memory().unwrap();
+        let p = store.create_cli_agent_session(&p, 1).unwrap().0;
+        let c = store.create_cli_agent_session(&c, 2).unwrap().0;
+        assert_ne!(p.digest, c.digest);
+        assert_eq!(c.root.as_deref(), Some("parent"));
+        assert_eq!(f.calls(), 6);
+    }
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn native_preflight_requires_its_flags_and_both_trust_decisions() {
+        let f = Fixture::good();
+        let mut request = f.request();
+        request.trust_project = false;
+        assert!(
+            check_orchestration(request, CancellationToken::new())
+                .await
+                .is_err()
+        );
+        assert_eq!(f.calls(), 0);
+        let mut request = f.request();
+        request.trust_executable = false;
+        assert!(
+            check_orchestration(request, CancellationToken::new())
+                .await
+                .is_err()
+        );
+        assert_eq!(f.calls(), 0);
+        assert!(
+            check_orchestration(f.request(), CancellationToken::new())
+                .await
+                .is_err()
+        );
+        assert_eq!(f.calls(), 2);
+    }
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
     async fn coding_binding_is_distinct_and_cannot_upgrade_a_chat_context() {
         use crate::execution::claude_cli::{
             permission_helper::HelperLaunch, permission_wire::Binding, write_policy::Hook,
@@ -101,7 +264,7 @@ mod unix {
             "--safe-mode fixture",
             "--settings fixture\n--safe-mode fixture",
         );
-        std::fs::write(&f.exe, script).unwrap();
+        write_script(&f.exe, script).unwrap();
         let chat = check(f.request(), CancellationToken::new()).await.unwrap();
         let coding = check_for_policy(
             f.request(),
@@ -238,7 +401,7 @@ mod unix {
                 "--safe-mode fixture",
                 "--safe-mode fixture\n--settings fixture",
             );
-            std::fs::write(&f.exe, script).unwrap();
+            write_script(&f.exe, script).unwrap();
             let prepared = check_for_policy(f.request(), CancellationToken::new(), launch_policy)
                 .await
                 .unwrap();
@@ -258,7 +421,7 @@ mod unix {
         let script = std::fs::read_to_string(&f.exe)
             .unwrap()
             .replace("--safe-mode fixture", "missing flag");
-        std::fs::write(&f.exe, script).unwrap();
+        write_script(&f.exe, script).unwrap();
         assert!(check(f.request(), CancellationToken::new()).await.is_err());
         assert_eq!(f.calls(), 2, "missing capabilities must stop before auth");
         let f = Fixture::new(
@@ -326,7 +489,7 @@ mod unix {
                 .is_err()
         );
         let request = f.request();
-        std::fs::write(&f.exe, "#!/bin/sh\nexit 99\n").unwrap();
+        write_script(&f.exe, "#!/bin/sh\nexit 99\n").unwrap();
         assert!(check(request, CancellationToken::new()).await.is_err());
         assert_eq!(f.calls(), 3);
     }

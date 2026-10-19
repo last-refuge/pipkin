@@ -516,9 +516,11 @@ fn an_event_gap_rereads_the_catalog_the_open_session_and_runs_in_doubt() {
     });
     run.backend.request(submit(c, 7, "r1"));
     run.until("accepted", |r| r.has(|k| *k == EventKind::Accepted));
-    fake.publish(Event::SessionsChanged);
+    // Sample before publishing: the adapter may consume the event immediately, so
+    // sampling afterward can mistake its completed refresh for the baseline.
     let lists = fake.count(|c| matches!(c, Call::ListSessions));
     let opens = fake.count(|c| matches!(c, Call::OpenSession { .. }));
+    fake.publish(Event::SessionsChanged);
     run.until("the in-order event is applied", |_| {
         fake.count(|c| matches!(c, Call::ListSessions)) > lists
     });

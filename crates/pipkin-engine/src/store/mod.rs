@@ -12,6 +12,10 @@
 //! No network, process or person is awaited while a transaction is open: callers prepare
 //! everything, then commit in one short transaction.
 
+pub mod cli_agent;
+pub(crate) mod cli_agent_children;
+pub mod cli_agent_turns;
+pub mod cli_bridge;
 pub mod compactions;
 pub mod diagnostics;
 mod external;
@@ -636,6 +640,7 @@ impl Store {
             execution_backend: match r.get::<_, String>("execution_backend")?.as_str() {
                 "nativeAgent" => ExecutionBackend::NativeAgent,
                 "localClaudeCli" => ExecutionBackend::LocalClaudeCli,
+                "claudeCliAgent" => ExecutionBackend::ClaudeCliAgent,
                 _ => ExecutionBackend::Unsupported,
             },
             model: r.get("model")?,

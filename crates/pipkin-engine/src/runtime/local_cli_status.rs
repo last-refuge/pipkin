@@ -8,6 +8,19 @@ impl Shared {
     /// publication/registry locks; this read-only hint never substitutes for admission.
     pub(super) fn filter_local_cli_readiness(&self, owner: u64, reply: &mut Reply) {
         let filter = |summary: &mut SessionSummary| {
+            if summary.execution_backend == ExecutionBackend::ClaudeCliAgent {
+                if self.local_cli_execution_enabled(LocalCliMode::Orchestration)
+                    && self.cli_agents.approved(&self.store, owner, &summary.id)
+                {
+                    summary.blocked = self
+                        .store
+                        .session(&summary.id)
+                        .ok()
+                        .flatten()
+                        .and_then(|r| r.blocked);
+                }
+                return;
+            }
             if summary.execution_backend == ExecutionBackend::LocalClaudeCli
                 && summary.blocked.is_none()
                 && !self.local_cli_setups.owns_grant(owner, &summary.id)
@@ -35,6 +48,17 @@ impl Shared {
         session: &str,
         setup: &str,
     ) -> Result<Reply, ProtoError> {
+        if let Some(binding) = self.store.cli_agent_binding(session)? {
+            return Ok(Reply::LocalCliCreation {
+                summary: if binding.create.request_key == setup {
+                    self.store
+                        .session(session)?
+                        .map(|row| self.execution_summary(&row))
+                } else {
+                    None
+                },
+            });
+        }
         Ok(Reply::LocalCliCreation {
             summary: self
                 .store
@@ -48,8 +72,10 @@ impl Shared {
             .store
             .session(session)?
             .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "Session does not exist"))?;
-        if row.execution_backend != ExecutionBackend::LocalClaudeCli
-            || row.parent.is_some()
+        if !matches!(
+            row.execution_backend,
+            ExecutionBackend::LocalClaudeCli | ExecutionBackend::ClaudeCliAgent
+        ) || row.parent.is_some()
             || row.root.is_some()
         {
             return Err(ProtoError::new(
@@ -58,8 +84,7 @@ impl Shared {
             ));
         }
         let binding = self
-            .store
-            .cli_binding(session)?
+            .setup_cli_binding(session)?
             .ok_or_else(|| ProtoError::new(ErrorCode::Conflict, "CLI binding is unavailable"))?;
         let model = match row.model.as_deref() {
             Some("haiku") => Some(LocalCliModel::Haiku),

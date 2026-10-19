@@ -41,7 +41,12 @@ impl AppState {
                 rows.push(ProviderModelChoice {
                     selection: ProviderModel::ClaudeCli(model),
                     name: format!("Claude Code CLI · {name}"),
-                    detail: if self.local_cli.available { "CLI login · fixed model · chat or approved Write only; connection review in Settings" } else { "CLI provider unavailable on this engine; no fallback" }.into(),
+                    detail: if self.local_cli.available {
+                        "CLI login · choose Claude Coding or Pipkin orchestration during setup"
+                    } else {
+                        "CLI provider unavailable on this engine; no fallback"
+                    }
+                    .into(),
                 });
             }
         }
@@ -64,6 +69,56 @@ impl AppState {
                     None
                 }
             })
+    }
+
+    /// The picker selects the current coding route, not a historical chat/Write binding
+    /// that happens to have the same alias. Never rewrite that historical identity.
+    pub fn provider_selection_matches(&self, model: &ProviderModel) -> bool {
+        self.selected_provider_model().as_ref() == Some(model)
+            && (!matches!(model, ProviderModel::ClaudeCli(_))
+                || matches!(
+                    self.current_execution_profile(),
+                    Some(ExecutionProfile::LocalCliCoding | ExecutionProfile::ClaudeCliAgent)
+                ))
+    }
+
+    /// A visible, explicit path out of a legacy binding, without rewriting or replaying it.
+    pub fn legacy_cli_coding_choice(&self) -> Option<ProviderModel> {
+        let model = self.selected_provider_model()?;
+        (matches!(model, ProviderModel::ClaudeCli(_))
+            && matches!(
+                self.current_execution_profile(),
+                Some(
+                    ExecutionProfile::LocalCliChatOnly | ExecutionProfile::LocalCliRestrictedWrite
+                )
+            )
+            && self
+                .current()
+                .is_some_and(|c| !self.provider_selection_pending(c.id)))
+        .then_some(model)
+    }
+
+    /// Actual conversation identity for the composer/settings, including legacy limitations.
+    pub fn selected_provider_label(&self) -> Option<String> {
+        let selection = self.selected_provider_model()?;
+        let mut label = self
+            .provider_models()
+            .into_iter()
+            .find(|m| m.selection == selection)?
+            .name;
+        if matches!(selection, ProviderModel::ClaudeCli(_)) {
+            match self.current_execution_profile() {
+                Some(ExecutionProfile::ClaudeCliAgent) => label.push_str(" · Pipkin orchestration"),
+                Some(ExecutionProfile::LocalCliChatOnly) => {
+                    label.push_str(" · legacy chat, no tools")
+                }
+                Some(ExecutionProfile::LocalCliRestrictedWrite) => {
+                    label.push_str(" · legacy Write only")
+                }
+                _ => {}
+            }
+        }
+        Some(label)
     }
 
     /// New follows this conversation's model (or its explicit pending change), not another
@@ -107,12 +162,10 @@ impl AppState {
     ) -> Option<(ConversationId, ProviderModel)> {
         let id = self.selected?;
         // Ordinary New with the same model must not stop an already submitted source prompt.
-        if self.selected_provider_model().as_ref() == Some(&model)
-            && !self.provider_selection_pending(id)
-        {
+        if self.provider_selection_matches(&model) && !self.provider_selection_pending(id) {
             return None;
         }
-        if self.selected_provider_model().as_ref() != Some(&model)
+        if !self.provider_selection_matches(&model)
             && let Some(intent) = self
                 .conversations
                 .iter_mut()
@@ -201,7 +254,7 @@ impl AppState {
             out.notes.push(Note::Other);
             return out;
         }
-        if self.selected_provider_model().as_ref() == Some(&model) {
+        if self.provider_selection_matches(&model) {
             out.merge(self.dispatch(Command::KeepConversationProvider));
             return out;
         }

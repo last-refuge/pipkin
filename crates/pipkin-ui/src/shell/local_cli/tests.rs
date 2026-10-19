@@ -20,6 +20,7 @@ fn state() -> AppState {
 }
 fn draft() -> LocalCliDraft {
     LocalCliDraft {
+        thinking: None,
         mode: CliMode::ChatOnly,
         executable: "/explicit/claude".into(),
         project: "/explicit/project".into(),
@@ -31,6 +32,7 @@ fn ticket() -> LocalCliSetupView {
         mode: CliMode::ChatOnly,
         setup: SetupId("ui-test".into()),
         target: LocalCliInspectTarget::New {
+            thinking: None,
             project: draft().project,
             model: CliModel::Sonnet,
         },
@@ -111,6 +113,14 @@ fn composer_model_is_authoritative_not_the_requested_connection() {
             ExecutionProfile::LocalCliChatOnly,
             ProviderModel::ClaudeCli(CliModel::Haiku),
         ),
+        (
+            ExecutionProfile::LocalCliRestrictedWrite,
+            ProviderModel::ClaudeCli(CliModel::Opus),
+        ),
+        (
+            ExecutionProfile::LocalCliCoding,
+            ProviderModel::ClaudeCli(CliModel::Sonnet),
+        ),
     ] {
         s.apply_event(BackendEvent {
             conversation: ConversationId(1),
@@ -127,7 +137,19 @@ fn composer_model_is_authoritative_not_the_requested_connection() {
             op: None,
             kind: EventKind::ConversationModel(Some(expected.clone())),
         });
-        assert_eq!(s.selected_provider_model(), Some(expected));
+        assert_eq!(s.selected_provider_model(), Some(expected.clone()));
+        let legacy = matches!(
+            profile,
+            ExecutionProfile::LocalCliChatOnly | ExecutionProfile::LocalCliRestrictedWrite
+        );
+        assert_eq!(s.provider_selection_matches(&expected), !legacy);
+        assert_eq!(s.legacy_cli_coding_choice().is_some(), legacy);
+        if matches!(expected, ProviderModel::ClaudeCli(_)) {
+            assert_eq!(
+                s.selected_provider_label().unwrap().contains("legacy"),
+                legacy
+            );
+        }
     }
 }
 
@@ -157,7 +179,8 @@ fn availability_labels_and_demo_marker_are_honest() {
         || c.title == REAPPROVE_LABEL
         || c.title == "Resume Local CLI setup…"));
     assert!(BILLING.contains("unverified") && BILLING.contains("already-enabled extra usage"));
-    assert!(LEASE.contains("five minutes after Inspect"));
+    assert!(LEASE.contains("Setup expires five minutes after Inspect"));
+    assert!(LEASE.contains("not the setup deadline") && LEASE.contains("Each Write"));
     assert!(LEASE.contains("stops active work") && LEASE.contains("fresh conversation"));
 }
 
@@ -530,6 +553,7 @@ fn core_capabilities_gate_picker_shortcuts_attachments_and_cli_labels(cx: &mut T
     cx.run_until_parked();
     for profile in [
         ExecutionProfile::NativeAgent,
+        ExecutionProfile::ClaudeCliAgent,
         ExecutionProfile::LocalCliChatOnly,
         ExecutionProfile::LocalCliRestrictedWrite,
         ExecutionProfile::Unsupported,
@@ -555,12 +579,19 @@ fn core_capabilities_gate_picker_shortcuts_attachments_and_cli_labels(cx: &mut T
                 caps.model_settings,
                 profile == ExecutionProfile::NativeAgent
             );
-            assert_eq!(caps.attachments, profile == ExecutionProfile::NativeAgent);
+            assert_eq!(
+                caps.attachments,
+                matches!(
+                    profile,
+                    ExecutionProfile::NativeAgent | ExecutionProfile::ClaudeCliAgent
+                )
+            );
             let expected = match profile {
                 ExecutionProfile::NativeAgent => None,
-                ExecutionProfile::LocalCliChatOnly | ExecutionProfile::LocalCliRestrictedWrite => {
-                    Some("Claude CLI · fixed model")
-                }
+                ExecutionProfile::ClaudeCliAgent
+                | ExecutionProfile::LocalCliCoding
+                | ExecutionProfile::LocalCliChatOnly
+                | ExecutionProfile::LocalCliRestrictedWrite => Some("Claude CLI · fixed model"),
                 ExecutionProfile::Unsupported => Some("Model settings unsupported"),
             };
             assert_eq!(restricted_model_label(w.state(cx)), expected);
@@ -620,7 +651,7 @@ fn cli_trust_keyboard_press_and_release_toggle_exactly_once(cx: &mut TestAppCont
         w.open_overlay(Overlay::LocalCli, window, cx)
     });
     cx.run_until_parked();
-    cx.simulate_keystrokes("tab tab tab tab tab tab tab tab space");
+    cx.simulate_keystrokes("tab tab tab tab tab tab space");
     cx.run_until_parked();
     root.update(cx, |w, cx| assert!(w.state(cx).local_cli.trust_executable));
     cx.update(|window, cx| {
@@ -665,8 +696,8 @@ fn cli_request_keeps_a_neutral_focus_anchor_after_its_button_disables(cx: &mut T
     });
     cx.run_until_parked();
     effects.borrow_mut().clear();
-    // Executable -> project -> two modes -> three aliases -> diagnostics -> Inspect.
-    cx.simulate_keystrokes("tab tab tab tab tab tab tab tab space");
+    // Executable -> project -> three aliases -> diagnostics -> Inspect; no mode selector.
+    cx.simulate_keystrokes("tab tab tab tab tab tab space");
     cx.run_until_parked();
     root.update_in(cx, |w, window, cx| {
         assert!(!w.state(cx).local_cli_availability().inspect);

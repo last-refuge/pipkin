@@ -213,35 +213,62 @@ impl Workspace {
             panel = panel.child(models);
             let mut modes = div().flex().gap(px(8.)).child("Tools:");
             for (id, label, mode) in [
-                ("guided-chat", "Chat only", CliMode::ChatOnly),
                 (
-                    "guided-write",
-                    "Write with approval",
-                    CliMode::RestrictedWrite,
+                    "guided-orchestration",
+                    "Pipkin orchestration",
+                    CliMode::Orchestration,
                 ),
+                ("guided-coding", "Claude Code Coding", CliMode::Coding),
             ] {
                 let mut draft = s.draft.clone();
                 draft.mode = mode;
+                if mode != CliMode::Orchestration {
+                    draft.thinking = None;
+                }
                 modes = modes.child(
                     self.cli_button(id, label, a.edit, C::Configure(draft), cx)
                         .selected(s.draft.mode == mode),
                 );
             }
             panel = panel.child(modes);
+            if s.draft.mode == CliMode::Orchestration {
+                let mut efforts = div().flex().flex_wrap().gap(px(6.)).child("Effort:");
+                for (id, label, value) in [
+                    ("cli-effort-default", "Default", None),
+                    ("cli-effort-low", "Low", Some("low")),
+                    ("cli-effort-medium", "Medium", Some("medium")),
+                    ("cli-effort-high", "High", Some("high")),
+                    ("cli-effort-xhigh", "Extra high", Some("xhigh")),
+                    ("cli-effort-max", "Max", Some("max")),
+                ] {
+                    let mut draft = s.draft.clone();
+                    draft.thinking = value.map(str::to_owned);
+                    efforts = efforts.child(
+                        self.cli_button(id, label, a.edit, C::Configure(draft), cx)
+                            .selected(s.draft.thinking.as_deref() == value),
+                    );
+                }
+                panel = panel.child(efforts).child("Effort is fixed for this conversation. Claude may apply model or account limits.");
+            }
         }
-        panel = panel.child(if s.draft.mode == CliMode::RestrictedWrite { "Write only: each Write needs separate argument review. No Read, Edit, Bash or MCP; not a sandbox." } else { "Chat only: no file tools. Model and tools are fixed for this conversation." });
+        panel = panel.child(match s.draft.mode {
+            CliMode::Orchestration => "Claude uses Pipkin tools, goals, children and queues. Submitted tasks can read/edit files and run commands automatically. Stop does not undo effects.",
+            CliMode::Coding => "Claude Code runs its coding tools automatically, including file edits and shell commands. No per-tool approval dialogs. Not a sandbox; Stop does not undo changes.",
+            CliMode::RestrictedWrite => "Legacy Write-only conversation. New CLI conversations use automatic coding tools; this saved conversation keeps its original permissions.",
+            _ => "Legacy chat-only conversation. Use New for coding tools; saved conversation identity and history are unchanged.",
+        });
         panel = panel.child("Login and compatibility are checked only after your confirmation. Account allowance or already-enabled extra usage may apply.");
         match s.stage {
             LocalCliStage::AwaitingTrust => if let Some(ticket) = &s.ticket {
-                panel = panel.child("Confirm that you trust BOTH the executable and project shown above. This permits a login/version check and conversation setup—not a message or a Write.")
-                    .child(div().flex().justify_center().debug_selector(|| "claude-confirm".into()).child(self.cli_button("claude-connect","Trust these paths and connect",a.trust,C::ConfirmAndConnect { setup: ticket.setup.clone() },cx)));
+                panel = panel.child("Use the selected executable and project shown above. Connect this installed provider using its own login. Connection checks do not send a message; submitted coding tasks can read/edit files and run commands automatically.")
+                    .child(div().flex().justify_center().debug_selector(|| "claude-confirm".into()).child(self.cli_button("claude-connect","Connect Claude Code",a.trust,C::ConfirmAndConnect { setup: ticket.setup.clone() },cx)));
             },
             LocalCliStage::Inspecting => panel = panel.child("Resolving the selected paths…"),
             LocalCliStage::Checking => panel = panel.child("Checking Claude login and compatibility…"),
             LocalCliStage::Creating | LocalCliStage::Reconciling => panel = panel.child("Preparing your conversation… No message is being sent."),
             LocalCliStage::CheckUnknown => panel = panel.child("The check's outcome is unknown. Check its status; it will not be repeated automatically.").child(self.cli_button("guided-status","Check status",a.status,C::Status,cx)),
             LocalCliStage::CreateUnknown => panel = panel.child("Conversation creation is uncertain. Look up the original request before doing anything else.").child(self.cli_button("guided-lookup","Look up conversation",a.lookup_creation,C::LookupCreation,cx)),
-            LocalCliStage::Verified if s.provider_only => panel = panel.child("Provider verified. Close Settings and choose Claude Code CLI · Haiku, Sonnet or Opus in the normal model picker. Each new conversation still needs scoped path confirmation."),
+            LocalCliStage::Verified if s.provider_only => panel = panel.child("Provider verified. Close Settings and choose Claude Code CLI · Haiku, Sonnet or Opus in the normal model picker. New coding conversations connect automatically to this configured executable."),
             LocalCliStage::Verified => panel = panel.child(self.cli_button("guided-continue",if existing { "Return to conversation" } else { "Create conversation" },if existing { a.return_to_conversation } else { a.create },if existing { C::ReturnToConversation } else { C::Create },cx)),
             _ => {}
         }

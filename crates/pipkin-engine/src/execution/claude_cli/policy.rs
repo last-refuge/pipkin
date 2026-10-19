@@ -16,6 +16,7 @@ pub const VERSION_FAILURE: &str =
     "CLI version is below the supported minimum or malformed; no model request attempted";
 pub const POLICY_ID: &str = "safe-restricted-no-tools-v1";
 pub const MAX_PROMPT_BYTES: usize = 256 * 1024;
+pub const TURN_TIMEOUT: Duration = Duration::from_secs(180);
 pub type Environment = BTreeMap<OsString, OsString>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,6 +73,7 @@ pub fn launch_environment(source: &Environment) -> Result<Environment, &'static 
             || key.starts_with("CLAUDE_CODE_")
             // Broker bindings may only be injected by the owning run after preflight.
             || key.starts_with("PIPKIN_CLI_PERMISSION_")
+            || key.starts_with("PIPKIN_CLI_NATIVE_TOOL_")
             || matches!(
                 key,
                 "CLAUDECODE"
@@ -349,7 +351,7 @@ pub(super) fn turn_spec(
     spec.input = prompt.as_bytes().to_vec();
     spec.input.push(b'\n');
     spec.mode = OutputMode::Stream;
-    spec.timeout = Duration::from_secs(180);
+    spec.timeout = TURN_TIMEOUT;
     spec.max_stdout = 16 * 1024 * 1024;
     Ok(spec)
 }

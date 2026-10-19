@@ -16,7 +16,9 @@ pub const LOCAL_CLI_RECOVERY_CAPACITY: usize = 8;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CliMode {
+    Orchestration,
     #[default]
+    Coding,
     ChatOnly,
     RestrictedWrite,
     Unsupported,
@@ -41,6 +43,7 @@ pub struct LocalCliDraft {
     pub executable: String,
     pub project: String,
     pub model: CliModel,
+    pub thinking: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,6 +86,7 @@ pub enum LocalCliInspectTarget {
     New {
         project: String,
         model: CliModel,
+        thinking: Option<String>,
     },
     Existing {
         session: EngineSessionId,
@@ -660,6 +664,7 @@ impl AppState {
                         LocalCliInspectTarget::New {
                             project: d.project.clone(),
                             model: d.model,
+                            thinking: d.thinking.clone(),
                         }
                     }
                     Some(LocalCliTarget::Existing { session, .. }) => {
@@ -890,12 +895,18 @@ impl AppState {
         self.local_cli.error = None;
         let checked = matches!(&event, LocalCliEvent::Checked(_));
         let discovered = matches!(&event, LocalCliEvent::Discovered(_));
+        let inspected = matches!(&event, LocalCliEvent::Inspected(_));
         let hints = matches!(&event, LocalCliEvent::SessionStatus(_));
         match event {
             LocalCliEvent::Discovered(paths) => {
                 self.local_cli.discovering = false;
                 self.local_cli.candidates = paths;
-                if self.local_cli.candidates.len() == 1 {
+                if self.prefs.cli_provider_configured
+                    && let Some(saved) = &self.prefs.cli_executable
+                    && self.local_cli.candidates.contains(saved)
+                {
+                    self.local_cli.draft.executable = saved.clone();
+                } else if self.local_cli.candidates.len() == 1 {
                     self.local_cli.draft.executable = self.local_cli.candidates[0].clone();
                 }
             }
@@ -953,7 +964,7 @@ impl AppState {
             }
         }
         self.local_cli_expire();
-        self.advance_guided_cli(discovered, hints, checked, &mut out);
+        self.advance_guided_cli(discovered, inspected, hints, checked, &mut out);
         self.local_cli_reconcile_catalog(&mut out);
         out.notes.push(Note::Other);
         out
@@ -976,6 +987,7 @@ impl AppState {
                     Some(LocalCliTarget::New) => LocalCliInspectTarget::New {
                         project: s.draft.project.clone(),
                         model: s.draft.model,
+                        thinking: s.draft.thinking.clone(),
                     },
                     Some(LocalCliTarget::Existing { session, .. }) => {
                         LocalCliInspectTarget::Existing {

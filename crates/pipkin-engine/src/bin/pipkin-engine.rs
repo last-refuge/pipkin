@@ -10,6 +10,11 @@ use std::path::PathBuf;
 
 fn main() {
     if let Some(code) =
+        pipkin_engine::execution::claude_cli::orchestration_helper::maybe_run_from_env()
+    {
+        std::process::exit(code);
+    }
+    if let Some(code) =
         pipkin_engine::execution::claude_cli::permission_helper::maybe_run_from_env()
     {
         std::process::exit(code);

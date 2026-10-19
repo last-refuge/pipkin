@@ -40,6 +40,33 @@ impl Shared {
     }
 
     pub(super) fn guard_execution_call(&self, call: &Call) -> Result<(), ProtoError> {
+        if let Call::AnswerQuestion {
+            session, question, ..
+        }
+        | Call::CancelQuestion { session, question } = call
+            && self.cli_question_allowed(session, question)
+        {
+            return Ok(());
+        }
+        if let Some(session) = native_execution_session(call)
+            && matches!(
+                call,
+                Call::McpServers { .. }
+                    | Call::McpUpsertServer { .. }
+                    | Call::McpRemoveServer { .. }
+                    | Call::McpSetDisabledTools { .. }
+                    | Call::McpTestServer { .. }
+                    | Call::McpReconnectServer { .. }
+                    | Call::McpAuthStart { .. }
+                    | Call::McpAuthRevoke { .. }
+                    | Call::McpImportPreview { .. }
+                    | Call::McpImportApply { .. }
+            )
+        {
+            // Explicit configuration management, never a model execution grant.
+            self.mcp_cwd(Some(session))?;
+            return Ok(());
+        }
         if let Some(session) = native_execution_session(call) {
             self.require_native_execution(session)?;
         }

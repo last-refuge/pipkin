@@ -21,6 +21,78 @@ fn spec(script: &str, cwd: &std::path::Path) -> Spec {
 }
 
 #[tokio::test]
+async fn async_observer_backpressures_a_slow_consumer_without_dropping_or_second_decoding() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = spec("cat", dir.path());
+    s.mode = OutputMode::Stream;
+    s.input = vec![b'x'; 64 * 1024];
+    let expected = s.input.clone();
+    let (tx, mut rx) = mpsc::channel::<Vec<u8>>(1);
+    let consume = async move {
+        let mut received = Vec::new();
+        while let Some(bytes) = rx.recv().await {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            assert!(bytes.len() <= MAX_OBSERVER_CHUNK_BYTES);
+            received.extend(bytes);
+        }
+        received
+    };
+    let run = run_observed_async(
+        s,
+        CancellationToken::new(),
+        None,
+        Box::new(move |bytes| {
+            let tx = tx.clone();
+            Box::pin(async move { tx.send(bytes).await.map_err(|_| "closed") })
+        }),
+    );
+    let (report, received) = tokio::join!(run, consume);
+    let report = report.unwrap();
+    assert!(report.clean_exit(), "{report:?}");
+    assert_eq!(received, expected);
+    assert!(report.captured.is_empty() && report.stream.is_none());
+}
+
+#[tokio::test]
+async fn async_observer_pressure_never_blocks_timeout_or_cancellation() {
+    for cancel_explicitly in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = spec("printf x; sleep 30", dir.path());
+        s.timeout = Duration::from_millis(100);
+        let cancel = CancellationToken::new();
+        let signaller = cancel.clone();
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let observed = entered.clone();
+        let run = run_observed_async(
+            s,
+            cancel,
+            None,
+            Box::new(move |_| {
+                observed.notify_one();
+                Box::pin(std::future::pending())
+            }),
+        );
+        let trigger = async move {
+            if cancel_explicitly {
+                entered.notified().await;
+                signaller.cancel();
+            }
+        };
+        let (report, ()) = tokio::join!(run, trigger);
+        let report = report.unwrap();
+        assert_eq!(
+            report.stop,
+            Some(if cancel_explicitly {
+                Stop::Cancelled
+            } else {
+                Stop::TimedOut
+            })
+        );
+        assert!(report.root_reaped && report.pipes_drained && !report.cleanup_timed_out);
+    }
+}
+
+#[tokio::test]
 async fn observer_delivers_only_stdout_in_bounded_chunks_and_caller_finishes_decoder() {
     let dir = tempfile::tempdir().unwrap();
     let id = "11111111-1111-4111-8111-111111111111";

@@ -1,5 +1,58 @@
 use super::*;
 
+#[test]
+fn configured_cli_model_connects_without_mode_selection_or_another_approval() {
+    let mut s = state();
+    s.prefs.cli_provider_configured = true;
+    s.prefs.cli_executable = Some("/bin/claude".into());
+    s.prefs.cli_mode = CliMode::ChatOnly; // legacy preference cannot select chat for new work
+    let discovery = call(cmd(&mut s, LocalCliCommand::BeginGuided));
+    assert_eq!(s.local_cli.draft.mode, CliMode::Coding);
+    let inspect = call(answer(
+        &mut s,
+        &discovery,
+        LocalCliEvent::Discovered(vec!["/other/claude".into(), "/bin/claude".into()]),
+    ));
+    let mut ticket = view(&inspect);
+    ticket.executable = "/bin/claude".into();
+    let check = call(answer(
+        &mut s,
+        &inspect,
+        LocalCliEvent::Inspected(ticket.clone()),
+    ));
+    assert!(matches!(
+        check.request,
+        LocalCliRequest::Check {
+            trust_executable: true,
+            trust_project: true,
+            ..
+        }
+    ));
+    ticket.stage = LocalCliMetadataStage::MetadataVerified;
+    let out = answer(&mut s, &check, LocalCliEvent::Checked(ticket));
+    assert!(
+        out.effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::JournalLocalCliCreation { .. }))
+    );
+}
+
+#[test]
+fn configured_cli_never_executes_a_newly_discovered_different_candidate() {
+    let mut s = state();
+    s.prefs.cli_provider_configured = true;
+    s.prefs.cli_executable = Some("/previous/claude".into());
+    let discovery = call(cmd(&mut s, LocalCliCommand::BeginGuided));
+    let inspect = call(answer(
+        &mut s,
+        &discovery,
+        LocalCliEvent::Discovered(vec!["/different/claude".into()]),
+    ));
+    let ticket = view(&inspect);
+    no_effect(answer(&mut s, &inspect, LocalCliEvent::Inspected(ticket)));
+    assert_eq!(s.local_cli.stage, LocalCliStage::AwaitingTrust);
+}
+
 fn guided_review(s: &mut AppState) -> LocalCliSetupView {
     let discovery = call(cmd(s, LocalCliCommand::BeginGuided));
     assert!(

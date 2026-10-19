@@ -712,3 +712,73 @@ fn failed_delayed_native_queue_intent_cannot_recreate_a_cli_queue() {
     assert!(s.current().unwrap().queue.is_empty());
     assert_eq!(s.current().unwrap().draft.text, "explicit text");
 }
+
+#[test]
+fn desktop_orchestration_keeps_native_inputs_and_fixed_cli_model_separate() {
+    let mut s = state();
+    context(&mut s, ExecutionProfile::ClaudeCliAgent, false);
+    event(
+        &mut s,
+        None,
+        EventKind::ConversationModel(Some(ProviderModel::ClaudeCli(CliModel::Sonnet))),
+    );
+    assert!(s.execution_capabilities().attachments);
+    assert!(!s.execution_capabilities().model_settings);
+    assert!(s.availability().submit);
+    let req = request(s.dispatch(Command::Submit));
+    let out = s.intent_persisted(A, &req, Ok(()));
+    assert!(out.effects.iter().any(|e| matches!(
+        e,
+        Effect::Backend(BackendRequest::Submit { model: None, .. })
+    )));
+    no_execution(&s.dispatch(Command::SetModel("native/other".into())));
+    no_execution(&s.dispatch(Command::SetThinkingLevel("high".into())));
+    context(&mut s, ExecutionProfile::ClaudeCliAgent, true);
+    assert!(!s.availability().submit);
+    assert_eq!(
+        s.current_execution_profile(),
+        Some(ExecutionProfile::ClaudeCliAgent)
+    );
+}
+
+#[test]
+fn desktop_orchestration_choice_retires_old_ticket_and_requires_explicit_confirmation() {
+    let mut s = state();
+    s.local_cli.available = true;
+    s.prefs.cli_provider_configured = true;
+    s.prefs.cli_mode = CliMode::Orchestration;
+    s.dispatch(Command::LocalCli(LocalCliCommand::BeginGuided));
+    assert_eq!(s.local_cli.draft.mode, CliMode::Orchestration);
+    assert!(!s.local_cli.trust_project);
+    assert!(!s.local_cli.trust_executable);
+    assert_eq!(
+        s.current_execution_profile(),
+        Some(ExecutionProfile::NativeAgent)
+    );
+}
+
+#[test]
+fn desktop_controls_enable_person_child_and_mcp_commands_only_for_orchestration() {
+    for profile in [
+        ExecutionProfile::ClaudeCliAgent,
+        ExecutionProfile::LocalCliCoding,
+    ] {
+        let mut s = state();
+        context(&mut s, profile, false);
+        let c = s.conversations.iter_mut().find(|c| c.id == A).unwrap();
+        c.opened = true;
+        c.subagents.enabled = Some(true);
+        let out = s.dispatch(Command::LaunchSubagent("person task".into()));
+        assert_eq!(
+            out.effects
+                .iter()
+                .any(|e| matches!(e, Effect::Backend(BackendRequest::LaunchSubagent { .. }))),
+            profile == ExecutionProfile::ClaudeCliAgent
+        );
+        let out = s.dispatch(Command::McpRefresh);
+        assert_eq!(
+            !out.effects.is_empty(),
+            profile == ExecutionProfile::ClaudeCliAgent
+        );
+    }
+}

@@ -30,6 +30,7 @@ fn fresh_setup_copies_only_hints_with_no_probe_create_prompt_or_context_transfer
     assert_eq!(
         s.local_cli.draft,
         LocalCliDraft {
+            thinking: None,
             mode: CliMode::ChatOnly,
             executable: "/private/executable".into(),
             project: "/private/project".into(),

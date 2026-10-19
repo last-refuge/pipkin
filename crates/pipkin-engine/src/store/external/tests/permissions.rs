@@ -419,6 +419,7 @@ fn completed_prompt_refuses_unresolved_authorizations_but_consumed_is_not_comple
                 &r.key.run,
                 2,
                 &Event::Terminal {
+                    metadata: None,
                     outcome: Outcome::Success,
                     usage: None,
                 },
@@ -551,13 +552,14 @@ fn schema23_backup_migration_preserves_external_identity_and_refuses_newer_schem
     let s = Store::open(dir.path()).unwrap();
     let r = fixture(&s, EXTERNAL_PERMISSION_POLICY);
     s.tx(|tx| {
-        tx.execute_batch("DROP TABLE external_projection_actions; DROP TABLE external_permissions; PRAGMA user_version=23;")?;
+        crate::store::cli_agent::remove_schema_for_test(tx)?;
+        tx.execute_batch("DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; DROP TABLE external_projection_actions; DROP TABLE external_permissions; PRAGMA user_version=23;")?;
         Ok(())
     })
     .unwrap();
     drop(s);
     let s = Store::open(dir.path()).unwrap();
-    assert_eq!(s.read(schema::version).unwrap(), 25);
+    assert_eq!(s.read(schema::version).unwrap(), SCHEMA_VERSION);
     let backup = Connection::open(dir.path().join("engine.sqlite.v23.bak")).unwrap();
     assert_eq!(schema::version(&backup).unwrap(), 23);
     assert!(
@@ -580,14 +582,14 @@ fn schema23_backup_migration_preserves_external_identity_and_refuses_newer_schem
     request(&s, &r);
     s.integrity_check().unwrap();
     s.tx(|tx| {
-        tx.execute_batch("PRAGMA user_version=26")?;
+        tx.execute_batch(&format!("PRAGMA user_version={}", SCHEMA_VERSION + 1))?;
         Ok(())
     })
     .unwrap();
     drop(s);
     assert!(matches!(
         Store::open(dir.path()),
-        Err(StoreError::NewerSchema(26))
+        Err(StoreError::NewerSchema(v)) if v == SCHEMA_VERSION + 1
     ));
 }
 

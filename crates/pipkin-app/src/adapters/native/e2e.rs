@@ -59,10 +59,6 @@ struct Faults {
     /// Sever the link instead of delivering the next steer or follow-up.
     drop_queue: AtomicBool,
     fired: AtomicUsize,
-    /// Reply ids to swallow.
-    swallow: Mutex<HashSet<u64>>,
-    /// Reply ids that sever the link when they arrive (instead of being delivered).
-    sever_on: Mutex<HashSet<u64>>,
     /// Nothing from the engine arrives while set, as when its writer thread has died: calls
     /// go in and are executed, but no reply or event ever comes back.
     mute: AtomicBool,
@@ -70,8 +66,17 @@ struct Faults {
     links: AtomicUsize,
 }
 
+/// Request IDs are connection-local. Abandoned replies cannot fault a later connection
+/// that reuses the same ID, even when the engine and fault counters outlive the client.
+#[derive(Default)]
+struct ReplyFaults {
+    swallow: Mutex<HashSet<u64>>,
+    sever_on: Mutex<HashSet<u64>>,
+}
+
 struct FaultSender {
     inner: pipkin_engine::host::Sender,
+    replies: Arc<ReplyFaults>,
     faults: Arc<Faults>,
     /// This link was cut (shared with its receiver).
     severed: Arc<AtomicBool>,
@@ -89,7 +94,7 @@ impl FrameSender for FaultSender {
             }
             if self.faults.drop_prompt_reply.swap(false, Ordering::SeqCst) {
                 self.faults.fired.fetch_add(1, Ordering::SeqCst);
-                self.faults.swallow.lock().unwrap().insert(frame.id);
+                self.replies.swallow.lock().unwrap().insert(frame.id);
             }
         }
         if matches!(frame.call, Call::CreateLocalCliSession { .. }) {
@@ -99,7 +104,7 @@ impl FrameSender for FaultSender {
                 .drop_creation_reply
                 .swap(false, Ordering::SeqCst)
             {
-                self.faults.swallow.lock().unwrap().insert(frame.id);
+                self.replies.swallow.lock().unwrap().insert(frame.id);
             }
         }
         if matches!(frame.call, Call::LookupLocalCliCreation { .. }) {
@@ -118,7 +123,7 @@ impl FrameSender for FaultSender {
                 .swap(false, Ordering::SeqCst)
             {
                 self.faults.fired.fetch_add(1, Ordering::SeqCst);
-                self.faults.swallow.lock().unwrap().insert(frame.id);
+                self.replies.swallow.lock().unwrap().insert(frame.id);
             }
         }
         if matches!(frame.call, Call::Stop { .. })
@@ -135,7 +140,7 @@ impl FrameSender for FaultSender {
             }
             if self.faults.drop_queue_reply.swap(false, Ordering::SeqCst) {
                 self.faults.fired.fetch_add(1, Ordering::SeqCst);
-                self.faults.sever_on.lock().unwrap().insert(frame.id);
+                self.replies.sever_on.lock().unwrap().insert(frame.id);
             }
         }
         self.inner.send(frame)
@@ -144,6 +149,7 @@ impl FrameSender for FaultSender {
 
 struct FaultReceiver {
     inner: pipkin_engine::delivery::Receiver,
+    replies: Arc<ReplyFaults>,
     faults: Arc<Faults>,
     severed: Arc<AtomicBool>,
 }
@@ -189,10 +195,10 @@ impl FrameReceiver for FaultReceiver {
                 });
             }
             if let ServerFrame::Reply { id, .. } = &frame {
-                if self.faults.swallow.lock().unwrap().remove(id) {
+                if self.replies.swallow.lock().unwrap().remove(id) {
                     continue;
                 }
-                if self.faults.sever_on.lock().unwrap().remove(id) {
+                if self.replies.sever_on.lock().unwrap().remove(id) {
                     self.severed.store(true, Ordering::SeqCst);
                     return Err("the link was cut".into());
                 }
@@ -339,14 +345,17 @@ impl Fixture {
             let (sender, receiver) = handle.connect("e2e").split();
             faults.links.fetch_add(1, Ordering::SeqCst);
             let severed = Arc::new(AtomicBool::new(false));
+            let replies = Arc::new(ReplyFaults::default());
             Ok(Link {
                 sender: Box::new(FaultSender {
                     inner: sender,
+                    replies: replies.clone(),
                     faults: faults.clone(),
                     severed: severed.clone(),
                 }),
                 receiver: Box::new(FaultReceiver {
                     inner: receiver,
+                    replies,
                     faults: faults.clone(),
                     severed,
                 }),
@@ -380,6 +389,67 @@ impl Drop for Fixture {
             engine.shutdown(Duration::from_secs(5));
         }
     }
+}
+
+#[test]
+fn abandoned_fault_link_cannot_swallow_a_new_connections_same_reply_id() {
+    let fx = Fixture::start(|_, _| panic!("no inference"));
+    let HostSpec::Fake(connect) = fx.host() else {
+        panic!("fault link")
+    };
+    let mut old = connect().unwrap();
+    fx.faults.drop_creation_reply.store(true, Ordering::SeqCst);
+    let call = Call::CreateLocalCliSession {
+        session: "never-created".into(),
+        setup: "invalid-ticket".into(),
+    };
+    old.sender
+        .send(ClientFrame {
+            id: 42,
+            lane: call.lane(),
+            call,
+        })
+        .unwrap();
+    // Deliberately abandon the old receiver before it can consume its swallowed reply.
+    drop(old);
+    let mut new = connect().unwrap();
+    let call = Call::Hello {
+        protocol: pipkin_engine_protocol::PROTOCOL_VERSION,
+        client: "new-link".into(),
+    };
+    new.sender
+        .send(ClientFrame {
+            id: 42,
+            lane: call.lane(),
+            call,
+        })
+        .unwrap();
+    let (tx, rx) = mpsc::channel();
+    let waiter = thread::spawn(move || {
+        let response = loop {
+            match new.receiver.recv() {
+                Ok(ServerFrame::Event { .. }) => continue,
+                response => break response,
+            }
+        };
+        let _ = tx.send(response);
+    });
+    let result = rx.recv_timeout(Duration::from_secs(5));
+    // Always stop/join, including the intentionally reproducible timeout on the broken link.
+    fx.engine().shutdown(Duration::from_secs(5));
+    waiter.join().unwrap();
+    assert!(
+        matches!(
+            result,
+            Ok(Ok(ServerFrame::Reply {
+                id: 42,
+                result: Ok(pipkin_engine_protocol::Reply::Welcome(_))
+            }))
+        ),
+        "new connection's response was swallowed: {result:?}"
+    );
+    assert_eq!(fx.faults.creations.load(Ordering::SeqCst), 1);
+    assert!(fx.requests().is_empty());
 }
 
 #[test]
@@ -426,6 +496,7 @@ struct Harness {
     copied: Vec<String>,
     launches: Vec<pipkin_core::Launch>,
     imports: Arc<Mutex<VecDeque<ImportResult>>>,
+    drop_goal_start_receipts: bool,
 }
 
 fn unique(prefix: &str) -> String {
@@ -503,6 +574,7 @@ impl Harness {
             copied: vec![],
             launches: vec![],
             imports: Arc::default(),
+            drop_goal_start_receipts: false,
         };
         let mut out = h.restore.apply(&mut h.state);
         out.merge(h.state.select_initial());
@@ -721,7 +793,16 @@ impl Harness {
             self.exec(outcome);
         }
         while let Ok(mut lease) = self.events.try_recv() {
-            let outcome = self.state.apply_event(lease.take());
+            let event = lease.take();
+            if self.drop_goal_start_receipts
+                && matches!(
+                    event.kind,
+                    pipkin_core::EventKind::GoalStartConfirmed { .. }
+                )
+            {
+                continue;
+            }
+            let outcome = self.state.apply_event(event);
             self.exec(outcome);
         }
         while let Ok((conversation, request, result)) = self.acks.try_recv() {
@@ -3338,6 +3419,79 @@ fn an_engine_owned_goal_runs_to_completion_without_the_desktop_runner() {
     h.until("archived", |s| {
         s.current().is_some_and(|c| c.goal.is_none())
     });
+    h.stop();
+}
+
+#[test]
+fn an_unconfirmed_goal_start_is_refreshed_before_resume_without_replaying_work() {
+    let fx = Fixture::start(|_, n| {
+        Reply::Text(if n == 0 {
+            "no decision".into()
+        } else {
+            "done\n[PIPKIN_GOAL_MET]".into()
+        })
+    });
+    let db = fx.root.join("app.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    h.until("engine goal ownership", |s| {
+        s.current().is_some_and(|c| c.goal_native)
+    });
+    h.drop_goal_start_receipts = true;
+    h.dispatch(Command::SetGoal(
+        "resume after an unconfirmed receipt".into(),
+    ));
+    h.until("paused goal with a lost start receipt", |s| {
+        is_idle(s)
+            && s.current().is_some_and(|c| {
+                c.goal_start_unconfirmed()
+                    && c.goal
+                        .as_ref()
+                        .is_some_and(|g| g.state == Some(pipkin_core::GoalState::Paused))
+            })
+    });
+    let id = h.state.current().unwrap().id;
+    let generation = h.state.current().unwrap().generation;
+    h.dispatch(Command::EditDraft("keep my draft".into()));
+    h.dispatch(Command::FlushDraft(id));
+    // The formerly dead button only reads current state. The person must then choose Resume.
+    h.dispatch(Command::ResumeGoal);
+    h.until("fresh status cleared the receipt fence", |s| {
+        s.current().is_some_and(|c| {
+            c.id == id
+                && c.generation > generation
+                && !c.goal_start_unconfirmed()
+                && s.close_conversation_reason(id).is_none()
+        })
+    });
+    assert_eq!(
+        fx.requests().len(),
+        1,
+        "status refresh must not execute another prompt"
+    );
+    assert_eq!(
+        h.state.current().unwrap().goal.as_ref().unwrap().state,
+        Some(pipkin_core::GoalState::Paused)
+    );
+    assert_eq!(h.state.current().unwrap().draft.text, "keep my draft");
+    h.drop_goal_start_receipts = false;
+    h.dispatch(Command::ResumeGoal);
+    h.until("explicit resume completed", |s| {
+        is_idle(s)
+            && s.current().is_some_and(|c| {
+                !c.goal_start_unconfirmed()
+                    && c.goal
+                        .as_ref()
+                        .is_some_and(|g| g.state == Some(pipkin_core::GoalState::Completed))
+            })
+    });
+    assert_eq!(
+        fx.requests().len(),
+        2,
+        "only the new explicit Resume executes the next turn"
+    );
+    assert_eq!(h.state.current().unwrap().id, id);
+    assert_eq!(h.state.current().unwrap().draft.text, "keep my draft");
     h.stop();
 }
 

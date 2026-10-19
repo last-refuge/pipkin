@@ -48,6 +48,9 @@ impl Shared {
             }
         };
         if let Some((group, permit, members)) = work {
+            for session in &members {
+                self.cli_agents.revoke_session(session);
+            }
             super::faults::crash_point("removal_intent");
             let shared = self.clone();
             let root = root.to_owned();
@@ -99,10 +102,11 @@ impl Shared {
                 // Registry plus this cleanup job are the only permitted owners. Requests,
                 // tools, runs, compactions and waiters each retain their own demand Arc.
                 let idle = members.iter().all(|id| {
-                    sessions
-                        .retiring
-                        .get(id)
-                        .is_none_or(|done| done.is_cancelled())
+                    !self.cli_agents.has_turn(id)
+                        && sessions
+                            .retiring
+                            .get(id)
+                            .is_none_or(|done| done.is_cancelled())
                 }) && group.iter().all(|s| {
                     let registered = sessions
                         .live

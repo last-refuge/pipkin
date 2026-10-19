@@ -296,7 +296,7 @@ struct Handler {
     prompts_dirty: Arc<AtomicBool>,
     /// Sessions with a call in flight on this server (with the call's cancellation), oldest
     /// first; a server's request for input goes to the most recent caller.
-    callers: Arc<Mutex<Vec<(String, CancellationToken)>>>,
+    callers: Callers,
     elicitor: Option<Arc<dyn Elicitor>>,
 }
 
@@ -345,16 +345,23 @@ impl ClientHandler for Handler {
         request: ElicitRequestParams,
         _context: rmcp::service::RequestContext<RoleClient>,
     ) -> impl std::future::Future<Output = Result<ElicitResult, rmcp::ErrorData>> + Send + '_ {
-        let caller = self
-            .callers
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .last()
-            .cloned();
+        let caller = {
+            let callers = self.callers.lock().unwrap_or_else(|e| e.into_inner());
+            // The protocol supplies no proven originating invocation here. Never lend a
+            // scoped native grant to an ambiguous concurrent request on this transport.
+            if callers.len() > 1 && callers.iter().any(|c| c.elicitor.is_some()) {
+                None
+            } else {
+                callers.last().cloned()
+            }
+        };
         let elicitor = self.elicitor.clone();
         let server = self.server.clone();
         Box::pin(async move {
-            let (Some((session, cancel)), Some(elicitor)) = (caller, elicitor) else {
+            let Some(caller) = caller else {
+                return Ok(ElicitResult::new(ElicitationAction::Decline));
+            };
+            let Some(elicitor) = caller.elicitor.clone().or(elicitor) else {
                 return Ok(ElicitResult::new(ElicitationAction::Decline));
             };
             match request {
@@ -365,7 +372,13 @@ impl ClientHandler for Handler {
                 } => {
                     let schema = serde_json::to_value(&requested_schema).unwrap_or(Value::Null);
                     let outcome = elicitor
-                        .elicit(&session, &server, &message, schema, cancel)
+                        .elicit(
+                            &caller.session,
+                            &server,
+                            &message,
+                            schema,
+                            caller.cancel.clone(),
+                        )
                         .await;
                     let action = match outcome.action.as_str() {
                         "accept" => ElicitationAction::Accept,
@@ -386,7 +399,44 @@ impl ClientHandler for Handler {
 }
 
 /// Sessions with a call in flight on a server, with each call's cancellation.
-type Callers = Arc<Mutex<Vec<(String, CancellationToken)>>>;
+struct Caller {
+    session: String,
+    cancel: CancellationToken,
+    elicitor: Option<Arc<dyn Elicitor>>,
+}
+type Callers = Arc<Mutex<Vec<Arc<Caller>>>>;
+
+// Removal must match this invocation, not the last call with the same session name.
+// Drop also runs when an owning native worker is aborted, and withdraws late elicitation.
+struct ActiveCall<'a> {
+    service: &'a McpService,
+    server: String,
+    client: Arc<Client>,
+    callers: Option<Callers>,
+    caller: Arc<Caller>,
+}
+impl Drop for ActiveCall<'_> {
+    fn drop(&mut self) {
+        self.caller.cancel.cancel();
+        if let Some(callers) = &self.callers {
+            callers
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .retain(|c| !Arc::ptr_eq(c, &self.caller));
+        }
+        let mut servers = self
+            .service
+            .servers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = servers.get_mut(&self.server)
+            && matches!(&entry.state, State::Ready {client, ..} if Arc::ptr_eq(client, &self.client))
+        {
+            entry.in_flight = entry.in_flight.saturating_sub(1);
+            entry.last_used = Instant::now();
+        }
+    }
+}
 
 type Client = RunningService<RoleClient, Handler>;
 
@@ -410,7 +460,7 @@ enum State {
         dirty: Arc<AtomicBool>,
         resources_dirty: Arc<AtomicBool>,
         prompts_dirty: Arc<AtomicBool>,
-        callers: Arc<Mutex<Vec<(String, CancellationToken)>>>,
+        callers: Callers,
     },
     /// The server answered 401; the person must sign in.
     AuthRequired {
@@ -1290,6 +1340,19 @@ impl McpService {
         arguments: Value,
         cancel: CancellationToken,
     ) -> Result<CallOutcome, McpError> {
+        self.call_scoped(session, qualified, arguments, cancel, None)
+            .await
+    }
+
+    /// A caller-owned elicitation route. It is never installed as a global session grant.
+    pub(crate) async fn call_scoped(
+        &self,
+        session: &str,
+        qualified: &str,
+        arguments: Value,
+        cancel: CancellationToken,
+        elicitor: Option<Arc<dyn Elicitor>>,
+    ) -> Result<CallOutcome, McpError> {
         let tool = self.describe(qualified).await?;
         let arguments = match arguments {
             Value::Null => Value::Object(Map::new()),
@@ -1307,11 +1370,23 @@ impl McpService {
         let timeout_secs = self.config().call_timeout_secs;
         self.adjust_in_flight(&tool.server, 1);
         let callers = self.callers_of(&tool.server);
+        let caller = Arc::new(Caller {
+            session: session.to_owned(),
+            cancel: cancel.child_token(),
+            elicitor,
+        });
         if let Some(c) = &callers {
             c.lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .push((session.to_owned(), cancel.clone()));
+                .push(caller.clone());
         }
+        let active = ActiveCall {
+            service: self,
+            server: tool.server.clone(),
+            client: client.clone(),
+            callers,
+            caller,
+        };
         let request = CallToolRequestParams::new(tool.name.clone()).with_arguments(args);
         let call = client.call_tool(request);
         let result = tokio::select! {
@@ -1323,13 +1398,7 @@ impl McpService {
                 Err(_) => Err(McpError::Timeout { server: tool.server.clone(), tool: tool.name.clone(), secs: timeout_secs }),
             },
         };
-        self.adjust_in_flight(&tool.server, -1);
-        if let Some(c) = &callers {
-            let mut c = c.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(pos) = c.iter().rposition(|(s, _)| s == session) {
-                c.remove(pos);
-            }
-        }
+        drop(active);
         let result = result?;
         let server = tool.server.clone();
         let content = result

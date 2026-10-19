@@ -2,6 +2,16 @@
 //! execution, and client connections.
 
 mod ask;
+mod cli_agent_desktop;
+mod cli_agent_desktop_children;
+mod cli_agent_goals;
+mod cli_agent_host;
+mod cli_agent_inputs;
+mod cli_agent_owner;
+pub(crate) mod cli_agent_root;
+mod cli_agent_runtime;
+pub mod cli_bridge_channel;
+pub mod cli_bridge_driver;
 mod compaction;
 mod context_usage;
 pub mod diagnostics;
@@ -77,9 +87,15 @@ pub struct Shared {
     pub generations: Arc<Semaphore>,
     pub processes: Arc<Semaphore>,
     pub locks: Arc<MutationLocks>,
-    publication: Mutex<()>,
+    publication: Arc<Mutex<()>>,
     stopping: tokio_util::sync::CancellationToken,
     external_tasks: tokio_util::task::TaskTracker,
+    cli_agents: cli_agent_owner::Registry,
+    #[cfg(test)]
+    cli_desktop_test_resources: Mutex<HashMap<String, Arc<cli_agent_host::ChildResources>>>,
+    cli_helper: std::sync::OnceLock<
+        Result<Arc<crate::execution::claude_cli::orchestration_policy::HelperImage>, String>,
+    >,
     local_cli_setups: local_cli_setup::Registry,
     local_cli_approvals: local_cli_approvals::Registry,
     prompt_waits: Arc<Semaphore>,
@@ -169,7 +185,10 @@ impl Shared {
     /// (children have no presentation of their own to ask). The order is stable between
     /// requests.
     pub fn tools_for(&self, row: &SessionRow) -> Vec<Arc<dyn Tool>> {
-        if !row.execution_backend.native_execution() {
+        if !matches!(
+            row.execution_backend,
+            ExecutionBackend::NativeAgent | ExecutionBackend::ClaudeCliAgent
+        ) {
             return Vec::new();
         }
         let mut tools = self.tools.clone();
@@ -337,6 +356,19 @@ impl EngineHandle {
         store
             .recover_external_runs(now_ms())
             .map_err(|e| e.to_string())?;
+        // A prepared/connected native CLI bridge is never reattached after restart.
+        store
+            .recover_cli_tool_bridges(now_ms())
+            .map_err(|e| e.to_string())?;
+        // Root CLI launch uncertainty is settled before generic native recovery can see it.
+        store
+            .recover_cli_agent_turns(now_ms())
+            .map_err(|e| e.to_string())?;
+        // Child metadata is only reconciled with actual receipts, never adopted by the
+        // API subagent recovery runner or reconstructed as CLI launch authority.
+        store
+            .recover_cli_native_children(now_ms())
+            .map_err(|e| e.to_string())?;
         crate::extensions::profiles::initialize(
             &store,
             &config.extensions,
@@ -373,6 +405,14 @@ impl EngineHandle {
             export: export::ExportRuntime::default(),
             generations: Arc::new(Semaphore::new(config.max_active_generations.max(1))),
             processes: Arc::new(Semaphore::new(config.max_tool_processes.max(1))),
+            cli_helper: std::sync::OnceLock::new(),
+            #[cfg(test)]
+            cli_desktop_test_resources: Mutex::default(),
+            cli_agents: cli_agent_owner::Registry::new(
+                cfg!(target_os = "linux")
+                    && config.enable_local_claude_cli
+                    && config.enable_local_claude_cli_orchestration,
+            ),
             config,
             store: Arc::new(store),
             auth,
@@ -382,7 +422,7 @@ impl EngineHandle {
             tools,
             locks: Arc::default(),
             cursors: Mutex::new(HashMap::new()),
-            publication: Mutex::new(()),
+            publication: Arc::new(Mutex::new(())),
             stopping: tokio_util::sync::CancellationToken::new(),
             external_tasks: tokio_util::task::TaskTracker::new(),
             local_cli_setups: local_cli_setup::Registry::default(),
@@ -472,6 +512,9 @@ impl EngineHandle {
             .insert(client, out_tx.clone());
         let shared = self.shared.clone();
         let lifetime = tokio_util::sync::CancellationToken::new();
+        self.shared
+            .cli_agents
+            .connect_with_lifetime(client, lifetime.clone());
         let sender_lifetime = Arc::new(crate::host::ClientLifetime(lifetime.clone()));
         let requests = Arc::new(crate::host::requests::Requests::default());
         let pending_requests = requests.clone();
@@ -497,6 +540,7 @@ impl EngineHandle {
                             shared.auth.client_gone(client);
                             shared.local_cli_setups.revoke_owner(client);
                             shared.local_cli_approvals.revoke_owner(client);
+                            shared.cli_agents.revoke_owner(client);
                             out_tx.close();
                             continue;
                         }
@@ -548,6 +592,7 @@ impl EngineHandle {
                                 shared.auth.client_gone(client);
                                 shared.local_cli_setups.revoke_owner(client);
                                 shared.local_cli_approvals.revoke_owner(client);
+                                shared.cli_agents.revoke_owner(client);
                                 Err(ProtoError::new(ErrorCode::ShuttingDown, "the client disconnected"))
                             }
                             result = async {
@@ -583,6 +628,7 @@ impl EngineHandle {
                 shared.release_client(client);
                 shared.local_cli_setups.revoke_owner(client);
                 shared.local_cli_approvals.revoke_owner(client);
+                shared.cli_agents.revoke_owner(client);
                 shared.clients.lock().unwrap_or_else(|e| e.into_inner()).remove(&client);
                 shared.cursors.lock().unwrap_or_else(|e| e.into_inner()).remove(&client);
                 shared.auth.client_gone(client);
@@ -603,6 +649,7 @@ impl EngineHandle {
     /// cancelled; runs in flight stay unsettled in the store and resume on the next start.
     pub fn shutdown(&self, timeout: Duration) {
         self.shared.stopping.cancel();
+        self.shared.cli_agents.shutdown();
         self.shared.local_cli_setups.shutdown();
         self.shared.local_cli_approvals.shutdown();
         let external_done = self.shared.external_shutdown();
@@ -722,6 +769,9 @@ async fn dispatch_call(
     call: Call,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<Reply, ProtoError> {
+    if let Some(reply) = shared.route_cli_desktop(client, &call).await {
+        return reply;
+    }
     shared.guard_execution_call(&call)?;
     match call {
         Call::CancelRequest { .. } => Err(ProtoError::new(
@@ -777,6 +827,11 @@ async fn dispatch_call(
                         .config
                         .enable_local_claude_cli
                         .then(|| "localCliChat".into()),
+                )
+                .chain(
+                    shared
+                        .local_cli_execution_enabled(LocalCliMode::Orchestration)
+                        .then(|| "localCliOrchestration".into()),
                 )
                 .chain(cfg!(unix).then(|| "localCliApprovals".into()))
                 .collect(),

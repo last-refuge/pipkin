@@ -27,7 +27,11 @@ impl AppState {
             || view.project.trim().is_empty()
             || !matches!(
                 (c.execution_profile(self.mode), view.mode),
-                (crate::ExecutionProfile::LocalCliChatOnly, CliMode::ChatOnly)
+                (
+                    crate::ExecutionProfile::ClaudeCliAgent,
+                    CliMode::Orchestration
+                ) | (crate::ExecutionProfile::LocalCliCoding, CliMode::Coding)
+                    | (crate::ExecutionProfile::LocalCliChatOnly, CliMode::ChatOnly)
                     | (
                         crate::ExecutionProfile::LocalCliRestrictedWrite,
                         CliMode::RestrictedWrite
@@ -37,6 +41,7 @@ impl AppState {
             return None;
         }
         Some(LocalCliDraft {
+            thinking: None,
             mode: view.mode,
             executable: view.executable.clone(),
             project: view.project.clone(),

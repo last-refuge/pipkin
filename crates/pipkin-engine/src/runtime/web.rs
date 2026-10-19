@@ -76,23 +76,27 @@ impl Shared {
         let records = self
             .store
             .read(|c| crate::store::Store::web_sources(c, session))?;
-        Ok(records
-            .iter()
-            .map(|r| WebSourceView {
-                id: r.label(),
-                kind: r.kind.clone(),
-                provider: r.provider.clone(),
-                requested_url: r.requested_url.clone(),
-                final_url: r.final_url.clone(),
-                title: r.title.clone(),
-                published: r.published.clone(),
-                retrieved_at_ms: r.retrieved_at_ms,
-                content_type: r.content_type.clone(),
-                bytes: r.bytes,
-                text_chars: r.text_chars,
-                expired: r.expired,
-                query: r.query.clone(),
-            })
-            .collect())
+        Ok(source_views(&records))
     }
+}
+
+pub(super) fn source_views(records: &[crate::web::SourceRecord]) -> Vec<WebSourceView> {
+    records
+        .iter()
+        .map(|r| WebSourceView {
+            id: r.label(),
+            kind: r.kind.clone(),
+            provider: r.provider.clone(),
+            requested_url: r.requested_url.clone(),
+            final_url: r.final_url.clone(),
+            title: r.title.clone(),
+            published: r.published.clone(),
+            retrieved_at_ms: r.retrieved_at_ms,
+            content_type: r.content_type.clone(),
+            bytes: r.bytes,
+            text_chars: r.text_chars,
+            expired: r.expired,
+            query: r.query.clone(),
+        })
+        .collect()
 }

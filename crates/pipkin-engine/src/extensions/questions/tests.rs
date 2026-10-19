@@ -5,6 +5,48 @@ use std::sync::Mutex;
 
 use super::*;
 
+#[tokio::test]
+async fn scoped_registration_precedes_question_publication_and_drop_withdraws() {
+    let registered = Arc::new(Mutex::new(None::<String>));
+    let seen = registered.clone();
+    let h = QuestionHost::new(Some(Arc::new(move |ui| {
+        for q in ui.questions {
+            assert_eq!(seen.lock().unwrap().as_ref(), Some(&q.id));
+        }
+    })));
+    let slot = registered.clone();
+    let waiting = h.ask_registered(
+        Question::input("scoped"),
+        Some(Duration::ZERO),
+        never(),
+        move |id| {
+            *slot.lock().unwrap() = Some(id.into());
+            true
+        },
+    );
+    assert_eq!(h.view().questions.len(), 1);
+    drop(waiting);
+    assert!(h.view().questions.is_empty());
+}
+#[tokio::test]
+async fn refused_registration_never_publishes_a_question() {
+    let (h, views) = recording();
+    assert!(
+        h.ask_registered(Question::input("refuse"), None, never(), |_| false)
+            .await
+            .is_none()
+    );
+    assert!(h.view().questions.is_empty());
+    assert!(views.lock().unwrap().is_empty());
+    h.dispose();
+    assert!(
+        h.ask_registered(Question::input("disposed"), None, never(), |_| panic!(
+            "disposed must not grant"
+        ))
+        .await
+        .is_none()
+    );
+}
 fn host() -> QuestionHost {
     QuestionHost::with_clock(None, Arc::new(|| 1_000))
 }

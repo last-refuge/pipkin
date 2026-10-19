@@ -84,7 +84,9 @@ fn cli_event(event: &LocalCliEvent) -> usize {
         | LocalCliEvent::Checked(view)
         | LocalCliEvent::Status(view) => {
             let target = match &view.target {
-                LocalCliInspectTarget::New { project, .. } => project.capacity(),
+                LocalCliInspectTarget::New {
+                    project, thinking, ..
+                } => project.capacity() + thinking.as_ref().map_or(0, String::capacity),
                 LocalCliInspectTarget::Existing { session, .. } => session.0.capacity(),
             };
             view.setup.0.capacity()

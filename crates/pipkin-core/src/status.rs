@@ -11,6 +11,7 @@ pub enum ContextSource {
     #[default]
     Unavailable,
     Reported,
+    ReportedInput,
     Estimated,
 }
 
@@ -19,6 +20,7 @@ impl ContextSource {
         match self {
             Self::Unavailable => "unknown",
             Self::Reported => "reported",
+            Self::ReportedInput => "last request input",
             Self::Estimated => "estimated",
         }
     }

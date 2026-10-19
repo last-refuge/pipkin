@@ -2712,7 +2712,11 @@ impl Live {
             return worker
                 .queue_refused(&req, "This conversation is not known to the engine.".into());
         };
-        if !summary.execution_backend.native_execution() {
+        if !matches!(
+            summary.execution_backend,
+            pipkin_engine_protocol::ExecutionBackend::NativeAgent
+                | pipkin_engine_protocol::ExecutionBackend::ClaudeCliAgent
+        ) {
             return worker.queue_refused(&req, execution::NATIVE_ONLY.into());
         }
         let prepared =

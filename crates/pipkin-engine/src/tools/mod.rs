@@ -461,6 +461,8 @@ pub trait ToolHost: Send + Sync {
 /// What a `subagent` call asks for: the task and, optionally, a profile and context mode.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SubagentLaunch {
+    /// Continue this existing child with the task as its next message.
+    pub child: Option<u64>,
     pub task: String,
     pub profile: Option<String>,
     pub context: Option<crate::profiles::ContextMode>,

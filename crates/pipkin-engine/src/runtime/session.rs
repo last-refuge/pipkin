@@ -54,6 +54,7 @@ pub struct SessionRt {
     pub(super) prompt_resources: Arc<Mutex<super::glue::Resources>>,
     /// Questions, status lines and notices from this session's extensions (volatile).
     pub questions: crate::extensions::questions::QuestionHost,
+    pub(super) cli_questions: super::cli_agent_host::Questions,
     /// Live foreground compactions, including manual work with no coding run.
     pub(super) manual_compactions: Mutex<std::collections::BTreeMap<u64, CancellationToken>>,
     pub(super) active_compactions: Mutex<std::collections::HashSet<u64>>,
@@ -78,6 +79,7 @@ impl SessionRt {
             compacting: std::sync::atomic::AtomicBool::new(false),
             manual_compactions: Mutex::new(Default::default()),
             active_compactions: Mutex::new(Default::default()),
+            cli_questions: Default::default(),
             id: id.to_owned(),
             root_id: id.to_owned(),
             removed: CancellationToken::new(),
@@ -461,6 +463,26 @@ impl Shared {
     }
 
     pub async fn cancel_queued(&self, session: &str, entry: u64) -> Result<Reply, ProtoError> {
+        if self.store.cli_agent_binding(session)?.is_some() {
+            // A queued CLI turn may hold the session lock while waiting for capacity.
+            // Its admission rechecks this row atomically; withdrawal must not wait for it.
+            return tokio::task::block_in_place(|| {
+                let _gate = self.publication.lock().unwrap_or_else(|e| e.into_inner());
+                let row = self
+                    .store
+                    .queue(session)?
+                    .into_iter()
+                    .find(|q| q.queue_entry == Some(entry));
+                let (outcome, _) = self.store.cancel_queued(session, entry)?;
+                if outcome == CancelQueuedOutcome::Cancelled
+                    && let Some(row) = row
+                {
+                    self.cli_agents.cancel_queued_input(session, &row.key);
+                }
+                self.publish_cli_queue(session);
+                Ok(Reply::CancelQueued { outcome })
+            });
+        }
         let sess = self.session(session)?;
         let _guard = sess.lock.lock().await;
         let outcome = self.commit(&sess, |tx| {

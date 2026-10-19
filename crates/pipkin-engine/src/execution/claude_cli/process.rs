@@ -139,6 +139,42 @@ pub const MAX_OBSERVER_CHUNK_BYTES: usize = 8192;
 /// authority to publish success, retry, or infer that external effects did not happen.
 pub type StdoutObserver = Box<dyn FnMut(&[u8]) -> Result<(), &'static str> + Send>;
 
+/// Owned, bounded chunk delivery with cancellable backpressure. Used by the provider,
+/// whose decoder owns framing/terminal validation (no second smoke decoder).
+pub type AsyncStdoutObserver = Box<
+    dyn FnMut(
+            Vec<u8>,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<(), &'static str>> + Send>,
+        > + Send,
+>;
+
+enum Observer {
+    Sync(StdoutObserver),
+    Async(AsyncStdoutObserver),
+}
+impl Observer {
+    async fn observe(&mut self, bytes: &[u8]) -> Result<(), &'static str> {
+        use futures_util::FutureExt;
+        match self {
+            Self::Sync(callback) => {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback(bytes)))
+                    .unwrap_or(Err("observer panicked"))
+            }
+            Self::Async(callback) => {
+                let future = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    callback(bytes.to_vec())
+                }))
+                .map_err(|_| "observer panicked")?;
+                std::panic::AssertUnwindSafe(future)
+                    .catch_unwind()
+                    .await
+                    .unwrap_or(Err("observer panicked"))
+            }
+        }
+    }
+}
+
 struct OwnedGroup {
     pid: u32,
     before_signal: Option<BeforeSignal>,
@@ -226,12 +262,30 @@ pub async fn run_fenced(
 /// No EOF callback is sent: finish caller-owned decoding after the report, checking
 /// `pipes_drained`, `stop`, and `clean_exit()` rather than treating EOF as success.
 /// Callback rejection leaves the outcome uncertain even when cleanup succeeds.
-#[cfg(unix)]
 pub async fn run_observed(
     spec: Spec,
     cancel: CancellationToken,
     before_signal: Option<BeforeSignal>,
-    mut observer: Option<StdoutObserver>,
+    observer: Option<StdoutObserver>,
+) -> Result<Report, &'static str> {
+    run_owned(spec, cancel, before_signal, observer.map(Observer::Sync)).await
+}
+
+pub async fn run_observed_async(
+    spec: Spec,
+    cancel: CancellationToken,
+    before_signal: Option<BeforeSignal>,
+    observer: AsyncStdoutObserver,
+) -> Result<Report, &'static str> {
+    run_owned(spec, cancel, before_signal, Some(Observer::Async(observer))).await
+}
+
+#[cfg(unix)]
+async fn run_owned(
+    spec: Spec,
+    cancel: CancellationToken,
+    before_signal: Option<BeforeSignal>,
+    mut observer: Option<Observer>,
 ) -> Result<Report, &'static str> {
     if cancel.is_cancelled() {
         return Err("cancelled before spawn");
@@ -287,7 +341,8 @@ pub async fn run_observed(
         stream_error: None,
         captured: Vec::new(),
     };
-    let mut decoder = matches!(spec.mode, OutputMode::Stream).then(Decoder::default);
+    let provider = matches!(observer, Some(Observer::Async(_)));
+    let mut decoder = (matches!(spec.mode, OutputMode::Stream) && !provider).then(Decoder::default);
     let mut exited = false;
     // Do not reap the group leader until all group signals are finished. Keeping its
     // PID reserved prevents a delayed signal from reaching a reused, unrelated PGID.
@@ -323,7 +378,10 @@ pub async fn run_observed(
                     // Root exit doesn't imply its descendants exited or released pipes.
                     group.signal(libc::SIGTERM);
                     kill_at.get_or_insert(Instant::now() + spec.grace);
-                    finish_at.get_or_insert(Instant::now() + spec.grace + Duration::from_secs(1));
+                    // Provider delivery can be backpressured after the root exits.
+                    // Keep its overall turn deadline; the short cleanup deadline applies
+                    // after a real stop, not while draining healthy queued output.
+                    finish_at.get_or_insert(if provider { deadline } else { Instant::now() + spec.grace + Duration::from_secs(1) });
                 }
             }
             packet = rx.recv(), if channel_open => match packet {
@@ -334,11 +392,21 @@ pub async fn run_observed(
                     if *count > limit as u64 {
                         stop = Some(Stop::OutputLimit);
                     } else if stdout && report.stop.is_none() {
-                        if observer.as_mut().is_some_and(|observe| {
-                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| observe(&bytes)))
-                                .map_or(true, |result| result.is_err())
-                        }) {
-                            // Never echo a callback's error, even though its type is static.
+                        let observed = if let Some(observer) = observer.as_mut() {
+                            let delivery = observer.observe(&bytes);
+                            tokio::pin!(delivery);
+                            loop {
+                                tokio::select! {
+                                    biased;
+                                    _ = cancel.cancelled() => { stop = Some(Stop::Cancelled); break Ok(()) },
+                                    _ = sleep_until(deadline) => { stop = Some(Stop::TimedOut); break Ok(()) },
+                                    _ = sleep_optional(kill_at), if kill_at.is_some() => { group.signal(libc::SIGKILL); kill_at = None; },
+                                    _ = sleep_optional(finish_at), if finish_at.is_some() => { stop = Some(Stop::CleanupTimeout); break Ok(()) },
+                                    result = &mut delivery => break result,
+                                }
+                            }
+                        } else { Ok(()) };
+                        if observed.is_err() {
                             report.stream_error = Some("stdout observer failed");
                             stop = Some(Stop::ObserverFailure);
                         } else if let Some(decoder) = &mut decoder {
@@ -346,7 +414,7 @@ pub async fn run_observed(
                                 report.stream_error = Some(error);
                                 stop = Some(Stop::InvalidStream);
                             }
-                        } else {
+                        } else if !provider {
                             report.captured.extend_from_slice(&bytes);
                         }
                     }
@@ -398,11 +466,11 @@ pub async fn run_observed(
 }
 
 #[cfg(not(unix))]
-pub async fn run_observed(
+async fn run_owned(
     _spec: Spec,
     _cancel: CancellationToken,
     _before_signal: Option<BeforeSignal>,
-    _observer: Option<StdoutObserver>,
+    _observer: Option<Observer>,
 ) -> Result<Report, &'static str> {
     Err("the Phase 0 process supervisor currently supports Unix only")
 }

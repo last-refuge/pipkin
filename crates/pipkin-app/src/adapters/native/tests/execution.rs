@@ -445,12 +445,18 @@ fn call_guard_keeps_compaction_and_all_native_surfaces_off_but_receipts_readable
     ];
     for call in calls {
         assert!(
-            super::super::execution::guard(&call, Some(&session), |_| Some(&cli)).is_err(),
+            crate::adapters::native::execution::guard(&call, Some(&session), |_| Some(&cli))
+                .is_err(),
             "{call:?}"
         );
-        assert!(super::super::execution::guard(&call, Some(&session), |_| None).is_err());
+        assert!(
+            crate::adapters::native::execution::guard(&call, Some(&session), |_| None).is_err()
+        );
         let native = summary("s1");
-        assert!(super::super::execution::guard(&call, Some(&session), |_| Some(&native)).is_ok());
+        assert!(
+            crate::adapters::native::execution::guard(&call, Some(&session), |_| Some(&native))
+                .is_ok()
+        );
     }
     for call in [
         Call::Lookup {
@@ -467,7 +473,7 @@ fn call_guard_keeps_compaction_and_all_native_surfaces_off_but_receipts_readable
             limit: 50,
         },
     ] {
-        assert!(super::super::execution::guard(&call, None, |_| None).is_ok());
+        assert!(crate::adapters::native::execution::guard(&call, None, |_| None).is_ok());
     }
     let unknown = external_summary(ExecutionBackend::Unsupported, None);
     assert!(super::super::execution::prompt(&unknown, false, false).is_err());
@@ -475,4 +481,71 @@ fn call_guard_keeps_compaction_and_all_native_surfaces_off_but_receipts_readable
     let blocked = external_summary(ExecutionBackend::LocalClaudeCli, Some("blocked"));
     assert!(!super::super::execution::stop(&blocked, false));
     assert!(super::super::execution::stop(&blocked, true));
+}
+
+#[test]
+fn desktop_orchestration_maps_identity_and_routes_only_supported_operations() {
+    let mut summary = external_summary(ExecutionBackend::ClaudeCliAgent, None);
+    summary.local_cli_mode = Some(LocalCliMode::Orchestration);
+    assert!(execution::prompt(&summary, true, false).is_ok());
+    assert!(execution::prompt(&summary, false, true).is_err());
+    assert!(matches!(
+        super::super::mapping::execution_context(&summary),
+        pipkin_core::EventKind::ExecutionContext {
+            profile: pipkin_core::ExecutionProfile::ClaudeCliAgent,
+            ..
+        }
+    ));
+    for call in [
+        Call::LaunchSubagent {
+            session: summary.id.clone(),
+            request: "person".into(),
+            task: "child".into(),
+            profile: None,
+            context: None,
+        },
+        Call::SteerSubagent {
+            session: summary.id.clone(),
+            request: "steer".into(),
+            child: 1,
+            text: "direction".into(),
+        },
+        Call::McpServers {
+            session: Some(summary.id.clone()),
+        },
+        Call::GoalControl {
+            session: summary.id.clone(),
+            action: pipkin_engine_protocol::GoalAction::SkipAudit,
+        },
+        Call::Enqueue {
+            session: summary.id.clone(),
+            request: "q".into(),
+            mode: pipkin_engine_protocol::InputMode::Steer,
+            text: "s".into(),
+            images: vec![],
+        },
+        Call::SetGoal {
+            session: summary.id.clone(),
+            objective: "goal".into(),
+        },
+        Call::Compact {
+            session: summary.id.clone(),
+            instructions: None,
+        },
+    ] {
+        assert!(crate::adapters::native::execution::guard(&call, None, |_| Some(&summary)).is_ok());
+    }
+    assert!(
+        crate::adapters::native::execution::guard(
+            &Call::SetModel {
+                session: summary.id.clone(),
+                model: "native/model".into()
+            },
+            None,
+            |_| Some(&summary)
+        )
+        .is_err()
+    );
+    summary.blocked = Some("Reconnect first".into());
+    assert!(execution::prompt(&summary, true, false).is_err());
 }

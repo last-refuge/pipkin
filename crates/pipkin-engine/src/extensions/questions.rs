@@ -316,11 +316,23 @@ impl QuestionHost {
         timeout: Option<Duration>,
         cancel: CancellationToken,
     ) -> impl Future<Output = Option<Answer>> + Send + 'static {
+        self.ask_registered(question, timeout, cancel, |_| true)
+    }
+
+    /// Install an exact runtime response grant before publication. The registration callback
+    /// runs under the question-state lock: no host re-entry, storage or other runtime locks.
+    pub(crate) fn ask_registered(
+        &self,
+        question: Question,
+        timeout: Option<Duration>,
+        cancel: CancellationToken,
+        register: impl FnOnce(&str) -> bool,
+    ) -> impl Future<Output = Option<Answer>> + Send + 'static {
         // Registered now, like the reference: the question is visible before the first poll.
         let timeout = timeout.unwrap_or(UI_DEFAULT_TIMEOUT);
         let expires = tokio::time::Instant::now().checked_add(timeout);
         let shared = self.shared.clone();
-        let opened = open(&shared, question, timeout).map(|(id, settled)| {
+        let opened = open(&shared, question, timeout, register).map(|(id, settled)| {
             let guard = AskGuard {
                 shared: shared.clone(),
                 id: id.clone(),
@@ -583,6 +595,7 @@ fn open(
     shared: &Arc<Shared>,
     question: Question,
     timeout: Duration,
+    register: impl FnOnce(&str) -> bool,
 ) -> Option<(String, oneshot::Receiver<Option<Answer>>)> {
     if question.kind == QuestionKind::Select && question.options.is_empty() {
         return None;
@@ -599,6 +612,9 @@ fn open(
         }
         state.counter += 1;
         let id = format!("q{}{}", state.scope, state.counter);
+        if !register(&id) {
+            return (None, false);
+        }
         let created = (shared.clock)();
         let deadline_ms = (!timeout.is_zero()).then(|| {
             created.saturating_add(i64::try_from(timeout.as_millis()).unwrap_or(i64::MAX))

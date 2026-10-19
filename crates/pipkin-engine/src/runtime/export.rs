@@ -24,6 +24,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -232,6 +233,7 @@ pub struct ExportRuntime {
     /// Poked after a diagnostics record is written.
     pub notify: Notify,
     health: Mutex<ExportHealthView>,
+    health_revision: AtomicU64,
     state: Mutex<State>,
     done: Arc<Notify>,
 }
@@ -245,6 +247,7 @@ impl Default for ExportRuntime {
                 content: CONTENT_METADATA.into(),
                 ..ExportHealthView::default()
             }),
+            health_revision: AtomicU64::new(0),
             state: Mutex::new(State::default()),
             done: Arc::new(Notify::new()),
         }
@@ -616,8 +619,23 @@ impl Shared {
     }
 
     fn export_health(&self, edit: impl FnOnce(&mut ExportHealthView)) {
+        self.export_health_for(None, edit);
+    }
+
+    fn export_health_for(&self, revision: Option<u64>, edit: impl FnOnce(&mut ExportHealthView)) {
+        // Keep publication in the same order as health updates.
+        let mut health = self.export.health.lock().unwrap_or_else(|e| e.into_inner());
         let changed = {
-            let mut health = self.export.health.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(revision) = revision {
+                if revision != self.export.health_revision.load(Ordering::Acquire) {
+                    return;
+                }
+            } else {
+                // The settings RPC supersedes every already-captured exporter snapshot.
+                // Compare and advance under the health lock, so an old cycle cannot put
+                // a removed credential or disabled configuration back into the view.
+                self.export.health_revision.fetch_add(1, Ordering::Release);
+            }
             let before = health.clone();
             edit(&mut health);
             let state = self.export.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -751,6 +769,7 @@ impl Shared {
             if self.stopping.is_cancelled() {
                 break;
             }
+            let health_revision = self.export.health_revision.load(Ordering::Acquire);
             let settings = Settings::load(&self.config.config_dir, None).0.export;
             let credential = self.export_credential();
             let target = match target(&settings, credential.as_ref()) {
@@ -775,7 +794,7 @@ impl Shared {
                     attempts = 0;
                     backoff_until = None;
                     let describe = self.export_description(&settings, credential.as_ref());
-                    self.export_health(|h| {
+                    self.export_health_for(Some(health_revision), |h| {
                         describe(h);
                         h.state = if settings.enabled { "failed" } else { "off" }.into();
                         h.endpoint = None;
@@ -807,7 +826,7 @@ impl Shared {
             let (batch, queued, aged) = match self.export_collect(target.content, &redactor) {
                 Ok(c) => c,
                 Err(error) => {
-                    self.export_health(|h| {
+                    self.export_health_for(Some(health_revision), |h| {
                         describe(h);
                         h.endpoint = Some(endpoint_host(&target.endpoint));
                         h.state = "failed".into();
@@ -828,7 +847,7 @@ impl Shared {
             }
             let host = endpoint_host(&target.endpoint);
             if batch.records == 0 {
-                self.export_health(|h| {
+                self.export_health_for(Some(health_revision), |h| {
                     describe(h);
                     h.endpoint = Some(host.clone());
                     h.queued = queued;
@@ -839,7 +858,7 @@ impl Shared {
                 self.export_wait(None).await;
                 continue;
             }
-            self.export_health(|h| {
+            self.export_health_for(Some(health_revision), |h| {
                 describe(h);
                 h.endpoint = Some(host.clone());
                 h.queued = queued;
@@ -868,7 +887,7 @@ impl Shared {
                     }
                     self.export_save_state();
                     attempts = 0;
-                    self.export_health(|h| {
+                    self.export_health_for(Some(health_revision), |h| {
                         h.state = "idle".into();
                         h.failures = 0;
                         h.last_error = None;
@@ -889,7 +908,7 @@ impl Shared {
                         }
                         self.export_save_state();
                         attempts = 0;
-                        self.export_health(|h| {
+                        self.export_health_for(Some(health_revision), |h| {
                             h.state = "failed".into();
                             h.failures = 0;
                             h.last_error = Some(error);
@@ -899,7 +918,7 @@ impl Shared {
                         let delay =
                             (target.retry_base * (1u32 << (attempts - 1).min(6))).min(MAX_BACKOFF);
                         backoff_until = Some(tokio::time::Instant::now() + delay);
-                        self.export_health(|h| {
+                        self.export_health_for(Some(health_revision), |h| {
                             h.state = "backoff".into();
                             h.failures = attempts;
                             h.last_error = Some(error);
@@ -1298,4 +1317,38 @@ pub(super) fn start(shared: &Arc<Shared>) {
     let shared = shared.clone();
     let runtime = shared.clone();
     runtime.spawn(async move { shared.export_run().await });
+}
+
+#[cfg(test)]
+mod health_race_tests {
+    use super::*;
+    use crate::provider::scripted::Scripted;
+    use crate::runtime::tests::Fixture;
+
+    #[test]
+    fn an_old_export_cycle_cannot_restore_removed_credential_or_enabled_status() {
+        let fx = Fixture::new();
+        let provider = Scripted::echo("unused");
+        let engine = fx.start(&provider);
+        let shared = engine.handle.shared();
+        shared
+            .export_set_credential("Authorization", "fixture-only-secret")
+            .unwrap();
+        let stale = shared.export.health_revision.load(Ordering::Acquire);
+        shared.export_clear_credential().unwrap();
+        shared
+            .export_configure(false, None, "metadata", None)
+            .unwrap();
+        let current = shared.export.health();
+        assert!(current.credential.is_none());
+        assert!(!current.enabled);
+        assert_eq!(current.state, "off");
+        shared.export_health_for(Some(stale), |h| {
+            h.credential = Some("Authorization".into());
+            h.enabled = true;
+            h.state = "sending".into();
+        });
+        assert_eq!(shared.export.health(), current);
+        assert!(provider.requests().is_empty());
+    }
 }

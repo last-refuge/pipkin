@@ -42,20 +42,27 @@ pub struct ExternalTerminalUsage {
     pub output_tokens: Option<u64>,
     pub cache_read_input_tokens: Option<u64>,
     pub cache_creation_input_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalTerminal {
     pub outcome: ExternalTerminalOutcome,
     pub usage: Option<ExternalTerminalUsage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::execution::claude_cli::usage_metadata::Metadata>,
 }
 
 /// Independent supervisor facts, never inferred from projected text or terminal metadata.
 /// Default is deliberately uncertain and is used for startup recovery.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalSettlementEvidence {
-    /// Acceptance witness: decoder finished and every event committed AND the supervisor
-    /// exited cleanly. EOF/decoder completion alone must never set this true.
+    /// Acceptance witness: decoder finished and every event committed AND supervised
+    /// transport finished without a stop. Success vs reported error additionally checks
+    /// terminal/exit evidence below. EOF/decoder completion alone never establishes this.
     pub projection_finished: bool,
     pub input_delivered: bool,
     pub root_reaped: bool,
@@ -74,6 +81,11 @@ pub struct ExternalSettlementEvidence {
     pub rejected_record: Option<crate::execution::claude_cli::events::RecordClass>,
     #[serde(default)]
     pub parse_failure: Option<crate::execution::claude_cli::events::ParseFailure>,
+    /// Inert display loss; never vetoes independently verified execution completion.
+    #[serde(default)]
+    pub presentation_incomplete: bool,
+    #[serde(default)]
+    pub stream_diagnostic: Option<crate::execution::claude_cli::events::StreamDiagnostic>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -274,12 +286,15 @@ impl Store {
         let (bad, completed): (bool, bool) = tx.query_row(
             "SELECT EXISTS(
                 SELECT 1 FROM external_runs r LEFT JOIN external_prompts p USING(session,generation,op)
-                WHERE r.session=?1 AND (r.state<>'completed' OR r.op=?2 OR p.id IS NULL
-                    OR json_extract(p.outcome,'$.reason') IS NOT 'completed'
-                    OR json_extract(p.result,'$.status') IS NOT 'done'
-                    OR json_extract(p.terminal,'$.outcome') IS NOT 'success'
-                    OR p.evidence IS NULL)
-             ), EXISTS(SELECT 1 FROM external_runs WHERE session=?1 AND state='completed')",
+                WHERE r.session=?1 AND (r.op=?2 OR p.id IS NULL OR p.evidence IS NULL OR NOT (
+                    (r.state='completed' AND json_extract(p.outcome,'$.reason') IS 'completed'
+                        AND json_extract(p.result,'$.status') IS 'done'
+                        AND json_extract(p.terminal,'$.outcome') IS 'success')
+                    OR (r.state='interrupted' AND json_extract(p.outcome,'$.reason') IS 'modelError'
+                        AND json_extract(p.result,'$.status') IS 'unanswered'
+                        AND json_extract(p.terminal,'$.outcome') IS 'error')
+                    ))
+             ), EXISTS(SELECT 1 FROM external_runs WHERE session=?1)",
             params![session, op], |r| Ok((r.get(0)?,r.get(1)?)))?;
         if bad {
             return Err(StoreError::ExecutionConflict);
@@ -417,14 +432,19 @@ impl Store {
         }
         let mut changes = vec![];
         match event {
-            Event::Initialized => {}
+            Event::Initialized | Event::Context { .. } => {}
             Event::ExternalToolObserved { .. } | Event::ExternalToolResult { .. } => {
                 changes.extend(Self::project_external_action_in(
                     tx, key, &receipt, event, now,
                 )?);
             }
-            Event::Terminal { outcome, usage } => {
+            Event::Terminal {
+                outcome,
+                usage,
+                metadata,
+            } => {
                 let terminal = ExternalTerminal {
+                    metadata: metadata.clone(),
                     outcome: match outcome {
                         Outcome::Success => ExternalTerminalOutcome::Success,
                         Outcome::Error => ExternalTerminalOutcome::Error,
@@ -435,6 +455,8 @@ impl Store {
                         output_tokens: u.output_tokens,
                         cache_read_input_tokens: u.cache_read_input_tokens,
                         cache_creation_input_tokens: u.cache_creation_input_tokens,
+                        reasoning_tokens: u.reasoning_tokens,
+                        cache_write_1h: u.cache_write_1h,
                     }),
                 };
                 tx.execute(
@@ -515,9 +537,8 @@ impl Store {
                         target.push_str(text);
                     }
                 } else {
-                    if finals.contains(block_index) {
-                        return Err(StoreError::ExecutionConflict);
-                    }
+                    // Ordered authoritative replacement (including terminal reconciliation),
+                    // not a replayed delta. It never grants tool or completion authority.
                     if *block_index == blocks.len() {
                         blocks.push(block);
                     } else {
@@ -528,7 +549,9 @@ impl Store {
                         }
                         blocks[*block_index] = block;
                     }
-                    finals.push(*block_index);
+                    if !finals.contains(block_index) {
+                        finals.push(*block_index);
+                    }
                 }
                 if blocks.iter().map(block_text).map(str::len).sum::<usize>() > MAX_TEXT {
                     return Err(StoreError::ExecutionConflict);
@@ -645,6 +668,35 @@ impl Store {
         } else {
             Self::revoke_external_permissions_for_run_in(tx, key, now)?;
         }
+        // An explicit CLI error with clean, owned completion is a known failed turn,
+        // not lost execution. A new instruction may resume; the failed prompt is never retried.
+        let mut provider_error = receipt.state == ExternalRunState::Running
+            && receipt
+                .terminal
+                .as_ref()
+                .is_some_and(|t| t.outcome == ExternalTerminalOutcome::Error)
+            && clean
+            && evidence.projection_finished
+            && evidence.input_delivered
+            && matches!(evidence.exit_code, Some(0 | 1))
+            && evidence.supervisor_stop.is_none()
+            && evidence.projection_error.is_none()
+            && evidence.rejected_record.is_none()
+            && evidence.parse_failure.is_none()
+            && !evidence.stop_requested
+            && !evidence.cancelled_clean_confirmed;
+        if provider_error {
+            for resolved in [
+                Self::assert_external_permissions_resolved(tx, key),
+                Self::assert_external_actions_resolved(tx, key),
+            ] {
+                match resolved {
+                    Ok(()) => {}
+                    Err(StoreError::ExecutionConflict) => provider_error = false,
+                    Err(error) => return Err(error),
+                }
+            }
+        }
         let cancelled = receipt.state == ExternalRunState::Stopping
             && evidence.cancelled_clean_confirmed
             && evidence
@@ -657,6 +709,10 @@ impl Store {
                 RunOutcome::Completed,
                 "completed",
             )
+        } else if provider_error {
+            (ExternalRunState::Interrupted, RunOutcome::ModelError {
+                detail: "Claude CLI reported an error. This conversation can continue with a new prompt; inspect any prior effects before repeating work.".into(),
+            }, "providerError")
         } else if cancelled {
             (
                 ExternalRunState::Interrupted,
@@ -667,7 +723,7 @@ impl Store {
             (
                 ExternalRunState::Unknown,
                 RunOutcome::Interrupted {
-                    detail: "External prompt outcome is unconfirmed".into(),
+                    detail: unconfirmed_detail(evidence),
                 },
                 "interrupted",
             )
@@ -725,8 +781,42 @@ impl Store {
             params![receipt.id, json(evidence), json(&outcome), json(&result)],
         )?;
         tx.execute("UPDATE external_runs SET state=?4,updated_at=MAX(updated_at,?5) WHERE session=?1 AND generation=?2 AND op=?3", params![key.session,key.generation,key.op,state.as_str(),now])?;
-        if !completed {
+        if !completed && !provider_error {
             Self::invalidate_external_binding(tx, key, now)?;
+        }
+        if let RunOutcome::Interrupted { detail } | RunOutcome::ModelError { detail } = &outcome {
+            // Same transaction as settlement, once only. Survives snapshot replacement,
+            // navigation and restart; never model context, a retry or execution authority.
+            let entry = Self::append_entry_owned(
+                tx,
+                &key.session,
+                now,
+                Some(receipt.id),
+                EntryKind::Notice {
+                    level: pipkin_engine_protocol::NoticeLevel::Error,
+                    text: detail.clone(),
+                },
+            )?;
+            changes.push(SessionChange::EntryAppended { entry });
+        }
+        if completed && evidence.presentation_incomplete {
+            let diagnostic = evidence
+                .stream_diagnostic
+                .map(|d| format!(" Display issue: {} ({:?}).", d.problem, d.record))
+                .unwrap_or_default();
+            let entry = Self::append_entry_owned(
+                tx,
+                &key.session,
+                now,
+                Some(receipt.id),
+                EntryKind::Notice {
+                    level: pipkin_engine_protocol::NoticeLevel::Warning,
+                    text: format!(
+                        "Claude CLI completed, but some live output could not be displayed. Available complete output was reconciled; this conversation can continue.{diagnostic}"
+                    ),
+                },
+            )?;
+            changes.push(SessionChange::EntryAppended { entry });
         }
         changes.push(SessionChange::RunChanged { run: None });
         changes.push(SessionChange::RunSettled {
@@ -750,6 +840,31 @@ impl Store {
         }
         Ok(())
     }
+}
+
+/// Only closed diagnostic categories: never raw records, stderr, schema labels or values.
+fn unconfirmed_detail(evidence: &ExternalSettlementEvidence) -> String {
+    let mut detail = "External prompt outcome is unconfirmed.".to_owned();
+    if let Some(error) = evidence.projection_error {
+        detail.push_str(&format!(" CLI output was rejected: {error}."));
+    }
+    if let Some(record) = evidence.rejected_record {
+        detail.push_str(&format!(" Record: {record:?}."));
+    }
+    if let Some(failure) = evidence.parse_failure {
+        detail.push_str(&format!(" Parse failure: {:?}.", failure.kind));
+    }
+    if let Some(stop) = evidence.supervisor_stop {
+        detail.push_str(&format!(" Supervisor: {stop:?}."));
+    }
+    if let Some(code) = evidence.exit_code.filter(|code| *code != 0) {
+        detail.push_str(&format!(" CLI exit code: {code}."));
+    }
+    if !evidence.root_reaped || !evidence.pipes_drained || evidence.cleanup_timed_out {
+        detail.push_str(" CLI cleanup was not fully confirmed.");
+    }
+    detail.push_str(" This conversation cannot resume; do not repeat uncertain work.");
+    detail
 }
 
 fn block_text(block: &ExternalBlock) -> &str {

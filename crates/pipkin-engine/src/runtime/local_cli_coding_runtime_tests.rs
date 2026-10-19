@@ -24,6 +24,7 @@ fn approve(engine: &mut Engine, cli: &FakeCli, existing: bool) -> String {
         }
     } else {
         LocalCliSetupTarget::New {
+            thinking: None,
             project: cli.project.display().to_string(),
             model: LocalCliModel::Sonnet,
         }

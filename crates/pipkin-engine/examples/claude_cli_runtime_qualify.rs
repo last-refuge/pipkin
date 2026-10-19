@@ -130,6 +130,7 @@ fn setup(
         mode,
         executable: exe.into(),
         target: LocalCliSetupTarget::New {
+            thinking: None,
             project: project.display().to_string(),
             model: LocalCliModel::Haiku,
         },

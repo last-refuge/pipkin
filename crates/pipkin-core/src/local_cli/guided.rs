@@ -35,7 +35,11 @@ impl AppState {
                         .map(|p| p.path.clone())
                         .unwrap_or_default(),
                     model: self.prefs.cli_model,
-                    mode: self.prefs.cli_mode,
+                    mode: if self.prefs.cli_mode == CliMode::Orchestration {
+                        CliMode::Orchestration
+                    } else {
+                        CliMode::Coding
+                    },
                     ..Default::default()
                 };
                 if self.local_cli.target.is_some() && self.local_cli.stage != LocalCliStage::Created
@@ -136,6 +140,7 @@ impl AppState {
     pub(super) fn advance_guided_cli(
         &mut self,
         discovered: bool,
+        inspected: bool,
         hints: bool,
         checked: bool,
         out: &mut Outcome,
@@ -143,7 +148,16 @@ impl AppState {
         if !self.local_cli.guided {
             return;
         }
-        if discovered && self.local_cli.candidates.len() == 1 {
+        if discovered
+            && (self.local_cli.candidates.len() == 1
+                || (self.prefs.cli_provider_configured
+                    && self.prefs.cli_executable.as_deref()
+                        == Some(self.local_cli.draft.executable.as_str())
+                    && self
+                        .local_cli
+                        .candidates
+                        .contains(&self.local_cli.draft.executable)))
+        {
             out.merge(self.dispatch_local_cli(LocalCliCommand::Inspect));
         }
         if hints
@@ -153,6 +167,7 @@ impl AppState {
         {
             out.merge(
                 self.dispatch_local_cli(LocalCliCommand::Edit(LocalCliDraft {
+                    thinking: None,
                     executable: view.executable,
                     project: view.project,
                     mode: view.mode,
@@ -170,6 +185,21 @@ impl AppState {
         {
             self.local_cli.stage = LocalCliStage::Failed;
             self.local_cli.error = Some(LocalCliFailure::Rejected("This saved Claude configuration is unsupported; it cannot be reconnected or migrated automatically.".into()));
+        }
+        // Selecting a configured provider is the user's request to connect it, as for
+        // native providers. Discovery alone, changed paths and status/unknown replies
+        // never execute candidates or resume an interrupted setup.
+        if inspected
+            && !self.local_cli.provider_only
+            && self.prefs.cli_provider_configured
+            && self.local_cli.draft.mode == CliMode::Coding
+            && self.local_cli.stage == LocalCliStage::AwaitingTrust
+            && let Some(ticket) = self.local_cli.ticket.clone()
+            && self.prefs.cli_executable.as_deref() == Some(ticket.executable.as_str())
+        {
+            out.merge(self.dispatch_local_cli(LocalCliCommand::ConfirmAndConnect {
+                setup: ticket.setup,
+            }));
         }
         // Status lookup is never permission to continue an interrupted workflow.
         if checked && self.local_cli.connect_after_check {

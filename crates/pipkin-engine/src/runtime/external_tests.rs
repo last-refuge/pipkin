@@ -25,19 +25,19 @@ const UUID: &str = "11111111-1111-4111-8111-111111111111";
 #[cfg(target_os = "linux")]
 #[path = "external_coding_tests.rs"]
 mod coding;
+#[path = "external_live_tests.rs"]
+mod live;
+#[path = "external_unattended_tests.rs"]
+mod unattended;
 
 struct FakeCli {
     executable: PathBuf,
     environment: policy::Environment,
     project: PathBuf,
+    model: policy::ModelAlias,
 }
 impl FakeCli {
     fn new(f: &Fixture, tail: &str, terminal: bool) -> Self {
-        let executable = f.dir.path().join("fake-cli");
-        let help = policy::REQUIRED_FLAGS
-            .iter()
-            .map(|flag| format!("{flag} fixture\n"))
-            .collect::<String>();
         let records = [
             json!({"type":"system","subtype":"init","session_id":UUID,"tools":[]}),
             json!({"type":"stream_event","session_id":UUID,"event":{"type":"message_start","message":{"id":"answer","role":"assistant","content":[]}}}),
@@ -47,15 +47,28 @@ impl FakeCli {
             json!({"type":"stream_event","session_id":UUID,"event":{"type":"message_stop"}}),
             json!({"type":"assistant","session_id":UUID,"message":{"id":"answer","role":"assistant","content":[{"type":"text","text":"Synthetic answer"}]}}),
         ];
+        Self::with_records(f, tail, terminal, &records)
+    }
+    fn with_records(
+        f: &Fixture,
+        tail: &str,
+        terminal: bool,
+        records: &[serde_json::Value],
+    ) -> Self {
+        let executable = f.dir.path().join("fake-cli");
+        let help = policy::REQUIRED_FLAGS
+            .iter()
+            .map(|flag| format!("{flag} fixture\n"))
+            .collect::<String>();
         let mut wire = records.iter().map(|r| format!("{r}\n")).collect::<String>();
         if terminal {
-            wire.push_str(&format!("{}\n", json!({"type":"result","session_id":UUID,"subtype":"success","is_error":false,"result":"NOT the projected answer"})));
+            wire.push_str(&format!("{}\n", json!({"type":"result","session_id":UUID,"subtype":"success","is_error":false,"result":"Synthetic answer"})));
         }
         let auth = r#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"fixture@example.invalid","orgId":"fixture-org"}"#;
         let script = format!(
             "#!/bin/sh\ncase \"$1\" in\n--version) printf '%s\\n' '2.1.299 (Claude Code)'; exit ;;\n--help) printf '%s' '{help}'; exit ;;\nesac\nfor arg in \"$@\"; do\n if [ \"$arg\" = '--print' ]; then\n  printf '%s\\n' \"$*\" >> invocations\n  printf '%s\\n' \"$$\" > root-pid\n  cat > received-prompt\n  printf '%s' '{wire}'\n  {tail}\n  exit 0\n fi\ndone\nprintf '%s\\n' '{auth}'\n"
         );
-        std::fs::write(&executable, script).unwrap();
+        crate::execution::claude_cli::test_support::write_script(&executable, script).unwrap();
         std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
         Self {
             executable,
@@ -66,6 +79,7 @@ impl FakeCli {
             .into_iter()
             .collect(),
             project: f.project.clone(),
+            model: policy::ModelAlias::Sonnet,
         }
     }
     fn prepared(&self, shared: &Shared) -> preflight::Prepared {
@@ -82,7 +96,7 @@ impl FakeCli {
                     trust_executable: true,
                     trust_project: true,
                     environment: self.environment.clone(),
-                    model: policy::ModelAlias::Sonnet,
+                    model: self.model,
                 },
                 CancellationToken::new(),
             ))
@@ -130,6 +144,174 @@ fn settled(shared: &Shared, request: &str) -> ExternalPromptReceipt {
             && shared.session("cli").unwrap().active_run().is_none()
     });
     receipt(shared, request)
+}
+
+fn thinking_records(malformed_display: bool) -> Vec<serde_json::Value> {
+    let mut delta =
+        json!({"type":"thinking_delta","thinking":"Synthetic thought","estimated_tokens":128});
+    if malformed_display {
+        delta["thinking"] = json!({"private":"PRIVATE_raw_record"});
+    }
+    delta["future_metadata"] = json!({"opaque":"PRIVATE_raw_record"});
+    vec![
+        json!({"type":"system","subtype":"init","session_id":UUID,"tools":[]}),
+        json!({"type":"stream_event","session_id":UUID,"event":{"type":"message_start","message":{"id":"answer","role":"assistant","content":[]}}}),
+        json!({"type":"stream_event","session_id":UUID,"event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}}),
+        json!({"type":"stream_event","session_id":UUID,"event":{"type":"content_block_delta","index":0,"delta":delta}}),
+        json!({"type":"assistant","session_id":UUID,"uuid":"thinking-block","message":{"id":"answer","role":"assistant","content":[{"type":"thinking","thinking":"Synthetic thought"}]}}),
+        json!({"type":"stream_event","session_id":UUID,"event":{"type":"content_block_stop","index":0}}),
+        json!({"type":"stream_event","session_id":UUID,"event":{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}}),
+        json!({"type":"stream_event","session_id":UUID,"event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Synthetic answer"}}}),
+        json!({"type":"assistant","session_id":UUID,"uuid":"text-block","message":{"id":"answer","role":"assistant","content":[{"type":"text","text":"Synthetic answer"}]}}),
+        json!({"type":"stream_event","session_id":UUID,"event":{"type":"content_block_stop","index":1}}),
+        json!({"type":"stream_event","session_id":UUID,"event":{"type":"message_stop"}}),
+    ]
+}
+
+#[test]
+fn opus_thinking_estimates_complete_and_resume_without_native_requests() {
+    let f = Fixture::new();
+    let provider = Scripted::echo("must not be used");
+    let engine = f.start(&provider);
+    let shared = engine.handle.shared().clone();
+    let mut cli = FakeCli::with_records(&f, ":", true, &thinking_records(false));
+    cli.model = policy::ModelAlias::Opus;
+    cli.seed(&shared);
+    for (request, mode) in [
+        ("first", ExternalPromptMode::Fresh),
+        ("second", ExternalPromptMode::Resume),
+    ] {
+        cli.submit(&shared, request, "synthetic prompt").unwrap();
+        let done = settled(&shared, request);
+        assert_eq!(done.state, ExternalRunState::Completed);
+        assert_eq!(done.mode, mode);
+        assert_eq!(
+            done.result,
+            Some(PromptResult::Done {
+                text: "Synthetic answer".into(),
+                reason: None
+            })
+        );
+        assert!(done.evidence.unwrap().projection_finished);
+        assert!(done.terminal.unwrap().usage.is_none()); // estimates are not usage
+        assert!(
+            shared
+                .store
+                .cli_binding("cli")
+                .unwrap()
+                .unwrap()
+                .context_valid
+        );
+    }
+    let launches = cli.launches();
+    assert_eq!(launches.len(), 2);
+    assert!(launches.iter().all(|args| args.contains("--model opus")));
+    assert!(launches[1].contains("--resume"));
+    assert!(provider.requests().is_empty());
+}
+
+#[test]
+fn malformed_thinking_display_keeps_warning_and_allows_explicit_next_turn() {
+    let f = Fixture::new();
+    let provider = Scripted::echo("must not be used");
+    let engine = f.start(&provider);
+    let shared = engine.handle.shared().clone();
+    let mut cli = FakeCli::with_records(&f, ":", true, &thinking_records(true));
+    cli.model = policy::ModelAlias::Opus;
+    cli.seed(&shared);
+    cli.submit(&shared, "first", "synthetic prompt").unwrap();
+    let done = settled(&shared, "first");
+    assert_eq!(done.state, ExternalRunState::Completed);
+    assert_eq!(
+        done.result,
+        Some(PromptResult::Done {
+            text: "Synthetic answer".into(),
+            reason: None
+        })
+    );
+    let evidence = done.evidence.unwrap();
+    assert!(evidence.presentation_incomplete && evidence.projection_finished);
+    assert!(evidence.projection_error.is_none() && evidence.supervisor_stop.is_none());
+    assert!(evidence.root_reaped && evidence.pipes_drained);
+    let (entries, _) = shared.store.page("cli", None, 100).unwrap();
+    let EntryKind::Notice {
+        level: NoticeLevel::Warning,
+        text,
+    } = &entries.last().unwrap().kind
+    else {
+        panic!("durable diagnostic")
+    };
+    assert!(text.contains("completed") && text.contains("can continue"));
+    assert!(!text.contains("PRIVATE"));
+    cli.submit(&shared, "second", "distinct new instruction")
+        .unwrap();
+    assert_eq!(
+        settled(&shared, "second").state,
+        ExternalRunState::Completed
+    );
+    assert_eq!(cli.launches().len(), 2);
+    assert!(provider.requests().is_empty());
+}
+
+#[test]
+fn burst_output_and_trailing_telemetry_complete_without_duplicates_or_native_execution() {
+    let f = Fixture::new();
+    let provider = Scripted::echo("must not be used");
+    let engine = f.start(&provider);
+    let shared = engine.handle.shared().clone();
+    let mut records = thinking_records(false);
+    records.splice(7..8, (0..2048).map(|_| json!({"type":"stream_event","session_id":UUID,"event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"a"}}})));
+    let tail = format!(
+        "printf '%s\\n' '{}'",
+        json!({"type":"system","subtype":"prompt_suggestion","session_id":UUID,"suggestion":"inert telemetry"})
+    );
+    let cli = FakeCli::with_records(&f, &tail, true, &records);
+    cli.seed(&shared);
+    cli.submit(&shared, "burst", "synthetic burst").unwrap();
+    let done = settled(&shared, "burst");
+    assert_eq!(done.state, ExternalRunState::Completed);
+    assert_eq!(
+        done.result,
+        Some(PromptResult::Done {
+            text: "Synthetic answer".into(),
+            reason: None
+        })
+    );
+    assert!(!done.evidence.unwrap().presentation_incomplete);
+    assert_eq!(cli.launches().len(), 1);
+    assert!(provider.requests().is_empty());
+}
+
+#[test]
+fn clean_reported_provider_error_is_not_unknown_or_an_automatic_retry() {
+    let f = Fixture::new();
+    let provider = Scripted::echo("must not be used");
+    let engine = f.start(&provider);
+    let shared = engine.handle.shared().clone();
+    let records = vec![
+        json!({"type":"system","subtype":"init","session_id":UUID,"tools":[]}),
+        json!({"type":"result","subtype":"error_during_execution","is_error":true,"session_id":UUID}),
+    ];
+    let cli = FakeCli::with_records(&f, "exit 1", false, &records);
+    cli.seed(&shared);
+    cli.submit(&shared, "first", "first instruction").unwrap();
+    let done = settled(&shared, "first");
+    assert!(matches!(done.outcome, Some(RunOutcome::ModelError { .. })));
+    assert!(
+        shared
+            .store
+            .cli_binding("cli")
+            .unwrap()
+            .unwrap()
+            .context_valid
+    );
+    cli.submit(&shared, "first", "first instruction").unwrap();
+    assert_eq!(cli.launches().len(), 1); // same receipt, never re-executed
+    cli.submit(&shared, "second", "different new instruction")
+        .unwrap();
+    assert_eq!(settled(&shared, "second").mode, ExternalPromptMode::Resume);
+    assert_eq!(cli.launches().len(), 2);
+    assert!(provider.requests().is_empty());
 }
 
 #[test]
@@ -438,7 +620,23 @@ fn storage_failure_cancels_drains_and_leaves_receipt_unfinished_for_recovery() {
     wait(|| sess.failure().is_some() && sess.active_run().is_none());
     let unfinished = receipt(&shared, "p");
     assert_eq!(unfinished.state, ExternalRunState::Running);
-    assert_eq!(unfinished.cursor, 1);
+    // Init may share the failed atomic batch or have committed in an earlier batch.
+    assert!(unfinished.cursor <= 1);
+    assert!(
+        !shared
+            .store
+            .page("cli", None, 100)
+            .unwrap()
+            .0
+            .iter()
+            .any(|entry| matches!(
+                entry.kind,
+                EntryKind::ExternalMessage {
+                    role: ExternalRole::Assistant,
+                    ..
+                }
+            ))
+    );
     assert!(unfinished.evidence.is_none() && unfinished.outcome.is_none());
     assert!(
         !shared

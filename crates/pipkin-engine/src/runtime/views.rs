@@ -81,10 +81,15 @@ impl Shared {
         let (entries, has_older) = self
             .store
             .window(session, window.clamp(1, limits::MAX_PAGE_ENTRIES))?;
-        let native = row.execution_backend.native_execution();
+        let native = matches!(
+            row.execution_backend,
+            ExecutionBackend::NativeAgent | ExecutionBackend::ClaudeCliAgent
+        );
         // Never project foreign/native journal rows as a runnable external-agent turn.
         let run = match row.execution_backend {
-            ExecutionBackend::NativeAgent => self.store.open_run(session)?.and_then(|r| r.view()),
+            ExecutionBackend::NativeAgent | ExecutionBackend::ClaudeCliAgent => {
+                self.store.open_run(session)?.and_then(|r| r.view())
+            }
             ExecutionBackend::LocalClaudeCli => self.external_run_view(session)?,
             ExecutionBackend::Unsupported => None,
         };
@@ -98,9 +103,9 @@ impl Shared {
         let model = row
             .model
             .as_deref()
-            .filter(|_| native)
+            .filter(|_| row.execution_backend.native_execution())
             .and_then(|k| catalog.find(k));
-        let thinking = if native {
+        let thinking = if row.execution_backend.native_execution() {
             models::thinking_view(model, row.thinking.as_deref())
         } else {
             ThinkingView::default()

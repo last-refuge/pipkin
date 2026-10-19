@@ -368,13 +368,14 @@ fn schema24_backup_preserves_identity_before_action_support() {
     let s = Store::open(dir.path()).unwrap();
     coding(&s);
     s.tx(|tx| {
-        tx.execute_batch("DROP TABLE external_projection_actions; PRAGMA user_version=24;")?;
+        crate::store::cli_agent::remove_schema_for_test(tx)?;
+        tx.execute_batch("DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; DROP TABLE external_projection_actions; PRAGMA user_version=24;")?;
         Ok(())
     })
     .unwrap();
     drop(s);
     let s = Store::open(dir.path()).unwrap();
-    assert_eq!(s.read(schema::version).unwrap(), 25);
+    assert_eq!(s.read(schema::version).unwrap(), SCHEMA_VERSION);
     let old = Connection::open(dir.path().join("engine.sqlite.v24.bak")).unwrap();
     assert_eq!(schema::version(&old).unwrap(), 24);
     assert!(

@@ -102,17 +102,22 @@ impl Shared {
     }
 
     /// The session's working directory, when the session exists.
-    fn mcp_cwd(&self, session: Option<&str>) -> Result<Option<PathBuf>, ProtoError> {
+    pub(super) fn mcp_cwd(&self, session: Option<&str>) -> Result<Option<PathBuf>, ProtoError> {
         let Some(session) = session else {
             return Ok(None);
         };
-        self.require_native_execution(session)?;
         let row = self.store.session(session)?.ok_or_else(|| {
             ProtoError::new(
                 ErrorCode::NotFound,
                 format!("Session {session} does not exist"),
             )
         })?;
+        if row.execution_backend != ExecutionBackend::ClaudeCliAgent
+            || row.parent.is_some()
+            || row.root.is_some()
+        {
+            self.require_native_execution(session)?;
+        }
         Ok(Some(PathBuf::from(row.cwd)))
     }
 
@@ -120,7 +125,13 @@ impl Shared {
     /// (`project` when the project's settings set or changed it).
     pub fn mcp_config_for(&self, session: Option<&str>) -> Result<McpConfig, ProtoError> {
         let cwd = self.mcp_cwd(session)?;
-        let mut merged = Settings::load(&self.config.config_dir, cwd.as_deref()).0;
+        Ok(self.mcp_config_at(cwd.as_deref()))
+    }
+
+    // Data-only seam for independently authorized native CLI calls. Public session paths
+    // continue through mcp_cwd (native or explicit root CLI settings); this never grants inference rights.
+    pub(super) fn mcp_config_at(&self, cwd: Option<&std::path::Path>) -> McpConfig {
+        let mut merged = Settings::load(&self.config.config_dir, cwd).0;
         let user = Settings::load(&self.config.config_dir, None).0;
         let user_servers = user
             .other
@@ -148,7 +159,7 @@ impl Shared {
         merged
             .other
             .insert("mcpScopes".into(), Value::Object(scopes));
-        Ok(McpConfig::from_settings(&merged))
+        McpConfig::from_settings(&merged)
     }
 
     /// Apply the session's configuration to the service before a call. Servers whose
@@ -424,6 +435,36 @@ impl Shared {
 /// The person declining any field declines the whole request; a stopped run cancels it.
 struct QuestionElicitor {
     shared: std::sync::Weak<Shared>,
+    scoped: Option<(String, String, Arc<dyn crate::tools::ToolHost>)>,
+}
+impl QuestionElicitor {
+    async fn ask(
+        &self,
+        shared: &Arc<Shared>,
+        session: &str,
+        question: crate::extensions::questions::Question,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> crate::tools::ask::AskOutcome {
+        if let Some((expected, call, host)) = &self.scoped {
+            if session != expected {
+                return crate::tools::ask::AskOutcome::Unanswered;
+            }
+            host.ask(call, question, cancel).await
+        } else {
+            shared.ask_user(session, question, cancel).await
+        }
+    }
+}
+pub(super) fn scoped_elicitor(
+    shared: &Arc<Shared>,
+    session: String,
+    call: String,
+    host: Arc<dyn crate::tools::ToolHost>,
+) -> Arc<dyn crate::mcp::Elicitor> {
+    Arc::new(QuestionElicitor {
+        shared: Arc::downgrade(shared),
+        scoped: Some((session, call, host)),
+    })
 }
 
 /// One field of an elicitation schema.
@@ -543,6 +584,10 @@ impl crate::mcp::Elicitor for QuestionElicitor {
         use crate::extensions::questions::Question;
         use crate::mcp::ElicitOutcome;
         use crate::tools::ask::AskOutcome;
+        let presenter = QuestionElicitor {
+            shared: self.shared.clone(),
+            scoped: self.scoped.clone(),
+        };
         let shared = self.shared.clone();
         let session = session.to_owned();
         let server = server.to_owned();
@@ -567,7 +612,7 @@ impl crate::mcp::Elicitor for QuestionElicitor {
             // An empty form is a yes/no on the message itself.
             if fields.is_empty() {
                 let q = Question::confirm(format!("{server} asks: {message}"));
-                return match shared.ask_user(&session, q, cancel.clone()).await {
+                return match presenter.ask(&shared, &session, q, cancel.clone()).await {
                     AskOutcome::Answered(Answer::Confirm { value: true }) => ElicitOutcome {
                         action: "accept".into(),
                         content: Some(Value::Object(content)),
@@ -620,7 +665,7 @@ impl crate::mcp::Elicitor for QuestionElicitor {
                         };
                         q = q.with_default(text);
                     }
-                    let answer = shared.ask_user(&session, q, cancel.clone()).await;
+                    let answer = presenter.ask(&shared, &session, q, cancel.clone()).await;
                     let value = match (answer, &field.kind) {
                         (AskOutcome::Answered(Answer::Choice { value }), FieldKind::Choice(_)) => {
                             Value::String(value)
@@ -770,6 +815,7 @@ pub(super) fn attach(shared: &Arc<Shared>) {
     }));
     shared.mcp.set_elicitor(Arc::new(QuestionElicitor {
         shared: weak.clone(),
+        scoped: None,
     }));
     shared.mcp.set_listener(Arc::new({
         let weak = weak.clone();

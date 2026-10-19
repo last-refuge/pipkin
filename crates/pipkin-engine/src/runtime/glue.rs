@@ -23,6 +23,9 @@ pub(super) struct Resources {
 }
 
 impl Resources {
+    pub(super) fn captured(&self, cwd: &str) -> Option<PromptInput> {
+        self.directories.get(cwd).cloned()
+    }
     /// Render current tool contributions using the group's frozen context files/skills.
     pub(super) fn system_sections(
         &mut self,

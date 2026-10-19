@@ -575,6 +575,32 @@ impl WebService {
         count: usize,
         cancel: CancellationToken,
     ) -> Result<(String, Vec<SourceRecord>), SearchError> {
+        let (name, results) = self.search_raw(query, count, cancel).await?;
+        let records = self
+            .store
+            .tx(|tx| {
+                Store::record_search(
+                    tx,
+                    session,
+                    call_id,
+                    &name,
+                    query.trim(),
+                    &results,
+                    crate::util::now_ms(),
+                )
+            })
+            .map_err(|e| SearchError::Network(format!("could not record sources: {e}")))?;
+        Ok((name, records))
+    }
+
+    /// Network-only half; native CLI hosts retain results inside their scoped publication
+    /// transaction. It does not execute model inference or grant storage authority.
+    pub(crate) async fn search_raw(
+        &self,
+        query: &str,
+        count: usize,
+        cancel: CancellationToken,
+    ) -> Result<(String, Vec<providers::SearchResult>), SearchError> {
         let query = query.trim();
         if query.is_empty() {
             return Err(SearchError::InvalidResponse("the query is empty".into()));
@@ -614,13 +640,7 @@ impl WebService {
         let Some(provider) = used else {
             return Err(last.unwrap_or_else(|| SearchError::NotConfigured("no provider".into())));
         };
-        let now = crate::util::now_ms();
-        let name = provider.name().to_owned();
-        let records = self
-            .store
-            .tx(|tx| Store::record_search(tx, session, call_id, &name, query, &results, now))
-            .map_err(|e| SearchError::Network(format!("could not record sources: {e}")))?;
-        Ok((name, records))
+        Ok((provider.name().to_owned(), results))
     }
 
     /// Fetch and retain a page.

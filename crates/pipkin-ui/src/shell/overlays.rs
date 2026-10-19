@@ -152,7 +152,7 @@ impl Workspace {
             }
             Overlay::Model => {
                 if let Some(model) = self.provider_menu.get(sel).map(|m| m.selection.clone()) {
-                    let same = self.state(cx).selected_provider_model().as_ref() == Some(&model);
+                    let same = self.state(cx).provider_selection_matches(&model);
                     self.close_overlay(window, cx);
                     self.dispatch(Command::SelectProviderModel(model.clone()), cx);
                     if matches!(model, pipkin_core::ProviderModel::ClaudeCli(_)) && !same {
@@ -839,16 +839,11 @@ impl Workspace {
         let model_settings = self.state(cx).execution_capabilities().model_settings;
         let (model, effort, has_effort) = {
             let s = self.state(cx);
-            let model = s
-                .provider_models()
-                .into_iter()
-                .find(|m| Some(&m.selection) == s.selected_provider_model().as_ref())
-                .map(|m| m.name)
-                .unwrap_or_else(|| {
-                    super::local_cli::restricted_model_label(s)
-                        .unwrap_or("Choose model")
-                        .into()
-                });
+            let model = s.selected_provider_label().unwrap_or_else(|| {
+                super::local_cli::restricted_model_label(s)
+                    .unwrap_or("Choose model")
+                    .into()
+            });
             let effort = s
                 .current()
                 .and_then(|conv| conv.thinking_level.as_deref())
@@ -1061,7 +1056,7 @@ impl Workspace {
                         (
                             m.name.clone(),
                             m.detail.clone(),
-                            Some(&m.selection) == s.selected_provider_model().as_ref(),
+                            s.provider_selection_matches(&m.selection),
                         )
                     })
                     .collect()

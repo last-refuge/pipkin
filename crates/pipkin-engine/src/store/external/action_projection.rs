@@ -15,7 +15,15 @@ impl Store {
             [&key.session],
             |r| r.get(0),
         )?;
-        if policy != super::super::permissions::EXTERNAL_PERMISSION_POLICY {
+        let unattended = policy == crate::execution::claude_cli::coding_policy::ID;
+        let allowed = |name: &str| {
+            if unattended {
+                token(name)
+            } else {
+                name == "Write"
+            }
+        };
+        if !unattended && policy != super::super::permissions::EXTERNAL_PERMISSION_POLICY {
             return Err(StoreError::UnsupportedExecution);
         }
         match event {
@@ -30,7 +38,7 @@ impl Store {
                     || !message_id.bytes().all(|b| b.is_ascii_graphic())
                     || *block_index >= MAX_BLOCKS
                     || !token(tool_id)
-                    || name != "Write"
+                    || !allowed(name)
                 {
                     return Err(StoreError::ExecutionConflict);
                 }
@@ -127,7 +135,7 @@ impl Store {
                     return Err(StoreError::ExecutionConflict);
                 };
                 if source_tool_id != tool_id
-                    || name != "Write"
+                    || !allowed(name)
                     || *state != ExternalActionState::Observed
                 {
                     return Err(StoreError::ExecutionConflict);
@@ -148,7 +156,7 @@ impl Store {
                     }
                 };
                 *output = text.clone();
-                if tx.execute("UPDATE external_actions SET status=?5,updated_at=MAX(updated_at,?6) WHERE session=?1 AND generation=?2 AND op=?3 AND call_id=?4 AND tool_name='Write' AND status='observed'", params![key.session,key.generation,key.op,tool_id,status,now])? != 1 {
+                if tx.execute("UPDATE external_actions SET status=?5,updated_at=MAX(updated_at,?6) WHERE session=?1 AND generation=?2 AND op=?3 AND call_id=?4 AND tool_name=?7 AND status='observed'", params![key.session,key.generation,key.op,tool_id,status,now,name.as_str()])? != 1 {
                     return Err(StoreError::ExecutionConflict);
                 }
                 Self::replace_entry(tx, &key.session, &entry)?;

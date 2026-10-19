@@ -141,6 +141,37 @@ impl Shared {
         spec: JobSpec,
     ) -> Result<JobView, ProtoError> {
         self.require_native_execution(session)?;
+        self.job_start_inner(session, origin, call_id, run, spec, None)
+            .await
+    }
+
+    pub(super) async fn job_start_cli(
+        self: &Arc<Self>,
+        authority: &super::cli_agent_host::JobAuthority,
+        spec: JobSpec,
+    ) -> Result<JobView, ProtoError> {
+        authority.check()?;
+        self.job_start_inner(
+            authority.session(),
+            "model",
+            Some(authority.call()),
+            Some(authority.run()),
+            spec,
+            Some(authority),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn job_start_inner(
+        self: &Arc<Self>,
+        session: &str,
+        origin: &str,
+        call_id: Option<&str>,
+        run: Option<u64>,
+        spec: JobSpec,
+        authority: Option<&super::cli_agent_host::JobAuthority>,
+    ) -> Result<JobView, ProtoError> {
         let command = spec.command.trim().to_owned();
         if command.is_empty() {
             return Err(invalid("The job needs a command"));
@@ -209,7 +240,19 @@ impl Shared {
             .map(str::trim)
             .filter(|n| !n.is_empty())
             .map(|n| n.chars().take(80).collect::<String>());
-        let created = self.commit(&sess, |tx| {
+        let intent = |tx: &rusqlite::Transaction| {
+            if Store::jobs_active_count(tx, session)? >= MAX_ACTIVE_JOBS {
+                return Err(crate::store::StoreError::ExecutionConflict);
+            }
+            if authority.is_some()
+                && tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM jobs WHERE session=?1 AND call_id=?2)",
+                    rusqlite::params![session, call_id],
+                    |r| r.get::<_, bool>(0),
+                )?
+            {
+                return Err(crate::store::StoreError::ExecutionConflict);
+            }
             // The log path needs the id; reserve by creating with a placeholder, then fix.
             let row = Store::job_create(
                 tx,
@@ -242,10 +285,18 @@ impl Shared {
                     jobs: jobs_view(&rows, truncated),
                 }],
             ))
-        })?;
-        let id = created;
+        };
+        let id = if let Some(authority) = authority {
+            authority.commit(intent)?
+        } else {
+            self.commit(&sess, intent)?
+        };
         let log_path = dir.join(format!("{id}.log"));
         super::faults::crash_point("after_job_intent");
+        #[cfg(test)]
+        if let Some(authority) = authority {
+            authority.before_spawn().await;
+        }
         // 2. Spawn.
         let token = job_token(epoch, session, id, &nonce);
         let mut env: Vec<(String, String)> =
@@ -262,7 +313,24 @@ impl Shared {
             .kill_on_drop(true);
         #[cfg(unix)]
         cmd.process_group(0);
-        let child = match cmd.spawn() {
+        let spawned = match authority {
+            Some(authority) => match authority.spawn(&mut cmd) {
+                Ok(spawned) => spawned,
+                Err(e) => {
+                    self.job_settle(
+                        session,
+                        id,
+                        "cancelled",
+                        None,
+                        Some("CLI job scope ended before spawn"),
+                    )
+                    .await;
+                    return Err(e);
+                }
+            },
+            None => cmd.spawn(),
+        };
+        let mut child = match spawned {
             Ok(child) => child,
             Err(e) => {
                 let reason = crate::tools::path::spawn_error(&e, &shell);
@@ -272,8 +340,9 @@ impl Shared {
             }
         };
         let pid = child.id().unwrap_or(0);
-        // 3. Receipt.
-        self.commit(&sess, |tx| {
+        // 3. Actual receipt is cleanup/evidence, not another execution grant. A revoked
+        // CLI scope cannot hide a known spawn. On failure, kill/reap the whole owned group.
+        let receipt = self.commit(&sess, |tx| {
             Store::job_receipt(tx, session, id, pid, now_ms())?;
             let (rows, truncated) = Store::jobs(tx, session)?;
             Ok((
@@ -282,7 +351,13 @@ impl Shared {
                     jobs: jobs_view(&rows, truncated),
                 }],
             ))
-        })?;
+        });
+        if let Err(e) = receipt {
+            kill_group(&mut child);
+            let _ = child.wait().await;
+            self.job_settle(session,id,"unknown",None,Some("Job spawned but its receipt could not be committed; process cleanup attempted; do not replay")).await;
+            return Err(e);
+        }
         super::faults::crash_point("after_job_receipt");
         // 4. Supervise.
         let cancel = CancellationToken::new();
@@ -511,6 +586,17 @@ impl Shared {
         if row.active() || row.delivery != "pending" {
             return;
         }
+        // The tracked CLI host owns pending wake delivery. This generic supervisor
+        // only settles process evidence; it must never enqueue API inference.
+        if row.wake
+            && self.require_native_execution(session).is_err()
+            && self
+                .store
+                .read(|c| Store::cli_job_cleanup_owned(c, &row))
+                .unwrap_or(false)
+        {
+            return;
+        }
         let stopped = row
             .run
             .and_then(|run| {
@@ -520,7 +606,12 @@ impl Shared {
                     .flatten()
             })
             .is_some_and(|outcome| outcome.contains("aborted"));
-        let delivery = if !row.wake || row.origin != "model" {
+        // CLI continuation is owned exclusively by its tracked host. Even an old or
+        // unjoined wake flag must never route a CLI session into the API runner.
+        let delivery = if self.require_native_execution(session).is_err()
+            || !row.wake
+            || row.origin != "model"
+        {
             "notified"
         } else if stopped {
             "suppressed"
@@ -529,7 +620,7 @@ impl Shared {
         };
         if delivery == "woken" {
             let key = format!("job:{id}:done");
-            let text = self.wake_text(&row);
+            let text = self.job_wake_text(&row);
             match self
                 .enqueue(session, &key, InputMode::FollowUp, &text, &[])
                 .await
@@ -565,7 +656,7 @@ impl Shared {
         });
     }
 
-    fn wake_text(&self, row: &JobRow) -> String {
+    pub(super) fn job_wake_text(&self, row: &JobRow) -> String {
         let label = row.name.clone().unwrap_or_else(|| row.command.clone());
         let elapsed = match (row.started_at, row.ended_at) {
             (Some(s), Some(e)) if e >= s => format!(" after {}", format_elapsed(e - s)),
@@ -732,7 +823,12 @@ impl Shared {
             return;
         };
         for row in rows {
-            if self.require_native_execution(&row.session).is_err() {
+            if self.require_native_execution(&row.session).is_err()
+                && !self
+                    .store
+                    .read(|c| Store::cli_job_cleanup_owned(c, &row))
+                    .unwrap_or(false)
+            {
                 continue;
             }
             if row.engine_epoch == self.epoch {
@@ -788,8 +884,19 @@ impl Shared {
                 return;
             };
             for row in rows {
-                if shared.require_native_execution(&row.session).is_ok() {
-                    shared.job_deliver(&row.session, row.id).await;
+                if shared.require_native_execution(&row.session).is_ok()
+                    || shared
+                        .store
+                        .read(|c| Store::cli_job_cleanup_owned(c, &row))
+                        .unwrap_or(false)
+                {
+                    if shared.require_native_execution(&row.session).is_err() && row.wake {
+                        // Startup has no original connected ticket. Saved completion data
+                        // cannot authorize a new CLI process, even for a confirmed job.
+                        shared.job_set_delivery(&row.session, row.id, "suppressed");
+                    } else {
+                        shared.job_deliver(&row.session, row.id).await;
+                    }
                 }
             }
         });

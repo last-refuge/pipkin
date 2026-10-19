@@ -40,7 +40,20 @@ pub fn execution_context(summary: &SessionSummary) -> EventKind {
     use pipkin_engine_protocol::ExecutionBackend;
     let (profile, execution_blocked) = match summary.execution_backend {
         ExecutionBackend::NativeAgent => (ExecutionProfile::NativeAgent, None),
+        ExecutionBackend::ClaudeCliAgent
+            if summary.local_cli_mode
+                == Some(pipkin_engine_protocol::LocalCliMode::Orchestration) =>
+        {
+            (ExecutionProfile::ClaudeCliAgent, summary.blocked.clone())
+        }
+        ExecutionBackend::ClaudeCliAgent => (
+            ExecutionProfile::Unsupported,
+            Some(super::execution::UNKNOWN.into()),
+        ),
         ExecutionBackend::LocalClaudeCli => match summary.local_cli_mode {
+            Some(pipkin_engine_protocol::LocalCliMode::Coding) => {
+                (ExecutionProfile::LocalCliCoding, summary.blocked.clone())
+            }
             Some(pipkin_engine_protocol::LocalCliMode::ChatOnly) => {
                 (ExecutionProfile::LocalCliChatOnly, summary.blocked.clone())
             }
@@ -69,12 +82,14 @@ pub fn conversation_model(summary: &SessionSummary) -> EventKind {
     use pipkin_engine_protocol::ExecutionBackend;
     let model = match summary.execution_backend {
         ExecutionBackend::NativeAgent => summary.model.clone().map(ProviderModel::Native),
-        ExecutionBackend::LocalClaudeCli => match summary.model.as_deref() {
-            Some("haiku") => Some(ProviderModel::ClaudeCli(CliModel::Haiku)),
-            Some("sonnet") => Some(ProviderModel::ClaudeCli(CliModel::Sonnet)),
-            Some("opus") => Some(ProviderModel::ClaudeCli(CliModel::Opus)),
-            _ => None,
-        },
+        ExecutionBackend::LocalClaudeCli | ExecutionBackend::ClaudeCliAgent => {
+            match summary.model.as_deref() {
+                Some("haiku") => Some(ProviderModel::ClaudeCli(CliModel::Haiku)),
+                Some("sonnet") => Some(ProviderModel::ClaudeCli(CliModel::Sonnet)),
+                Some("opus") => Some(ProviderModel::ClaudeCli(CliModel::Opus)),
+                _ => None,
+            }
+        }
         ExecutionBackend::Unsupported => None,
     };
     EventKind::ConversationModel(model)
@@ -1215,6 +1230,7 @@ pub fn context(view: &pipkin_engine_protocol::ContextUsageView) -> pipkin_core::
         tokens: view.tokens,
         source: match view.source.as_str() {
             "reported" => ContextSource::Reported,
+            "cli-reported-input" => ContextSource::ReportedInput,
             "estimated" => ContextSource::Estimated,
             _ => ContextSource::Unavailable,
         },

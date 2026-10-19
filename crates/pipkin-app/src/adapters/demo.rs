@@ -269,7 +269,8 @@ impl Ctx {
                 match action {
                     None => run.ended = true,
                     Some(Action::Sleep(ms)) => run.due = Instant::now() + self.scale(ms),
-                    Some(Action::Emit(mut kind)) => {
+                    Some(Action::Emit(kind)) => {
+                        let mut kind = *kind;
                         if let EventKind::JobsSynced { jobs } = &mut kind {
                             // Scripted job times are relative to the step; the demo never
                             // runs anything, so the clock is the only thing that moves.

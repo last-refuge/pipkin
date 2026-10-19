@@ -23,7 +23,7 @@ fn init(tools: &[&str]) -> Value {
 fn terminal() -> Value {
     envelope(
         "result",
-        json!({"subtype":"success","is_error":false,"result":"not appended"}),
+        json!({"subtype":"success","is_error":false,"result":""}),
     )
 }
 fn stream(body: Value) -> Value {
@@ -244,7 +244,7 @@ fn thinking_and_text_are_separate_indexed_blocks_and_messages() {
 }
 
 #[test]
-fn snapshot_before_stream_stop_still_requires_closing_stream() {
+fn snapshot_before_stream_stop_and_missing_preview_stop_keep_execution_separate() {
     let records = vec![
         init(&[]),
         start("m"),
@@ -257,7 +257,11 @@ fn snapshot_before_stream_stop_still_requires_closing_stream() {
     assert!(run(&records, &[]).is_ok());
     let mut invalid = records;
     invalid.remove(4);
-    assert_eq!(run(&invalid, &[]).unwrap_err(), Error::Sequence);
+    let (summary, _) = run(&invalid, &[]).unwrap();
+    assert!(summary.presentation_incomplete);
+    assert_eq!(summary.outcome, Some(Outcome::Success));
+    invalid.pop();
+    assert_eq!(run(&invalid, &[]).unwrap_err(), Error::Incomplete);
 }
 
 #[test]
@@ -474,7 +478,7 @@ fn reused_tool_ids_conflicting_results_and_unknown_tools_fail() {
             &["Write"]
         )
         .unwrap_err(),
-        Error::Sequence
+        Error::OrphanToolResult
     );
     let mut error = terminal();
     error["subtype"] = json!("error_during_execution");
@@ -515,7 +519,7 @@ fn result_block_arrays_and_explicit_null_error_flag_remain_uncertain() {
 }
 
 #[test]
-fn unknown_envelopes_count_but_mutating_unknowns_fail_closed() {
+fn unknown_envelopes_are_observations_never_completion_authority() {
     let records = vec![
         json!({"type":"future","result":"success","is_error":false,"account":SECRET}),
         init(&[]),
@@ -528,10 +532,10 @@ fn unknown_envelopes_count_but_mutating_unknowns_fail_closed() {
     for field in ["message", "event", "content", "delta", "tool_use_result"] {
         let mut unknown = json!({"type":"future"});
         unknown[field] = Value::Null;
-        assert_eq!(
-            feed(&mut decoder(), &[unknown], &mut Vec::new()),
-            Err(Error::UnsupportedContent)
-        );
+        let mut decoder = decoder();
+        feed(&mut decoder, &[unknown], &mut Vec::new()).unwrap();
+        assert!(decoder.summary().presentation_incomplete);
+        assert_eq!(decoder.finish(|_| Ok::<_, ()>(())), Err(Error::Incomplete));
     }
     let mut decoder = decoder();
     feed(
@@ -544,13 +548,17 @@ fn unknown_envelopes_count_but_mutating_unknowns_fail_closed() {
 }
 
 #[test]
-fn unknown_content_delta_types_and_nested_streams_fail_closed() {
+fn unsupported_display_is_a_warning_but_nested_and_tool_streams_fail_closed() {
     for bad in [
         json!({"type":"image","source":SECRET}),
         json!({"type":"future","text":"x"}),
         json!({"type":"redacted_thinking","data":SECRET}),
     ] {
-        assert!(run(&[init(&[]), assistant("m", json!([bad]))], &[]).is_err());
+        let (summary, events) =
+            run(&[init(&[]), assistant("m", json!([bad])), terminal()], &[]).unwrap();
+        assert!(summary.presentation_incomplete);
+        assert_eq!(summary.outcome, Some(Outcome::Success));
+        assert!(!format!("{events:?}").contains(SECRET));
     }
     for kind in [
         "citations_delta",
@@ -562,16 +570,22 @@ fn unknown_content_delta_types_and_nested_streams_fail_closed() {
         let bad = stream(
             json!({"type":"content_block_delta","index":0,"delta":{"type":kind,"text":"x","thinking":"x","partial_json":"{}","signature":"s"}}),
         );
-        assert!(run(&[init(&[]), start("m"), block(0, text("")), bad], &[]).is_err());
+        let decoded = run(
+            &[init(&[]), start("m"), block(0, text("")), bad, terminal()],
+            &[],
+        );
+        if kind == "input_json_delta" {
+            assert!(decoded.is_err());
+        } else {
+            assert!(decoded.unwrap().0.presentation_incomplete);
+        }
     }
     let mut nested = start("m");
     nested["parent_tool_use_id"] = json!("parent");
-    assert_eq!(
-        run(&[init(&[]), nested], &[]).unwrap_err(),
-        Error::UnsupportedContent
-    );
+    assert_eq!(run(&[init(&[]), nested], &[]).unwrap_err(), Error::Identity);
     let bad = stream(json!({"type":"message_delta","delta":{"text":"hidden mutation"}}));
-    assert!(run(&[init(&[]), start("m"), bad], &[]).is_err());
+    let (_, events) = run(&[init(&[]), start("m"), bad, stop(), terminal()], &[]).unwrap();
+    assert!(display(&events).is_empty());
 }
 
 #[test]
@@ -620,15 +634,11 @@ fn malformed_utf8_duplicate_fields_truncation_and_arrays_are_redacted() {
 }
 
 #[test]
-fn positional_struct_arrays_and_hidden_stream_mutations_are_rejected() {
+fn positional_presentation_and_unknown_metadata_cannot_establish_completion() {
     for record in [
         envelope("assistant", json!({"message":["m", "assistant", []]})),
         envelope("user", json!({"message":[null, "user", []]})),
         stream(json!({"type":"message_start","message":["m", "assistant", []]})),
-        envelope(
-            "result",
-            json!({"subtype":"success","is_error":false,"usage":[0,1,null,null]}),
-        ),
         stream(json!({"type":"ping","delta":{"type":"text_delta","text":"hidden"}})),
     ] {
         assert!(run(&[init(&[]), record], &[]).is_err());
@@ -680,7 +690,7 @@ fn crlf_and_complete_final_record_without_lf() {
 }
 
 #[test]
-fn terminal_summary_is_never_an_assistant_append_and_usage_is_optional() {
+fn terminal_summary_does_not_duplicate_existing_text_and_usage_is_optional() {
     let mut result = terminal();
     result["result"] = json!(SECRET);
     result["account"] = json!(SECRET);
@@ -709,7 +719,9 @@ fn terminal_summary_is_never_an_assistant_append_and_usage_is_optional() {
                 input_tokens: Some(0),
                 output_tokens: Some(12),
                 cache_read_input_tokens: None,
-                cache_creation_input_tokens: None
+                cache_creation_input_tokens: None,
+                reasoning_tokens: None,
+                cache_write_1h: None
             }),
             ..
         })
@@ -717,7 +729,11 @@ fn terminal_summary_is_never_an_assistant_append_and_usage_is_optional() {
     for invalid in [json!(-1), json!(1.5), json!("0"), json!({})] {
         let mut result = terminal();
         result["usage"] = json!({"input_tokens":invalid});
-        assert!(run(&[init(&[]), result], &[]).is_err());
+        let (_, events) = run(&[init(&[]), result], &[]).unwrap();
+        assert!(matches!(
+            events.last(),
+            Some(Event::Terminal { usage: None, .. })
+        ));
     }
 }
 
@@ -963,13 +979,18 @@ fn ids_message_count_and_total_block_count_are_bounded() {
     );
 
     let mut decoder = super::Decoder::new(SESSION, &[]).unwrap();
-    let blocks = vec![text(""); MAX_ENTRIES];
-    feed(
-        &mut decoder,
-        &[init(&[]), assistant("m", json!(blocks))],
-        &mut Vec::new(),
-    )
-    .unwrap();
+    feed(&mut decoder, &[init(&[])], &mut Vec::new()).unwrap();
+    for message in 0..MAX_ENTRIES / 256 {
+        feed(
+            &mut decoder,
+            &[assistant(
+                &format!("blocks{message}"),
+                json!(vec![text(""); 256]),
+            )],
+            &mut Vec::new(),
+        )
+        .unwrap();
+    }
     let mut events = Vec::new();
     assert_eq!(
         feed(
@@ -998,4 +1019,88 @@ fn large_chunks_have_no_internal_event_queue_and_counters_are_checked() {
         decoder.feed(unknown, |_| Ok::<_, ()>(())),
         Err(Error::Limit)
     );
+}
+
+#[test]
+fn native_context_telemetry_is_bounded_scoped_and_never_terminal_usage() {
+    let mut d = decoder().with_exact_inventory();
+    let mut out = vec![];
+    feed(&mut d,&[init(&[]),envelope("assistant",json!({"message":{"id":"a","role":"assistant","content":[],"usage":{"input_tokens":10,"cache_read_input_tokens":20,"cache_creation_input_tokens":30,"output_tokens":999}}})),envelope("system",json!({"subtype":"compact_boundary","compact_metadata":{"trigger":"auto","pre_tokens":1234}})),terminal()],&mut out).unwrap();
+    assert!(out.contains(&Event::Context {
+        tokens: Some(60),
+        compact_pre_tokens: None
+    }));
+    assert!(out.contains(&Event::Context {
+        tokens: None,
+        compact_pre_tokens: Some(1234)
+    }));
+    let n = out.len();
+    feed(&mut d,&[envelope("system",json!({"subtype":"compact_boundary","compact_metadata":{"trigger":"manual","pre_tokens":9999}}))],&mut out).unwrap();
+    assert_eq!(out.len(), n, "trailing telemetry cannot prove compaction");
+    for metadata in [
+        json!({"trigger":"manual","pre_tokens":-1}),
+        json!({"trigger":"manual","pre_tokens":u64::MAX}),
+        json!({"trigger":"made-up","pre_tokens":20}),
+        json!({"trigger":"manual"}),
+    ] {
+        let mut d = decoder().with_exact_inventory();
+        let mut out = vec![];
+        assert!(
+            feed(
+                &mut d,
+                &[
+                    init(&[]),
+                    envelope(
+                        "system",
+                        json!({"subtype":"compact_boundary","compact_metadata":metadata})
+                    )
+                ],
+                &mut out
+            )
+            .is_err()
+        );
+    }
+    let boundary = envelope(
+        "system",
+        json!({"subtype":"compact_boundary","compact_metadata":{"trigger":"manual","pre_tokens":10}}),
+    );
+    assert_eq!(
+        feed(
+            &mut decoder().with_exact_inventory(),
+            std::slice::from_ref(&boundary),
+            &mut vec![]
+        ),
+        Err(Error::MissingInit)
+    );
+    let mut foreign = boundary;
+    foreign["session_id"] = json!(OTHER);
+    assert_eq!(
+        feed(
+            &mut decoder().with_exact_inventory(),
+            &[init(&[]), foreign],
+            &mut vec![]
+        ),
+        Err(Error::Identity)
+    );
+}
+
+#[test]
+fn features_invalid_usage_subsets_do_not_erase_valid_counts_or_inflate_totals() {
+    for (reasoning, cache) in [
+        (json!(21), json!(11)),
+        (json!("private"), json!(-1)),
+        (Value::Null, Value::Null),
+    ] {
+        let mut result = terminal();
+        result["usage"] = json!({"input_tokens":-1,"output_tokens":20,"cache_creation_input_tokens":10,"output_tokens_details":{"thinking_tokens":reasoning},"cache_creation":{"ephemeral_1h_input_tokens":cache}});
+        let (_, events) = run(&[init(&[]), result], &[]).unwrap();
+        let Some(Event::Terminal { usage: Some(u), .. }) = events.last() else {
+            panic!("usage preserved")
+        };
+        assert_eq!(u.input_tokens, None);
+        assert_eq!(u.output_tokens, Some(20));
+        assert_eq!(u.cache_creation_input_tokens, Some(10));
+        assert_eq!(u.reasoning_tokens, None);
+        assert_eq!(u.cache_write_1h, None);
+    }
 }

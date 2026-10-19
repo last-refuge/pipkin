@@ -382,6 +382,88 @@ fn native_default_without_model_identity_does_not_inherit_another_chats_cli_choi
 }
 
 #[test]
+fn same_cli_alias_on_legacy_binding_starts_coding_setup_without_rewriting_or_forwarding() {
+    for profile in [
+        ExecutionProfile::LocalCliChatOnly,
+        ExecutionProfile::LocalCliRestrictedWrite,
+    ] {
+        let mut s = providers();
+        context(&mut s, profile, false);
+        let model = ProviderModel::ClaudeCli(CliModel::Sonnet);
+        event(
+            &mut s,
+            None,
+            EventKind::ConversationModel(Some(model.clone())),
+        );
+        assert!(!s.provider_selection_matches(&model));
+        assert_eq!(s.legacy_cli_coding_choice(), Some(model.clone()));
+        assert!(s.selected_provider_label().unwrap().contains("legacy"));
+        let out = s.dispatch(Command::SelectProviderModel(model.clone()));
+        assert_eq!(s.local_cli.draft.mode, CliMode::Coding);
+        assert_eq!(s.local_cli.draft.model, CliModel::Sonnet);
+        assert_eq!(s.local_cli.target, Some(LocalCliTarget::New));
+        assert!(s.provider_selection_pending(A));
+        assert_eq!(s.legacy_cli_coding_choice(), None);
+        assert_eq!(s.current_execution_profile(), Some(profile));
+        assert_eq!(s.selected_provider_model(), Some(model));
+        assert_eq!(s.current().unwrap().draft.text, "explicit text");
+        assert!(!out.effects.iter().any(|e| matches!(
+            e,
+            Effect::JournalIntent { .. } | Effect::Backend(BackendRequest::Submit { .. })
+        )));
+        s.dispatch(Command::LocalCli(LocalCliCommand::Cancel));
+        assert!(
+            !s.availability().submit,
+            "cancelled setup must not fall back to old tools-disabled route"
+        );
+        no_execution(&s.dispatch(Command::Submit));
+        s.dispatch(Command::KeepConversationProvider);
+        assert!(!s.provider_selection_pending(A));
+        assert_eq!(s.current_execution_profile(), Some(profile));
+    }
+}
+
+#[test]
+fn same_cli_alias_on_coding_binding_is_already_selected() {
+    let mut s = providers();
+    context(&mut s, ExecutionProfile::LocalCliCoding, false);
+    let model = ProviderModel::ClaudeCli(CliModel::Sonnet);
+    event(
+        &mut s,
+        None,
+        EventKind::ConversationModel(Some(model.clone())),
+    );
+    assert!(s.provider_selection_matches(&model));
+    assert_eq!(
+        s.selected_provider_label().as_deref(),
+        Some("Claude Code CLI · Sonnet")
+    );
+    no_execution(&s.dispatch(Command::SelectProviderModel(model)));
+    assert!(!s.provider_selection_pending(A));
+}
+
+#[test]
+fn legacy_same_alias_transition_never_sends_an_inflight_journal_intent() {
+    let mut s = providers();
+    context(&mut s, ExecutionProfile::LocalCliChatOnly, false);
+    let model = ProviderModel::ClaudeCli(CliModel::Sonnet);
+    event(
+        &mut s,
+        None,
+        EventKind::ConversationModel(Some(model.clone())),
+    );
+    let req = request(s.dispatch(Command::Submit));
+    s.dispatch(Command::SelectProviderModel(model));
+    s.dispatch(Command::KeepConversationProvider);
+    let out = s.intent_persisted(A, &req, Ok(()));
+    assert!(
+        !out.effects
+            .iter()
+            .any(|e| matches!(e, Effect::Backend(BackendRequest::Submit { .. })))
+    );
+}
+
+#[test]
 fn stale_or_unavailable_catalog_choice_is_not_silently_replaced() {
     let mut s = providers();
     s.local_cli.available = false;

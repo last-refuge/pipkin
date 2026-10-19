@@ -193,7 +193,7 @@ pub fn stamp_jobs(jobs: &mut pipkin_core::JobsSync, now_ms: i64) {
 #[derive(Debug, Clone)]
 pub enum Action {
     Sleep(u64),
-    Emit(EventKind),
+    Emit(Box<EventKind>),
     AwaitSteer(Option<u64>),
     AwaitStatus,
 }
@@ -330,7 +330,7 @@ pub fn expand(
     if step.if_steered.is_some_and(|want| want != steered) {
         return;
     }
-    let emit = |k: EventKind| Action::Emit(k);
+    let emit = |k: EventKind| Action::Emit(Box::new(k));
     match &step.op {
         StepOp::DelayMs { ms } => out.push_back(Action::Sleep(*ms)),
         StepOp::Accepted => out.push_back(emit(EventKind::Accepted)),

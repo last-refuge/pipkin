@@ -130,6 +130,9 @@ impl Shared {
                 format!("Session {session} does not exist"),
             )
         })?;
+        if self.store.cli_agent_binding(session)?.is_some() {
+            return self.store.cli_context_usage(session).map_err(Into::into);
+        }
         let entries = self.store.context_entries(session)?;
         let settings = self.settings_for(session);
         let model = row.model.clone();

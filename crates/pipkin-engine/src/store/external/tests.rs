@@ -62,12 +62,13 @@ fn conflict<T: std::fmt::Debug>(result: Result<T>) {
     );
 }
 fn drop_v21(c: &Connection) -> Result<()> {
+    crate::store::cli_agent::remove_schema_for_test(c)?;
     c.execute_batch(
         "DROP TABLE external_permissions; DROP TABLE external_projection_messages; DROP TABLE external_prompts;
         DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings;
         DROP TABLE cli_binding_receipts;
         DROP TRIGGER session_execution_immutable; DROP TRIGGER cli_session_shape_insert;
-        DROP TRIGGER cli_session_shape_update; ALTER TABLE sessions DROP COLUMN execution_backend;
+        DROP TRIGGER cli_session_shape_update; DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; ALTER TABLE sessions DROP COLUMN execution_backend;
         DROP TABLE external_projection_actions; PRAGMA user_version=20;",
     )?;
     Ok(())

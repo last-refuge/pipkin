@@ -1766,6 +1766,8 @@ fn write_prefs(conn: &mut Connection, ns: &str, p: &Prefs) -> Result<(), String>
         (
             "cli_mode",
             json!(match p.cli_mode {
+                pipkin_core::CliMode::Orchestration => "orchestration",
+                pipkin_core::CliMode::Coding => "coding",
                 pipkin_core::CliMode::ChatOnly => "chatOnly",
                 pipkin_core::CliMode::RestrictedWrite => "restrictedWrite",
                 pipkin_core::CliMode::Unsupported => "unsupported",
@@ -1899,6 +1901,8 @@ fn apply_pref(p: &mut Prefs, key: &str, v: &Value) {
         }
         "cli_mode" => {
             p.cli_mode = match v.as_str() {
+                Some("orchestration") => pipkin_core::CliMode::Orchestration,
+                Some("coding") => pipkin_core::CliMode::Coding,
                 Some("chatOnly") => pipkin_core::CliMode::ChatOnly,
                 Some("restrictedWrite") => pipkin_core::CliMode::RestrictedWrite,
                 _ => pipkin_core::CliMode::Unsupported,

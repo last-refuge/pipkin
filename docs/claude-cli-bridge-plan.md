@@ -241,8 +241,9 @@ Subsequent protocol35/schema23 work adds durable receipts/projection, connection
 routing, desktop setup/capabilities and explicit uncertain-creation recovery. Job 45 passes the
 full workspace gates, including fake end-to-end fresh/resume/reapproval. This is still **chat
 only**, not read-only tool support: external tools, live strict-schema checks and actual native
-desktop qualification remain open. Approval currently expires five minutes after Inspect;
-expiry stops active work and interrupted contexts require a fresh conversation.
+desktop qualification remained open at job45. At that baseline, approval expired five minutes
+from Inspect and stopped active work. The later [provider repairs](scorecard.md) separate setup
+freshness from revocable connection consent; uncertain contexts still require a fresh conversation.
 
 Implement discovery/preflight, bounded subprocess supervisor and decoder; admission-to-stream-to-settlement mapping; explicit-session completed-turn resume; cancellation and conservative crash recovery. Add fake CLI programs and replay fixtures before real-account tests.
 

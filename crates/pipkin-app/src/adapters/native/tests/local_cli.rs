@@ -20,6 +20,7 @@ fn ticket() -> LocalCliSetupView {
         mode: pipkin_engine_protocol::LocalCliMode::ChatOnly,
         setup: "setup-123".into(),
         target: LocalCliSetupTarget::New {
+            thinking: None,
             project: "/chosen-project".into(),
             model: LocalCliModel::Opus,
         },
@@ -58,6 +59,7 @@ fn inspect() -> core::LocalCliRequest {
         mode: core::CliMode::ChatOnly,
         executable: "/chosen-cli".into(),
         target: core::LocalCliInspectTarget::New {
+            thinking: None,
             project: "/chosen-project".into(),
             model: core::CliModel::Opus,
         },

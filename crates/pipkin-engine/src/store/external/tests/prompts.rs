@@ -44,6 +44,7 @@ fn terminal(s: &Store, k: &ExternalRunKey, cursor: u64) {
         k,
         cursor,
         CliEvent::Terminal {
+            metadata: None,
             outcome: Outcome::Success,
             usage: None,
         },
@@ -316,6 +317,170 @@ fn projection_replaces_snapshots_and_settles_once_without_native_rows() {
 }
 
 #[test]
+fn rejected_output_keeps_one_inert_diagnostic_across_settlement_and_restart() {
+    use crate::execution::claude_cli::{events, process};
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(dir.path()).unwrap();
+    cli(&s);
+    let r = admit(&s, "r", "op");
+    start(&s, &r.key);
+    event(&s, &r.key, 2, delta("retained prefix", 0));
+    let evidence = ExternalSettlementEvidence {
+        input_delivered: true,
+        root_reaped: true,
+        pipes_drained: true,
+        supervisor_stop: Some(process::Stop::ObserverFailure),
+        projection_error: Some(events::Error::MalformedRecord),
+        rejected_record: Some(events::RecordClass::ContentBlockDelta),
+        parse_failure: Some(events::ParseFailure {
+            kind: events::ParseFailureKind::UnknownField,
+            field_sha256: Some([42; 32]),
+            message_delta_shapes: None,
+        }),
+        ..Default::default()
+    };
+    let (settled, changes) = s
+        .tx(|tx| Store::settle_external_prompt_in(tx, &r.key, &evidence, 8))
+        .unwrap();
+    assert_eq!(settled.receipt.state, ExternalRunState::Unknown);
+    let Some(RunOutcome::Interrupted { detail }) = &settled.receipt.outcome else {
+        panic!("unknown outcome")
+    };
+    for expected in [
+        "unconfirmed",
+        "malformed CLI record",
+        "ContentBlockDelta",
+        "UnknownField",
+        "cannot resume",
+    ] {
+        assert!(detail.contains(expected), "{detail}");
+    }
+    assert!(!detail.contains("42")); // not even the rejected label's digest is displayed
+    let (entries, _) = s.page("cli", None, 100).unwrap();
+    assert_eq!(entries.len(), 3);
+    let notice = entries.last().unwrap();
+    assert_eq!(notice.run, Some(r.id));
+    assert!(
+        matches!(&notice.kind, EntryKind::Notice { level: pipkin_engine_protocol::NoticeLevel::Error, text } if text == detail)
+    );
+    assert_eq!(
+        changes
+            .iter()
+            .filter(|c| matches!(c, SessionChange::EntryAppended { .. }))
+            .count(),
+        1
+    );
+    let notice_position = changes
+        .iter()
+        .position(|c| matches!(c, SessionChange::EntryAppended { .. }))
+        .unwrap();
+    let settled_position = changes
+        .iter()
+        .position(|c| matches!(c, SessionChange::RunSettled { .. }))
+        .unwrap();
+    assert!(notice_position < settled_position);
+    let (again, changes) = s
+        .tx(|tx| Store::settle_external_prompt_in(tx, &r.key, &success(), 9))
+        .unwrap();
+    assert!(!again.newly_settled);
+    assert_eq!(again.receipt, settled.receipt);
+    assert!(changes.is_empty());
+    drop(s);
+    let s = Store::open(dir.path()).unwrap();
+    assert_eq!(s.page("cli", None, 100).unwrap().0, entries);
+    assert_eq!(
+        s.external_prompt("cli", "r").unwrap().unwrap(),
+        settled.receipt
+    );
+    assert!(!s.cli_binding("cli").unwrap().unwrap().context_valid);
+    assert!(
+        s.tx(|tx| Store::admit_external_prompt_in(
+            tx,
+            "cli",
+            "new",
+            "do not replay",
+            "new-op",
+            1,
+            10
+        ))
+        .is_err()
+    );
+    for table in ["requests", "runs", "tool_calls", "external_actions"] {
+        assert_eq!(count(&s, table), 0);
+    }
+}
+
+#[test]
+fn display_warnings_and_known_provider_errors_survive_restart_without_replay() {
+    for provider_error in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::open(dir.path()).unwrap();
+        cli(&s);
+        let r = admit(&s, "first", "first-op");
+        start(&s, &r.key);
+        event(&s, &r.key, 2, delta("answer", 0));
+        event(
+            &s,
+            &r.key,
+            3,
+            CliEvent::Terminal {
+                metadata: None,
+                outcome: if provider_error {
+                    Outcome::Error
+                } else {
+                    Outcome::Success
+                },
+                usage: None,
+            },
+        );
+        let evidence = ExternalSettlementEvidence {
+            presentation_incomplete: true,
+            exit_code: Some(if provider_error { 1 } else { 0 }),
+            ..success()
+        };
+        let (settled, _) = s
+            .tx(|tx| Store::settle_external_prompt_in(tx, &r.key, &evidence, 8))
+            .unwrap();
+        assert!(s.cli_binding("cli").unwrap().unwrap().context_valid);
+        assert_eq!(
+            matches!(settled.receipt.outcome, Some(RunOutcome::ModelError { .. })),
+            provider_error
+        );
+        let entries = s.page("cli", None, 100).unwrap().0;
+        assert!(matches!(
+            &entries.last().unwrap().kind,
+            EntryKind::Notice { .. }
+        ));
+        drop(s);
+        let s = Store::open(dir.path()).unwrap();
+        assert_eq!(s.page("cli", None, 100).unwrap().0, entries);
+        assert_eq!(
+            s.external_prompt("cli", "first").unwrap().unwrap(),
+            settled.receipt
+        );
+        let (same, changes) = s
+            .tx(|tx| {
+                Store::settle_external_prompt_in(
+                    tx,
+                    &r.key,
+                    &ExternalSettlementEvidence::default(),
+                    9,
+                )
+            })
+            .unwrap();
+        assert!(!same.newly_settled && changes.is_empty());
+        assert_eq!(same.receipt, settled.receipt);
+        assert_eq!(
+            admit(&s, "new-instruction", "new-op").mode,
+            ExternalPromptMode::Resume
+        );
+        for table in ["requests", "runs", "tool_calls"] {
+            assert_eq!(count(&s, table), 0);
+        }
+    }
+}
+
+#[test]
 fn completion_requires_every_independent_fact_and_persisted_success() {
     for missing in 0..15 {
         let s = Store::memory().unwrap();
@@ -330,6 +495,7 @@ fn completion_requires_every_independent_fact_and_persisted_success() {
                 k,
                 3,
                 CliEvent::Terminal {
+                    metadata: None,
                     outcome: if missing == 10 {
                         Outcome::Error
                     } else {
@@ -376,17 +542,29 @@ fn completion_requires_every_independent_fact_and_persisted_success() {
             .unwrap();
         assert_eq!(
             settled.receipt.state,
-            ExternalRunState::Unknown,
+            if missing == 10 {
+                ExternalRunState::Interrupted
+            } else {
+                ExternalRunState::Unknown
+            },
             "case {missing}"
         );
         assert_eq!(
             settled.receipt.result,
             Some(PromptResult::Unanswered {
                 text: Some("prefix".into()),
-                reason: "interrupted".into()
+                reason: if missing == 10 {
+                    "providerError"
+                } else {
+                    "interrupted"
+                }
+                .into()
             })
         );
-        assert!(!s.cli_binding("cli").unwrap().unwrap().context_valid);
+        assert_eq!(
+            s.cli_binding("cli").unwrap().unwrap().context_valid,
+            missing == 10
+        );
         let entries = s
             .read(|c| {
                 Ok(c.query_row(
@@ -663,7 +841,7 @@ fn v21_backup_preserves_raw_ledger_and_migration_adds_only_prompt_tables() {
     let s = Store::open(dir.path()).unwrap();
     cli(&s);
     running(&s, &key("raw"));
-    s.tx(|tx| { tx.execute_batch("DROP TABLE external_permissions; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_projection_actions; PRAGMA user_version=21;")?; Ok(()) }).unwrap();
+    s.tx(|tx| { crate::store::cli_agent::remove_schema_for_test(tx)?; tx.execute_batch("DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; DROP TABLE external_permissions; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_projection_actions; PRAGMA user_version=21;")?; Ok(()) }).unwrap();
     drop(s);
     let s = Store::open(dir.path()).unwrap();
     assert_eq!(s.read(schema::version).unwrap(), schema::SCHEMA_VERSION);

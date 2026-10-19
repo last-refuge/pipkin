@@ -51,6 +51,7 @@ impl Fake {
                     owner,
                     self.executable.to_str().unwrap(),
                     Target::New {
+                        thinking: None,
                         project: self.fixture.project.to_str().unwrap().into(),
                         model: LocalCliModel::Sonnet,
                     },
@@ -90,6 +91,78 @@ fn expire(shared: &Shared, setup: &str) {
         .get_mut(setup)
         .unwrap()
         .expires = Instant::now() - Duration::from_secs(1);
+}
+
+#[test]
+fn connected_consent_survives_setup_expiry_but_is_still_owned_and_revocable() {
+    use pipkin_engine_protocol::Call;
+    let fake = Fake::new();
+    let provider = Scripted::echo("must not execute");
+    let mut config = fake.fixture.config();
+    config.enable_local_claude_cli = true;
+    config
+        .env
+        .vars
+        .insert("HOME".into(), fake.fixture.dir.path().display().to_string());
+    config
+        .env
+        .vars
+        .insert("PATH".into(), "/usr/bin:/bin".into());
+    let mut engine = fake.fixture.start_config(&provider, config);
+    let ticket = view(
+        engine
+            .call(Call::InspectLocalCli {
+                mode: LocalCliMode::ChatOnly,
+                executable: fake.executable.display().to_string(),
+                target: Target::New {
+                    thinking: None,
+                    project: fake.fixture.project.display().to_string(),
+                    model: LocalCliModel::Sonnet,
+                },
+            })
+            .unwrap(),
+    );
+    engine
+        .call(Call::CheckLocalCli {
+            setup: ticket.setup.clone(),
+            trust_executable: true,
+            trust_project: true,
+        })
+        .unwrap();
+    engine
+        .call(Call::CreateLocalCliSession {
+            session: "connected".into(),
+            setup: ticket.setup.clone(),
+        })
+        .unwrap();
+    let shared = engine.handle.shared();
+    let registry = &shared.local_cli_setups;
+    let grant = registry.current_grant("connected").unwrap();
+    let active_turn = registry.begin_turn(grant.owner, "connected").unwrap();
+    let probes = fake.count();
+    expire(shared, &ticket.setup);
+    registry.state.lock().unwrap().prune();
+    assert!(!grant.cancel.is_cancelled() && !active_turn.cancel.is_cancelled());
+    assert!(
+        registry
+            .with_admission(Some(&active_turn), || Ok(()))
+            .is_ok()
+    );
+    drop(active_turn);
+    assert!(registry.current_grant("connected").is_some());
+    assert!(registry.begin_turn(grant.owner + 1, "connected").is_err());
+    let turn = registry.begin_turn(grant.owner, "connected").unwrap();
+    assert!(registry.with_admission(Some(&turn), || Ok(())).is_ok());
+    // An expired ticket is not new setup authority, but its original owner can still revoke.
+    assert!(registry.status(grant.owner, &ticket.setup).is_err());
+    assert!(registry.revoke(grant.owner + 1, &ticket.setup).is_err());
+    assert!(!turn.cancel.is_cancelled());
+    registry.revoke(grant.owner, &ticket.setup).unwrap();
+    assert!(grant.cancel.is_cancelled() && turn.cancel.is_cancelled());
+    assert!(registry.with_admission(Some(&turn), || Ok(())).is_err());
+    assert!(registry.current_grant("connected").is_none());
+    assert_eq!(fake.count(), probes);
+    assert!(provider.requests().is_empty());
 }
 
 #[test]
@@ -153,6 +226,7 @@ fn public_coding_setup_is_immutable_metadata_and_chat_switch_cannot_enable_it() 
         executable: fake.executable.to_str().unwrap().into(),
     };
     let target = || Target::New {
+        thinking: None,
         project: fake.fixture.project.to_str().unwrap().into(),
         model: LocalCliModel::Sonnet,
     };
@@ -370,6 +444,7 @@ fn paths_are_bounded_and_control_characters_rejected_before_inspection() {
                     1,
                     &value,
                     Target::New {
+                        thinking: None,
                         project: fake.fixture.project.display().to_string(),
                         model: LocalCliModel::Haiku
                     }
@@ -384,6 +459,7 @@ fn paths_are_bounded_and_control_characters_rejected_before_inspection() {
                     1,
                     fake.executable.to_str().unwrap(),
                     Target::New {
+                        thinking: None,
                         project: value,
                         model: LocalCliModel::Haiku
                     }
@@ -647,6 +723,7 @@ fn wire_cancel_and_disconnect_revoke_inflight_checks_without_late_verification()
                     mode: LocalCliMode::ChatOnly,
                     executable: fake.executable.to_str().unwrap().into(),
                     target: Target::New {
+                        thinking: None,
                         project: fake.fixture.project.to_str().unwrap().into(),
                         model: LocalCliModel::Sonnet,
                     },
@@ -933,4 +1010,178 @@ fn existing_metadata_requires_exact_saved_identity_and_model_without_rebinding()
     ] {
         assert!(!source.contains(forbidden));
     }
+}
+
+#[test]
+fn desktop_controls_effort_setup_is_explicit_connection_scoped_and_lookup_only() {
+    let fake = Fake::new();
+    let help = crate::execution::claude_cli::orchestration_policy::FLAGS
+        .iter()
+        .map(|f| format!("{f} fixture\n"))
+        .collect::<String>();
+    fs::write(&fake.executable,format!("#!/bin/sh\ncase \"$1\" in\n--version) echo '2.1.301 (Claude Code)';;\n--help) printf '%s' '{help}';;\n*) for arg in \"$@\"; do if [ \"$arg\" = '--print' ]; then exit 99; fi; done; echo '{{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"apiProvider\":\"firstParty\",\"orgId\":\"fixture\",\"email\":\"fake@example.invalid\"}}';;\nesac\n")).unwrap();
+    let provider = Scripted::echo("never API");
+    let mut config = fake.fixture.config();
+    config.enable_local_claude_cli = true;
+    config.enable_local_claude_cli_orchestration = true;
+    config.env.vars.insert(
+        "HOME".into(),
+        fake.fixture.dir.path().to_str().unwrap().into(),
+    );
+    config
+        .env
+        .vars
+        .insert("PATH".into(), "/usr/bin:/bin".into());
+    let mut e = fake.fixture.start_config(&provider, config);
+    let inspect = pipkin_engine_protocol::Call::InspectLocalCli {
+        mode: LocalCliMode::Orchestration,
+        executable: fake.executable.to_str().unwrap().into(),
+        target: Target::New {
+            thinking: Some("high".into()),
+            project: fake.fixture.project.to_str().unwrap().into(),
+            model: LocalCliModel::Sonnet,
+        },
+    };
+    let mut invalid = inspect.clone();
+    if let pipkin_engine_protocol::Call::InspectLocalCli {
+        target: Target::New { thinking, .. },
+        ..
+    } = &mut invalid
+    {
+        *thinking = Some("off".into());
+    }
+    assert!(e.call(invalid).is_err());
+    let setup = view(e.call(inspect).unwrap());
+    assert!(
+        e.call(pipkin_engine_protocol::Call::CheckLocalCli {
+            setup: setup.setup.clone(),
+            trust_executable: true,
+            trust_project: false
+        })
+        .is_err()
+    );
+    assert_eq!(
+        view(
+            e.call(pipkin_engine_protocol::Call::CheckLocalCli {
+                setup: setup.setup.clone(),
+                trust_executable: true,
+                trust_project: true
+            })
+            .unwrap()
+        )
+        .stage,
+        Stage::MetadataVerified
+    );
+    let create = pipkin_engine_protocol::Call::CreateLocalCliSession {
+        session: "desktop-agent".into(),
+        setup: setup.setup.clone(),
+    };
+    let Reply::Session { summary } = e.call(create.clone()).unwrap() else {
+        panic!()
+    };
+    assert_eq!(
+        summary.execution_backend,
+        pipkin_engine_protocol::ExecutionBackend::ClaudeCliAgent
+    );
+    assert_eq!(summary.local_cli_mode, Some(LocalCliMode::Orchestration));
+    assert!(summary.blocked.is_none(), "{:?}", summary.blocked);
+    assert_eq!(
+        e.handle
+            .shared()
+            .store
+            .cli_agent_binding("desktop-agent")
+            .unwrap()
+            .unwrap()
+            .create
+            .thinking
+            .as_deref(),
+        Some("high")
+    );
+    let initial_revision = e
+        .handle
+        .shared()
+        .store
+        .session("desktop-agent")
+        .unwrap()
+        .unwrap()
+        .revision;
+    e.call(pipkin_engine_protocol::Call::RevokeLocalCliSetup { setup: setup.setup })
+        .unwrap();
+    let Reply::Session { summary } = e.call(create).unwrap() else {
+        panic!()
+    };
+    assert!(summary.blocked.is_some());
+    assert!(
+        e.call(pipkin_engine_protocol::Call::Prompt {
+            session: "desktop-agent".into(),
+            request: "no-grant".into(),
+            text: "do not run".into(),
+            images: vec![],
+            model: None
+        })
+        .is_err()
+    );
+    let setup = view(
+        e.call(pipkin_engine_protocol::Call::InspectLocalCli {
+            mode: LocalCliMode::Orchestration,
+            executable: fake.executable.to_str().unwrap().into(),
+            target: Target::Existing {
+                session: "desktop-agent".into(),
+                model: LocalCliModel::Sonnet,
+            },
+        })
+        .unwrap(),
+    );
+    assert_eq!(
+        view(
+            e.call(pipkin_engine_protocol::Call::CheckLocalCli {
+                setup: setup.setup,
+                trust_executable: true,
+                trust_project: true
+            })
+            .unwrap()
+        )
+        .stage,
+        Stage::MetadataVerified
+    );
+    let Reply::LocalCliSession(status) = e
+        .call(pipkin_engine_protocol::Call::LocalCliSessionStatus {
+            session: "desktop-agent".into(),
+        })
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(status.summary.blocked.is_none());
+    assert!(status.context_valid);
+    assert!(
+        e.handle
+            .shared()
+            .store
+            .session("desktop-agent")
+            .unwrap()
+            .unwrap()
+            .revision
+            > initial_revision
+    );
+    assert!(
+        e.call(pipkin_engine_protocol::Call::SetModel {
+            session: "desktop-agent".into(),
+            model: "test/model".into()
+        })
+        .is_err()
+    );
+    assert_eq!(
+        e.handle
+            .shared()
+            .store
+            .cli_agent_binding("desktop-agent")
+            .unwrap()
+            .unwrap()
+            .create
+            .thinking
+            .as_deref(),
+        Some("high")
+    );
+    assert!(provider.requests().is_empty());
 }
