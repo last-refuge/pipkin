@@ -293,7 +293,7 @@ pub(super) fn metadata_spec(
         args,
         input: vec![],
         mode: OutputMode::Capture,
-        timeout: Duration::from_secs(10),
+        timeout: Some(Duration::from_secs(10)),
         grace: Duration::from_millis(300),
         max_stdout: 128 * 1024,
         max_stderr: 128 * 1024,
@@ -351,7 +351,7 @@ pub(super) fn turn_spec(
     spec.input = prompt.as_bytes().to_vec();
     spec.input.push(b'\n');
     spec.mode = OutputMode::Stream;
-    spec.timeout = TURN_TIMEOUT;
+    spec.timeout = Some(TURN_TIMEOUT);
     spec.max_stdout = 16 * 1024 * 1024;
     Ok(spec)
 }

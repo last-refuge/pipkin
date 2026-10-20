@@ -121,6 +121,7 @@ fn v28_migration_preserves_binding_and_root_receipts_without_child_authority() {
     let receipt = admitted.receipt().clone();
     s.tx(|tx| {
         remove_schema_for_test(tx)?;
+        crate::store::schema::remove_v33_for_test(tx)?;
         tx.execute_batch("PRAGMA user_version=28")?;
         Ok(())
     })
@@ -169,13 +170,14 @@ fn desktop_controls_v31_migration_preserves_identity_and_backs_up_before_person_
     s.tx(|c| {
         c.execute_batch("DROP TRIGGER cli_agent_child_policy_shape;")?;
         c.execute_batch(trigger)?;
+        crate::store::schema::remove_v33_for_test(c)?;
         c.execute_batch("PRAGMA user_version=31")?;
         Ok(())
     })
     .unwrap();
     drop(s);
     let s = Store::open(dir.path()).unwrap();
-    assert_eq!(s.read(schema::version).unwrap(), 32);
+    assert_eq!(s.read(schema::version).unwrap(), schema::SCHEMA_VERSION);
     assert_eq!(s.cli_agent_binding("parent").unwrap().unwrap(), binding);
     let backup = Connection::open(dir.path().join("engine.sqlite.v31.bak")).unwrap();
     assert_eq!(schema::version(&backup).unwrap(), 31);

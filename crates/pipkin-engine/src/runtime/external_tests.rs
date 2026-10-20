@@ -475,7 +475,7 @@ fn terminal_then_timeout_is_unknown_and_duplicate_after_fencing_is_still_a_recei
 }
 
 #[test]
-fn stop_commits_intent_then_kills_owned_group_and_fences_context_after_cleanup() {
+fn stop_commits_intent_then_kills_owned_group_and_preserves_context_after_cleanup() {
     let f = Fixture::new();
     let provider = Scripted::echo("unused");
     let engine = f.start(&provider);
@@ -503,7 +503,7 @@ fn stop_commits_intent_then_kills_owned_group_and_fences_context_after_cleanup()
     let evidence = done.evidence.unwrap();
     assert!(evidence.cancelled_clean_confirmed && evidence.root_reaped && evidence.pipes_drained);
     assert!(
-        !shared
+        shared
             .store
             .cli_binding("cli")
             .unwrap()

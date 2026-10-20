@@ -71,6 +71,10 @@ pub struct ExternalSettlementEvidence {
     pub stop_requested: bool,
     pub cleanup_timed_out: bool,
     pub cancelled_clean_confirmed: bool,
+    /// The connection/consent is still authorized after cancellation cleanup. False
+    /// for disconnect, revoked consent, shutdown and historical receipts without proof.
+    #[serde(default)]
+    pub continuation_authorized: bool,
     /// Closed diagnostic facts, never positive success/authority evidence. Errors can
     /// veto completion. Optional for old receipts; no raw payloads or type names.
     #[serde(default)]
@@ -86,6 +90,36 @@ pub struct ExternalSettlementEvidence {
     pub presentation_incomplete: bool,
     #[serde(default)]
     pub stream_diagnostic: Option<crate::execution::claude_cli::events::StreamDiagnostic>,
+}
+
+impl ExternalSettlementEvidence {
+    /// A user Stop may leave unfinished tools, but continuing requires a validated CLI
+    /// session and confirmed owned-process cleanup. Truncated EOF is expected on Stop;
+    /// malformed output, observer failure, early cancellation and lost cleanup are not.
+    fn allows_cancel_continuation(&self, cursor: u64) -> bool {
+        self.continuation_authorized && self.clean_cancelled_session(cursor)
+    }
+
+    pub(super) fn clean_cancelled_session(&self, cursor: u64) -> bool {
+        use crate::execution::claude_cli::{events, process};
+        cursor > 0
+            && self.input_delivered
+            && self.stop_requested
+            && self.cancelled_clean_confirmed
+            && self.supervisor_stop == Some(process::Stop::Cancelled)
+            && self.root_reaped
+            && self.pipes_drained
+            && !self.cleanup_timed_out
+            && self.parse_failure.is_none()
+            && matches!(
+                self.projection_error,
+                None | Some(events::Error::Incomplete)
+            )
+            && matches!(
+                self.rejected_record,
+                None | Some(events::RecordClass::EndOfStream)
+            )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -283,9 +317,8 @@ impl Store {
         Self::assert_external_binding(tx, &key)?;
         // Legacy ledger rows are not evidence-backed prompt receipts. Their completion
         // cannot authorize resume, nor may their existing context be treated as fresh.
-        let (bad, completed): (bool, bool) = tx.query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM external_runs r LEFT JOIN external_prompts p USING(session,generation,op)
+        let unresolved = tx.prepare(
+            "SELECT p.id FROM external_runs r LEFT JOIN external_prompts p USING(session,generation,op)
                 WHERE r.session=?1 AND (r.op=?2 OR p.id IS NULL OR p.evidence IS NULL OR NOT (
                     (r.state='completed' AND json_extract(p.outcome,'$.reason') IS 'completed'
                         AND json_extract(p.result,'$.status') IS 'done'
@@ -293,12 +326,29 @@ impl Store {
                     OR (r.state='interrupted' AND json_extract(p.outcome,'$.reason') IS 'modelError'
                         AND json_extract(p.result,'$.status') IS 'unanswered'
                         AND json_extract(p.terminal,'$.outcome') IS 'error')
-                    ))
-             ), EXISTS(SELECT 1 FROM external_runs WHERE session=?1)",
-            params![session, op], |r| Ok((r.get(0)?,r.get(1)?)))?;
-        if bad {
-            return Err(StoreError::ExecutionConflict);
+                    ))",
+        )?.query_map(params![session, op], |r| r.get::<_, Option<u64>>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for id in unresolved {
+            let prior = Self::external_prompt_id_in(tx, id.ok_or(StoreError::ExecutionConflict)?)?;
+            if prior.key.op == op
+                || prior.state != ExternalRunState::Interrupted
+                || prior.outcome != Some(RunOutcome::Aborted)
+                || !matches!(&prior.result, Some(PromptResult::Unanswered { reason, .. }) if reason == "aborted")
+                || !prior
+                    .evidence
+                    .as_ref()
+                    .is_some_and(|e| e.allows_cancel_continuation(prior.cursor))
+                    && !Self::recovered_cli_stop_in(tx, &prior, generation)?
+            {
+                return Err(StoreError::ExecutionConflict);
+            }
         }
+        let completed: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM external_runs WHERE session=?1)",
+            [session],
+            |r| r.get(0),
+        )?;
         tx.execute("INSERT INTO external_runs(session,generation,op,state,created_at,updated_at) VALUES(?1,?2,?3,'admitted',?4,?4)", params![session,generation,op,now])?;
         let entry = Self::append_entry_owned(
             tx,
@@ -781,8 +831,15 @@ impl Store {
             params![receipt.id, json(evidence), json(&outcome), json(&result)],
         )?;
         tx.execute("UPDATE external_runs SET state=?4,updated_at=MAX(updated_at,?5) WHERE session=?1 AND generation=?2 AND op=?3", params![key.session,key.generation,key.op,state.as_str(),now])?;
+        let continuable_cancel = cancelled && evidence.allows_cancel_continuation(receipt.cursor);
         if !completed && !provider_error {
-            Self::invalidate_external_binding(tx, key, now)?;
+            if continuable_cancel {
+                // Unfinished actions remain unknown forever; preserving context must not
+                // leave them running or grant permission to retry the stopped request.
+                Self::mark_external_actions_unknown(tx, key, now)?;
+            } else {
+                Self::invalidate_external_binding(tx, key, now)?;
+            }
         }
         if let RunOutcome::Interrupted { detail } | RunOutcome::ModelError { detail } = &outcome {
             // Same transaction as settlement, once only. Survives snapshot replacement,

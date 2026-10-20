@@ -275,6 +275,7 @@ fn v5_upgrade_preserves_history_and_makes_a_private_backup_before_compaction_jou
                 partial: false,
             },
         )?;
+        crate::store::schema::remove_v33_for_test(c)?;
         c.execute_batch("DROP TABLE diagnostics; DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN note; ALTER TABLE subagent_tasks DROP COLUMN delivery; ALTER TABLE subagent_tasks DROP COLUMN origin; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings; DROP TABLE cli_binding_receipts; DROP TRIGGER session_execution_immutable; DROP TRIGGER cli_session_shape_insert; DROP TRIGGER cli_session_shape_update; DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; ALTER TABLE sessions DROP COLUMN execution_backend; DROP TABLE external_permissions; DROP TABLE external_projection_actions; PRAGMA user_version = 5;")?;
         Ok(())
     })
@@ -316,6 +317,7 @@ fn v6_activation_upgrade_preserves_pending_jobs_and_private_backup() {
     session(&s, "s");
     let job = admit(&s, "pending-at-activation", CompactionScope::Manual);
     s.read(|c| {
+        crate::store::schema::remove_v33_for_test(c)?;
         c.execute_batch("DROP TABLE diagnostics; DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN note; ALTER TABLE subagent_tasks DROP COLUMN delivery; ALTER TABLE subagent_tasks DROP COLUMN origin; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP INDEX compactions_recovery; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings; DROP TABLE cli_binding_receipts; DROP TRIGGER session_execution_immutable; DROP TRIGGER cli_session_shape_insert; DROP TRIGGER cli_session_shape_update; DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; ALTER TABLE sessions DROP COLUMN execution_backend; DROP TABLE external_permissions; DROP TABLE external_projection_actions; PRAGMA user_version = 6")?;
         Ok(())
     })

@@ -841,7 +841,7 @@ fn v21_backup_preserves_raw_ledger_and_migration_adds_only_prompt_tables() {
     let s = Store::open(dir.path()).unwrap();
     cli(&s);
     running(&s, &key("raw"));
-    s.tx(|tx| { crate::store::cli_agent::remove_schema_for_test(tx)?; tx.execute_batch("DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; DROP TABLE external_permissions; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_projection_actions; PRAGMA user_version=21;")?; Ok(()) }).unwrap();
+    s.tx(|tx| { crate::store::cli_agent::remove_schema_for_test(tx)?; crate::store::schema::remove_v33_for_test(tx)?; tx.execute_batch("DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; DROP TABLE external_permissions; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_projection_actions; PRAGMA user_version=21;")?; Ok(()) }).unwrap();
     drop(s);
     let s = Store::open(dir.path()).unwrap();
     assert_eq!(s.read(schema::version).unwrap(), schema::SCHEMA_VERSION);
@@ -862,4 +862,98 @@ fn v21_backup_preserves_raw_ledger_and_migration_adds_only_prompt_tables() {
     );
     assert_eq!(s.recover_external_runs(10).unwrap(), 1);
     s.integrity_check().unwrap();
+}
+
+fn clean_cancel() -> ExternalSettlementEvidence {
+    ExternalSettlementEvidence {
+        input_delivered: true,
+        root_reaped: true,
+        pipes_drained: true,
+        stop_requested: true,
+        cancelled_clean_confirmed: true,
+        continuation_authorized: true,
+        supervisor_stop: Some(crate::execution::claude_cli::process::Stop::Cancelled),
+        projection_error: Some(crate::execution::claude_cli::events::Error::Incomplete),
+        rejected_record: Some(crate::execution::claude_cli::events::RecordClass::EndOfStream),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn clean_cancel_receipt_survives_restart_and_only_new_requests_resume() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(dir.path()).unwrap();
+    cli(&s);
+    let r = admit(&s, "stopped", "old");
+    start(&s, &r.key);
+    s.tx(|tx| Store::stop_external_prompt_in(tx, &r.key, 6))
+        .unwrap();
+    let stopped = s
+        .tx(|tx| Store::settle_external_prompt_in(tx, &r.key, &clean_cancel(), 7))
+        .unwrap()
+        .0
+        .receipt;
+    assert_eq!(stopped.outcome, Some(RunOutcome::Aborted));
+    drop(s);
+    let s = Store::open(dir.path()).unwrap();
+    assert_eq!(s.recover_external_runs(8).unwrap(), 0);
+    assert!(s.cli_binding("cli").unwrap().unwrap().context_valid);
+    let duplicate = s
+        .tx(|tx| Store::admit_external_prompt_in(tx, "cli", "stopped", "question", "ignored", 1, 9))
+        .unwrap()
+        .0;
+    assert!(!duplicate.newly_admitted);
+    assert_eq!(duplicate.receipt, stopped);
+    conflict(
+        s.tx(|tx| Store::admit_external_prompt_in(tx, "cli", "stopped", "different", "new", 1, 9)),
+    );
+    conflict(
+        s.tx(|tx| Store::admit_external_prompt_in(tx, "cli", "next", "question", "old", 1, 9)),
+    );
+    let next = admit(&s, "next", "new");
+    assert_eq!(next.mode, ExternalPromptMode::Resume);
+    assert_eq!(count(&s, "external_runs"), 2);
+    assert_eq!(
+        s.external_prompt("cli", "stopped").unwrap().unwrap(),
+        stopped
+    );
+}
+
+#[test]
+fn cancellation_without_complete_trusted_evidence_keeps_context_fenced() {
+    use crate::execution::claude_cli::{events, process};
+    for case in 0..11 {
+        let s = Store::memory().unwrap();
+        cli(&s);
+        let r = admit(&s, "stopped", "old");
+        if case != 0 {
+            start(&s, &r.key);
+        }
+        s.tx(|tx| Store::stop_external_prompt_in(tx, &r.key, 6))
+            .unwrap();
+        let mut e = clean_cancel();
+        match case {
+            0 => {} // No validated CLI initialization.
+            1 => e.input_delivered = false,
+            2 => e.root_reaped = false,
+            3 => e.pipes_drained = false,
+            4 => e.cleanup_timed_out = true,
+            5 => e.cancelled_clean_confirmed = false,
+            6 => e.supervisor_stop = Some(process::Stop::ObserverFailure),
+            7 => e.projection_error = Some(events::Error::MalformedRecord),
+            8 => e.rejected_record = Some(events::RecordClass::Result),
+            9 => e.stop_requested = false,
+            10 => e.continuation_authorized = false,
+            _ => unreachable!(),
+        }
+        s.tx(|tx| Store::settle_external_prompt_in(tx, &r.key, &e, 7))
+            .unwrap();
+        assert!(
+            !s.cli_binding("cli").unwrap().unwrap().context_valid,
+            "case {case}"
+        );
+        conflict(
+            s.tx(|tx| Store::admit_external_prompt_in(tx, "cli", "new", "question", "new", 1, 9)),
+        );
+    }
 }

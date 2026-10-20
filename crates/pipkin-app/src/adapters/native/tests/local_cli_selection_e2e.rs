@@ -271,3 +271,154 @@ fn authorized_live_same_alias_selection_fresh_and_resume() {
     h.stop();
     assert_eq!(open_requests(&fx.root.join("selection-desktop.db")), 0);
 }
+
+#[test]
+fn clean_stop_keeps_coding_composer_ready_and_new_text_resumes_same_conversation() {
+    let fx = Fixture::start(|_, _| panic!("native inference must not run"));
+    let fake = FakeShell::install_with_coding(&fx, true);
+    let mut script = std::fs::read_to_string(&fake.executable).unwrap();
+    script.push_str("\nif [ ! -f stopped-once ]; then touch stopped-once; sleep 30; fi\n");
+    std::fs::write(&fake.executable, script).unwrap();
+    let (mut h, session) = select_coding(&fx, &fake.executable);
+    let conversation = h.state.selected;
+    h.send("first instruction");
+    h.until("first CLI output", |s| {
+        matches!(s.current().unwrap().run, RunState::Running { .. })
+            && assistant_texts(s) == ["Synthetic external fresh answer"]
+            && fx.project.join("stopped-once").exists()
+    });
+    h.dispatch(Command::Cancel);
+    h.until("clean Stop returns to ready composer", |s| {
+        is_idle(s) && s.current().unwrap().execution_blocked.is_none()
+    });
+    let engine = fx.engine();
+    assert!(
+        engine
+            .shared()
+            .store
+            .cli_binding(&session)
+            .unwrap()
+            .unwrap()
+            .context_valid
+    );
+    assert_eq!(FakeShell::lines(&fake.launches).len(), 1);
+    assert!(!h.state.availability().retry);
+    h.dispatch(Command::EditDraft(
+        "inspect existing work and continue".into(),
+    ));
+    assert!(h.state.availability().submit);
+    h.dispatch(Command::Submit);
+    h.until("new instruction completes in original conversation", |s| {
+        is_idle(s)
+            && assistant_texts(s)
+                .iter()
+                .any(|text| text == "Synthetic external resume answer")
+    });
+    assert_eq!(h.state.selected, conversation);
+    assert_eq!(
+        h.user_messages(),
+        ["first instruction", "inspect existing work and continue"]
+    );
+    let launches = FakeShell::lines(&fake.launches);
+    assert_eq!(launches.len(), 2);
+    let first = launches[0].strip_prefix("fresh ").unwrap();
+    assert_eq!(launches[1], format!("resume {first}"));
+    assert!(fx.requests().is_empty());
+    h.stop();
+}
+
+#[test]
+fn old_clean_stop_recovery_reconnects_without_replay_then_resumes_in_the_same_composer() {
+    let fx = Fixture::start(|_, _| panic!("native inference must not run"));
+    let fake = FakeShell::install_with_coding(&fx, true);
+    let mut script = std::fs::read_to_string(&fake.executable).unwrap();
+    script.push_str("\nif [ ! -f stopped-once ]; then touch stopped-once; sleep 30; fi\n");
+    std::fs::write(&fake.executable, script).unwrap();
+    let (mut h, session) = select_coding(&fx, &fake.executable);
+    let conversation = h.state.selected.unwrap();
+    h.send("first instruction");
+    h.until("fixture has produced output", |s| {
+        matches!(s.current().unwrap().run, RunState::Running { .. })
+            && assistant_texts(s) == ["Synthetic external fresh answer"]
+            && fx.project.join("stopped-once").exists()
+    });
+    h.dispatch(Command::Cancel);
+    h.until("first turn stopped", is_idle);
+    h.dispatch(Command::LocalCli(C::Revoke));
+    h.until("connection revoked", |s| {
+        s.current().unwrap().execution_blocked.is_some()
+    });
+    let engine = fx.engine();
+    let store = &engine.shared().store;
+    let identity = store.cli_binding(&session).unwrap().unwrap().identity;
+    // Reproduce the old build's exact durable state only in this disposable fixture.
+    store.tx(|tx| {
+        tx.execute("UPDATE external_prompts SET evidence=json_remove(evidence,'$.continuation_authorized') WHERE session=?1", [&session])?;
+        tx.execute("UPDATE cli_bindings SET context_valid=0,generation=generation+1 WHERE session=?1", [&session])?;
+        Ok(())
+    }).unwrap();
+    let stopped = store.cli_clean_stop_recovery(&session).unwrap().unwrap();
+    let probes_before = FakeShell::lines(&fake.metadata).len();
+    let generation = h.state.current().unwrap().generation;
+    h.dispatch(Command::LocalCli(C::BeginGuidedExisting {
+        conversation,
+        session: pipkin_core::local_cli::EngineSessionId(session.clone()),
+    }));
+    h.until("fresh reconnect recovers old clean Stop", |s| {
+        s.local_cli.stage == LocalCliStage::Created
+            && s.current().is_some_and(|c| {
+                c.id == conversation
+                    && c.opened
+                    && c.generation > generation
+                    && c.execution_blocked.is_none()
+            })
+    });
+    let binding = store.cli_binding(&session).unwrap().unwrap();
+    assert_eq!(binding.identity, identity);
+    assert_eq!(binding.generation, 3);
+    assert!(binding.context_valid);
+    assert_eq!(FakeShell::lines(&fake.metadata).len(), probes_before + 3);
+    assert_eq!(
+        FakeShell::lines(&fake.launches).len(),
+        1,
+        "recovery must not launch a prompt"
+    );
+    assert_eq!(
+        store
+            .external_prompt(&session, &stopped.request)
+            .unwrap()
+            .unwrap(),
+        stopped
+    );
+    h.dispatch(Command::EditDraft(
+        "inspect existing work and continue".into(),
+    ));
+    assert!(h.state.availability().submit, "{:?}", h.state.current());
+    h.dispatch(Command::Submit);
+    h.until("new instruction completes in original conversation", |s| {
+        is_idle(s)
+            && assistant_texts(s)
+                .iter()
+                .any(|text| text == "Synthetic external resume answer")
+    });
+    assert_eq!(h.state.selected, Some(conversation));
+    assert_eq!(
+        h.user_messages(),
+        ["first instruction", "inspect existing work and continue"]
+    );
+    let launches = FakeShell::lines(&fake.launches);
+    assert_eq!(launches.len(), 2);
+    assert_eq!(
+        launches[1],
+        format!("resume {}", launches[0].strip_prefix("fresh ").unwrap())
+    );
+    assert_eq!(
+        store
+            .external_prompt(&session, &stopped.request)
+            .unwrap()
+            .unwrap(),
+        stopped
+    );
+    assert!(fx.requests().is_empty());
+    h.stop();
+}

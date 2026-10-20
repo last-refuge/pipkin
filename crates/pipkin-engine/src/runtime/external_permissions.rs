@@ -253,6 +253,12 @@ impl Broker {
     /// Transport retirement observes all captured lifetime tokens, never current selection.
     /// Consent retirement is distinct from a protocol/delivery failure cancelling
     /// the run. Only the former may establish an intentional Stop receipt.
+    /// Stop retires this run's approvals, not the connection's consent. Keep that
+    /// distinction after the broker seals the run and its cancellation token fires.
+    pub fn consent_active(&self) -> bool {
+        !self.lease.revoked.is_cancelled() && Instant::now() < self.lease.expires
+    }
+
     pub async fn consent_retired(&self) {
         tokio::select! {
             _ = self.lease.revoked.cancelled() => {},

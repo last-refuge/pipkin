@@ -83,6 +83,7 @@ fn migration_from_v25_preserves_native_cli_and_unknown_identity_receipts() {
     let before = s.read(legacy_rows).unwrap();
     s.tx(|tx| {
         crate::store::cli_agent::remove_schema_for_test(tx)?;
+        crate::store::schema::remove_v33_for_test(tx)?;
         tx.execute_batch(
             "DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; PRAGMA user_version=25;",
         )?;

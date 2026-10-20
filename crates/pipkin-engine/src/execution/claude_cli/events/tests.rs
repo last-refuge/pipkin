@@ -6,6 +6,8 @@ const SESSION: &str = "12345678-1234-4234-a234-123456789abc";
 const OTHER: &str = "87654321-4321-4321-b432-cba987654321";
 const SECRET: &str = "PRIVATE_account_token_stderr_tool_input";
 
+#[path = "coding_results_tests.rs"]
+mod coding_results_tests;
 #[path = "diagnostics_tests.rs"]
 mod diagnostics;
 
@@ -360,7 +362,6 @@ fn constructor_and_all_known_envelopes_require_exact_canonical_identity() {
 #[test]
 fn initialization_inventory_is_explicit_and_no_tools_is_the_default_policy() {
     for records in [
-        vec![init(&[]), init(&[])],
         vec![assistant("m", json!([text("x")]))],
         vec![start("m")],
         vec![terminal()],
@@ -383,6 +384,173 @@ fn initialization_inventory_is_explicit_and_no_tools_is_the_default_policy() {
     assert!(run(&[init(&[]), terminal()], &["Write"]).is_ok());
     assert!(Decoder::new(SESSION, &["Write", "Write"]).is_err());
     assert!(Decoder::new(SESSION, &[""]).is_err());
+}
+
+#[test]
+fn repeated_init_preserves_pending_tools_text_and_one_initialization() {
+    for mode in 0..3 {
+        let mut d = Decoder::new(SESSION, &["Agent"]).unwrap();
+        if mode == 1 {
+            d = d.with_cli_tools();
+        } else if mode == 2 {
+            d = d.with_exact_inventory();
+        }
+        let mut events = Vec::new();
+        let records = [
+            init(&["Agent"]),
+            assistant("launch", json!([tool("agent-1", "Agent")])),
+            start("waiting"),
+            block(0, text("Waiting")),
+            // A repeated init is telemetry, not a new root run or message boundary.
+            init(&["Agent"]),
+            delta(0, " for agents"),
+            stop_block(0),
+            stop(),
+            tool_result("agent-1", "background exploration complete"),
+            envelope(
+                "system",
+                json!({"subtype":"task_notification","task_id":"task-1","status":"completed"}),
+            ),
+            init(&["Agent"]),
+            assistant("answer", json!([text("Finished contract")])),
+            terminal(),
+        ];
+        feed(&mut d, &records, &mut events).unwrap();
+        let summary = d.finish(|_| Ok::<_, ()>(())).unwrap();
+        assert_eq!(summary.outcome, Some(Outcome::Success));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, Event::Initialized))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, Event::ExternalToolObserved { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, Event::ExternalToolResult { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            display(&events)[&("waiting".into(), 0)],
+            "Waiting for agents"
+        );
+        assert_eq!(display(&events)[&("answer".into(), 0)], "Finished contract");
+    }
+}
+
+#[test]
+fn repeated_init_revalidates_identity_shape_inventory_and_terminal_boundary() {
+    let mut wrong_session = init(&["Agent"]);
+    wrong_session["session_id"] = json!(OTHER);
+    let mut mutation = init(&["Agent"]);
+    mutation["message"] = json!({"content": [text(SECRET)]});
+    for (record, expected) in [
+        (wrong_session, Error::Identity),
+        (init(&["Agent", "Agent"]), Error::UnsupportedTool),
+        (init(&[""]), Error::UnsupportedTool),
+        (
+            envelope("system", json!({"subtype":"init","tools":null})),
+            Error::MalformedRecord,
+        ),
+        (mutation, Error::UnsupportedContent),
+        (init(&vec!["Agent"; MAX_ENTRIES + 1]), Error::Limit),
+    ] {
+        let mut d = Decoder::new(SESSION, &[]).unwrap().with_cli_tools();
+        assert_eq!(
+            feed(&mut d, &[init(&["Agent"]), record], &mut Vec::new()),
+            Err(expected)
+        );
+    }
+    for exact in [false, true] {
+        let mut d = Decoder::new(SESSION, &["Agent", "Write"]).unwrap();
+        if exact {
+            d = d.with_exact_inventory();
+        }
+        assert_eq!(
+            feed(
+                &mut d,
+                &[init(&["Agent", "Write"]), init(&["Agent"])],
+                &mut Vec::new()
+            ),
+            Err(Error::UnsupportedTool)
+        );
+        let mut d = Decoder::new(SESSION, &["Agent"]).unwrap();
+        if exact {
+            d = d.with_exact_inventory();
+        }
+        assert_eq!(
+            feed(
+                &mut d,
+                &[init(&["Agent"]), init(&["Agent", "Bash"])],
+                &mut Vec::new()
+            ),
+            Err(Error::UnsupportedTool)
+        );
+    }
+    let mut d = Decoder::new(SESSION, &[]).unwrap().with_cli_tools();
+    feed(&mut d, &[init(&[]), terminal(), init(&[])], &mut Vec::new()).unwrap();
+    assert_eq!(d.finish(|_| Ok::<_, ()>(())), Err(Error::Incomplete));
+    let mut d = Decoder::new(SESSION, &[]).unwrap().with_cli_tools();
+    assert_eq!(
+        feed(
+            &mut d,
+            &[
+                init(&["Agent"]),
+                assistant("launch", json!([tool("pending", "Agent")])),
+                init(&["Agent"]),
+                terminal()
+            ],
+            &mut Vec::new()
+        ),
+        Err(Error::OrphanToolResult)
+    );
+}
+
+#[test]
+fn coding_init_inventory_refresh_does_not_forget_previously_observed_tools() {
+    let mut d = Decoder::new(SESSION, &[]).unwrap().with_cli_tools();
+    let mut events = Vec::new();
+    feed(
+        &mut d,
+        &[
+            init(&["Agent"]),
+            assistant("launch", json!([tool("agent-1", "Agent")])),
+            init(&["Bash"]),
+            assistant("work", json!([tool("bash-1", "Bash")])),
+            tool_result("bash-1", "command complete"),
+            tool_result("agent-1", "background complete"),
+            terminal(),
+        ],
+        &mut events,
+    )
+    .unwrap();
+    assert_eq!(
+        d.finish(|_| Ok::<_, ()>(())).unwrap().outcome,
+        Some(Outcome::Success)
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, Event::Initialized))
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, Event::ExternalToolResult { .. }))
+            .count(),
+        2
+    );
 }
 
 #[test]

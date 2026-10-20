@@ -272,7 +272,7 @@ fn base_spec(executable: &Path, cwd: &Path, env: &Environment, args: Vec<OsStrin
         env: env.clone(),
         input: Vec::new(),
         mode: OutputMode::Capture,
-        timeout: Duration::from_secs(10),
+        timeout: Some(Duration::from_secs(10)),
         grace: Duration::from_millis(300),
         max_stdout: 128 * 1024,
         max_stderr: 128 * 1024,
@@ -461,7 +461,7 @@ async fn execute(o: Options, cancel: CancellationToken) -> Result<(), &'static s
     }
     let mut spec = base_spec(&executable, &cwd, &env, smoke_args(&o));
     spec.mode = OutputMode::Stream;
-    spec.timeout = Duration::from_secs(60);
+    spec.timeout = Some(Duration::from_secs(60));
     spec.max_stdout = 16 * 1024 * 1024;
     spec.input = if o.resume {
         b"What exact code did I ask you to remember in the previous turn? Reply only with that code. Do not use tools.\n".to_vec()

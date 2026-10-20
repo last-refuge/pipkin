@@ -123,6 +123,7 @@ fn revision(item: &TranscriptItem, expanded: bool) -> u64 {
         ItemKind::Assistant { text, .. } => (2, text.len(), 0),
         ItemKind::Tool(t) => (3, t.input.len(), t.output.len()),
         ItemKind::Notice { text, .. } => (4, text.len(), 0),
+        ItemKind::Activity { title, text, .. } => (7, title.len(), text.len()),
         ItemKind::Background { text, .. } => (5, text.len(), 0),
         ItemKind::Job(job) => (6, job.command.len(), job.state as usize),
     };
@@ -140,6 +141,10 @@ fn revision(item: &TranscriptItem, expanded: bool) -> u64 {
             t.output.hash(&mut h);
         }
         ItemKind::Job(job) => job.command.hash(&mut h),
+        ItemKind::Activity { title, text, .. } => {
+            title.hash(&mut h);
+            text.hash(&mut h);
+        }
     }
     h.finish()
 }
@@ -148,6 +153,13 @@ fn build(item: &TranscriptItem, expanded: bool) -> Vec<Block> {
     match &item.kind {
         ItemKind::User { text, .. } => vec![Block::plain(BlockKind::Paragraph, text.clone())],
         ItemKind::Notice { text, .. } => vec![Block::plain(BlockKind::Paragraph, text.clone())],
+        ItemKind::Activity { title, text, .. } => {
+            let mut blocks = vec![Block::plain(BlockKind::Paragraph, title.clone())];
+            if expanded && !text.is_empty() {
+                blocks.extend(markdown::parse(text));
+            }
+            blocks
+        }
         ItemKind::Background { text, .. } => {
             if expanded {
                 vec![Block::plain(BlockKind::Paragraph, text.clone())]
@@ -642,6 +654,52 @@ mod tests {
             block,
             offset,
         }
+    }
+
+    #[test]
+    fn expanded_cli_activity_uses_assistant_markdown_and_refreshes_changed_content() {
+        let doc = Document::default();
+        let source = "## Results\n\n**bold** *italic* `inline` [docs](https://example.com)\n\n- first\n- second\n\n> quote\n\n| File | Status |\n|---|---|\n| app.rs | Done |\n\n```rust\nlet ready = true;\n```";
+        let mut activity = TranscriptItem {
+            native_only: true,
+            id: ItemId(91),
+            at: 0,
+            kind: ItemKind::Activity {
+                title: "Claude Code · Result".into(),
+                text: source.into(),
+                level: pipkin_core::NoticeLevel::Info,
+            },
+        };
+        let collapsed = doc.blocks(&activity, false);
+        assert_eq!(collapsed.len(), 1);
+        assert_eq!(collapsed[0].text, "Claude Code · Result");
+        let expanded = doc.blocks(&activity, true);
+        let assistant = doc.blocks(&asst(92, source), false);
+        assert_eq!(&expanded[1..], assistant.as_slice());
+        assert!(
+            expanded
+                .iter()
+                .any(|b| matches!(b.kind, BlockKind::Heading(2)))
+        );
+        assert!(
+            expanded
+                .iter()
+                .any(|b| matches!(b.kind, BlockKind::TableCell(_)))
+        );
+        assert!(
+            expanded
+                .iter()
+                .any(|b| matches!(&b.kind, BlockKind::Code { lang: Some(lang) } if lang == "rust"))
+        );
+        assert!(Arc::ptr_eq(&expanded, &doc.blocks(&activity, true)));
+        if let ItemKind::Activity { text, .. } = &mut activity.kind {
+            *text = source.replace("Done", "Fail");
+        }
+        let updated = doc.blocks(&activity, true);
+        assert!(!Arc::ptr_eq(&expanded, &updated));
+        assert!(updated.iter().any(|b| b.text == "Fail"));
+        assert!(!updated.iter().any(|b| b.text == "Done"));
+        assert_eq!(doc.blocks(&activity, false).len(), 1);
     }
 
     #[test]

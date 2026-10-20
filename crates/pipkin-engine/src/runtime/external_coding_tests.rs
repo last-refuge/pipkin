@@ -389,13 +389,15 @@ fn coding_stop_deny_and_revoke_fence_before_clean_cancellation() {
         );
         assert!(done.evidence.as_ref().unwrap().cancelled_clean_confirmed);
         assert!(!f.project.join("effect").exists());
-        assert!(
-            !shared
+        assert_eq!(
+            shared
                 .store
                 .cli_binding("cli")
                 .unwrap()
                 .unwrap()
-                .context_valid
+                .context_valid,
+            mode == "stop",
+            "only explicit Stop retains connection consent"
         );
         assert!(control.decide(7, &r.ticket, Decision::AllowOnce).is_err());
         no_native(&shared, &provider);

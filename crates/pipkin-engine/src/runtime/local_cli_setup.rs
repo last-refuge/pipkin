@@ -633,6 +633,25 @@ impl Shared {
             self.publish(Event::SessionsChanged);
             return Ok(());
         }
+        let binding = if binding.context_valid {
+            binding
+        } else {
+            // Reconnection is a fresh, explicit trust check. Hold its lease across the
+            // atomic recovery so disconnect/revocation cannot resurrect an old grant.
+            let mut state = self.local_cli_setups.state.lock().unwrap();
+            let ticket = state.ticket(owner, setup)?;
+            if ticket.view.stage != Stage::MetadataVerified
+                || ticket.cancel.is_cancelled()
+                || ticket.saved.as_ref() != Some(&binding)
+                || ticket.view.mode != LocalCliMode::Coding
+                || !matches!(&ticket.view.target, Target::Existing { session: target, .. } if target == session)
+            {
+                return Err(missing());
+            }
+            self.store
+                .tx(|tx| Store::recover_cli_clean_stop_in(tx, session, &binding, setup, now_ms()))
+                .map_err(storage_error)?
+        };
         let mut installed = None;
         let result = (|| {
             // Capture the runtime before taking the trust registry. Never acquire
@@ -712,7 +731,12 @@ impl Shared {
                     .setup_cli_binding(session)
                     .map_err(storage_error)?
                     .ok_or_else(missing)?;
-                if !binding.context_valid
+                if (!binding.context_valid
+                    && self
+                        .store
+                        .cli_clean_stop_recovery(session)
+                        .map_err(storage_error)?
+                        .is_none())
                     || row.parent.is_some()
                     || row.root.is_some()
                     || executable != binding.identity.executable_path
@@ -869,7 +893,12 @@ impl Shared {
                             .session(&session)
                             .map_err(storage_error)?
                             .ok_or_else(missing)?;
-                        if !current.context_valid
+                        if (!current.context_valid
+                            && shared
+                                .store
+                                .cli_clean_stop_recovery(&session)
+                                .map_err(storage_error)?
+                                .is_none())
                             || current != saved
                             || binding != saved.identity
                             || row.model.as_deref() != Some(alias.as_str())

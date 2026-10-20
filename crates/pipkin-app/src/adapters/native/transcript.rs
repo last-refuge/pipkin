@@ -357,43 +357,48 @@ impl Builder<'_> {
                     ..
                 } => {
                     use pipkin_engine_protocol::ExternalActionState;
-                    let label = match state {
-                        ExternalActionState::Observed => "observed; result pending",
-                        ExternalActionState::ReportedSuccess => "CLI reported success",
-                        ExternalActionState::ReportedFailure => {
-                            "CLI reported failure; effects may remain"
-                        }
-                        ExternalActionState::Unknown => {
-                            "outcome unknown; inspect effects before repeating"
-                        }
+                    let (label, level) = match state {
+                        ExternalActionState::Observed => ("Running", NoticeLevel::Info),
+                        ExternalActionState::ReportedSuccess => ("Done", NoticeLevel::Info),
+                        ExternalActionState::ReportedFailure => ("Failed", NoticeLevel::Error),
+                        ExternalActionState::Unknown => ("Result unknown", NoticeLevel::Error),
                     };
                     let (preview, truncated) = preview_output(output);
-                    // An inert notice, never ToolCall/ToolStatus, approval, retry or context.
                     let name: String = name
                         .chars()
                         .take(128)
                         .flat_map(char::escape_default)
                         .collect();
-                    self.notice(
+                    self.push(
                         id,
                         at,
-                        NoticeLevel::Info,
-                        format!(
-                            "Claude CLI action: {name} — {label}\n{preview}{}",
-                            if truncated {
-                                "\n[output preview truncated]"
-                            } else {
-                                ""
-                            },
-                        ),
+                        ItemKind::Activity {
+                            title: format!("Claude Code · {name} · {label}"),
+                            text: format!(
+                                "{preview}{}",
+                                if truncated {
+                                    "\n[output preview truncated]"
+                                } else {
+                                    ""
+                                }
+                            ),
+                            level,
+                        },
                     );
                 }
-                ExternalBlock::Thinking { text } => self.notice(
-                    id,
-                    at,
-                    NoticeLevel::Info,
-                    format!("Claude CLI thinking\n{text}"),
-                ),
+                ExternalBlock::Thinking { text } => {
+                    if !text.trim().is_empty() {
+                        self.push(
+                            id,
+                            at,
+                            ItemKind::Activity {
+                                title: "Claude Code · Thinking".into(),
+                                text: text.clone(),
+                                level: NoticeLevel::Info,
+                            },
+                        );
+                    }
+                }
             }
         }
     }
@@ -617,8 +622,8 @@ mod tests {
             if text == goal && attachments.is_empty())
         );
         assert!(
-            matches!(&mapped.items[1].kind, ItemKind::Notice { text, .. }
-            if text == "Claude CLI thinking\nconsidering")
+            matches!(&mapped.items[1].kind, ItemKind::Activity { title, text, .. }
+            if title == "Claude Code · Thinking" && text == "considering")
         );
         assert!(
             matches!(&mapped.items[2].kind, ItemKind::Assistant { text, streaming: true } if text == raw)
@@ -635,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn external_actions_are_bounded_notices_never_native_tools_or_results() {
+    fn external_actions_are_bounded_collapsible_activity_never_native_tools_or_results() {
         use pipkin_engine_protocol::ExternalActionState;
         let entries = [external(
             9,
@@ -666,7 +671,7 @@ mod tests {
         assert_eq!(mapped.items.len(), 3);
         assert_eq!(mapped.items[1].id, ItemId(9 * SLOTS_PER_ENTRY + 1));
         assert!(
-            matches!(&mapped.items[1].kind, ItemKind::Notice { text, .. } if text.contains("CLI reported failure") && text.contains("preview truncated") && text.len()<10_000 && !text.contains("must not merge"))
+            matches!(&mapped.items[1].kind, ItemKind::Activity { title, text, level: NoticeLevel::Error } if title.contains("Failed") && text.contains("preview truncated") && text.len()<10_000 && !text.contains("must not merge"))
         );
         assert_eq!(tool_result_text(&entries, "native-collision"), None);
         assert!(super::super::mapping::changed_paths(&entries, 0).is_empty());

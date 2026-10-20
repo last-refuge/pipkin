@@ -3503,7 +3503,12 @@ fn a_goal_stopped_mid_turn_can_be_resumed_or_cleared_after_a_relaunch() {
     let fx = Fixture::start(held_first(
         &gate,
         Reply::Text("working\n[PIPKIN_GOAL_CONTINUE]".into()),
-        vec![Reply::Text("done\n[PIPKIN_GOAL_MET]".into())],
+        // Hold the resumed turn too: Stop must win before a successful completion.
+        // An immediate answer races the UI's running event under suite load.
+        vec![Reply::Gated(
+            gate.clone(),
+            Box::new(Reply::Text("done\n[PIPKIN_GOAL_MET]".into())),
+        )],
     ));
     let db = fx.root.join("app.sqlite3");
     let mut h = Harness::start(&fx, &db);

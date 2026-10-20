@@ -100,7 +100,7 @@ async fn run(
         .launch_spec(&binding, policy::TurnMode::Fresh, prompt)
         .unwrap();
     if let Some(timeout) = timeout {
-        spec.timeout = timeout;
+        spec.timeout = Some(timeout);
     }
     let decoder = Arc::new(Mutex::new(events::Decoder::new(SESSION, &[]).unwrap()));
     let observed = decoder.clone();

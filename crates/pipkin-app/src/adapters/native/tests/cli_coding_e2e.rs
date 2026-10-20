@@ -334,7 +334,7 @@ fn full_coding_deny_and_stop_retire_reviews_without_effects_or_retry() {
         }
         h.until("coding scope retired", |s| {
             s.current().is_some_and(|c| {
-                c.execution_blocked.is_some()
+                c.execution_blocked.is_some() == deny
                     && !matches!(
                         c.run,
                         RunState::Submitting { .. }

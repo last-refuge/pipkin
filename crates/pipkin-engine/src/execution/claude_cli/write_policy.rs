@@ -158,7 +158,7 @@ pub(crate) fn turn_spec(turn: Turn<'_>, hook: &Hook) -> Result<Spec, &'static st
     spec.input = turn.prompt.as_bytes().to_vec();
     spec.input.push(b'\n');
     spec.mode = OutputMode::Stream;
-    spec.timeout = Duration::from_secs(180);
+    spec.timeout = Some(Duration::from_secs(180));
     spec.max_stdout = 16 * 1024 * 1024;
     Ok(spec)
 }

@@ -1044,6 +1044,7 @@ mod unit {
                     ItemKind::Background { .. } => panic!("no fabricated background evidence"),
                     ItemKind::Job(_) => panic!("no fabricated job evidence"),
                     ItemKind::Tool(_) => panic!("no fabricated tool evidence"),
+                    ItemKind::Activity { .. } => panic!("no fabricated external activity"),
                 };
                 assert!(text.len() < 1024);
                 assert!(!text.contains('`'));

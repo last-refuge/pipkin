@@ -5,6 +5,7 @@ mod permissions;
 mod prompts;
 mod review;
 mod setup;
+mod stop_recovery;
 
 fn receipt_count(s: &Store) -> i64 {
     s.read(|c| {
@@ -63,6 +64,7 @@ fn conflict<T: std::fmt::Debug>(result: Result<T>) {
 }
 fn drop_v21(c: &Connection) -> Result<()> {
     crate::store::cli_agent::remove_schema_for_test(c)?;
+    crate::store::schema::remove_v33_for_test(c)?;
     c.execute_batch(
         "DROP TABLE external_permissions; DROP TABLE external_projection_messages; DROP TABLE external_prompts;
         DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings;

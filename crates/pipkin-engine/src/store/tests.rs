@@ -572,6 +572,7 @@ fn a_v1_database_is_backed_up_before_adding_durable_retry_state() {
         .unwrap();
         // Reconstruct the actual v1 schema, retaining a nonempty history/catalog.
         s.tx(|tx| {
+            crate::store::schema::remove_v33_for_test(tx)?;
             tx.execute_batch("DROP TABLE diagnostics; DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN note; ALTER TABLE subagent_tasks DROP COLUMN delivery; ALTER TABLE subagent_tasks DROP COLUMN origin; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE external_permissions; DROP TABLE generation_state; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings; DROP TABLE cli_binding_receipts; DROP TRIGGER session_execution_immutable; DROP TRIGGER cli_session_shape_insert; DROP TRIGGER cli_session_shape_update; DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; ALTER TABLE sessions DROP COLUMN execution_backend; DROP TABLE external_projection_actions; PRAGMA user_version = 1;")?;
             Ok(())
         })
@@ -704,6 +705,7 @@ fn a_v2_database_is_backed_up_before_adding_the_outbox() {
         s.tx(|tx| cli_agent::remove_schema_for_test(tx)).unwrap();
         session(&s, "existing");
         s.tx(|tx| {
+            crate::store::schema::remove_v33_for_test(tx)?;
             tx.execute_batch("DROP TABLE diagnostics; DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN note; ALTER TABLE subagent_tasks DROP COLUMN delivery; ALTER TABLE subagent_tasks DROP COLUMN origin; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TRIGGER event_session_insert; DROP TRIGGER event_session_revision; DROP TRIGGER event_retention; DROP TABLE event_outbox; DROP TABLE external_permissions; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings; DROP TABLE cli_binding_receipts; DROP TRIGGER session_execution_immutable; DROP TRIGGER cli_session_shape_insert; DROP TRIGGER cli_session_shape_update; DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; ALTER TABLE sessions DROP COLUMN execution_backend; DROP TABLE external_projection_actions; PRAGMA user_version = 2;")?;
             Ok(())
         }).unwrap();
@@ -735,6 +737,7 @@ fn a_v3_database_is_backed_up_before_positional_system_bodies_are_written() {
         s.tx(|tx| cli_agent::remove_schema_for_test(tx)).unwrap();
         session(&s, "old");
         s.tx(|tx| {
+            crate::store::schema::remove_v33_for_test(tx)?;
             tx.execute_batch("DROP TABLE diagnostics; DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN note; ALTER TABLE subagent_tasks DROP COLUMN delivery; ALTER TABLE subagent_tasks DROP COLUMN origin; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings; DROP TABLE cli_binding_receipts; DROP TRIGGER session_execution_immutable; DROP TRIGGER cli_session_shape_insert; DROP TRIGGER cli_session_shape_update; DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; ALTER TABLE sessions DROP COLUMN execution_backend; DROP TABLE external_permissions; DROP TABLE external_projection_actions; PRAGMA user_version = 3")?;
             Ok(())
         })
@@ -785,6 +788,7 @@ fn a_v4_database_is_backed_up_before_pinned_extension_profiles_are_written() {
         session(&s, "existing");
         s.tx(|tx| {
             Store::kv_set(tx, "existing", "opaque-state", "retained bytes")?;
+            crate::store::schema::remove_v33_for_test(tx)?;
             tx.execute_batch("DROP TABLE diagnostics; DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN note; ALTER TABLE subagent_tasks DROP COLUMN delivery; ALTER TABLE subagent_tasks DROP COLUMN origin; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE summary_writes; DROP TABLE tool_boundaries; DROP TABLE compactions; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings; DROP TABLE cli_binding_receipts; DROP TRIGGER session_execution_immutable; DROP TRIGGER cli_session_shape_insert; DROP TRIGGER cli_session_shape_update; DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; ALTER TABLE sessions DROP COLUMN execution_backend; DROP TABLE external_permissions; DROP TABLE external_projection_actions; PRAGMA user_version = 4")?;
             Ok(())
         })
@@ -831,6 +835,7 @@ fn a_v8_database_is_backed_up_before_removal_receipts_and_delete_events() {
         session(&s, "existing");
         s.tx(|tx| {
             Store::kv_set(tx, "existing", "opaque-state", "retained bytes")?;
+            crate::store::schema::remove_v33_for_test(tx)?;
             tx.execute_batch("DROP TABLE diagnostics; DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN note; ALTER TABLE subagent_tasks DROP COLUMN delivery; ALTER TABLE subagent_tasks DROP COLUMN origin; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TRIGGER event_session_delete; DROP TRIGGER removed_session_insert; DROP TABLE session_removals; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings; DROP TABLE cli_binding_receipts; DROP TRIGGER session_execution_immutable; DROP TRIGGER cli_session_shape_insert; DROP TRIGGER cli_session_shape_update; DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; ALTER TABLE sessions DROP COLUMN execution_backend; DROP TABLE external_permissions; DROP TABLE external_projection_actions; PRAGMA user_version = 8")?;
             Ok(())
         }).unwrap();
@@ -912,6 +917,7 @@ fn v9_tool_history_is_backed_up_and_preserved_before_invocation_aliases() {
                 },
             )?;
             // Reconstruct V9 before reopening; its call index is populated by the migration.
+            crate::store::schema::remove_v33_for_test(tx)?;
             tx.execute_batch("DROP TABLE diagnostics; DROP TABLE jobs; DROP TABLE goal_events; DROP TABLE goals; ALTER TABLE subagent_tasks DROP COLUMN note; ALTER TABLE subagent_tasks DROP COLUMN delivery; ALTER TABLE subagent_tasks DROP COLUMN origin; ALTER TABLE subagent_tasks DROP COLUMN launch; DROP TABLE web_sources; DROP TABLE plan_receipts; DROP TABLE plan_events; DROP TABLE plan_tasks; DROP TABLE plans; DROP TABLE tool_call_ids; DROP TABLE external_projection_messages; DROP TABLE external_prompts; DROP TABLE external_actions; DROP TABLE external_runs; DROP TABLE cli_bindings; DROP TABLE cli_binding_receipts; DROP TRIGGER session_execution_immutable; DROP TRIGGER cli_session_shape_insert; DROP TRIGGER cli_session_shape_update; DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; ALTER TABLE sessions DROP COLUMN execution_backend; DROP TABLE external_permissions; DROP TABLE external_projection_actions; PRAGMA user_version=9")?;
             Ok(())
         })
@@ -957,4 +963,87 @@ fn v9_tool_history_is_backed_up_and_preserved_before_invocation_aliases() {
             .unwrap(),
         "saved output"
     );
+}
+
+/// Contracts §6/§9: v32 → v33 keeps every session, task and run, writes the private backup,
+/// adds the activity indices, and leaves `continues` empty on existing tasks.
+#[test]
+fn a_v32_database_is_backed_up_before_the_activity_indices_and_follow_up_link() {
+    fn rows(c: &Connection, sql: &str) -> Result<Vec<Vec<rusqlite::types::Value>>> {
+        let mut q = c.prepare(sql)?;
+        Ok(q.query_map([], |r| {
+            (0..r.as_ref().column_count())
+                .map(|i| r.get(i))
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+    const SNAPSHOT: [&str; 3] = [
+        "SELECT * FROM sessions ORDER BY id",
+        "SELECT root, child, parent_session, parent_call, child_session, task, status, result,
+                created_at, updated_at, launch, origin, delivery, note
+         FROM subagent_tasks ORDER BY root, child",
+        "SELECT * FROM runs ORDER BY id",
+    ];
+    let snapshot =
+        |c: &Connection| -> Result<Vec<_>> { SNAPSHOT.iter().map(|sql| rows(c, sql)).collect() };
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(dir.path()).unwrap();
+    session(&s, "root");
+    s.tx(|tx| {
+        tx.execute_batch(
+            "INSERT INTO sessions(id, cwd, created_at, updated_at, origin, parent, root)
+                 VALUES ('kid', '/tmp', 2, 2, '{\"kind\":\"native\"}', 'root', 'root');
+             INSERT INTO subagent_tasks(root, child, parent_session, parent_call, child_session,
+                 task, status, result, created_at, updated_at)
+                 VALUES ('root', 1, 'root', 'call', 'kid', 'look', 'done', 'found', 2, 3);
+             INSERT INTO runs(session, state, outcome, started_at, ended_at)
+                 VALUES ('root', 'settled', '{\"reason\":\"completed\"}', 1, 4);",
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    let before = s.read(snapshot).unwrap();
+    s.tx(|tx| {
+        schema::remove_v33_for_test(tx)?;
+        tx.execute_batch("PRAGMA user_version = 32")?;
+        Ok(())
+    })
+    .unwrap();
+    drop(s);
+
+    let s = Store::open(dir.path()).unwrap();
+    assert_eq!(s.read(schema::version).unwrap(), SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 34);
+    assert_eq!(s.read(snapshot).unwrap(), before);
+    let continues: Option<i64> = s
+        .read(|c| {
+            Ok(c.query_row(
+                "SELECT continues FROM subagent_tasks WHERE child_session = 'kid'",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(continues, None);
+    for index in [
+        "sessions_by_updated",
+        "subagent_tasks_by_status",
+        "runs_by_session_ended",
+    ] {
+        let found: bool = s
+            .read(|c| {
+                Ok(c.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?1)",
+                    [index],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap();
+        assert!(found, "{index}");
+    }
+    let backup = Connection::open(dir.path().join("engine.sqlite.v32.bak")).unwrap();
+    assert_eq!(schema::version(&backup).unwrap(), 32);
+    assert_eq!(snapshot(&backup).unwrap(), before);
+    s.integrity_check().unwrap();
 }

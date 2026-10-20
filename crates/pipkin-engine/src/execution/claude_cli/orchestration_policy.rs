@@ -327,7 +327,7 @@ pub fn turn_spec(turn: Turn<'_>, assets: &Assets) -> Result<Spec, &'static str> 
     let mut spec = policy::metadata_spec(turn.executable, turn.cwd, &env, args);
     spec.input = super::orchestration_input::wire(turn.prompt, turn.images)?;
     spec.mode = OutputMode::Stream;
-    spec.timeout = assets.launch.remaining().min(Duration::from_secs(30 * 60));
+    spec.timeout = Some(assets.launch.remaining().min(Duration::from_secs(30 * 60)));
     spec.max_stdout = MAX_STDOUT_BYTES;
     assets.validate(turn.binding)?;
     Ok(spec)

@@ -12,6 +12,70 @@ pub struct ToolLabel {
     pub target: String,
 }
 
+/// Presentation-only state. It never grants external activity native tool controls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepStatus {
+    Running,
+    Done,
+    Failed,
+    Unknown,
+}
+
+/// Read the stable labels emitted by the external transcript adapter, including saved copies.
+/// Unrecognized labels stay visible verbatim instead of guessing a successful outcome.
+pub fn external_action(title: &str) -> Option<(&str, StepStatus)> {
+    let (name, state) = title.strip_prefix("Claude Code · ")?.rsplit_once(" · ")?;
+    if name.is_empty() {
+        return None;
+    }
+    let status = match state {
+        "Running" => StepStatus::Running,
+        "Done" => StepStatus::Done,
+        "Failed" => StepStatus::Failed,
+        "Result unknown" => StepStatus::Unknown,
+        _ => return None,
+    };
+    Some((name, status))
+}
+
+pub fn step(kind: &ItemKind) -> Option<(&str, StepStatus)> {
+    match kind {
+        ItemKind::Tool(tool) => Some((
+            &tool.name,
+            match tool.status {
+                ToolStatus::Running => StepStatus::Running,
+                ToolStatus::Ok => StepStatus::Done,
+                ToolStatus::Failed => StepStatus::Failed,
+            },
+        )),
+        ItemKind::Activity { title, .. } => external_action(title),
+        _ => None,
+    }
+}
+
+pub fn thinking_preview(kind: &ItemKind) -> Option<String> {
+    match kind {
+        ItemKind::Notice {
+            text,
+            level: NoticeLevel::Info,
+        } if is_thinking(text) => Some(thinking_first_line(text)),
+        ItemKind::Activity {
+            title,
+            text,
+            level: NoticeLevel::Info,
+        } if title == "Claude Code · Thinking" => {
+            // External thinking has no native "Thinking" prefix to strip.
+            Some(
+                text.lines()
+                    .map(|s| s.trim().replace("**", ""))
+                    .find(|s| !s.is_empty())
+                    .unwrap_or_default(),
+            )
+        }
+        _ => None,
+    }
+}
+
 /// The string value of `"key": "…"` in a JSON object's text, with the common escapes undone.
 /// Tolerant: a truncated or malformed input just yields `None`.
 pub fn json_string_field(input: &str, key: &str) -> Option<String> {
@@ -243,34 +307,30 @@ pub fn recent_activity(items: &[TranscriptItem]) -> Option<String> {
     let mut completed = Vec::new();
     let mut running = Vec::new();
     let mut failed = 0;
+    let mut unknown = 0;
     let mut thought = None;
     let mut found_prompt = false;
     for item in items.iter().rev().take(MAX_ITEMS) {
-        match &item.kind {
-            ItemKind::User { .. } => {
-                found_prompt = true;
-                break;
+        if matches!(item.kind, ItemKind::User { .. }) {
+            found_prompt = true;
+            break;
+        }
+        if let Some((name, status)) = step(&item.kind) {
+            match status {
+                StepStatus::Done => completed.push(name),
+                StepStatus::Running => running.push(name),
+                StepStatus::Failed => failed += 1,
+                StepStatus::Unknown => unknown += 1,
             }
-            ItemKind::Tool(tool) => match tool.status {
-                ToolStatus::Ok => completed.push(tool.name.as_str()),
-                ToolStatus::Running => running.push(tool.name.as_str()),
-                ToolStatus::Failed => failed += 1,
-            },
-            ItemKind::Notice {
-                text,
-                level: NoticeLevel::Info,
-            } if is_thinking(text)
-                && thought.is_none()
-                && completed.is_empty()
-                && running.is_empty()
-                && failed == 0 =>
-            {
-                let line = thinking_first_line(text);
-                if !line.is_empty() {
-                    thought = Some(line);
-                }
-            }
-            _ => {}
+        } else if thought.is_none()
+            && completed.is_empty()
+            && running.is_empty()
+            && failed == 0
+            && unknown == 0
+            && let Some(line) = thinking_preview(&item.kind)
+            && !line.is_empty()
+        {
+            thought = Some(line);
         }
     }
     if let Some(thought) = thought {
@@ -293,6 +353,12 @@ pub fn recent_activity(items: &[TranscriptItem]) -> Option<String> {
         parts.push(format!(
             "{failed} tool{} failed",
             if failed == 1 { "" } else { "s" }
+        ));
+    }
+    if unknown > 0 {
+        parts.push(format!(
+            "{unknown} tool result{} unknown",
+            if unknown == 1 { "" } else { "s" }
         ));
     }
     if parts.is_empty() {

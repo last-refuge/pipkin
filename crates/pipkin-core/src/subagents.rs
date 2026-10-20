@@ -120,6 +120,7 @@ impl SubagentState {
                 )
                 .into(),
             ),
+            ItemKind::Activity { title, .. } => ("Activity", title.into()),
             ItemKind::Notice { text, .. } => ("Notice", text.into()),
         };
         let clipped = text.chars().nth(PREVIEW_CHARS).is_some();

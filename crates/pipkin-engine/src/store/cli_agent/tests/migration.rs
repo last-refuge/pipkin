@@ -48,6 +48,7 @@ fn v26_backup_preserves_unknown_receipts_and_reserves_removed_legacy_uuids() {
     let before = s.read(snapshot).unwrap();
     s.tx(|tx| {
         remove_schema_for_test(tx)?;
+        crate::store::schema::remove_v33_for_test(tx)?;
         tx.execute_batch("PRAGMA user_version=26;")?;
         Ok(())
     })

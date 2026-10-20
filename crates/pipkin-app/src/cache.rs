@@ -66,6 +66,10 @@ fn encode_item(item: &TranscriptItem) -> Value {
                 },
             }),
         ),
+        ItemKind::Activity { title, text, level } => (
+            "activity",
+            json!({"title":title,"text":text,"error":*level==NoticeLevel::Error}),
+        ),
         ItemKind::Notice { text, level } => (
             "notice",
             json!({ "text": text, "error": *level == NoticeLevel::Error }),
@@ -181,6 +185,15 @@ fn decode_item(value: &Value) -> Option<TranscriptItem> {
                 _ => ToolStatus::Ok,
             },
         }),
+        "activity" => ItemKind::Activity {
+            title: body.get("title")?.as_str()?.to_owned(),
+            text: text()?,
+            level: if body.get("error").and_then(Value::as_bool).unwrap_or(false) {
+                NoticeLevel::Error
+            } else {
+                NoticeLevel::Info
+            },
+        },
         "notice" => ItemKind::Notice {
             text: text()?,
             level: if body.get("error").and_then(Value::as_bool).unwrap_or(false) {
@@ -295,6 +308,22 @@ mod tests {
                 .iter()
                 .all(|item| !item.native_only)
         );
+    }
+
+    #[test]
+    fn external_activity_survives_offline_copy_without_becoming_a_tool_or_message() {
+        let items = vec![TranscriptItem {
+            native_only: true,
+            id: ItemId(31),
+            at: 20,
+            kind: ItemKind::Activity {
+                title: "Claude Code · Bash · Failed".into(),
+                text: "retained output".into(),
+                level: NoticeLevel::Error,
+            },
+        }];
+        assert_eq!(decode_items(&encode_items(&items).0), items);
+        assert_eq!(search_text(&items[0]), None);
     }
 
     fn items() -> Vec<TranscriptItem> {

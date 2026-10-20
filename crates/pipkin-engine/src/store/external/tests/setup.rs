@@ -335,6 +335,7 @@ fn schema22_model_guards_migrate_with_backup_and_no_table_changes() {
     let end = original.find("-- Permanent, nonsecret UUID").unwrap();
     s.tx(|c| {
         crate::store::cli_agent::remove_schema_for_test(c)?;
+        crate::store::schema::remove_v33_for_test(c)?;
         c.execute_batch(
             "DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; DROP TABLE external_permissions; DROP TRIGGER cli_session_shape_insert; DROP TRIGGER cli_session_shape_update; DROP TABLE external_projection_actions; PRAGMA user_version=22;",
         )?;

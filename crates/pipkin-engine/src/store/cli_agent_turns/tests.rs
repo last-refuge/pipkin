@@ -405,6 +405,7 @@ fn v27_backup_preserves_binding_and_migration_does_not_infer_context_history() {
     let b = setup(&s);
     s.tx(|c| {
         remove_schema_for_test(c)?;
+        crate::store::schema::remove_v33_for_test(c)?;
         c.execute_batch("PRAGMA user_version=27;")?;
         Ok(())
     })

@@ -83,15 +83,36 @@ nothing is forwarded, rebound or replayed. Legacy approval recovery remains for 
 - Additional configured MCP servers and hooks are not activated by this provider. The fixed
   launch uses empty MCP configuration, disabled hooks and empty setting sources, without
   modifying the installed CLI or its configuration. Normal CLI login remains separate.
-- New coding turns have a bounded 30-minute execution deadline, cancellable throughout tools
-  and output backpressure. Legacy chat/Write turns retain their three-minute bound. Setup
-  freshness (five minutes, with 30-second Create preflight freshness) is not connection lifetime.
+- Ordinary coding turns run until completion or Stop, without a fixed execution deadline.
+  Long builds and quiet commands may continue beyond 30 minutes. Stop remains effective
+  during tools and output backpressure; output limits and process cleanup still apply. After
+  the CLI process exits, pending output has a separate 30-second drain deadline. Legacy
+  chat/Write turns retain their three-minute bound, and native orchestration keeps its channel
+  lifetime. Setup freshness (five minutes, with 30-second Create preflight freshness) is not
+  connection lifetime.
 
 ## Stop, restart and uncertainty
 
-Stop/disconnect revokes the owned connection/turn and supervises process cleanup. It cannot undo
-file effects or prove every descendant died. Inspect files/processes after a crash before
-repeating work. Existing Unknown turns remain Unknown; compatibility changes never upgrade them.
+In ordinary CLI coding conversations, a clean **Stop** settles the current instruction as
+stopped and keeps the conversation available. Wait for cleanup, then send a new instruction
+in the same composer. Pipkin resumes the existing CLI session and sends only that new text;
+it does not resend the stopped instruction. Completed tool results stay visible, while tools
+without a confirmed result remain **Result unknown**. Inspect existing changes before asking
+Claude to repeat a tool operation: Stop cannot undo file effects.
+
+Continuation requires a confirmed CLI session, delivered input, user-requested cancellation,
+owned-process cleanup, still-active connection authorization and no malformed/rejected stream evidence beyond the expected incomplete
+EOF. Early cancellation before session initialization, crashes, transport failures, lost
+ownership and unconfirmed cleanup still make the conversation read-only. Disconnect still
+revokes the connection's execution authorization; reconnect does not send a prompt.
+For conversations locked by an older build after a clean Stop, choose **Reconnect Claude Code…**
+in that conversation. Pipkin checks the saved cleanup evidence and freshly verifies the same
+project, CLI installation, account, configuration and model. If those checks pass, it unlocks
+the existing conversation without sending a prompt or changing the stopped request's record.
+Then send a new instruction; Pipkin resumes the same CLI session without replaying the old
+request. Existing Unknown turns, timeouts and rejected-output failures remain locked.
+Recovery is explicit; updating the app alone does not unlock conversations. After restart,
+reconnect to a valid conversation before sending a new instruction.
 
 An uncertain prompt, creation or old approval decision must not be resent. Duplicate request
 IDs resolve to their existing receipts, not a second launch. For uncertain creation use the
@@ -99,8 +120,9 @@ explicit read-only lookup in Connections; absence alone never triggers automatic
 Fresh work requires a new instruction, not a retry of an uncertain operation.
 
 A confirmed success can continue. An explicit CLI-reported error can accept a new instruction
-only with independently finished transport/exit and resolved action evidence. Missing terminal
-results, identity conflicts, storage failures and unconfirmed cleanup remain conservative.
+only with independently finished transport/exit and resolved action evidence. Outside the
+confirmed clean Stop path, missing terminal results, identity conflicts, storage failures
+and unconfirmed cleanup remain conservative.
 
 Streaming presentation is separate from execution. Completed blocks repair previews; optional
 telemetry and CLI-owned child observations do not establish root completion. Tool output previews
@@ -133,3 +155,25 @@ explains that `--permission-prompts none` denies otherwise-unresolved prompts in
 the chosen permission mode decides tools first. This is documentation evidence, not a live test.
 The earlier offline implementation passed frozen-source workspace/Clippy/fmt gate269. The
 follow-up's routing/live evidence and final gate status are recorded in [the scorecard](scorecard.md).
+
+## Reading CLI activity and interrupted conversations
+
+CLI tool activity appears as a compact status row. Expand it to inspect or copy the bounded
+output preview. Expanded output and thinking use the same Markdown formatting as replies,
+including headings, lists, links, tables and fenced code blocks. Thinking is collapsed too;
+normal answers remain in the conversation.
+
+Coding tool observations may arrive after the startup inventory and are still display-only.
+Claude can emit another initialization while continuing after background tasks; Pipkin
+validates it without resetting the work already recorded.
+Coding can also emit several completion records when background work finishes. Pipkin
+collects these until the CLI exits, retaining any failure and counting each identified turn
+once. A result alone does not mark the process complete.
+Pipkin orchestration retains its exact native tool catalog. If a previous build interrupted a
+conversation because an output record was rejected, the update does not replay that work or
+clear its uncertainty. Inspect existing project effects, then start a fresh conversation.
+
+CLI tool calls and thinking use Pipkin's compact activity groups: consecutive steps collapse
+into one progress line, and you can expand the group and each step's Markdown output.
+Failed or unknown steps remain marked; the status strip includes CLI activity counts.
+Assistant commentary keeps the same Markdown presentation as other models.

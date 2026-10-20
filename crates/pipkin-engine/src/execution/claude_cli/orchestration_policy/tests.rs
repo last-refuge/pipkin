@@ -184,7 +184,10 @@ async fn native_policy_has_one_mcp_executor_and_no_secrets_or_prompts_in_argv() 
             super::super::orchestration_helper::CHANNEL_ENV
         )));
         assert_eq!(spec.input, b"private user prompt\n");
-        assert!(spec.timeout <= Duration::from_secs(30));
+        assert!(
+            spec.timeout
+                .is_some_and(|timeout| timeout <= Duration::from_secs(30))
+        );
     }
     let config: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&f.assets.mcp).unwrap()).unwrap();

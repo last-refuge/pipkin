@@ -31,7 +31,7 @@ fn spec(root: &Path, mode: &str) -> process::Spec {
     );
     spec.env.insert(CHILD_ROOT.into(), root.as_os_str().into());
     spec.env.insert(CHILD_MODE.into(), mode.into());
-    spec.timeout = Duration::from_secs(5);
+    spec.timeout = Some(Duration::from_secs(5));
     spec.grace = Duration::from_millis(50);
     spec
 }
@@ -125,7 +125,7 @@ async fn external_cancel_during_failed_cleanup_cannot_reclassify_failure_as_inte
             .map(Into::into)
             .collect(),
         );
-        spec.timeout = Duration::from_millis(100);
+        spec.timeout = Some(Duration::from_millis(100));
         spec.grace = Duration::from_millis(500);
         if invalid_stream {
             spec.mode = process::OutputMode::Stream;

@@ -1283,3 +1283,265 @@ fn jobs_are_rows_in_the_transcript_that_follow_the_engine(cx: &mut TestAppContex
         assert_eq!(c.jobs.expanded, Some(3));
     });
 }
+
+#[gpui::test]
+fn external_activity_is_collapsed_and_output_is_selectable_only_after_expansion(
+    cx: &mut TestAppContext,
+) {
+    let (h, cx) = setup(cx, 0);
+    open(
+        &h.model,
+        1,
+        vec![TranscriptItem {
+            native_only: true,
+            id: ItemId(91),
+            at: 0,
+            kind: ItemKind::Activity {
+                title: "Claude Code · Bash · Done".into(),
+                text: "## Results\n\n**Formatted** output\n\n| File | Status |\n|---|---|\n| app.rs | Done |\n\n```text\nhidden command output\nsecond line\n```".into(),
+                level: NoticeLevel::Info,
+            },
+        }],
+        false,
+        cx,
+    );
+    frame(&h, cx);
+    cx.update(|_, cx| h.view.update(cx, |v, cx| v.select_all(cx)));
+    let collapsed = cx
+        .update(|_, cx| h.view.read(cx).selection_text(cx))
+        .unwrap();
+    assert!(collapsed.contains("Bash"));
+    assert!(!collapsed.contains("hidden command output"));
+    cx.update(|_, cx| {
+        h.view
+            .update(cx, |v, cx| v.toggle_tool(ConversationId(1), ItemId(91), cx))
+    });
+    frame(&h, cx);
+    cx.update(|_, cx| h.view.update(cx, |v, cx| v.select_all(cx)));
+    let expanded = cx
+        .update(|_, cx| h.view.read(cx).selection_text(cx))
+        .unwrap();
+    assert!(expanded.contains("hidden command output\nsecond line"));
+    assert!(expanded.contains("Results"));
+    assert!(expanded.contains("Formatted output"));
+    assert!(expanded.contains("File\tStatus\napp.rs\tDone"));
+    assert!(!expanded.contains("**Formatted**"));
+    assert!(!expanded.contains("## Results"));
+    cx.update(|_, cx| {
+        let view = h.view.read(cx);
+        let registry = view.registry.borrow();
+        // Title is block zero; the table starts after the heading and paragraph.
+        let left = registry.find(ItemId(91), 3).expect("first table header");
+        let right = registry.find(ItemId(91), 4).expect("second table header");
+        assert_eq!(left.bounds.origin.y, right.bounds.origin.y);
+        assert!(left.bounds.origin.x < right.bounds.origin.x);
+    });
+}
+
+fn cli_activity(id: u64, title: &str, text: &str) -> TranscriptItem {
+    TranscriptItem {
+        native_only: true,
+        id: ItemId(id),
+        at: 1_700_000_000 + id as i64,
+        kind: ItemKind::Activity {
+            title: title.into(),
+            text: text.into(),
+            level: if title.ends_with("Failed") || title.ends_with("Result unknown") {
+                NoticeLevel::Error
+            } else {
+                NoticeLevel::Info
+            },
+        },
+    }
+}
+
+#[test]
+fn cli_activity_counts_and_thinking_match_native_progress() {
+    use super::super::tools::{StepStatus, external_action, recent_activity};
+    let mut external = vec![
+        item(0),
+        cli_activity(1, "Claude Code · Read · Done", "read output"),
+    ];
+    assert_eq!(
+        recent_activity(&external),
+        recent_activity(&[item(0), tool(1)])
+    );
+    external.push(cli_activity(2, "Claude Code · Bash · Running", ""));
+    assert_eq!(
+        recent_activity(&external).as_deref(),
+        Some("Read 1 file, running 1 command")
+    );
+    external[2] = cli_activity(2, "Claude Code · Bash · Failed", "failure output");
+    external.push(cli_activity(3, "Claude Code · Write · Result unknown", ""));
+    assert_eq!(
+        recent_activity(&external).as_deref(),
+        Some("Read 1 file, 1 tool failed, 1 tool result unknown")
+    );
+    external.push(cli_activity(
+        4,
+        "Claude Code · Thinking",
+        "
+**Checking the build**
+More thoughts",
+    ));
+    assert_eq!(
+        recent_activity(&external).as_deref(),
+        Some("Checking the build")
+    );
+    assert_eq!(
+        activity_caption(&external, true, true, "summary"),
+        "Checking the build"
+    );
+    assert_eq!(
+        activity_caption(&external, false, true, "summary"),
+        "summary · Finished with errors."
+    );
+    external.push(item(5));
+    assert_eq!(
+        recent_activity(&external),
+        None,
+        "a new prompt resets observed counts"
+    );
+    for title in [
+        "Bash · Done",
+        "Claude Code · Bash · Unrecognized",
+        "Claude Code · Thinking",
+        "Claude Code ·  · Done",
+    ] {
+        assert_eq!(
+            external_action(title),
+            None,
+            "do not guess status for {title}"
+        );
+    }
+    assert!(
+        !is_activity(&cli_activity(9, "Claude Code · Bash · Unrecognized", "output").kind),
+        "an unrecognized activity must stay visible rather than becoming a successful group"
+    );
+    assert_eq!(
+        external_action("Claude Code · plugin · custom · Result unknown"),
+        Some(("plugin · custom", StepStatus::Unknown))
+    );
+}
+
+#[gpui::test]
+fn cli_steps_group_like_native_steps_and_open_independently(cx: &mut TestAppContext) {
+    let (h, cx) = setup(cx, 0);
+    let mut external = vec![
+        item(0),
+        cli_activity(1, "Claude Code · Thinking", "Inspecting the project"),
+    ];
+    external.extend((100..130).map(|id| {
+        cli_activity(
+            id,
+            "Claude Code · Read · Done",
+            "## Result
+
+Read output",
+        )
+    }));
+    external.push(item(4));
+    external.push(cli_activity(
+        2,
+        "Claude Code · Thinking",
+        "Checking the build",
+    ));
+    external.extend((200..230).map(|id| {
+        cli_activity(
+            id,
+            "Claude Code · Bash · Done",
+            "## Result
+
+Command output",
+        )
+    }));
+    external[40] = cli_activity(206, "Claude Code · Bash · Failed", "Command failed");
+    external.push(item(9));
+    open(&h.model, 1, external, false, cx);
+    assert!(
+        scroll_extent(&h, cx) < 1.0,
+        "sixty CLI steps collapse into two progress lines"
+    );
+    toggle(&h, 1, cx);
+    let first_open = scroll_extent(&h, cx);
+    assert!(first_open > 100.0);
+    toggle(&h, 2, cx);
+    assert!(scroll_extent(&h, cx) > first_open + 500.0);
+    toggle(&h, 1, cx);
+    toggle(&h, 2, cx);
+    assert!(scroll_extent(&h, cx) < 1.0);
+    cx.update(|_, cx| {
+        let c = h.model.read(cx).state.current().unwrap();
+        assert!(
+            c.items.iter().all(|i| !matches!(i.kind, ItemKind::Tool(_))),
+            "presentation never creates native tool authority"
+        );
+    });
+}
+
+#[gpui::test]
+fn cli_snapshot_updates_preserve_group_and_output_expansion(cx: &mut TestAppContext) {
+    let (h, cx) = setup(cx, 0);
+    let mut external = vec![
+        item(0),
+        cli_activity(1, "Claude Code · Thinking", "Checking"),
+        cli_activity(2, "Claude Code · Bash · Running", "**First output**"),
+    ];
+    open(&h.model, 1, external.clone(), false, cx);
+    toggle(&h, 1, cx);
+    cx.update(|_, cx| {
+        h.view
+            .update(cx, |v, cx| v.toggle_tool(ConversationId(1), ItemId(2), cx))
+    });
+    frame(&h, cx);
+    external[2] = cli_activity(2, "Claude Code · Bash · Failed", "**Final output**");
+    external.push(cli_activity(
+        3,
+        "Claude Code · Read · Done",
+        "hidden details",
+    ));
+    sync_snapshot(&h, external.clone(), cx);
+    cx.update(|_, cx| {
+        let v = h.view.read(cx);
+        assert!(v.convs[&ConversationId(1)].steps_open.contains(&ItemId(1)));
+        assert!(v.is_expanded(ConversationId(1), ItemId(2)));
+        assert!(
+            v.registry.borrow().find(ItemId(2), 1).is_some(),
+            "updated output stays visible"
+        );
+    });
+    cx.update(|_, cx| h.view.update(cx, |v, cx| v.select_all(cx)));
+    let selected = cx
+        .update(|_, cx| h.view.read(cx).selection_text(cx))
+        .unwrap();
+    assert!(selected.contains("Final output"));
+    assert!(!selected.contains("First output"));
+    assert!(!selected.contains("hidden details"));
+    toggle(&h, 1, cx);
+    external.push(cli_activity(
+        4,
+        "Claude Code · Write · Done",
+        "other hidden details",
+    ));
+    sync_snapshot(&h, external, cx);
+    cx.update(|_, cx| {
+        let v = h.view.read(cx);
+        assert!(!v.convs[&ConversationId(1)].steps_open.contains(&ItemId(1)));
+        assert!(
+            v.registry.borrow().find(ItemId(2), 1).is_none(),
+            "folded output is not painted or hit-tested"
+        );
+    });
+    toggle(&h, 1, cx);
+    frame(&h, cx);
+    cx.update(|_, cx| {
+        assert!(
+            h.view
+                .read(cx)
+                .registry
+                .borrow()
+                .find(ItemId(2), 1)
+                .is_some()
+        )
+    });
+}

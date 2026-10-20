@@ -9,7 +9,8 @@
 //! Identity, init/inventory, tool correlation, resource bounds, terminal contradictions and
 //! sink errors remain hard failures. Only an explicit result plus independent supervised
 //! exit/drain/permission evidence can establish execution completion. EOF never does.
-//! Trailing system telemetry is drained after a result. No prompt/delta is replayed.
+//! Coding results are per internal turn and aggregate at EOF; other modes retain
+//! a single terminal result. Trailing telemetry is drained. No prompt/delta is replayed.
 //!
 //! The runtime is the sole production framing consumer and supplies bounded asynchronous
 //! backpressure; the phase-0 smoke decoder is not a second production validator. This module
@@ -17,6 +18,9 @@
 //! signatures and account metadata are discarded; Debug never exposes display content.
 //! Offline fixtures follow the official SDK message-flow contract; they are not live
 //! qualification. See docs/claude-cli-provider-review.md and docs/scorecard.md.
+
+#[path = "events/coding_results.rs"]
+mod coding_results;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
@@ -271,7 +275,7 @@ pub enum Outcome {
 }
 
 /// Missing values stay unknown. No estimates, pricing, account or model metadata.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Usage {
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
@@ -364,6 +368,7 @@ pub struct Decoder {
     snapshots: HashMap<String, [u8; 32]>,
     last_text: Option<(String, usize)>,
     tool_preview_limit: Option<usize>,
+    coding_results: coding_results::CodingResults,
     cli_inventory: bool,
     exact_inventory: bool,
     last_text_snapshot: u64,
@@ -428,6 +433,7 @@ impl Decoder {
             snapshots: HashMap::new(),
             last_text: None,
             tool_preview_limit: None,
+            coding_results: Default::default(),
             cli_inventory: false,
             exact_inventory: false,
             last_text_snapshot: 0,
@@ -512,6 +518,28 @@ impl Decoder {
         if self.summary.outcome.is_none() {
             return Err(Error::Incomplete);
         }
+        if self.cli_inventory {
+            // Per-turn results are not process completion. Publish exactly one
+            // aggregate only after the stream drains; the supervisor still verifies
+            // exit, cancellation, permissions and cleanup independently.
+            if self.summary.presentation_incomplete || self.last_text.is_none() {
+                match self.coding_results.last_result.take() {
+                    Some(serde_json::Value::String(text)) => {
+                        self.reconcile_result(text, &mut sink)?
+                    }
+                    None | Some(serde_json::Value::Null) => {}
+                    Some(_) => self.summary.presentation_incomplete = true,
+                }
+            }
+            emit(
+                &mut sink,
+                Event::Terminal {
+                    outcome: self.summary.outcome.ok_or(Error::Incomplete)?,
+                    usage: self.coding_results.usage,
+                    metadata: None,
+                },
+            )?;
+        }
         Ok(self.summary)
     }
 
@@ -559,28 +587,40 @@ impl Decoder {
                 return Err(Error::Identity);
             }
             increment(&mut self.summary.records)?;
-            // Result ends execution, not the stdout stream. Drain trailing telemetry,
-            // but never accept another result, content mutation or a changed identity.
+            // Native/restricted results end execution, not stdout. Coding results
+            // close internal turns, with process settlement deferred until EOF.
             if self.summary.outcome.is_some() {
                 if matches!(header.kind.as_str(), "system" | "rate_limit_event")
                     && header.subtype.as_deref() != Some("init")
                 {
                     return increment(&mut self.summary.unknown_records);
                 }
-                return Err(Error::Sequence);
-            }
-            if header.kind == "system" && header.subtype.as_deref() == Some("init") {
-                if self.summary.initialized {
+                if self.cli_inventory && header.kind == "result" {
+                    // A batch of held internal-turn results follows the final text.
+                } else if self.cli_inventory
+                    && (matches!(header.kind.as_str(), "assistant" | "user" | "stream_event")
+                        || (header.kind == "system" && header.subtype.as_deref() == Some("init")))
+                {
+                    // Further root work needs a new result before EOF. Keep the
+                    // aggregate outcome/usage and all pending tool correlations.
+                    self.summary.outcome = None;
+                } else {
                     return Err(Error::Sequence);
                 }
+            }
+            if header.kind == "system" && header.subtype.as_deref() == Some("init") {
+                // The CLI emits init per internal turn, including continuation after
+                // background work. Validate each catalog without resetting root state
+                // or announcing a second execution to the projection sink.
                 let init: Init = parse(line)?;
                 if init.tools.len() > MAX_ENTRIES {
                     return Err(Error::Limit);
                 }
+                let mut inventory = HashSet::new();
                 for tool in init.tools {
                     if !valid_id(&tool)
                         || (!self.cli_inventory && !self.allowlist.contains(&tool))
-                        || !self.inventory.insert(tool)
+                        || !inventory.insert(tool)
                     {
                         return Err(Error::UnsupportedTool);
                     }
@@ -588,8 +628,16 @@ impl Decoder {
                 if header.mutates() {
                     return Err(Error::UnsupportedContent);
                 }
-                if self.exact_inventory && self.inventory != self.allowlist {
+                if (self.exact_inventory && inventory != self.allowlist)
+                    || (self.summary.initialized
+                        && !self.cli_inventory
+                        && inventory != self.inventory)
+                {
                     return Err(Error::UnsupportedTool);
+                }
+                self.inventory = inventory;
+                if self.summary.initialized {
+                    return increment(&mut self.summary.unknown_records);
                 }
                 self.summary.initialized = true;
                 return emit(sink, Event::Initialized);
@@ -714,6 +762,21 @@ impl Decoder {
                         | "error_max_structured_output_retries" => Outcome::Error,
                         _ => Outcome::Unknown,
                     };
+                    if self.cli_inventory {
+                        if !self.coding_results.observe(record, outcome)? {
+                            return Ok(());
+                        }
+                        if outcome == Outcome::Success
+                            && self.tools.values().any(|tool| tool.result.is_none())
+                        {
+                            return Err(Error::OrphanToolResult);
+                        }
+                        if self.active.take().is_some() {
+                            self.summary.presentation_incomplete = true;
+                        }
+                        self.summary.outcome = self.coding_results.outcome;
+                        return Ok(());
+                    }
                     if outcome == Outcome::Success
                         && self.tools.values().any(|tool| tool.result.is_none())
                     {
@@ -917,7 +980,10 @@ impl Decoder {
         if !valid_id(id) || !valid_id(name) {
             return Err(Error::Identity);
         }
-        if !self.inventory.contains(name) {
+        // Coding owns its tools and may expose them lazily after init. These
+        // records are inert observations, not permission to execute native tools.
+        // Restricted and orchestration policies retain their closed inventory.
+        if !self.cli_inventory && !self.inventory.contains(name) {
             return Err(Error::UnsupportedTool);
         }
         if let Some(old) = self.tools.get(id) {
@@ -1592,6 +1658,7 @@ impl ResultContent {
 }
 #[derive(Deserialize)]
 struct TerminalRecord {
+    uuid: Option<String>,
     subtype: String,
     is_error: bool,
     #[serde(default, deserialize_with = "optional_usage")]

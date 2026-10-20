@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 32;
+pub const SCHEMA_VERSION: u32 = 34;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -485,10 +485,44 @@ const V29: &str = include_str!("cli_agent_children.sql");
 const V30: &str = include_str!("cli_agent_inputs.sql");
 const V31: &str = include_str!("cli_agent_input_deliveries.sql");
 const V32: &str = include_str!("cli_agent_person_children.sql");
+// The orchestration dashboard's activity directory (docs/orchestration-dashboard-contracts.md
+// §6): recency and status indices, and the follow-up link between a child and the finished
+// child it continues (§7). Existing tasks continue nothing.
+const V33: &str = r#"
+CREATE INDEX sessions_by_updated ON sessions(updated_at DESC, id);
+CREATE INDEX subagent_tasks_by_status ON subagent_tasks(status, updated_at DESC);
+CREATE INDEX runs_by_session_ended ON runs(session, ended_at DESC);
+ALTER TABLE subagent_tasks ADD COLUMN continues INTEGER;
+"#;
+const V34: &str = include_str!("external/stop_recovery.sql");
 const MIGRATIONS: &[&str] = &[
     V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19, V20, V21,
-    V22, V23, V24, V25, V26, V27, V28, V29, V30, V31, V32,
+    V22, V23, V24, V25, V26, V27, V28, V29, V30, V31, V32, V33, V34,
 ];
+
+/// Historical-schema fixtures remove v33 and later objects before setting an older version.
+#[cfg(test)]
+pub(crate) fn remove_v33_for_test(c: &Connection) -> Result<()> {
+    remove_v34_for_test(c)?;
+    c.execute_batch(
+        "DROP INDEX sessions_by_updated; DROP INDEX subagent_tasks_by_status;
+         DROP INDEX runs_by_session_ended; ALTER TABLE subagent_tasks DROP COLUMN continues;",
+    )?;
+    Ok(())
+}
+
+/// Restore the previous immutable-binding trigger for historical migration fixtures.
+#[cfg(test)]
+pub(crate) fn remove_v34_for_test(c: &Connection) -> Result<()> {
+    c.execute_batch("DROP TRIGGER cli_binding_immutable; DROP TABLE cli_stop_recoveries;")?;
+    let original = include_str!("external.sql");
+    let start = original
+        .find("CREATE TRIGGER cli_binding_immutable")
+        .unwrap();
+    let end = start + original[start..].find("END;").unwrap() + 4;
+    c.execute_batch(&original[start..end])?;
+    Ok(())
+}
 
 pub fn configure(conn: &Connection, wal: bool) -> Result<()> {
     if wal {

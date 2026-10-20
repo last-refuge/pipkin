@@ -206,6 +206,10 @@ struct RowCtx {
 fn is_activity(kind: &ItemKind) -> bool {
     match kind {
         ItemKind::Tool(_) => true,
+        ItemKind::Activity { title, level, .. } => {
+            super::tools::external_action(title).is_some()
+                || (*level == NoticeLevel::Info && title == "Claude Code · Thinking")
+        }
         ItemKind::Notice {
             level: NoticeLevel::Info,
             text,
@@ -250,21 +254,12 @@ fn activity_caption(items: &[TranscriptItem], active: bool, failed: bool, summar
     items
         .iter()
         .rev()
-        .filter_map(|item| match &item.kind {
-            ItemKind::Notice {
-                level: NoticeLevel::Info,
-                text,
-            } if super::tools::is_thinking(text) => {
-                let first = super::tools::thinking_first_line(text);
-                (!first.is_empty()).then_some(first)
-            }
-            _ => None,
-        })
-        .next()
+        .filter_map(|item| super::tools::thinking_preview(&item.kind))
+        .find(|first| !first.is_empty())
         .unwrap_or_else(|| {
             if items
                 .iter()
-                .any(|item| matches!(item.kind, ItemKind::Tool(_)))
+                .any(|item| super::tools::step(&item.kind).is_some())
             {
                 summary.to_owned()
             } else {
@@ -421,7 +416,9 @@ impl TranscriptView {
         let model = self.model.clone();
         let range = model.read(cx).state.conversation(conv).and_then(|c| {
             let s = Document::index_of(&c.items, first)?;
-            let is_tool = |i: usize| is_activity(&c.items[i].kind);
+            let is_tool = |i: usize| {
+                is_activity(&c.items[i].kind) && c.items[i].native_only == c.items[s].native_only
+            };
             let (_, last) = super::tools::tool_run(c.items.len(), s, is_tool)?;
             Some(s..last + 1)
         });
@@ -1006,10 +1003,21 @@ impl TranscriptView {
                     let mut names = Vec::new();
                     let mut failed = false;
                     for step in &conv.items[first..=last] {
-                        if let ItemKind::Tool(t) = &step.kind {
-                            names.push(t.name.as_str());
-                            failed |= t.status == ToolStatus::Failed;
+                        if let Some((name, status)) = super::tools::step(&step.kind) {
+                            names.push(name);
+                            failed |= matches!(
+                                status,
+                                super::tools::StepStatus::Failed
+                                    | super::tools::StepStatus::Unknown
+                            );
                         }
+                        failed |= matches!(
+                            step.kind,
+                            ItemKind::Activity {
+                                level: NoticeLevel::Error,
+                                ..
+                            }
+                        );
                     }
                     // Only the newest stretch can still be running; a stale tool status in
                     // history must not leave a completed run saying "Working…" forever.
@@ -1073,6 +1081,9 @@ impl TranscriptView {
             ItemKind::Assistant { text, streaming } => {
                 self.render_assistant(&item, item_ix, text, *streaming, new_reply, &ctx, cx)
             }
+            ItemKind::Activity { title, text, level } => {
+                self.render_activity(&item, item_ix, title, text, *level, &ctx, cx)
+            }
             ItemKind::Tool(t) => self.render_tool(&item, item_ix, t, &ctx, cx),
             ItemKind::Background { text, source } => {
                 self.render_background(&item, item_ix, text, *source, &ctx, cx)
@@ -1086,7 +1097,7 @@ impl TranscriptView {
         // Steps and thinking are quiet, slim lines; messages keep their room.
         let (pad_top, pad_bottom) = match &item.kind {
             ItemKind::Tool(_) => (1.0, 1.0),
-            ItemKind::Notice { .. } => (2.0, 2.0),
+            ItemKind::Notice { .. } | ItemKind::Activity { .. } => (2.0, 2.0),
             ItemKind::Background { .. } | ItemKind::Job(_) => (8.0, 4.0),
             // The header of a message ("You 11:30", "Pipkin 11:32") starts a new step in the
             // conversation, so it gets room above it; the steps between stay tight.
@@ -1318,6 +1329,54 @@ impl TranscriptView {
             .into_any_element()
     }
 
+    /// Shared layout for assistant replies and expanded external Markdown. Keep original
+    /// block indices so table geometry, links and cross-row selection use the document.
+    #[allow(clippy::too_many_arguments)]
+    fn append_markdown_blocks(
+        &self,
+        mut col: gpui::Div,
+        blocks: &[Block],
+        start: usize,
+        item: &TranscriptItem,
+        item_ix: usize,
+        ctx: &RowCtx,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        let theme = &ctx.theme;
+        let mut bi = start;
+        while bi < blocks.len() {
+            let block = &blocks[bi];
+            if matches!(block.kind, BlockKind::TableCell(_)) {
+                let end = super::tables::end(blocks, bi);
+                col = col.child(super::tables::grid(
+                    ElementId::NamedInteger("table".into(), element_key(item.id, bi as u32)),
+                    &blocks[bi..end],
+                    theme,
+                    |offset, block| self.block_element(ctx, item, item_ix, bi + offset, block, cx),
+                ));
+                bi = end;
+                continue;
+            }
+            // A run of list items reads as one section, with breathing room around the
+            // whole list rather than a repeated card around every point.
+            if matches!(block.kind, BlockKind::ListItem)
+                && (bi == start || !matches!(blocks[bi - 1].kind, BlockKind::ListItem))
+            {
+                col = col.child(div().h(px(6.0 * theme.scale)));
+            }
+            col = col.child(self.block_element(ctx, item, item_ix, bi, block, cx));
+            if matches!(block.kind, BlockKind::ListItem)
+                && !blocks
+                    .get(bi + 1)
+                    .is_some_and(|b| matches!(b.kind, BlockKind::ListItem))
+            {
+                col = col.child(div().h(px(6.0 * theme.scale)));
+            }
+            bi += 1;
+        }
+        col
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn render_assistant(
         &self,
@@ -1337,37 +1396,7 @@ impl TranscriptView {
             let status = streaming.then(|| ("Writing…".to_string(), c.text_faint));
             col = col.child(self.author_line("Pipkin", item.at, status, theme));
         }
-        let mut bi = 0;
-        while bi < blocks.len() {
-            let block = &blocks[bi];
-            if matches!(block.kind, BlockKind::TableCell(_)) {
-                let end = super::tables::end(&blocks, bi);
-                col = col.child(super::tables::grid(
-                    ElementId::NamedInteger("table".into(), element_key(item.id, bi as u32)),
-                    &blocks[bi..end],
-                    theme,
-                    |offset, block| self.block_element(ctx, item, item_ix, bi + offset, block, cx),
-                ));
-                bi = end;
-                continue;
-            }
-            // A run of list items reads as one section, with breathing room around the
-            // whole list rather than a repeated card around every point.
-            if matches!(block.kind, BlockKind::ListItem)
-                && (bi == 0 || !matches!(blocks[bi - 1].kind, BlockKind::ListItem))
-            {
-                col = col.child(div().h(px(6.0 * theme.scale)));
-            }
-            col = col.child(self.block_element(ctx, item, item_ix, bi, block, cx));
-            if matches!(block.kind, BlockKind::ListItem)
-                && !blocks
-                    .get(bi + 1)
-                    .is_some_and(|b| matches!(b.kind, BlockKind::ListItem))
-            {
-                col = col.child(div().h(px(6.0 * theme.scale)));
-            }
-            bi += 1;
-        }
+        col = self.append_markdown_blocks(col, &blocks, 0, item, item_ix, ctx, cx);
         if streaming {
             // Static indicator: no animation, identical under reduced motion.
             col = col.child(
@@ -1682,6 +1711,139 @@ impl TranscriptView {
         row.into_any_element()
     }
 
+    /// External output is inspectable display data, never a native tool card.
+    #[allow(clippy::too_many_arguments)]
+    fn render_activity(
+        &self,
+        item: &TranscriptItem,
+        item_ix: usize,
+        title: &str,
+        text: &str,
+        level: NoticeLevel,
+        ctx: &RowCtx,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = &ctx.theme;
+        let c = &theme.colors;
+        let (conv, id) = (ctx.conv, item.id);
+        let expanded = ctx.expanded && !text.is_empty();
+        if let Some(line) = ctx.steps.as_ref().filter(|l| !l.open) {
+            return div()
+                .id(ElementId::NamedInteger("msg".into(), id.0))
+                .role(Role::Article)
+                .aria_label(format!("{}. Show all {} steps", line.caption, line.count))
+                .pl(px(38.0 * theme.scale.max(1.0)))
+                .child(self.render_run_line(line, theme, cx))
+                .into_any_element();
+        }
+        let action = super::tools::external_action(title);
+        let thinking = super::tools::thinking_preview(&item.kind);
+        let label = action.map(|(name, _)| super::tools::label(name, ""));
+        let (mark, verb) = if let Some(label) = &label {
+            (
+                label.icon,
+                if label.icon == "terminal" {
+                    "Running a command"
+                } else {
+                    &label.verb
+                },
+            )
+        } else if thinking.is_some() {
+            ("clock", "Thinking")
+        } else {
+            ("wrench", title)
+        };
+        let color = if level == NoticeLevel::Error {
+            c.danger
+        } else {
+            c.text_muted
+        };
+        let mut heading = div()
+            .id(ElementId::NamedInteger("cli-activity".into(), id.0))
+            .role(Role::Button)
+            .aria_label(title.to_owned())
+            .aria_expanded(expanded)
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .min_h(px(26.0 * theme.scale.max(1.0)))
+            .px(px(6.0))
+            .py(px(2.0))
+            .rounded(px(5.0))
+            .text_size(theme.small_size())
+            .text_color(color)
+            .when(!text.is_empty(), |d| {
+                d.cursor_pointer()
+                    .tab_stop(true)
+                    .focus_visible(|s| s.border_1().border_color(c.accent))
+                    .hover(|s| s.bg(c.bg_hover))
+                    .on_mouse_down(MouseButton::Left, stop_mouse_down)
+                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_tool(conv, id, cx)))
+            })
+            .child(icon(mark, 14.0, c.text_faint))
+            .child(div().flex_none().child(verb.to_owned()))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(c.text_faint)
+                    .child(if expanded {
+                        String::new()
+                    } else {
+                        thinking.unwrap_or_default()
+                    }),
+            );
+        if let Some((_, status)) = action {
+            use super::tools::StepStatus;
+            let (mark, word, tint) = match status {
+                StepStatus::Running => ("loader-circle", "Running", c.accent),
+                StepStatus::Done => ("check", "", c.success),
+                StepStatus::Failed => ("circle-alert", "Failed", c.danger),
+                StepStatus::Unknown => ("circle-alert", "Result unknown", c.danger),
+            };
+            heading = heading.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .text_color(tint)
+                    .child(icon(mark, 14.0, tint))
+                    .child(word),
+            );
+        }
+        if !text.is_empty() {
+            heading = heading.child(icon(
+                if expanded {
+                    "chevron-down"
+                } else {
+                    "chevron-right"
+                },
+                13.0,
+                c.text_faint,
+            ));
+        }
+        let mut row = div()
+            .id(ElementId::NamedInteger("msg".into(), id.0))
+            .role(Role::Article)
+            .aria_label(title.to_owned())
+            .w_full()
+            .flex()
+            .flex_col()
+            .pl(px(38.0 * theme.scale.max(1.0)));
+        if let Some(line) = ctx.steps.as_ref().filter(|l| l.open) {
+            row = row.child(self.render_run_line(line, theme, cx));
+        }
+        row = row.child(heading);
+        if expanded {
+            let blocks = self.blocks_for(ctx.conv, item, true, cx);
+            let details = div().w_full().flex().flex_col().pl(px(24.0)).pb(px(6.0));
+            row =
+                row.child(self.append_markdown_blocks(details, &blocks, 1, item, item_ix, ctx, cx));
+        }
+        row.into_any_element()
+    }
+
     fn render_notice(
         &self,
         item: &TranscriptItem,
@@ -1827,10 +1989,10 @@ impl TranscriptView {
     ) -> gpui::Stateful<gpui::Div> {
         let c = &theme.colors;
         let (conv, first) = (self.current.unwrap_or(ConversationId(0)), line.first);
-        let (mark, color) = if line.running {
-            ("loader-circle", c.accent)
-        } else if line.failed {
+        let (mark, color) = if line.failed {
             ("circle-alert", c.danger)
+        } else if line.running {
+            ("loader-circle", c.accent)
         } else {
             ("check", c.success)
         };
@@ -1878,6 +2040,15 @@ impl TranscriptView {
                     .text_color(c.text_muted)
                     .child(label.to_owned()),
             )
+            .when(line.running && line.failed, |d| {
+                d.child(
+                    div()
+                        .flex_none()
+                        .text_size(theme.small_size())
+                        .text_color(c.danger)
+                        .child("· Some steps need attention"),
+                )
+            })
             .when(!line.open && !line.running, |d| {
                 d.child(
                     div()

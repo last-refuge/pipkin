@@ -10,6 +10,7 @@
 use super::*;
 pub mod permissions;
 pub mod prompts;
+mod stop_recovery;
 
 /// Immutable, nonsecret identity. Config/account fields are opaque markers, NEVER credentials
 /// or paths to credentials. The caller must qualify both paths against the actual filesystem;
@@ -418,6 +419,10 @@ impl Store {
     fn invalidate_external_binding(c: &Connection, key: &ExternalRunKey, now: i64) -> Result<()> {
         Self::revoke_external_permissions_for_run_in(c, key, now)?;
         c.execute("UPDATE cli_bindings SET context_valid=0,generation=generation+1 WHERE session=?1 AND generation=?2 AND context_valid=1", params![key.session,key.generation])?;
+        Self::mark_external_actions_unknown(c, key, now)
+    }
+
+    fn mark_external_actions_unknown(c: &Connection, key: &ExternalRunKey, now: i64) -> Result<()> {
         c.execute("UPDATE external_actions SET status='unknown',updated_at=MAX(updated_at,?4) WHERE session=?1 AND generation=?2 AND op=?3 AND status IN ('observed','running')", params![key.session,key.generation,key.op,now])?;
         Ok(())
     }

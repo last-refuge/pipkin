@@ -5,7 +5,7 @@ use super::{
     policy,
     process::{OutputMode, Spec},
 };
-use std::{ffi::OsString, path::Path, time::Duration};
+use std::{ffi::OsString, path::Path};
 
 pub const ID: &str = "cli-unattended-coding-v1";
 pub const FLAGS: &[&str] = &[
@@ -94,8 +94,9 @@ pub fn turn_spec(
     spec.input = prompt.as_bytes().to_vec();
     spec.input.push(b'\n');
     spec.mode = OutputMode::Stream;
-    // Coding includes builds/tests and CLI-owned tool rounds, not just one API answer.
-    spec.timeout = Duration::from_secs(30 * 60);
+    // Coding may include arbitrarily long builds and CLI-owned tool rounds. The user
+    // owns its lifetime via Stop; a wall-clock cap must not kill healthy work.
+    spec.timeout = None;
     spec.max_stdout = 16 * 1024 * 1024;
     Ok(spec)
 }
@@ -137,6 +138,7 @@ mod tests {
                 )));
             assert_eq!(spec.input, b"private $(not a shell command)\n");
             assert_eq!(spec.cwd, Path::new("/project"));
+            assert_eq!(spec.timeout, None);
             assert_ne!(ID, policy::POLICY_ID);
         }
     }

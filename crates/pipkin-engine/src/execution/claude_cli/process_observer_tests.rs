@@ -13,7 +13,7 @@ fn spec(script: &str, cwd: &std::path::Path) -> Spec {
         env: std::env::vars_os().collect(),
         input: Vec::new(),
         mode: OutputMode::Capture,
-        timeout: Duration::from_secs(5),
+        timeout: Some(Duration::from_secs(5)),
         grace: Duration::from_millis(100),
         max_stdout: 128 * 1024,
         max_stderr: 128 * 1024,
@@ -55,10 +55,10 @@ async fn async_observer_backpressures_a_slow_consumer_without_dropping_or_second
 
 #[tokio::test]
 async fn async_observer_pressure_never_blocks_timeout_or_cancellation() {
-    for cancel_explicitly in [false, true] {
+    for (cancel_explicitly, bounded) in [(false, true), (true, true), (true, false)] {
         let dir = tempfile::tempdir().unwrap();
         let mut s = spec("printf x; sleep 30", dir.path());
-        s.timeout = Duration::from_millis(100);
+        s.timeout = bounded.then_some(Duration::from_millis(100));
         let cancel = CancellationToken::new();
         let signaller = cancel.clone();
         let entered = Arc::new(tokio::sync::Notify::new());
@@ -341,4 +341,134 @@ async fn observer_failure_and_failed_revocation_cannot_become_clean_success() {
     assert_eq!(report.approval_revocation_confirmed, Some(false));
     assert!(report.root_reaped && report.pipes_drained && !report.cleanup_timed_out);
     assert!(!report.clean_exit());
+}
+
+#[tokio::test]
+async fn coding_lifetime_survives_thirty_minutes_of_quiet_work_or_backpressure() {
+    for blocked_observer in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = spec(
+            "printf ready; while [ ! -f finish ]; do sleep 0.01; done; printf done",
+            dir.path(),
+        );
+        s.timeout = None;
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let observed = entered.clone();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let gate = release.clone();
+        let mut first = true;
+        let task = tokio::spawn(run_observed_async(
+            s,
+            CancellationToken::new(),
+            None,
+            Box::new(move |_| {
+                let wait = first && blocked_observer;
+                if first {
+                    observed.notify_one();
+                    first = false;
+                }
+                let gate = gate.clone();
+                Box::pin(async move {
+                    if wait {
+                        gate.notified().await;
+                    }
+                    Ok(())
+                })
+            }),
+        ));
+        tokio::time::timeout(Duration::from_secs(5), entered.notified())
+            .await
+            .unwrap();
+        // Real subprocess, virtual elapsed time: no inference and no half-hour sleep.
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(31 * 60)).await;
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !task.is_finished(),
+            "ongoing work must survive the old absolute deadline"
+        );
+        tokio::time::resume();
+        std::fs::write(dir.path().join("finish"), b"ready").unwrap();
+        release.notify_one();
+        let report = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(report.clean_exit(), "{report:?}");
+        assert_eq!(report.stdout_bytes, 9);
+        assert!(report.elapsed_ms >= 31 * 60 * 1000);
+    }
+}
+
+#[tokio::test]
+async fn coding_without_execution_deadline_still_bounds_stuck_delivery_after_root_exit() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = spec(
+        "printf ready; while [ ! -f finish ]; do sleep 0.01; done",
+        dir.path(),
+    );
+    s.timeout = None;
+    let exited = Arc::new(tokio::sync::Notify::new());
+    let signalled = exited.clone();
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let observed = entered.clone();
+    let task = tokio::spawn(run_observed_async(
+        s,
+        CancellationToken::new(),
+        Some(Box::new(move || {
+            signalled.notify_one();
+            true
+        })),
+        Box::new(move |_| {
+            observed.notify_one();
+            Box::pin(std::future::pending())
+        }),
+    ));
+    tokio::time::timeout(Duration::from_secs(5), entered.notified())
+        .await
+        .unwrap();
+    std::fs::write(dir.path().join("finish"), b"ready").unwrap();
+    // This fence runs on root exit even while the observer remains backpressured.
+    tokio::time::timeout(Duration::from_secs(5), exited.notified())
+        .await
+        .unwrap();
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(31)).await;
+    for _ in 0..8 {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::resume();
+    let report = tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(report.stop, Some(Stop::CleanupTimeout), "{report:?}");
+    assert!(report.root_reaped);
+    assert!(!report.clean_exit());
+}
+
+#[tokio::test]
+async fn coding_without_execution_deadline_still_enforces_output_limits() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = spec("while :; do printf 0123456789; done", dir.path());
+    s.timeout = None;
+    s.max_stdout = 64;
+    let report = tokio::time::timeout(
+        Duration::from_secs(5),
+        run_observed_async(
+            s,
+            CancellationToken::new(),
+            None,
+            Box::new(|_| Box::pin(async { Ok(()) })),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(report.stop, Some(Stop::OutputLimit));
+    assert!(report.root_reaped && report.pipes_drained);
 }

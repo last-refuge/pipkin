@@ -163,7 +163,7 @@ impl Workspace {
                 ));
             }
             if s.session_status.as_ref().is_some_and(|v| !v.context_valid) {
-                panel = panel.child("This conversation cannot resume safely. Inspect any uncertain effects before starting a separate conversation; do not repeat its last message.");
+                panel = panel.child("This conversation is locked. Reconnect can recover a clean Stop from an older build after verification. Other interrupted work needs a separate conversation. Reconnecting never repeats the last message.");
                 if let Some(target) = &s.target {
                     panel = panel.child(self.cli_button(
                         "guided-fresh",

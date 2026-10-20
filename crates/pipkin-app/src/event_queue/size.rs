@@ -23,6 +23,7 @@ fn item(i: &TranscriptItem) -> usize {
         ItemKind::Assistant { text, .. }
         | ItemKind::Background { text, .. }
         | ItemKind::Notice { text, .. } => text.capacity(),
+        ItemKind::Activity { title, text, .. } => title.capacity() + text.capacity(),
         ItemKind::Tool(t) => {
             strings(&t.call_id) + t.name.capacity() + t.input.capacity() + t.output.capacity()
         }

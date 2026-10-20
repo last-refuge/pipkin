@@ -1,5 +1,257 @@
 # Scorecard
 
+## Recovery of old clean CLI Stops — 2026-10-19
+
+**Implemented:** fresh matching **Reconnect Claude Code…** can recover an ordinary Coding
+conversation invalidated by an older build after a provably clean Stop. Schema34 records an
+immutable recovery audit and advances the binding generation; it does not rewrite old receipts,
+restore old execution grants or replay prompts. Earlier Unknown runs, missing cleanup evidence,
+newer explicit negative authorization, changed identity and revoked setup checks remain blocked.
+Migration alone does not unlock conversations.
+
+**Observed offline:** desktop reconnect then same-composer resume, fresh/revoked/mismatched
+metadata setup, duplicate request non-replay, restart durability, immutable receipts and unknown
+actions, rollback/CAS, migration backup and removal. **Observed read-only:** one historical
+candidate (receipt19), seven excluded Unknown conversations; live data unchanged. **Unverified:**
+installed-Claude recovery/resume and actual-window interaction. Zero Claude prompts.
+
+**Measured offline:** 2,680 tests passed, 13 ignored, zero failures across 48 workspace
+suite results. Strict workspace/all-target Clippy, formatting and diff checks passed. Checked
+source manifest SHA256: `4ba8b18ed420bd247d4ec02bb404efcf7ba22a5876568d2e0e14bf0b92dace93`.
+All five prompt-budget files stayed byte-identical; zero Claude prompts. Evidence:
+`dist/cli-stop-recovery/summary.json`.
+
+Release build and isolated native-engine startup probe passed with the checked source
+unchanged. Quit the old app and run `scripts/run.sh`, then choose **Reconnect Claude Code…**
+in the eligible stopped conversation. No live recovery has been performed yet. Evidence:
+`dist/cli-stop-recovery/release-build.json`. Built binary:
+`/home/jason/coding/pipkin/dist/source-setup/builds/ef6e412c1cc64e14860717c31fee0d9d/bin/pipkin`.
+
+## Clean CLI Stop continuation — 2026-10-19
+
+**Implemented:** confirmed user cancellation retains the CLI conversation for a new instruction.
+The previous request stays aborted and non-replayable, including across restart. The next
+prompt uses the same CLI session with only the newly submitted text. Completed actions retain
+their results; unfinished actions remain Unknown in the ledger and transcript. Approval
+revocation, disconnection, shutdown, malformed output and unconfirmed cleanup cannot grant
+continuation. Historical invalidated bindings are unchanged.
+
+**Observed offline:** desktop composer readiness after Stop, same-session resumed completion,
+public RPC request deduplication, restart durability, stale action rejection and insufficient
+cleanup/authorization evidence. Synthetic CLI fixtures only. **Unverified:** installed-Claude
+Stop/resume and real-window interaction; no live inference was authorized or performed.
+
+**Measured offline:** 2,674 tests passed, 13 ignored, zero failures
+across 48 workspace suite results. Strict workspace/all-target Clippy, formatting
+and diff checks passed. Final source remained unchanged through the checks and release build
+(manifest SHA256 `d0ca083e59b461fc78141e3d4ff2883cfb793e2dbb851511a66fd976c3aeffc0`). All five prompt-budget files stayed byte-identical;
+zero Claude prompts. Release build and isolated native-engine startup probe passed.
+
+Quit the old app and launch with `scripts/run.sh`. Evidence: `dist/cli-stop-fix/summary.json`
+and `dist/cli-stop-fix/release-build.json`. Built binary:
+`/home/jason/coding/pipkin/dist/source-setup/builds/226057fee234411bafd6bf1b97a26460/bin/pipkin`.
+
+## Ordinary CLI coding lifetime — 2026-10-19
+
+**Observed:** read-only receipt 18 records `TimedOut` and an incomplete `EndOfStream`
+after 1,800.634 seconds (13:04–13:34 Arizona time). The ordinary Coding launch policy
+imposed an absolute 30-minute deadline, regardless of tool activity. The supervisor
+terminated the process while a Bash action remained unsettled. This was a lifetime-policy
+failure, not a newly rejected CLI record shape. Evidence: `dist/cli-timeout-fix/observed.json`.
+
+**Implemented:** ordinary Coding has no fixed execution deadline. Long builds and quiet
+commands may continue until completion or Stop. The shared supervisor now represents the
+execution deadline explicitly as optional. Metadata probes, legacy chat/Write, native
+orchestration channel lifetimes and approved probe budgets retain their existing bounds.
+Output byte limits, Stop/cancellation, owner-drop process cleanup and uncertainty rules
+remain in effect. Once an unbounded Coding process exits, output delivery has a separate
+30-second drain deadline. Exit is observed even during delivery backpressure; termination
+and reaping remain bounded. No timeout renews credentials, grants authority or replays work.
+
+Synthetic subprocess regressions advance a virtual clock by 31 minutes during quiet work
+and blocked delivery, then complete normally. Other cases cover cancellation without an
+execution deadline, output caps and a stuck observer after root exit. Existing deadline,
+process-tree cleanup and fresh/resume tests remain part of workspace verification.
+
+**Measured offline:** 2,669 tests passed, 13 ignored, zero failures across
+48 workspace suite results. Strict workspace/all-target Clippy, formatting and diff checks
+passed. The final source stayed unchanged throughout the gates and release build (manifest
+SHA256 `62d114e4ead4a4ffdcd1b326e2ae160aef4542f8991ef4d50ffdc68dc8f03061`).
+All five prompt-budget files stayed byte-identical; zero Claude prompts. The 31-minute
+elapsed-time cases use a virtual clock with real synthetic subprocesses, not real Claude
+inference. Installed-CLI long-turn behavior and real-window qualification remain unverified.
+
+Release build and isolated native-engine startup probe passed. Quit the old app and launch
+with `scripts/run.sh`. Evidence: `dist/cli-timeout-fix/summary.json` and
+`dist/cli-timeout-fix/release-build.json`.
+The historical interrupted receipt is unchanged and remains uncertain; inspect existing
+project files in a new conversation before continuing, rather than replaying the old prompt.
+
+## CLI activity presentation — 2026-10-19
+
+CLI tool observations and thinking now join the same consecutive-step groups as native
+model activity. Groups start collapsed, remain separated by assistant commentary and user
+messages, and use the existing summary, elapsed-time and expand/collapse controls. Expanded
+rows use familiar tool icons and friendly labels, quiet success checks, explicit failed or
+unknown states, and a thinking preview. The provider is still identified by the conversation
+and accessible row labels. A failed step remains visible on a folded group even while work
+continues. The live activity strip now counts CLI actions as well as native tools.
+
+Expanded output keeps the shared cached Markdown renderer, including tables and selectable
+text. Snapshot refreshes retain group and output expansion by item identity. Saved activity
+labels are recognized without a cache migration; unrecognized labels remain visible verbatim.
+These are presentation-only observations: no native tool identity, execution, diff, or retry
+controls are created, and no missing command arguments or paths are invented.
+
+**Measured offline:** 2,666 tests passed, 13 ignored, zero failures across
+48 workspace suite results. Strict workspace/all-target Clippy, formatting and diff checks
+passed. The final source stayed unchanged throughout the gates and release build (manifest
+SHA256 `1fd61c71722b0e0ba47889d8333ddce8f9a97ecacb4b79f57ff729b8f1119017`).
+All five prompt-budget files remained byte-identical; zero Claude prompts. The GPUI harness
+verified sixty CLI steps folding around commentary, independent group expansion, refreshed
+Markdown details, and expansion persistence across snapshots. Real-window appearance and
+installed-CLI inference remain unverified.
+
+The initial focused run passed the new regressions but an existing file-link fixture could
+not write its temporary directory inside the sandbox. The unrestricted offline workspace
+run passed; Clippy then requested an equivalent iterator cleanup. The final complete run
+above includes that cleanup. Earlier logs are retained separately.
+
+Release build and isolated native-engine startup probe passed. Quit the old app, then use
+`scripts/run.sh` for this build. Evidence: `dist/cli-presentation/summary.json` and
+`dist/cli-presentation/release-build.json`.
+
+## CLI batched completion results — 2026-10-19
+
+**Observed:** the resumed Coding receipt stored success and clean exit0, then rejected a
+second `Result` with `Sequence`/`ObserverFailure`. The raw second frame was not retained;
+its precise payload/outcome cannot be reconstructed from the receipt. Read-only inspection
+of the installed CLI2.1.301 emitter confirmed its background-result queue flushes several
+held per-turn results after the assistant content. This is distinct from duplicate delivery.
+Anthropic's [SDK changelog](https://github.com/anthropics/claude-agent-sdk-typescript/blob/main/CHANGELOG.md)
+documents held background results (v0.3.239) and per-turn `usage` versus cumulative
+`modelUsage` (v0.3.223).
+
+**Implemented:** Coding retains a bounded result aggregate and publishes one terminal event
+at stream EOF. Independent supervised exit/drain/cancellation/permission checks still govern
+settlement. Distinct result UUIDs add per-turn usage; identical semantic redelivery adds
+nothing. Conflicting reuse, missing identity on multiple results, foreign sessions, invalid
+mutation surfaces and resource overflow remain failures. Missing usage stays unknown, and
+an error or unknown outcome cannot be upgraded by a later successful result. Further root
+activity requires a new result; replaying an older result cannot close it. Only the last
+result may repair incomplete display, preventing held intermediate summaries from replacing
+the final answer. Native orchestration and restricted connections keep their single-result
+policy and existing catalog/permission boundaries.
+
+The public fake Coding fixture now flushes three identified results after its background
+continuations and verifies fresh/resume, aggregate usage and no replay. Additional tests
+cover prior failure followed by success, Stop after results but before exit, partial pipe
+chunks, missing final newline, unfinished continuation, duplicate deliveries, pending tools,
+identity conflicts, usage overflow and result-count bounds. No old live receipt or history
+was rewritten. Existing unknown conversations remain fenced because later raw results were
+not retained; no uncertain work is replayed.
+
+**Measured offline:** 2,645 tests passed, 13 ignored, zero failures across 48 workspace suite
+results. Strict workspace/all-target Clippy, formatting and diff checks passed. Source stayed
+unchanged during the final gates (manifest SHA256
+`1af00b4690af2693665dd38370780ec61554ab798b05924b6a0c1ae35eacfe69`). All five prompt-budget
+files stayed byte-identical; zero Claude prompts. Evidence: `dist/cli-result-fix/summary.json`.
+An early focused test used an already-invalid token value for overflow; the final regression
+adds valid counts beyond the aggregate storage bound. Its early log is retained separately.
+Installed-CLI inference and real-window behavior remain unverified.
+
+Release build and isolated native-engine probe passed. `scripts/run.sh` selects this build;
+quit the old app first. Build receipt: `dist/cli-result-fix/release-build.json`.
+
+## CLI continuation initialization fix — 2026-10-19
+
+**Observed:** the latest resumed CLI2.1.301 Coding turn stopped with `Sequence`, record
+`System`, supervisor `ObserverFailure` and exit143. No terminal result was committed.
+The decoder rejected repeated `system/init` records, treating per-turn initialization as a
+second process start. Raw rejected frames were not retained, so their exact payload is unknown.
+The new offline continuation fixture reproduced the same `Sequence` failure before the fix.
+
+**Implemented:** accept repeated initialization before the terminal result, revalidating
+session identity, record bounds, tool names and catalog policy each time. Restricted sessions
+must retain their original inventory; native orchestration must retain its exact catalog.
+Coding can refresh its CLI-owned inventory. Reinitialization does not reset messages, pending
+actions, tool correlation or resource counters, and emits no second initialization to storage.
+Terminal contradictions and initialization after a result remain failures.
+
+The fake public Coding route now includes two background completion/initialization cycles
+before its final answer, exercised on fresh and resumed prompts. Decoder regressions cover
+continued text, pending tool results, catalog refresh, invalid records, altered catalogs and
+terminal boundaries. The interrupted real conversation remains fenced; no uncertain work was
+replayed or history rewritten.
+
+Protocol reference: Anthropic's [SDK changelog](https://github.com/anthropics/claude-agent-sdk-typescript/blob/main/CHANGELOG.md),
+v0.3.247, describes per-turn `system/init` frames; v0.3.239 describes one-shot results held
+back for background subagents. These are protocol references, not live qualification.
+
+**Verification repair:** the first workspace attempt hit a native goal test race: its resumed
+answer could finish before Stop while the test required a paused goal. The fixture now holds
+both turns until cancellation; no goal runtime behavior changed. Its isolated recheck passed.
+The original failure is retained in `dist/cli-reinit-fix/workspace-first-attempt.log`.
+The next run exposed an outdated fixture expectation: the completed prompt correctly retained
+both new background progress messages as well as its final answer. The assertion now checks
+all three texts; production output handling is unchanged. That failure is retained in
+`dist/cli-reinit-fix/workspace-second-attempt.log`.
+
+**Measured offline:** 2,639 tests passed, 13 ignored, zero failures across 48 workspace suite
+results. Strict workspace/all-target Clippy, formatting and diff checks passed. Source stayed
+unchanged throughout the final gates (manifest SHA256
+`05640f2e6594c087445d91f841866a0f85fc6204a25a422456c89bd7c4e85b72`). All five prompt-budget
+files remained byte-identical; zero Claude prompts. Evidence: `dist/cli-reinit-fix/summary.json`.
+Installed-CLI inference and real-window verification remain unverified.
+
+Release build and isolated native-engine startup probe passed. `scripts/run.sh` selects the
+updated build; quit the old app first. Build receipt: `dist/cli-reinit-fix/release-build.json`.
+
+## CLI Markdown output — 2026-10-19
+
+Expanded CLI activity and thinking now use the same cached Markdown parser and block layout
+as assistant replies: headings, emphasis, links, lists, quotes, tables and fenced code.
+Rows remain collapsed by default. The status title stays outside the Markdown body, and
+selection uses the original document block positions, including table cells. Parsing stays
+outside rendering; content changes invalidate the existing document cache. CLI observations
+remain display-only.
+
+Regressions compare the expanded activity body with assistant Markdown, refresh equal-length
+content changes, and check collapsed selection, formatted copy, code line breaks and actual
+table-column geometry in the GPUI harness. Real-window presentation remains unverified.
+
+**Measured offline:** 2,636 tests passed, 13 ignored, zero failures. Strict workspace/all-target
+Clippy, formatting and diff checks passed. All five Claude prompt-budget files remained
+unchanged; zero Claude prompts. Source-manifest SHA256
+`ece296cf222ce17933c50458edbd4dc55b615e7fcf538447503e3b59c1919496`. Evidence:
+`dist/cli-markdown/summary.json`. GPUI harness checks are not real-window qualification.
+
+Release build and isolated native-engine startup probe passed. `scripts/run.sh` selects
+the new build; quit the old app first. Build receipt: `dist/cli-markdown/release-build.json`.
+
+## CLI coding stream rejection and output presentation — 2026-10-19
+
+**Observed:** installed CLI2.1.301 Coding failed when a streamed tool was absent from its
+initial inventory. Three earlier tool results were displayed as verbose notices. Stored
+diagnostics identify the rejected record class, not the rejected tool name. Exit143 followed
+Pipkin's observer-failure shutdown.
+
+**Implemented:** accept valid late CLI-owned observations only in Coding; preserve strict
+restricted/native catalogs. Show inert tool activity and thinking collapsed by default,
+with expandable literal output, stable identity and offline caching.
+
+**Measured offline:** 2,635 tests passed, 13 ignored, zero failures;
+strict workspace/all-target Clippy, formatting and diff checks passed. Final source stayed
+unchanged (manifest SHA256 `fdb72d5781a9a353f4b002594049af100b4991dd55d402b3cde66ff56ee5bdb4`). All five prompt-budget files stayed
+byte-identical; zero Claude prompts. The decoder regression exercises `ContentBlockStart`
+for a late tool and strict-policy refusal. Fake CLI fresh/resume tests complete without
+native API fallback. GPUI tests prove collapsed output is excluded from selection until
+expanded; offline cache and stable/inert transcript mapping checks pass. An extra blank
+line in documentation was corrected and the actual diff check rerun successfully.
+
+**Unverified:** updated installed-CLI behavior and real-window presentation. No old uncertain
+conversation was unfenced or replayed; no installed Claude prompts were spent.
+
 ## CLI desktop controls — 2026-10-19 (slice35)
 
 **Implemented:** creation-time effort selection; person-launched notification-only CLI children

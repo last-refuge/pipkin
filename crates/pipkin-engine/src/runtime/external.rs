@@ -623,7 +623,7 @@ impl Shared {
         let spec = {
             let mut spec = spec;
             if let Some(timeout) = launch.test.and_then(|test| test.timeout) {
-                spec.timeout = timeout;
+                spec.timeout = Some(timeout);
             }
             spec
         };
@@ -853,6 +853,16 @@ impl Shared {
                     .as_ref()
                     .is_ok_and(|r| r.approval_revocation_confirmed == Some(true));
         }
+        evidence.continuation_authorized = !self.stopping.is_cancelled()
+            && !sess.removed.is_cancelled()
+            && launch
+                .grant
+                .as_ref()
+                .is_none_or(|grant| !grant.cancel.is_cancelled());
+        #[cfg(unix)]
+        if let Some(coding) = &launch.coding {
+            evidence.continuation_authorized &= coding.broker.consent_active();
+        }
         self.finish_external(&lifetime, receipt, evidence).await;
     }
 
@@ -933,6 +943,7 @@ fn evidence(report: &process::Report, decoder_finished: bool) -> ExternalSettlem
             && report.pipes_drained
             && !report.cleanup_timed_out
             && report.approval_revocation_confirmed != Some(false),
+        continuation_authorized: false, // checked against connection/consent after cleanup
         supervisor_stop: report.stop,
         projection_error: None,
         rejected_record: None,

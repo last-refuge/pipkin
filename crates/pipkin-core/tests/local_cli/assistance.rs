@@ -108,7 +108,7 @@ fn redacted_diagnostics_are_explicit_scoped_and_contain_no_untrusted_text() {
     ] {
         assert!(!text.contains(forbidden));
     }
-    assert!(text.contains("cannot be resumed safely"));
+    assert!(text.contains("Reconnect can recover a confirmed clean Stop"));
     assert!(text.contains("not proof of delivery"));
     assert_eq!(s.local_cli.stage, LocalCliStage::Editing);
     assert!(s.local_cli.ticket.is_none());

@@ -259,6 +259,12 @@ pub enum ItemKind {
         text: String,
         streaming: bool,
     },
+    /// Inert external activity, collapsed by default. No native tool identity or actions.
+    Activity {
+        title: String,
+        text: String,
+        level: NoticeLevel,
+    },
     Tool(ToolCall),
     /// A background job the engine started from this conversation, shown where its
     /// `job_start` call was. It follows the engine's job list while it runs (see

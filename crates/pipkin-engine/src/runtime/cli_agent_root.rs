@@ -175,9 +175,11 @@ pub(crate) async fn run(
             let mut spec = prepared
                 .launch_admitted_orchestration_spec(&context, &assets)
                 .map_err(|_| Error::Preparation)?;
-            spec.timeout = spec
-                .timeout
-                .min(deadline.saturating_duration_since(Instant::now()));
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            spec.timeout = Some(
+                spec.timeout
+                    .map_or(remaining, |timeout| timeout.min(remaining)),
+            );
             let (close, request) = cli_bridge_driver::close_channel(context.scope().clone());
             let close = Arc::new(tokio::sync::Mutex::new(close));
             let observed = Arc::new(Mutex::new(Observed {

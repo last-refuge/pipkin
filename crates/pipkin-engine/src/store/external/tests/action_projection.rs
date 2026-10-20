@@ -369,6 +369,7 @@ fn schema24_backup_preserves_identity_before_action_support() {
     coding(&s);
     s.tx(|tx| {
         crate::store::cli_agent::remove_schema_for_test(tx)?;
+        crate::store::schema::remove_v33_for_test(tx)?;
         tx.execute_batch("DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; DROP TABLE external_projection_actions; PRAGMA user_version=24;")?;
         Ok(())
     })
@@ -391,4 +392,48 @@ fn schema24_backup_preserves_identity_before_action_support() {
         EXTERNAL_PERMISSION_POLICY
     );
     s.integrity_check().unwrap();
+}
+
+#[test]
+fn clean_stop_preserves_completed_actions_and_marks_unfinished_actions_unknown() {
+    let s = Store::memory().unwrap();
+    coding(&s);
+    let r = admit(&s, "stopped", "old");
+    start(&s, &r.key);
+    event(&s, &r.key, 2, observation(0, "finished"));
+    event(&s, &r.key, 3, result("finished", Some(false)));
+    event(&s, &r.key, 4, observation(1, "unfinished"));
+    s.tx(|tx| Store::stop_external_prompt_in(tx, &r.key, 6))
+        .unwrap();
+    s.tx(|tx| Store::settle_external_prompt_in(tx, &r.key, &clean_cancel(), 7))
+        .unwrap();
+    let actions = s.external_actions(&r.key).unwrap();
+    assert_eq!(actions[0].status, ExternalActionStatus::Completed);
+    assert_eq!(actions[1].status, ExternalActionStatus::Unknown);
+    assert!(matches!(
+        &blocks(&s)[..],
+        [
+            ExternalBlock::Action {
+                state: ExternalActionState::ReportedSuccess,
+                ..
+            },
+            ExternalBlock::Action {
+                state: ExternalActionState::Unknown,
+                ..
+            }
+        ]
+    ));
+    conflict(s.tx(|tx| {
+        Store::project_external_event_in(tx, &r.key, 5, &result("unfinished", Some(false)), 8)
+    }));
+    let next = admit(&s, "next", "new");
+    start(&s, &next.key);
+    terminal(&s, &next.key, 2);
+    let done = s
+        .tx(|tx| Store::settle_external_prompt_in(tx, &next.key, &success(), 9))
+        .unwrap()
+        .0
+        .receipt;
+    assert_eq!(done.state, ExternalRunState::Completed);
+    assert_eq!(s.external_actions(&r.key).unwrap(), actions);
 }

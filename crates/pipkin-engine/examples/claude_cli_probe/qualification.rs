@@ -56,7 +56,7 @@ pub async fn isolation_probe(
             "--init-only".into(),
         ]);
         let mut spec = base_spec(executable, &fixture.project, &env, args);
-        spec.timeout = Duration::from_secs(25);
+        spec.timeout = Some(Duration::from_secs(25));
         let report = process::run(spec, cancel.clone()).await?;
         let observed = fixture.checked_observed()?;
         // The explicit test plugin is intentionally injected for safe-mode qualification.
@@ -99,7 +99,7 @@ pub async fn isolation_probe(
         fixture.clear_markers()?;
         args.extend(["mcp".into(), "list".into()]);
         let mut spec = base_spec(executable, &fixture.project, &env, args);
-        spec.timeout = Duration::from_secs(15);
+        spec.timeout = Some(Duration::from_secs(15));
         let report = process::run(spec, cancel.clone()).await?;
         let observed = fixture.checked_observed()?;
         let launched = observed.contains(&"project-mcp");
@@ -218,7 +218,7 @@ pub(super) async fn write_spec(
     );
     let mut spec = base_spec(executable, root, env, args);
     spec.mode = process::OutputMode::Stream;
-    spec.timeout = Duration::from_secs(60);
+    spec.timeout = Some(Duration::from_secs(60));
     spec.max_stdout = 16 * 1024 * 1024;
     let target = root.join(permission::TARGET);
     spec.input = format!(

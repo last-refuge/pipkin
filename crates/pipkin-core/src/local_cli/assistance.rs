@@ -60,7 +60,7 @@ impl AppState {
             .as_ref()
             .is_some_and(|v| !v.context_valid)
         {
-            "This CLI context cannot be resumed safely. Inspect transcript and project files. Once the source run is settled, start a separate fresh setup; it copies only executable/project/model/mode hints, never transcript, arguments, prompts, goals or authority."
+            "This CLI context is locked. Reconnect can recover a confirmed clean Stop from an older build after fresh identity and login checks, without resending its last message. Unknown outcomes, timeouts and failed cleanup cannot be unlocked; inspect transcript and project files, then start a separate conversation for new work."
         } else {
             match self.local_cli.error {
                 Some(LocalCliFailure::Unknown(_)) => {

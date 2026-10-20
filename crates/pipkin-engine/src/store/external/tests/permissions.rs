@@ -553,6 +553,7 @@ fn schema23_backup_migration_preserves_external_identity_and_refuses_newer_schem
     let r = fixture(&s, EXTERNAL_PERMISSION_POLICY);
     s.tx(|tx| {
         crate::store::cli_agent::remove_schema_for_test(tx)?;
+        crate::store::schema::remove_v33_for_test(tx)?;
         tx.execute_batch("DROP TABLE cli_bridge_calls; DROP TABLE cli_tool_bridges; DROP TABLE external_projection_actions; DROP TABLE external_permissions; PRAGMA user_version=23;")?;
         Ok(())
     })

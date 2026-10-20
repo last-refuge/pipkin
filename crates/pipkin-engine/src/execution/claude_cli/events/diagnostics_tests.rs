@@ -388,3 +388,57 @@ fn tool_identity_and_unresolved_actions_remain_hard_failures() {
     records[7]["session_id"] = json!(OTHER);
     assert_eq!(run(&records, &[]).unwrap_err(), Error::Identity);
 }
+
+#[test]
+fn coding_late_inventory_tool_streams_and_correlates_without_widening_native_catalogs() {
+    let records = vec![
+        init(&["Bash"]),
+        start("m"),
+        block(0, tool("late", "DeferredTool")),
+        stop_block(0),
+        stop(),
+        assistant("m", json!([tool("late", "DeferredTool")])),
+        tool_result("late", "done"),
+        terminal(),
+    ];
+    let mut coding = decoder().with_cli_tools();
+    let mut events = vec![];
+    feed(&mut coding, &records, &mut events).unwrap();
+    assert_eq!(
+        coding.finish(|_| Ok::<_, ()>(())).unwrap().outcome,
+        Some(Outcome::Success)
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, Event::ExternalToolObserved { .. }))
+            .count(),
+        1
+    );
+    for exact in [false, true] {
+        let mut restricted = Decoder::new(SESSION, &["Bash"]).unwrap();
+        if exact {
+            restricted = restricted.with_exact_inventory();
+        }
+        assert_eq!(
+            feed(&mut restricted, &records, &mut vec![]),
+            Err(Error::UnsupportedTool)
+        );
+        assert_eq!(
+            restricted.failed_record(),
+            Some(RecordClass::ContentBlockStart)
+        );
+    }
+    let mut coding = decoder().with_cli_tools();
+    assert_eq!(
+        feed(
+            &mut coding,
+            &[
+                init(&[]),
+                assistant("m", json!([tool("id", "bad tool name")]))
+            ],
+            &mut vec![]
+        ),
+        Err(Error::Identity)
+    );
+}

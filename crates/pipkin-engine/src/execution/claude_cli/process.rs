@@ -31,7 +31,9 @@ pub struct Spec {
     pub env: BTreeMap<OsString, OsString>,
     pub input: Vec<u8>,
     pub mode: OutputMode,
-    pub timeout: Duration,
+    /// None lets an ordinary Coding turn run until completion or explicit cancellation.
+    /// Post-exit draining and termination cleanup remain independently bounded.
+    pub timeout: Option<Duration>,
     pub grace: Duration,
     pub max_stdout: usize,
     pub max_stderr: usize,
@@ -353,7 +355,7 @@ async fn run_owned(
     let mut channel_open = true;
     let mut kill_at = None;
     let mut finish_at = None;
-    let deadline = start + spec.timeout;
+    let deadline = spec.timeout.map(|timeout| start + timeout);
     loop {
         if exited && eofs == 2 && input_done && kill_at.is_none() {
             break;
@@ -362,7 +364,7 @@ async fn run_owned(
         tokio::select! {
             biased;
             _ = cancel.cancelled(), if report.stop.is_none() => stop = Some(Stop::Cancelled),
-            _ = sleep_until(deadline), if report.stop.is_none() => stop = Some(Stop::TimedOut),
+            _ = sleep_optional(deadline), if report.stop.is_none() => stop = Some(Stop::TimedOut),
             _ = sleep_optional(kill_at), if kill_at.is_some() => {
                 group.signal(libc::SIGKILL);
                 kill_at = None;
@@ -378,10 +380,7 @@ async fn run_owned(
                     // Root exit doesn't imply its descendants exited or released pipes.
                     group.signal(libc::SIGTERM);
                     kill_at.get_or_insert(Instant::now() + spec.grace);
-                    // Provider delivery can be backpressured after the root exits.
-                    // Keep its overall turn deadline; the short cleanup deadline applies
-                    // after a real stop, not while draining healthy queued output.
-                    finish_at.get_or_insert(if provider { deadline } else { Instant::now() + spec.grace + Duration::from_secs(1) });
+                    finish_at.get_or_insert(drain_deadline(provider, deadline, spec.grace));
                 }
             }
             packet = rx.recv(), if channel_open => match packet {
@@ -399,9 +398,19 @@ async fn run_owned(
                                 tokio::select! {
                                     biased;
                                     _ = cancel.cancelled() => { stop = Some(Stop::Cancelled); break Ok(()) },
-                                    _ = sleep_until(deadline) => { stop = Some(Stop::TimedOut); break Ok(()) },
+                                    _ = sleep_optional(deadline) => { stop = Some(Stop::TimedOut); break Ok(()) },
                                     _ = sleep_optional(kill_at), if kill_at.is_some() => { group.signal(libc::SIGKILL); kill_at = None; },
                                     _ = sleep_optional(finish_at), if finish_at.is_some() => { stop = Some(Stop::CleanupTimeout); break Ok(()) },
+                                    _ = exit_poll.tick(), if !exited => {
+                                        // A backpressured observer must still notice root exit,
+                                        // including turns without an execution deadline.
+                                        if exited_without_reaping(group.pid)? {
+                                            exited = true;
+                                            group.signal(libc::SIGTERM);
+                                            kill_at.get_or_insert(Instant::now() + spec.grace);
+                                            finish_at.get_or_insert(drain_deadline(provider, deadline, spec.grace));
+                                        }
+                                    },
                                     result = &mut delivery => break result,
                                 }
                             }
@@ -499,6 +508,16 @@ fn exited_without_reaping(pid: u32) -> Result<bool, &'static str> {
     Ok(unsafe { info.si_pid() } != 0)
 }
 
+/// Give a provider time to drain queued output after root exit, independently of the
+/// Coding lifetime. Existing bounded profiles keep their original absolute deadline.
+fn drain_deadline(provider: bool, deadline: Option<Instant>, grace: Duration) -> Instant {
+    if provider {
+        deadline.unwrap_or_else(|| Instant::now() + Duration::from_secs(30))
+    } else {
+        Instant::now() + grace + Duration::from_secs(1)
+    }
+}
+
 async fn sleep_optional(at: Option<Instant>) {
     match at {
         Some(at) => sleep_until(at).await,
@@ -522,7 +541,7 @@ mod tests {
             env: std::env::vars_os().collect(),
             input: Vec::new(),
             mode: OutputMode::Capture,
-            timeout: Duration::from_secs(5),
+            timeout: Some(Duration::from_secs(5)),
             grace: Duration::from_millis(50),
             max_stdout: 128 * 1024,
             max_stderr: 128 * 1024,
@@ -562,7 +581,7 @@ mod tests {
     async fn timeout_kills_a_child_that_ignores_term() {
         let dir = tempfile::tempdir().unwrap();
         let mut s = spec("trap '' TERM; while :; do sleep 1; done", dir.path());
-        s.timeout = Duration::from_millis(100);
+        s.timeout = Some(Duration::from_millis(100));
         let result = run(s, CancellationToken::new()).await.unwrap();
         assert_eq!(result.stop, Some(Stop::TimedOut));
         assert!(result.elapsed_ms < 3000);
@@ -676,7 +695,7 @@ mod tests {
             let mut spec = spec(script, dir.path());
             spec.grace = Duration::from_millis(150);
             if case == "timeout" {
-                spec.timeout = Duration::from_millis(300);
+                spec.timeout = Some(Duration::from_millis(300));
             }
             if case == "invalid_stream" {
                 spec.mode = OutputMode::Stream;
