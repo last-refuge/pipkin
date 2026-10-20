@@ -1,5 +1,21 @@
 # Scorecard
 
+## Dashboard presentation refinement — 2026-10-19
+
+**Implemented:** compact task rows, state icons, quieter badges, a conversation-first detail
+pane and a styled composer. Filters, metadata and coverage are available on demand; errors
+and recovery actions stay visible. Tab/Shift+Tab navigation is scoped to the dashboard.
+
+**Measured:** 2,693 workspace tests passed, 13 ignored, zero failures; strict all-target
+Clippy, formatting and the locked release build passed. The new GPUI regression exercises
+keyboard disclosure activation and navigation without dispatching work.
+
+**Observed natively:** isolated 1440×960 and 720×800 logical windows, shared Markdown history,
+and guarded keyboard activation of help, filters and task details. Test windows were closed;
+no live Claude prompts were spent. Evidence: `dist/orchestration-dashboard-redesign/`.
+Visual quality remains subjective for owner review. Real IME, screen-reader behavior, other
+platforms and additional display scales remain unverified.
+
 ## Orchestration dashboard — 2026-10-19
 
 **Implemented:** global worker directory, independent shared-Markdown history viewer, target-owned

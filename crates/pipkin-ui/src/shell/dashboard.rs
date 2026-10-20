@@ -1,5 +1,5 @@
 //! Independent activity page. The history projection uses the ordinary transcript renderer.
-use super::controls::{Btn, BtnKind};
+use super::controls::{Btn, BtnKind, chip, icon};
 use crate::{
     model::Model,
     text::{ComposerEditor, ComposerEvent},
@@ -20,6 +20,9 @@ pub(super) struct DashboardView {
     editor: Entity<ComposerEditor>,
     search: Entity<ComposerEditor>,
     scroll: UniformListScrollHandle,
+    filters_open: bool,
+    about_open: bool,
+    details_open: bool,
     output: Option<(String, Result<String, String>)>,
     selected: Option<String>,
     draft_key: (Option<String>, u64),
@@ -64,13 +67,13 @@ impl DashboardView {
         let transcript = cx.new(|cx| TranscriptView::new(projection.clone(), window, cx));
         let editor = cx.new(|cx| ComposerEditor::new(window, cx));
         editor.update(cx, |e, cx| {
-            e.set_label("Message to selected worker", cx);
-            e.set_placeholder("Message this worker…");
+            e.set_label("Message to selected task", cx);
+            e.set_placeholder("Message this task…");
         });
         let search = cx.new(|cx| ComposerEditor::single_line(window, cx));
         search.update(cx, |e, cx| {
             e.set_label("Filter workers", cx);
-            e.set_placeholder("Search title, task, or project…");
+            e.set_placeholder("Search tasks…");
         });
         let subs = vec![
             cx.observe_in(&model, window, |this, _, _, cx| this.sync(cx)),
@@ -116,6 +119,9 @@ impl DashboardView {
             editor,
             search,
             scroll: UniformListScrollHandle::new(),
+            filters_open: false,
+            about_open: false,
+            details_open: false,
             output: None,
             selected: None,
             draft_key: (None, 0),
@@ -126,6 +132,32 @@ impl DashboardView {
     }
     pub(super) fn focus_list(&self, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus, cx);
+    }
+    fn navigate(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let m = event.keystroke.modifiers;
+        if event.keystroke.key != "tab" || m.control || m.alt || m.platform {
+            return;
+        }
+        // A composing editor must retain its marked range, including when Tab is pressed.
+        if self.editor.read(cx).is_composing() || self.search.read(cx).is_composing() {
+            cx.stop_propagation();
+            return;
+        }
+        // This page owns its own tab sequence; never land on the conversation behind it.
+        for _ in 0..512 {
+            if m.shift {
+                window.focus_prev(cx);
+            } else {
+                window.focus_next(cx);
+            }
+            if self.focus.contains_focused(window, cx) {
+                window.prevent_default();
+                cx.stop_propagation();
+                return;
+            }
+        }
+        self.focus_list(window, cx);
+        cx.stop_propagation();
     }
     fn step(&self, forward: bool, cx: &mut Context<Self>) {
         let d = &self.model.read(cx).state.dashboard;
@@ -217,6 +249,7 @@ impl DashboardView {
             )
         });
         if changed {
+            self.details_open = false;
             self.output = None;
         }
         if output != self.output {
@@ -244,6 +277,25 @@ impl DashboardView {
         let model = self.model.clone();
         Btn::new(id)
             .label(label)
+            .tab_stop(true)
+            .on_click(move |_, cx| {
+                model.update(cx, |m, cx| {
+                    m.dispatch(Command::Dashboard(command.clone()), cx)
+                })
+            })
+    }
+    fn icon_button(
+        &self,
+        id: &'static str,
+        symbol: &'static str,
+        label: &'static str,
+        command: D,
+    ) -> Btn {
+        let model = self.model.clone();
+        Btn::new(id)
+            .icon(symbol)
+            .aria(label)
+            .hint(label)
             .tab_stop(true)
             .on_click(move |_, cx| {
                 model.update(cx, |m, cx| {
@@ -281,20 +333,53 @@ impl DashboardView {
         })
     }
 }
+// Compact labels live in the presentation layer; the engine's full reason remains available.
+fn status(state: &d::WorkState, c: &crate::theme::Colors) -> (&'static str, &'static str, Hsla) {
+    match state {
+        d::WorkState::Running => ("Working", "loader-circle", c.accent),
+        d::WorkState::Pending | d::WorkState::Queued => ("Queued", "clock", c.text_muted),
+        d::WorkState::Waiting { .. } => ("Needs you", "circle-alert", c.warning),
+        d::WorkState::Stopping => ("Stopping", "square", c.warning),
+        d::WorkState::Completing => ("Finishing", "loader-circle", c.accent),
+        d::WorkState::Ready => ("Ready", "circle-check", c.success),
+        d::WorkState::Completed => ("Done", "check", c.success),
+        d::WorkState::Failed { .. } => ("Failed", "circle-alert", c.danger),
+        d::WorkState::Stopped => ("Stopped", "square", c.text_muted),
+        d::WorkState::Interrupted => ("Interrupted", "triangle-alert", c.warning),
+        d::WorkState::Blocked { .. } => ("Blocked", "circle-alert", c.warning),
+        d::WorkState::Unknown => ("Unknown", "circle-help", c.warning),
+    }
+}
+fn project_name(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(path)
+        .to_owned()
+}
 impl Render for DashboardView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
-        let c = theme.colors;
+        let c = theme.colors.clone();
         let state = &self.model.read(cx).state;
         let projects = state.projects.clone();
         let closed_roots = state.prefs.closed_conversations.clone();
         let dash = state.dashboard.clone();
         let selected = dash.selected_row().cloned();
         let narrow = window.viewport_size().width < px(1100.0);
+        let show_directory = !narrow || selected.is_none();
+        let live_color = if dash.freshness == d::Freshness::Live {
+            c.success
+        } else {
+            c.warning
+        };
+        let view = cx.entity();
         let mut page = div()
             .id("orchestration-page")
             .key_context("Orchestration")
             .track_focus(&self.focus)
+            .capture_key_down(cx.listener(Self::navigate))
             .on_action(
                 cx.listener(|this, _: &super::actions::DashboardNext, _, cx| this.step(true, cx)),
             )
@@ -311,142 +396,296 @@ impl Render for DashboardView {
             .min_h_0()
             .bg(c.bg_app)
             .text_color(c.text)
-            .gap(px(8.));
-        page = page.child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(12.))
-                .p(px(12.))
-                .child(div().text_lg().child("Orchestration"))
-                .child(div().flex_1().child(dash.freshness.label()))
-                .child(self.button("refresh-workers", "Refresh", D::Refresh))
-                .child(self.button("return-chat", "Return to conversation", D::Close)),
-        );
-        if let Some(counts) = dash.counts {
-            page=page.child(div().px(px(16.)).child(format!("{} workers · {} running · {} need attention · {} finished in 24 h · {} background jobs",counts.total,counts.running,dash.attention(),counts.finished_recent,counts.jobs_active)));
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .px(px(20.))
+                    .py(px(14.))
+                    .child(icon("panel-right", px(20.), c.accent))
+                    .child(
+                        div()
+                            .text_lg()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("Orchestration"),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .text_size(theme.small_size())
+                            .text_color(c.text_muted)
+                            .child(div().size(px(6.)).rounded_full().bg(live_color))
+                            .child(dash.freshness.label()),
+                    )
+                    .child(
+                        Btn::new("dashboard-coverage")
+                            .icon("circle-help")
+                            .aria("About this view")
+                            .hint("About this view")
+                            .tab_stop(true)
+                            .selected(self.about_open)
+                            .on_click(move |_, cx| {
+                                view.update(cx, |v, cx| {
+                                    v.about_open = !v.about_open;
+                                    cx.notify();
+                                })
+                            }),
+                    )
+                    .child(self.icon_button(
+                        "refresh-workers",
+                        "refresh-cw",
+                        "Refresh tasks",
+                        D::Refresh,
+                    ))
+                    .child(self.icon_button(
+                        "return-chat",
+                        "x",
+                        "Return to conversation · Ctrl+Shift+A",
+                        D::Close,
+                    )),
+            );
+        if self.about_open {
+            let counts = dash.counts.unwrap_or_default();
+            page = page.child(div().mx(px(20.)).mb(px(12.)).p(px(12.)).rounded(px(8.)).bg(c.bg_pane)
+                .flex().flex_col().gap(px(6.)).text_size(theme.small_size()).text_color(c.text_muted)
+                .child(format!("{} tasks · {} finished in 24 h · {} background jobs", counts.total, counts.finished_recent, counts.jobs_active))
+                .child("Pipkin conversations and child tasks. CLI-internal workers and agents outside Pipkin are not included. Jobs are related work, not agents."));
         }
         if let Some(error) = dash.error.clone() {
-            page = page.child(div().px(px(16.)).text_color(c.danger).child(error));
-        }
-        if !dash.available {
-            return page.child(div().p(px(16.)).child("Activity is unavailable while the engine connects. Cached state cannot authorize actions.")).into_any_element();
-        }
-        let mut tabs = div().flex().flex_wrap().gap(px(4.)).px(px(12.));
-        for (id, label, group) in [
-            ("overview", "Overview", None),
-            ("running", "Running", Some(d::ActivityGroup::Running)),
-            (
-                "attention",
-                "Needs attention",
-                Some(d::ActivityGroup::Attention),
-            ),
-            ("finished", "Finished", Some(d::ActivityGroup::Finished)),
-            ("all", "All", Some(d::ActivityGroup::All)),
-        ] {
-            tabs = tabs.child(
-                self.button(id, label, D::Group(group))
-                    .selected(dash.group == group),
+            page = page.child(
+                div()
+                    .mx(px(20.))
+                    .mb(px(8.))
+                    .p(px(10.))
+                    .rounded(px(8.))
+                    .bg(c.danger_bg)
+                    .text_color(c.danger)
+                    .child(error),
             );
         }
-        page = page.child(tabs);
-        let filter = dash.filter.clone();
-        let model = self.model.clone();
-        let mut filters = div()
-            .flex()
-            .flex_wrap()
-            .gap(px(4.))
-            .px(px(12.))
-            .child(div().w(px(240.)).child(self.search.clone()));
-        let next_kind = match filter.kind {
-            None => Some(d::WorkerKind::Root),
-            Some(d::WorkerKind::Root) => Some(d::WorkerKind::Child),
-            _ => None,
-        };
-        let mut f = filter.clone();
-        f.kind = next_kind;
-        filters = filters.child(self.button(
-            "kind-filter",
-            format!(
-                "Kind: {}",
-                match filter.kind {
-                    None => "All",
-                    Some(d::WorkerKind::Root) => "Conversations",
-                    _ => "Children",
-                }
-            ),
-            D::Filter(f),
-        ));
-        let next_backend = match filter.backend {
-            None => Some(d::ExecutionBackend::NativeAgent),
-            Some(d::ExecutionBackend::NativeAgent) => Some(d::ExecutionBackend::ClaudeCliAgent),
-            Some(d::ExecutionBackend::ClaudeCliAgent) => Some(d::ExecutionBackend::LocalClaudeCli),
-            _ => None,
-        };
-        let mut f = filter.clone();
-        f.backend = next_backend;
-        filters = filters.child(self.button(
-            "backend-filter",
-            format!(
-                "Backend: {}",
-                match filter.backend {
-                    None => "All",
-                    Some(d::ExecutionBackend::NativeAgent) => "Native",
-                    Some(d::ExecutionBackend::ClaudeCliAgent) => "Claude orchestration",
-                    Some(d::ExecutionBackend::LocalClaudeCli) => "Local CLI",
-                    _ => "Unsupported",
-                }
-            ),
-            D::Filter(f),
-        ));
-        let mut paths: Vec<_> = projects.iter().map(|p| p.path.clone()).collect();
-        paths.sort();
-        paths.dedup();
-        let next = filter
-            .cwd
-            .as_ref()
-            .and_then(|p| paths.iter().position(|x| x == p))
-            .map_or(0, |i| i + 1);
-        let mut f = filter.clone();
-        f.cwd = paths.get(next).cloned();
-        filters = filters.child(
-            self.button(
-                "project-filter",
-                filter
-                    .cwd
-                    .as_ref()
-                    .map_or("All projects".to_owned(), |p| format!("Project: {p}")),
-                D::Filter(f),
-            ),
-        );
-        let mut f = filter.clone();
-        f.failed = !f.failed;
-        filters = filters.child(
-            self.button("failure-filter", "Failures", D::Filter(f))
-                .selected(filter.failed),
-        );
-        let search = self.search.clone();
-        filters = filters.child(Btn::new("clear-filters").label("Clear filters").on_click(
-            move |_, cx| {
-                search.update(cx, |e, cx| e.set_text("", cx));
-                model.update(cx, |m, cx| {
-                    m.dispatch(Command::Dashboard(D::Filter(Default::default())), cx)
-                });
-            },
-        ));
-        page = page.child(filters);
+        if !dash.available {
+            return page
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_center()
+                        .gap(px(12.))
+                        .child(icon("refresh-cw", px(28.), c.text_muted))
+                        .child("Connecting to your workspace…"),
+                )
+                .into_any_element();
+        }
+        if show_directory {
+            let counts = dash.counts.unwrap_or_default();
+            let mut tabs = div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap(px(4.))
+                .px(px(20.))
+                .pb(px(12.));
+            for (id, label, group, count) in [
+                ("overview", "Overview", None, 0),
+                (
+                    "running",
+                    "Working",
+                    Some(d::ActivityGroup::Running),
+                    counts.running,
+                ),
+                (
+                    "attention",
+                    "Needs you",
+                    Some(d::ActivityGroup::Attention),
+                    dash.attention(),
+                ),
+                ("finished", "Finished", Some(d::ActivityGroup::Finished), 0),
+                ("all", "All", Some(d::ActivityGroup::All), 0),
+            ] {
+                let label = if count > 0 {
+                    format!("{label}  {count}")
+                } else {
+                    label.into()
+                };
+                tabs = tabs.child(
+                    self.button(id, label, D::Group(group))
+                        .selected(dash.group == group),
+                );
+            }
+            page = page.child(tabs);
+        }
         let mut body = div()
             .flex()
             .flex_1()
-            .w_full()
             .min_w_0()
             .min_h_0()
-            .gap(px(12.))
-            .px(px(12.));
-        if !narrow || selected.is_none() {
+            .border_t_1()
+            .border_color(c.border);
+        if show_directory {
+            let filter = dash.filter.clone();
+            let active_filters = usize::from(filter.kind.is_some())
+                + usize::from(filter.backend.is_some())
+                + usize::from(filter.cwd.is_some())
+                + usize::from(filter.failed);
+            let view = cx.entity();
+            let mut rail = div()
+                .flex()
+                .flex_col()
+                .min_h_0()
+                .min_w_0()
+                .when(selected.is_some(), |d| {
+                    d.w(px(300.))
+                        .flex_shrink_0()
+                        .border_r_1()
+                        .border_color(c.border)
+                })
+                .when(selected.is_none(), |d| d.flex_1())
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .p(px(12.))
+                        .child(div().flex_1().min_w_0().child(self.search.clone()))
+                        .child(
+                            Btn::new("toggle-worker-filters")
+                                .icon("settings")
+                                .aria("Filter tasks")
+                                .hint("Filter tasks")
+                                .selected(self.filters_open || active_filters > 0)
+                                .tab_stop(true)
+                                .on_click(move |_, cx| {
+                                    view.update(cx, |v, cx| {
+                                        v.filters_open = !v.filters_open;
+                                        cx.notify();
+                                    })
+                                }),
+                        ),
+                );
+            if self.filters_open {
+                let mut filters = div().flex().flex_wrap().gap(px(4.)).px(px(12.)).pb(px(12.));
+                let mut f = filter.clone();
+                f.kind = match filter.kind {
+                    None => Some(d::WorkerKind::Root),
+                    Some(d::WorkerKind::Root) => Some(d::WorkerKind::Child),
+                    _ => None,
+                };
+                filters = filters.child(
+                    self.button(
+                        "kind-filter",
+                        match filter.kind {
+                            None => "All tasks",
+                            Some(d::WorkerKind::Root) => "Conversations",
+                            _ => "Children",
+                        },
+                        D::Filter(f),
+                    )
+                    .compact()
+                    .hint("Cycle task type"),
+                );
+                let mut f = filter.clone();
+                f.backend = match filter.backend {
+                    None => Some(d::ExecutionBackend::NativeAgent),
+                    Some(d::ExecutionBackend::NativeAgent) => {
+                        Some(d::ExecutionBackend::ClaudeCliAgent)
+                    }
+                    Some(d::ExecutionBackend::ClaudeCliAgent) => {
+                        Some(d::ExecutionBackend::LocalClaudeCli)
+                    }
+                    _ => None,
+                };
+                filters = filters.child(
+                    self.button(
+                        "backend-filter",
+                        match filter.backend {
+                            None => "All engines",
+                            Some(d::ExecutionBackend::NativeAgent) => "Native",
+                            Some(d::ExecutionBackend::ClaudeCliAgent) => "Claude orchestration",
+                            Some(d::ExecutionBackend::LocalClaudeCli) => "Local CLI",
+                            _ => "Unsupported",
+                        },
+                        D::Filter(f),
+                    )
+                    .compact()
+                    .hint("Cycle engine"),
+                );
+                let mut paths: Vec<_> = projects.iter().map(|p| p.path.clone()).collect();
+                paths.sort();
+                paths.dedup();
+                let next = filter
+                    .cwd
+                    .as_ref()
+                    .and_then(|p| paths.iter().position(|x| x == p))
+                    .map_or(0, |i| i + 1);
+                let mut f = filter.clone();
+                f.cwd = paths.get(next).cloned();
+                filters = filters.child(
+                    self.button(
+                        "project-filter",
+                        filter
+                            .cwd
+                            .as_ref()
+                            .map_or("All projects".into(), |p| project_name(p)),
+                        D::Filter(f),
+                    )
+                    .compact()
+                    .hint(filter.cwd.clone().unwrap_or("Cycle project".into())),
+                );
+                let mut f = filter.clone();
+                f.failed = !f.failed;
+                filters = filters.child(
+                    self.button("failure-filter", "Failures", D::Filter(f))
+                        .compact()
+                        .selected(filter.failed),
+                );
+                rail = rail.child(filters);
+            }
+            // Keep active filters visible even when their controls are folded away.
+            if active_filters > 0 || filter.text.is_some() {
+                let search = self.search.clone();
+                let model = self.model.clone();
+                rail = rail.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .px(px(12.))
+                        .pb(px(8.))
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_size(theme.small_size())
+                                .text_color(c.text_muted)
+                                .child("Filtered results"),
+                        )
+                        .child(
+                            Btn::new("clear-filters")
+                                .label("Clear")
+                                .compact()
+                                .tab_stop(true)
+                                .on_click(move |_, cx| {
+                                    search.update(cx, |e, cx| e.set_text("", cx));
+                                    model.update(cx, |m, cx| {
+                                        m.dispatch(
+                                            Command::Dashboard(D::Filter(Default::default())),
+                                            cx,
+                                        )
+                                    });
+                                }),
+                        ),
+                );
+            }
             let rows = dash.rows.clone();
             let len = rows.len();
             let source = self.model.clone();
+            let colors = c.clone();
+            let small_size = theme.small_size();
+            let row_height = px(76. * theme.scale.max(1.));
             let list = uniform_list(
                 "worker-list",
                 len,
@@ -458,18 +697,22 @@ impl Render for DashboardView {
                             let selected =
                                 source.read(cx).state.dashboard.selected.as_ref() == Some(&session);
                             let model = source.clone();
+                            let c = &colors;
+                            let (label, symbol, color) = status(&row.worker.state, c);
                             div()
                                 .id(("worker", i))
                                 .role(Role::Button)
-                                .aria_label(format!("{} · {}", row.title(), row.label()))
-                                .flex()
-                                .flex_col()
-                                .h(px(88.))
-                                .p(px(10.))
-                                .border_b_1()
-                                .border_color(c.border)
-                                .bg(if selected { c.bg_pane } else { c.bg_app })
-                                .cursor_pointer()
+                                .aria_label(format!(
+                                    "{} · {} · {} · {}",
+                                    if row.worker.kind == d::WorkerKind::Child {
+                                        "Child"
+                                    } else {
+                                        "Conversation"
+                                    },
+                                    row.title(),
+                                    row.label(),
+                                    row.worker.cwd
+                                ))
                                 .on_click(move |_, _, cx| {
                                     model.update(cx, |m, cx| {
                                         m.dispatch(
@@ -478,24 +721,85 @@ impl Render for DashboardView {
                                         )
                                     })
                                 })
-                                .child(div().truncate().child(
-                                    row.title().lines().next().unwrap_or_default().to_owned(),
-                                ))
-                                .child(div().text_sm().child(format!(
-                                    "{} · {}",
-                                    if row.worker.kind == d::WorkerKind::Root {
-                                        "Conversation"
-                                    } else {
-                                        "Child"
-                                    },
-                                    row.label()
-                                )))
+                                .h(row_height)
+                                .px(px(8.))
+                                .py(px(3.))
                                 .child(
                                     div()
-                                        .text_sm()
-                                        .truncate()
-                                        .text_color(c.text_muted)
-                                        .child(row.worker.cwd.clone()),
+                                        .flex()
+                                        .items_center()
+                                        .size_full()
+                                        .gap(px(10.))
+                                        .px(px(12.))
+                                        .rounded(px(9.))
+                                        .bg(if selected {
+                                            c.bg_selected
+                                        } else {
+                                            gpui::transparent_black()
+                                        })
+                                        .border_l_2()
+                                        .border_color(if selected {
+                                            c.accent
+                                        } else {
+                                            gpui::transparent_black()
+                                        })
+                                        .hover(|s| s.bg(c.bg_hover))
+                                        .cursor_pointer()
+                                        .child(icon(symbol, px(16.), color))
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_col()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .gap(px(5.))
+                                                .child(
+                                                    div()
+                                                        .truncate()
+                                                        .font_weight(FontWeight::MEDIUM)
+                                                        .child(
+                                                            row.title()
+                                                                .lines()
+                                                                .next()
+                                                                .unwrap_or_default()
+                                                                .to_owned(),
+                                                        ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap(px(6.))
+                                                        .text_size(small_size)
+                                                        .text_color(c.text_muted)
+                                                        .when(
+                                                            row.worker.kind == d::WorkerKind::Child,
+                                                            |d| {
+                                                                d.child(icon(
+                                                                    "zap",
+                                                                    px(12.),
+                                                                    c.text_faint,
+                                                                ))
+                                                            },
+                                                        )
+                                                        .child(
+                                                            div().truncate().child(project_name(
+                                                                &row.worker.cwd,
+                                                            )),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_color(c.text_faint)
+                                                                .child("·"),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .flex_shrink_0()
+                                                                .text_color(color)
+                                                                .child(label),
+                                                        ),
+                                                ),
+                                        ),
                                 )
                         })
                         .collect()
@@ -504,69 +808,187 @@ impl Render for DashboardView {
             .track_scroll(&self.scroll)
             .w_full()
             .flex_1();
-            let mut col = div().flex().flex_col().min_h_0().min_w_0();
-            col = if selected.is_some() {
-                col.w(px(320.)).flex_shrink_0()
-            } else {
-                col.flex_1()
-            };
-            col = col.child(list);
             if len == 0 {
-                col = col.child(div().p(px(16.)).child(if dash.loading {
-                    "Loading workers…"
-                } else {
-                    "No workers match these filters."
-                }));
+                rail = rail.child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_center()
+                        .gap(px(12.))
+                        .p(px(24.))
+                        .child(icon(
+                            if dash.loading {
+                                "loader-circle"
+                            } else {
+                                "circle-check"
+                            },
+                            px(28.),
+                            c.text_faint,
+                        ))
+                        .child(div().text_color(c.text_muted).child(if dash.loading {
+                            "Loading…"
+                        } else if filter.text.is_some() || active_filters > 0 {
+                            "No matching tasks"
+                        } else {
+                            "All clear"
+                        })),
+                );
+            } else {
+                rail = rail.child(list);
             }
             if dash.next.is_some() {
-                col = col.child(
-                    self.button("more-workers", "Load more workers", D::More)
+                rail = rail.child(
+                    self.button("more-workers", "Load more", D::More)
                         .disabled(dash.loading),
                 );
             }
-            body = body.child(col);
+            body = body.child(rail);
         }
         if let Some(row) = selected {
+            let (label, symbol, color) = status(&row.worker.state, &c);
+            let view = cx.entity();
+            let mut header = div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .px(px(16.))
+                .py(px(12.))
+                .when(narrow, |d| {
+                    d.child(self.icon_button(
+                        "back-workers",
+                        "panel-left",
+                        "Back to tasks",
+                        D::Back,
+                    ))
+                })
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .gap(px(4.))
+                        .child(
+                            div()
+                                .truncate()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(row.title().to_owned()),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.))
+                                .text_size(theme.small_size())
+                                .text_color(c.text_muted)
+                                .child(icon("folder", px(12.), c.text_faint))
+                                .child(div().truncate().child(project_name(&row.worker.cwd))),
+                        ),
+                )
+                .child(chip(label, color, color.opacity(0.10), cx).child(icon(
+                    symbol,
+                    px(12.),
+                    color,
+                )))
+                .child(self.icon_button(
+                    "latest-worker-history",
+                    "arrow-down",
+                    "Latest history",
+                    D::Select(row.worker.session.clone()),
+                ))
+                .child(
+                    Btn::new("worker-details")
+                        .icon("ellipsis")
+                        .aria("Task details")
+                        .hint("Task details")
+                        .selected(self.details_open)
+                        .tab_stop(true)
+                        .on_click(move |_, cx| {
+                            view.update(cx, |v, cx| {
+                                v.details_open = !v.details_open;
+                                cx.notify();
+                            })
+                        }),
+                );
+            if let Some(root) = row.root {
+                let model = self.model.clone();
+                header = header.child(
+                    Btn::new("open-owner")
+                        .icon("arrow-right")
+                        .aria("Open conversation and requests")
+                        .hint("Open conversation and requests")
+                        .tab_stop(true)
+                        .on_click(move |_, cx| {
+                            model.update(cx, |m, cx| {
+                                m.dispatch(Command::Dashboard(D::Close), cx);
+                                m.dispatch(Command::SelectConversation(root), cx);
+                            })
+                        }),
+                );
+            }
             let mut detail = div()
                 .flex()
                 .flex_col()
                 .flex_1()
                 .min_w_0()
                 .min_h_0()
-                .gap(px(6.));
-            detail = detail.child(
-                div()
+                .bg(c.bg_surface)
+                .child(header);
+            if self.details_open {
+                let mut info = div()
+                    .mx(px(16.))
+                    .mb(px(8.))
+                    .p(px(12.))
+                    .rounded(px(8.))
+                    .bg(c.bg_pane)
                     .flex()
+                    .flex_col()
                     .gap(px(6.))
-                    .child(self.button("back-workers", "Back to workers", D::Back))
-                    .child(div().flex_1().truncate().child(row.title().to_owned())),
-            );
-            detail = detail.child(div().text_sm().truncate().child(format!(
-                "{} child tasks active · {} background jobs",
-                row.worker.children_active, row.worker.jobs_active
-            )));
-            detail = detail.child(div().text_sm().truncate().child(format!(
-                "{} · {} · {}",
-                row.label(),
-                row.worker.model.as_deref().unwrap_or("Model unavailable"),
-                row.worker.cwd.as_str()
-            )));
-            if let Some(parent) = row.worker.parent.as_ref() {
-                detail = detail.child(div().text_sm().truncate().child(format!(
-                        "Parent: {parent}{}",
+                    .text_size(theme.small_size())
+                    .text_color(c.text_muted)
+                    .child(row.worker.cwd.clone())
+                    .child(
                         row.worker
-                            .continues
-                            .map_or(String::new(), |c| format!(" · Follows child {c}"))
-                    )));
+                            .model
+                            .clone()
+                            .unwrap_or("Model unavailable".into()),
+                    )
+                    .child(row.label().to_owned());
+                if let Some(parent) = &row.worker.parent {
+                    let name = dash
+                        .rows
+                        .iter()
+                        .find(|r| &r.worker.session == parent)
+                        .map(|r| r.title())
+                        .unwrap_or("Owning conversation");
+                    info = info.child(format!("Child of {name}"));
+                }
+                if let Some(child) = row.worker.continues {
+                    info = info.child(format!("Follow-up to child {child}"));
+                }
+                if row.worker.children_active > 0 {
+                    info = info.child(format!("{} active child tasks", row.worker.children_active));
+                }
+                if row.worker.jobs_active > 0 {
+                    info = info.child(format!("{} background jobs", row.worker.jobs_active));
+                }
+                detail = detail.child(info);
             }
-            if let Some(error) = dash.detail.error.as_ref() {
-                detail = detail.child(div().text_color(c.danger).child(error.clone()));
+            // An actionable reason must remain visible without opening metadata.
+            if let d::WorkState::Blocked { reason } = &row.worker.state {
+                detail = detail.child(
+                    div()
+                        .px(px(16.))
+                        .pb(px(8.))
+                        .text_color(c.warning)
+                        .child(reason.clone()),
+                );
             }
-            detail = detail.child(self.button(
-                "latest-worker-history",
-                "Latest history",
-                D::Select(row.worker.session.clone()),
-            ));
+            if let Some(error) = &dash.detail.error {
+                detail = detail.child(div().px(px(16.)).text_color(c.danger).child(error.clone()));
+            }
             detail = detail.child(
                 div()
                     .flex_1()
@@ -577,75 +999,156 @@ impl Render for DashboardView {
             );
             if dash.detail.has_older {
                 detail = detail.child(
-                    self.button("older-worker-history", "Load older history", D::Older)
-                        .disabled(dash.detail.loading),
+                    div().flex().justify_center().gap(px(8.)).child(
+                        self.button("older-worker-history", "Earlier", D::Older)
+                            .compact()
+                            .disabled(dash.detail.loading),
+                    ),
                 );
             }
             let closed = row.root.is_some_and(|c| closed_roots.contains(&c.0));
             if closed {
-                detail=detail.child(div().child("This conversation is closed. Reopen it from Closed conversations to send work."));
-            } else {
                 detail = detail.child(
                     div()
-                        .w_full()
-                        .min_w_0()
-                        .max_h(px(180.))
-                        .min_h(px(60.))
-                        .child(self.editor.clone()),
+                        .p(px(16.))
+                        .text_size(theme.small_size())
+                        .text_color(c.text_muted)
+                        .child("Reopen this conversation to continue."),
                 );
-                let mut actions = div().flex().flex_wrap().gap(px(4.));
-                if row.worker.kind == d::WorkerKind::Root {
-                    for (id, label, action) in [
-                        ("send-worker", "Send", Control::Send),
-                        ("queue-worker", "Queue", Control::Queue),
-                        ("steer-worker", "Steer", Control::Steer),
-                    ] {
-                        actions = actions.child(self.control(id, label, action, cx));
-                    }
-                } else if row.finished_child() {
-                    actions = actions.child(self.control(
-                        "follow-child",
-                        "Follow up as new child",
-                        Control::FollowUp,
-                        cx,
-                    ));
-                } else {
-                    actions = actions.child(self.control(
-                        "steer-child",
-                        "Steer child",
-                        Control::Steer,
-                        cx,
-                    ));
-                }
+            } else {
+                let mut actions = div().flex().items_center().flex_wrap().gap(px(6.));
                 if row.worker.run.as_ref().is_some_and(|r| r.phase.is_some())
                     || (!row.finished_child() && row.worker.kind == d::WorkerKind::Child)
                 {
-                    actions = actions.child(self.control("stop-worker", "Stop", Control::Stop, cx));
+                    actions = actions.child(
+                        self.control("stop-worker", "Stop", Control::Stop, cx)
+                            .icon("square"),
+                    );
                 }
                 if dash.control.as_ref().is_some_and(|p| p.uncertain) {
-                    actions = actions.child(self.button(
-                        "check-worker-action",
-                        "Check action status",
-                        D::Reconcile,
-                    ));
+                    actions = actions.child(
+                        self.button("check-worker-action", "Check status", D::Reconcile)
+                            .icon("refresh-cw"),
+                    );
                 }
-                detail = detail.child(actions);
-            }
-            if let Some(root) = row.root {
-                let model = self.model.clone();
+                actions = actions.child(div().flex_1());
+                if row.worker.kind == d::WorkerKind::Root {
+                    actions = actions
+                        .child(
+                            self.control("queue-worker", "Queue", Control::Queue, cx)
+                                .kind(BtnKind::Ghost)
+                                .hint("Queue a message for this conversation"),
+                        )
+                        .child(
+                            self.control("steer-worker", "Steer", Control::Steer, cx)
+                                .kind(BtnKind::Ghost)
+                                .hint("Guide the current turn"),
+                        )
+                        .child(
+                            self.control("send-worker", "Send", Control::Send, cx)
+                                .kind(BtnKind::Primary)
+                                .icon("arrow-up"),
+                        );
+                } else if row.finished_child() {
+                    actions = actions.child(
+                        self.control("follow-child", "Follow up", Control::FollowUp, cx)
+                            .kind(BtnKind::Primary)
+                            .icon("arrow-up")
+                            .hint("Start a linked child with the recorded context"),
+                    );
+                } else {
+                    actions = actions.child(
+                        self.control("steer-child", "Steer", Control::Steer, cx)
+                            .kind(BtnKind::Primary)
+                            .icon("arrow-up"),
+                    );
+                }
                 detail = detail.child(
-                    Btn::new("open-owner")
-                        .label("Open owning conversation / review requests")
-                        .on_click(move |_, cx| {
-                            model.update(cx, |m, cx| {
-                                m.dispatch(Command::Dashboard(D::Close), cx);
-                                m.dispatch(Command::SelectConversation(root), cx);
-                            })
-                        }),
+                    div()
+                        .m(px(16.))
+                        .mt(px(8.))
+                        .p(px(12.))
+                        .rounded(px(12.))
+                        .border_1()
+                        .border_color(c.border_strong)
+                        .bg(c.bg_input)
+                        .flex()
+                        .flex_col()
+                        .gap(px(10.))
+                        .child(
+                            div()
+                                .w_full()
+                                .min_w_0()
+                                .max_h(px(160.))
+                                .min_h(px(48.))
+                                .child(self.editor.clone()),
+                        )
+                        .child(actions),
                 );
             }
             body = body.child(detail);
         }
-        page.child(body).child(div().px(px(16.)).pb(px(8.)).text_sm().text_color(c.text_muted).child("Pipkin conversations and child tasks · CLI-internal workers and agents outside Pipkin are not included. Jobs are related work, not agents.")).into_any_element()
+        page.child(body).into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DashboardView;
+    use crate::model::Model;
+    use gpui::{AppContext as _, TestAppContext, VisualTestContext};
+    use pipkin_core::{AppState, Bootstrap, Prefs, TextSize, Theme};
+    use std::{cell::RefCell, rc::Rc};
+
+    #[gpui::test]
+    fn dashboard_keyboard_reaches_disclosures_without_dispatching_work(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            crate::text::init(cx);
+            cx.set_global(crate::theme::Theme::new(
+                Theme::Dark,
+                TextSize::Normal,
+                true,
+            ));
+        });
+        let effects = Rc::new(RefCell::new(Vec::new()));
+        let captured = effects.clone();
+        let window = cx.add_window(|window, cx| {
+            let mut state = AppState::new(
+                Bootstrap {
+                    projects: vec![],
+                    models: vec![],
+                    conversations: vec![],
+                    now: 0,
+                },
+                Prefs::default(),
+            );
+            state.dashboard.open = true;
+            state.dashboard.available = true;
+            let model = cx.new(|_| Model::new(state));
+            model.update(cx, |m, _| {
+                m.set_effect_handler(Box::new(move |e, _| captured.borrow_mut().push(e)))
+            });
+            DashboardView::new(model, window, cx)
+        });
+        let root = window.root(cx).unwrap();
+        let cx = &mut VisualTestContext::from_window(window.into(), cx);
+        root.update_in(cx, |v, w, cx| v.focus_list(w, cx));
+        cx.run_until_parked();
+        cx.simulate_keystrokes("tab enter");
+        root.update(cx, |v, _| {
+            assert!(v.about_open, "first control opens the coverage disclosure")
+        });
+        cx.simulate_keystrokes("enter");
+        root.update(cx, |v, _| assert!(!v.about_open));
+        for _ in 0..40 {
+            cx.simulate_keystrokes("tab");
+            root.update_in(cx, |v, w, cx| assert!(v.focus.contains_focused(w, cx)));
+        }
+        cx.simulate_keystrokes("shift-tab");
+        root.update_in(cx, |v, w, cx| assert!(v.focus.contains_focused(w, cx)));
+        assert!(
+            effects.borrow().is_empty(),
+            "navigation must never dispatch work"
+        );
     }
 }

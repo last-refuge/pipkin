@@ -301,3 +301,23 @@ manifest SHA256 `d817a7b878615b38b407658a4f4d384c6da91682b8767c799939455bdc1f596
 protocol42/schema35, no sessions in the fresh profile, and a clean worker shutdown. Run the
 updated desktop with `scripts/setup.sh --run` after quitting the previous app. The dashboard
 is available from the sidebar or `Ctrl+Shift+A` (`Cmd+Shift+A` on macOS; macOS unverified here).
+
+### Presentation refinement (2026-10-19)
+
+The dashboard now gives the conversation priority over instrumentation. Two-line task rows
+use state icons and short project names; selected tasks have an amber edge. A compact header,
+status pill and familiar composer replace the metadata stack and full-width action buttons.
+Filters, coverage/count explanations and task metadata are disclosures. Zero-count sidebar
+badges are hidden. Errors, blocked reasons and uncertain-action recovery remain visible.
+The owner-conversation and latest-history actions have labeled icon buttons; narrow windows
+show one pane at a time. Existing target guards, drafts and execution semantics are unchanged.
+
+Keyboard navigation stays inside the dashboard, supports forward/reverse Tab and preserves
+marked IME composition. The composer, transcript, task details and filters remain independent
+of the selected conversation. Native verification uses isolated local-provider fixtures;
+no live Claude prompts are needed.
+
+**Verification:** 2,693 workspace tests passed, 13 ignored; strict Clippy, formatting and
+the release build passed. Guarded native checks covered the 1440×960 and 720×800 layouts
+and keyboard access to all three disclosures. Evidence is retained locally in
+`dist/orchestration-dashboard-redesign/`. No real-IME or screen-reader qualification is claimed.

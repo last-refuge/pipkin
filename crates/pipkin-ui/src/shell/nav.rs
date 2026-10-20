@@ -504,11 +504,25 @@ impl Workspace {
                 "Orchestration, {} running, {} need attention",
                 counts.running, counts.attention
             ))
-            .child(
-                div()
-                    .text_sm()
-                    .child(format!("{} / {}", counts.running, counts.attention)),
-            )
+            .when(counts.attention > 0 || counts.running > 0, |d| {
+                let attention = counts.attention > 0;
+                d.child(
+                    div()
+                        .text_size(t.small_size())
+                        .px(px(6.))
+                        .rounded(px(8.))
+                        .bg(if attention { c.accent_bg } else { c.bg_active })
+                        .text_color(if attention { c.accent } else { c.text_muted })
+                        .child(
+                            if attention {
+                                counts.attention
+                            } else {
+                                counts.running
+                            }
+                            .to_string(),
+                        ),
+                )
+            })
             .on_click(move |_, _, cx| {
                 model.update(cx, |m, cx| {
                     m.dispatch(
