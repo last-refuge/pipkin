@@ -97,7 +97,8 @@ fn native_execution_session(call: &Call) -> Option<&str> {
         | SetSubagentsEnabled { session, .. }
         | StopSubagent { session, .. }
         | SteerSubagent { session, .. }
-        | LaunchSubagent { session, .. } => Some(session),
+        | LaunchSubagent { session, .. }
+        | FollowUpSubagent { session, .. } => Some(session),
         PrepareExtensions { session, .. }
         | McpServers { session }
         | McpUpsertServer { session, .. }
@@ -111,6 +112,7 @@ fn native_execution_session(call: &Call) -> Option<&str> {
         | McpImportApply { session, .. } => session.as_deref(),
         Prompt { .. }
         | Stop { .. }
+        | StopRun { .. }
         | CancelRequest { .. }
         | Hello { .. }
         | CatchUp { .. }
@@ -149,6 +151,7 @@ fn native_execution_session(call: &Call) -> Option<&str> {
         | McpAuthCancel { .. }
         | GoalHistory { .. }
         | SubagentHistory { .. }
+        | LookupFollowUpSubagent { .. }
         | SubagentResult { .. }
         | Diagnostics { .. }
         | ExportDiagnostics { .. }
@@ -168,6 +171,11 @@ fn native_execution_session(call: &Call) -> Option<&str> {
         | ImportSessions { .. }
         | ImportConfig { .. }
         | ImportCredentials { .. }
+        // Store-only observation never executes anything.
+        | Activity { .. }
+        | ActivityRows { .. }
+        | ObserveHistory { .. }
+        | ObserveChildren { .. }
         | Shutdown => None,
     }
 }

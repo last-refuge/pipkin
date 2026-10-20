@@ -1025,6 +1025,10 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                     })
                     .detach();
                 }
+                Effect::SaveDashboard {prefs,request}=> {
+                    let tx=setup_tx.clone();
+                    storage.save_prefs_ack(prefs,move |result| {let _=tx.send_blocking(LifecycleEvent::Dashboard(pipkin_core::dashboard::Event::Persisted{request,result}));});
+                }
                 Effect::SavePrefs(prefs) => storage.save_prefs(&prefs),
                 Effect::CompleteSetup(prefs) => {
                     let tx = setup_tx.clone();
@@ -1290,6 +1294,7 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                     LifecycleEvent::Notice(message) => {
                         m.mutate(|state| state.set_notice(message), cx)
                     }
+                    LifecycleEvent::Dashboard(event) => m.mutate(|s| s.dashboard_event(event), cx),
                     LifecycleEvent::StorageIssue(message) => {
                         m.mutate(|state| state.set_storage_issue(message), cx)
                     }

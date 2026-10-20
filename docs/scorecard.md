@@ -1,5 +1,35 @@
 # Scorecard
 
+## Orchestration dashboard — 2026-10-19
+
+**Implemented:** global worker directory, independent shared-Markdown history viewer, target-owned
+drafts, explicit secondary root execution, guarded Stop and linked child follow-up with full
+recorded context and original permissions. Durable control receipts restore as lookup-only.
+Protocol42 and schema35; a backed-up migration adds the transactionally maintained child
+summary index. Oversized context refuses before creating a child.
+
+**Observed natively:** owned scratch Wayland windows at 1440×960 and 720×800 logical sizes;
+sidebar/shortcut, Markdown table/code history, child follow-up with a synthetic provider,
+separate drafts, and keyboard return to the original conversation. All input used `guard.sh`.
+The normal running app and user data were untouched; test windows were closed.
+
+**Measured automated gates:** 2,692 passed, 13 ignored, zero failures across 48 workspace
+suite results. Strict workspace/all-target Clippy, formatting and diff checks passed. The
+source/test-input manifest stayed unchanged through qualification. Evidence:
+`dist/orchestration-dashboard/qualification.json`.
+
+The locked release build and isolated native-worker probe also passed (protocol42/schema35,
+fresh empty profile, clean shutdown).
+
+**Measured release directory:** 10,000 workers, ten samples; fresh page median 26.84 ms
+(maximum 30.08 ms), cached page median 1.51 ms. Source history/results remain authoritative;
+only the compact summary projection is indexed.
+
+**Unverified:** installed-Claude dashboard actions, other platforms, screen reader, real IME,
+other scales, suspend/resume, prolonged multi-session soak and display-presentation latency.
+No Claude prompts were spent. Full delivery evidence and final automated gates are recorded in
+[the dashboard plan](orchestration-dashboard-plan.md#delivery-qualification--2026-10-19).
+
 ## Recovery of old clean CLI Stops — 2026-10-19
 
 **Implemented:** fresh matching **Reconnect Claude Code…** can recover an ordinary Coding

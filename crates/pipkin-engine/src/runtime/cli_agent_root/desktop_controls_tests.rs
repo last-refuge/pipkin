@@ -201,3 +201,114 @@ fn desktop_controls_skip_audit_cancels_only_auditor_and_retains_person_verdict()
     });
     assert!(p.requests().is_empty());
 }
+
+#[test]
+fn dashboard_cli_follow_up_is_new_child_with_original_policy_and_lookup_only_receipt() {
+    let fx = EngineFixture::new();
+    let p = Scripted::echo("never API");
+    let e = configured(&fx, &p);
+    let s = e.handle.shared().clone();
+    s.handle.block_on(async {
+        let mut f = setup_variant(&s, "children").await;
+        s.cli_desktop_test_resources
+            .lock()
+            .unwrap()
+            .insert("s".into(), f.resources.clone());
+        let cancel = CancellationToken::new();
+        let Reply::Subagent(old) = dispatch_call(
+            &s,
+            f.owner,
+            Call::LaunchSubagent {
+                session: "s".into(),
+                request: "first".into(),
+                task: "offline child fixture".into(),
+                profile: None,
+                context: None,
+            },
+            &cancel,
+        )
+        .await
+        .unwrap() else {
+            panic!()
+        };
+        let uuid = s
+            .store
+            .cli_agent_binding(&old.session)
+            .unwrap()
+            .unwrap()
+            .create
+            .identity
+            .cli_session_id;
+        let peer = next(&mut f).await;
+        marker(f.dir.path(), &uuid).await;
+        peer_marked(peer, f.dir.path().into(), vec![], false, Some(uuid)).await;
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while !s.store.tasks("s", 10).unwrap().0[0].finished() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let original = s.store.tasks("s", 10).unwrap().0.remove(0);
+        let call = Call::FollowUpSubagent {
+            session: "s".into(),
+            child: old.child,
+            request: "second".into(),
+            text: "offline continuation fixture".into(),
+        };
+        let Reply::Subagent(new) = dispatch_call(&s, f.owner, call.clone(), &cancel)
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        let snapshot = s
+            .store
+            .read(|c| Store::cli_native_child_policy_in(c, &new.session))
+            .unwrap()
+            .unwrap()
+            .1;
+        assert!(snapshot.contains("offline child fixture"));
+        assert!(snapshot.contains("previous_child"));
+        assert!(snapshot.contains("\"context\":\"continue\""));
+        assert_ne!(new.session, old.session);
+        let uuid = s
+            .store
+            .cli_agent_binding(&new.session)
+            .unwrap()
+            .unwrap()
+            .create
+            .identity
+            .cli_session_id;
+        let peer = next(&mut f).await;
+        marker(f.dir.path(), &uuid).await;
+        peer_marked(peer, f.dir.path().into(), vec![], false, Some(uuid)).await;
+        let Reply::Subagent(repeat) = dispatch_call(&s, f.owner, call, &cancel).await.unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(repeat.session, new.session);
+        let Reply::Subagent(receipt) = dispatch_call(
+            &s,
+            f.owner,
+            Call::LookupFollowUpSubagent {
+                session: "s".into(),
+                child: old.child,
+                request: "second".into(),
+            },
+            &cancel,
+        )
+        .await
+        .unwrap() else {
+            panic!()
+        };
+        assert_eq!(receipt.session, new.session);
+        let tasks = s.store.tasks("s", 10).unwrap().0;
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(
+            tasks.iter().find(|r| r.child == old.child).unwrap(),
+            &original
+        );
+        assert!(p.requests().is_empty());
+    });
+}

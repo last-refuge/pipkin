@@ -16,6 +16,7 @@ mod changes;
 mod cli_approvals;
 pub mod client;
 mod control;
+mod dashboard;
 mod execution;
 mod import;
 mod local_cli;
@@ -657,6 +658,8 @@ impl Worker {
             index: HashMap::new(),
             models: Vec::new(),
             current: None,
+            secondary: None,
+            dashboard: dashboard::Watch::default(),
             auth_done: None,
             scanning: None,
             next_changes_op: 0,
@@ -683,12 +686,21 @@ impl Worker {
             cli_approvals_supported,
         ));
         self.report(Connection::Ready);
+        (self.sink)(LifecycleEvent::Dashboard(
+            pipkin_core::dashboard::Event::Available(
+                welcome
+                    .capabilities
+                    .iter()
+                    .any(|c| c == "activityDirectory"),
+            ),
+        ));
         if let Some((conversation, generation, initial)) = self.last_open
             && live.open(self, conversation, generation, initial)
         {
             self.last_open = Some((conversation, generation, false));
         }
         live.reconcile(self);
+        live.dashboard_counts(self);
         self.serve(&mut live)
     }
 
@@ -804,6 +816,10 @@ impl Worker {
             }
             live.flush_sync(self, false);
             live.flush_child(self);
+            std::mem::swap(&mut live.current, &mut live.secondary);
+            live.flush_sync(self, false);
+            std::mem::swap(&mut live.current, &mut live.secondary);
+            live.dashboard_tick(self);
             if let Some(current) = &live.current
                 && current.workspace_ready
                 && Instant::now() >= current.next_changes_scan
@@ -859,6 +875,8 @@ struct Live {
     index: HashMap<ConversationId, SessionSummary>,
     models: Vec<ModelInfo>,
     current: Option<Current>,
+    secondary: Option<Current>,
+    dashboard: dashboard::Watch,
     auth_done: Option<String>,
     scanning: Option<changes::Scope>,
     next_changes_op: u64,
@@ -1103,13 +1121,24 @@ impl Live {
     /// When the loop must wake without a message: to send a coalesced transcript update, or to
     /// rescan the project.
     fn next_wakeup(&self) -> Option<Instant> {
-        let current = self.current.as_ref()?;
+        let dashboard = self.dashboard.next;
+        let secondary = self
+            .secondary
+            .as_ref()
+            .filter(|c| c.dirty)
+            .map(|c| c.last_sync + SYNC_INTERVAL);
+        let Some(current) = self.current.as_ref() else {
+            return dashboard.into_iter().chain(secondary).min();
+        };
         let sync = current.dirty.then_some(current.last_sync + SYNC_INTERVAL);
         let scan = current.workspace_ready.then_some(current.next_changes_scan);
         let child = current
             .child_dirty
             .then_some(current.child_sync + CHILD_SYNC_INTERVAL);
-        [sync, scan, child].into_iter().flatten().min()
+        [sync, scan, child, dashboard, secondary]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     /// Send the open conversation's transcript if it changed, at most every `SYNC_INTERVAL`
@@ -1183,6 +1212,40 @@ impl Live {
     }
 
     fn session_change(
+        &mut self,
+        worker: &mut Worker,
+        session: String,
+        revision: u64,
+        change: SessionChange,
+    ) {
+        if self.dashboard.open
+            && !self.dashboard.dirty
+            && !matches!(
+                &change,
+                SessionChange::EntryAppended { .. } | SessionChange::EntryReplaced { .. }
+            )
+        {
+            (worker.sink)(LifecycleEvent::Dashboard(
+                pipkin_core::dashboard::Event::Invalidated {
+                    session: session.clone(),
+                    revision,
+                },
+            ));
+        }
+        self.dashboard_invalidate(&session);
+        let secondary = self
+            .secondary
+            .as_ref()
+            .is_some_and(|c| c.session == session);
+        if secondary {
+            std::mem::swap(&mut self.current, &mut self.secondary);
+        }
+        self.session_change_inner(worker, session, revision, change);
+        if secondary {
+            std::mem::swap(&mut self.current, &mut self.secondary);
+        }
+    }
+    fn session_change_inner(
         &mut self,
         worker: &mut Worker,
         session: String,
@@ -1614,8 +1677,31 @@ impl Live {
     /// Re-read everything derived from events: the catalogue, the open session, and the outcome
     /// of every run and queue request in doubt.
     fn resync(&mut self, worker: &mut Worker) -> bool {
+        self.dashboard_invalidate("");
+        if self.dashboard.detail.is_some() {
+            self.dashboard.detail_dirty = true;
+        }
         if self.refresh_sessions().is_err() {
             return false;
+        }
+        if self
+            .secondary
+            .as_ref()
+            .is_some_and(|c| !self.index.contains_key(&c.conversation))
+        {
+            self.secondary = None;
+        }
+        if let Some((id, generation)) = self
+            .secondary
+            .as_ref()
+            .map(|c| (c.conversation, c.generation))
+        {
+            std::mem::swap(&mut self.current, &mut self.secondary);
+            let opened = self.open(worker, id, generation, false);
+            std::mem::swap(&mut self.current, &mut self.secondary);
+            if !opened {
+                return false;
+            }
         }
         // A durable removal invalidates the catalog even if its live event was missed.
         // Drop local attachment/run state so an absent conversation cannot keep catch-up
@@ -1829,7 +1915,18 @@ impl Live {
     }
 
     fn handle_request(&mut self, worker: &mut Worker, request: BackendRequest) {
+        let secondary = self.secondary_request(&request);
+        if secondary {
+            std::mem::swap(&mut self.current, &mut self.secondary);
+        }
+        self.handle_request_inner(worker, request);
+        if secondary {
+            std::mem::swap(&mut self.current, &mut self.secondary);
+        }
+    }
+    fn handle_request_inner(&mut self, worker: &mut Worker, request: BackendRequest) {
         match request {
+            BackendRequest::Dashboard(request) => self.dashboard_request(worker, request),
             BackendRequest::CliApproval(request) => self.cli_approval_request(worker, request),
             BackendRequest::RetireLocalCliInspect {
                 conversation,
@@ -1898,6 +1995,13 @@ impl Live {
                 worker
                     .attachment_generations
                     .insert(conversation, generation);
+                if self
+                    .secondary
+                    .as_ref()
+                    .is_some_and(|c| c.conversation == conversation)
+                {
+                    self.secondary = None;
+                }
                 let opened = self.open(worker, conversation, generation, true);
                 worker.last_open = Some((conversation, generation, !opened));
             }

@@ -953,7 +953,7 @@ mod import_tests {
             providers: vec!["openrouter".into()],
         });
         assert_eq!(json["call"], "importCredentials");
-        assert_eq!(crate::PROTOCOL_VERSION, 41);
+        assert_eq!(crate::PROTOCOL_VERSION, 42);
         let discovery = round_trip(&Call::DiscoverLocalCli {
             saved: None,
             project: "/project".into(),

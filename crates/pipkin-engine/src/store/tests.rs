@@ -1014,7 +1014,7 @@ fn a_v32_database_is_backed_up_before_the_activity_indices_and_follow_up_link() 
 
     let s = Store::open(dir.path()).unwrap();
     assert_eq!(s.read(schema::version).unwrap(), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 34);
+    assert_eq!(SCHEMA_VERSION, 35);
     assert_eq!(s.read(snapshot).unwrap(), before);
     let continues: Option<i64> = s
         .read(|c| {
@@ -1030,6 +1030,7 @@ fn a_v32_database_is_backed_up_before_the_activity_indices_and_follow_up_link() 
         "sessions_by_updated",
         "subagent_tasks_by_status",
         "runs_by_session_ended",
+        "subagent_tasks_activity_cover",
     ] {
         let found: bool = s
             .read(|c| {
@@ -1045,5 +1046,48 @@ fn a_v32_database_is_backed_up_before_the_activity_indices_and_follow_up_link() 
     let backup = Connection::open(dir.path().join("engine.sqlite.v32.bak")).unwrap();
     assert_eq!(schema::version(&backup).unwrap(), 32);
     assert_eq!(snapshot(&backup).unwrap(), before);
+    s.integrity_check().unwrap();
+}
+
+#[test]
+fn dashboard_projection_upgrade_preserves_history_and_tracks_later_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(dir.path()).unwrap();
+    session(&s, "root");
+    s.tx(|tx| {
+        tx.execute_batch("INSERT INTO sessions(id,cwd,created_at,updated_at,origin,parent,root) VALUES ('kid','/tmp',1,1,'{\"kind\":\"native\"}','root','root');
+            INSERT INTO subagent_tasks(root,child,parent_session,parent_call,child_session,task,status,result,launch,created_at,updated_at) VALUES ('root',1,'root','call','kid','original task','done','original result','{\"profile\":\"worker\"}',1,1);
+            DROP INDEX subagent_tasks_activity_cover; PRAGMA user_version=34;")?;
+        Ok(())
+    }).unwrap();
+    drop(s);
+    let s = Store::open(dir.path()).unwrap();
+    assert_eq!(s.read(schema::version).unwrap(), 35);
+    let backup = Connection::open(dir.path().join("engine.sqlite.v34.bak")).unwrap();
+    assert_eq!(schema::version(&backup).unwrap(), 34);
+    let original = s.activity_source(2).unwrap().tasks.remove("kid").unwrap();
+    assert_eq!(original.excerpt, "original task");
+    assert_eq!(original.profile.as_deref(), Some("worker"));
+    assert!(original.has_result);
+    s.tx(|tx| {tx.execute_batch("UPDATE subagent_tasks SET task='revised',result=NULL,launch='{\"profile\":\"reviewer\"}' WHERE child_session='kid';")?;Ok(())}).unwrap();
+    let changed = s.activity_source(3).unwrap().tasks.remove("kid").unwrap();
+    assert_eq!(changed.excerpt, "revised");
+    assert_eq!(changed.profile.as_deref(), Some("reviewer"));
+    assert!(!changed.has_result);
+    assert_eq!(
+        backup
+            .query_row(
+                "SELECT result FROM subagent_tasks WHERE child_session='kid'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+        "original result"
+    );
+    assert_eq!(
+        pipkin_engine_protocol::limits::SUBAGENT_TASK_EXCERPT_CHARS,
+        160,
+        "keep the covering-index expression and read identical"
+    );
     s.integrity_check().unwrap();
 }

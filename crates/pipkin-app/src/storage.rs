@@ -32,7 +32,8 @@ pub const INJECTED_FAILURE: &str = "injected write failure";
 pub const DEMO_NAMESPACE: &str = "demo";
 
 /// Preference keys that refer to backend-owned identities rather than to the application.
-const SESSION_PREF_KEYS: [&str; 11] = [
+const SESSION_PREF_KEYS: [&str; 12] = [
+    "dashboard",
     "selected_project",
     "selected_conversation",
     "closed_conversations",
@@ -879,6 +880,14 @@ impl Storage {
         if self.send(Msg::Prefs(Box::new(prefs.clone()))).is_err() {
             log::warn!("preferences write dropped: storage busy or closed");
         }
+    }
+
+    pub fn save_prefs_ack(
+        &self,
+        prefs: Prefs,
+        ack: impl FnOnce(Result<(), String>) + Send + 'static,
+    ) {
+        self.complete_setup(prefs, ack);
     }
 
     pub fn complete_setup(
@@ -1744,6 +1753,7 @@ fn write_prefs(conn: &mut Connection, ns: &str, p: &Prefs) -> Result<(), String>
         ),
         ("model", json!(p.model)),
         ("closed_conversations", json!(p.closed_conversations)),
+        ("dashboard", json!(p.dashboard)),
         ("conversation_backend", Value::Null),
         (
             "provider_model",
@@ -1832,6 +1842,7 @@ fn parse_provider_model(v: &Value) -> pipkin_core::ProviderModel {
 
 fn apply_pref(p: &mut Prefs, key: &str, v: &Value) {
     match key {
+        "dashboard" => p.dashboard = v.as_str().unwrap_or_default().to_owned(),
         "closed_conversations" => {
             p.closed_conversations = v
                 .as_array()
@@ -2190,6 +2201,7 @@ mod tests {
         let (_dir, path) = tmp_db();
         let s = Storage::open(&path, "setup-test").unwrap();
         let prefs = Prefs {
+            dashboard: String::new(),
             setup_completed: true,
             ..Prefs::default()
         };
@@ -2221,6 +2233,7 @@ mod tests {
     fn round_trip_prefs_drafts_and_conversations() {
         let (_dir, path) = tmp_db();
         let prefs = Prefs {
+            dashboard: String::new(),
             setup_completed: true,
             theme: Theme::Light,
             text_size: TextSize::Large,

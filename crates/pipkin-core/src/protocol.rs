@@ -6,6 +6,7 @@ use crate::onboarding::{SignInAnswer, SignInProvider};
 /// User intents issued by the UI or command palette.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
+    Dashboard(crate::dashboard::Command),
     SelectProviderModel(crate::ProviderModel),
     /// Explicitly abandon this conversation's unfinished provider change, not other sessions.
     KeepConversationProvider,
@@ -265,6 +266,7 @@ pub struct Availability {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BackendRequest {
+    Dashboard(crate::dashboard::Request),
     CliApproval(crate::CliApprovalPortRequest),
     /// Fire-and-forget retirement of this exact pending Inspect tuple, not a setup
     /// operation and not a creation cancellation. Adapter cancels/cleans up racing
@@ -839,6 +841,10 @@ pub enum Effect {
         rev: u64,
     },
     SavePrefs(Prefs),
+    SaveDashboard {
+        prefs: Prefs,
+        request: String,
+    },
     /// Acknowledged write. Never show completion until the writer commits this preference.
     CompleteSetup(Prefs),
     SaveGoal {

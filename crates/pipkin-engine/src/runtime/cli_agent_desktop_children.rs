@@ -29,7 +29,21 @@ impl Shared {
         profile: &Option<String>,
         context: &Option<String>,
     ) -> Result<Reply, ProtoError> {
-        if request.is_empty() || request.len() > 240 || request.chars().any(char::is_control) {
+        self.launch_cli_desktop_child_inner(owner, session, request, task, profile, context, None)
+            .await
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn launch_cli_desktop_child_inner(
+        self: &Arc<Self>,
+        owner: u64,
+        session: &str,
+        request: &str,
+        task: &str,
+        profile: &Option<String>,
+        context: &Option<String>,
+        follow_up: Option<u64>,
+    ) -> Result<Reply, ProtoError> {
+        if request.is_empty() || request.len() > 220 || request.chars().any(char::is_control) {
             return Err(failed("invalid request"));
         }
         let context = match context.as_deref().map(str::trim) {
@@ -48,8 +62,16 @@ impl Shared {
             wake: false,
             model: None,
         };
-        let call = format!("user:{request}");
-        let intent = serde_json::json!({"task":launch.task,"profile":launch.profile,"context":launch.context.map(|v|v.as_str())});
+        let call = if follow_up.is_some() {
+            format!("followup:{request}")
+        } else {
+            format!("user:{request}")
+        };
+        let intent = if let Some(child) = follow_up {
+            serde_json::json!({"child":child,"text":task})
+        } else {
+            serde_json::json!({"task":launch.task,"profile":launch.profile,"context":launch.context.map(|v|v.as_str())})
+        };
         // Lost acknowledgements read the original receipt, even after approval was revoked.
         if let Some(row) = self
             .store
@@ -60,7 +82,13 @@ impl Shared {
                 .read(|c| Store::cli_native_child_policy_in(c, &row.child_session))?
                 .ok_or_else(|| failed("missing policy"))?;
             let snapshot: serde_json::Value = serde_json::from_str(&stored.1).map_err(failed)?;
-            if row.origin != "user" || snapshot["cliNative"]["personIntent"] != intent {
+            if row.origin != "user"
+                || (if follow_up.is_some() {
+                    &snapshot["followUp"]["intent"]
+                } else {
+                    &snapshot["cliNative"]["personIntent"]
+                }) != &intent
+            {
                 return Err(failed("request changed"));
             }
             return Ok(Reply::Subagent(self.subagent_row(session, row.child)?));
@@ -71,6 +99,15 @@ impl Shared {
             .person_child(&self.store, owner, session, request)
             .map_err(failed)?;
         let resources = tokio::task::block_in_place(|| self.cli_desktop_resources(session))?;
+        let previous = follow_up
+            .map(|child| self.authorized_child(session, child))
+            .transpose()?;
+        if previous
+            .as_ref()
+            .is_some_and(|p| !p.finished() || p.parent_session != session)
+        {
+            return Err(failed("follow-up requires a finished direct child"));
+        }
         let policy = tokio::task::block_in_place(|| {
             let settings = self.settings_for(session);
             let tools = resources.tools.iter().map(|t| t.spec()).collect::<Vec<_>>();
@@ -89,6 +126,50 @@ impl Shared {
                 )
                 .map_err(failed)
             };
+            if let Some(old) = previous.as_ref() {
+                let prior = self
+                    .store
+                    .session(&old.child_session)?
+                    .ok_or_else(|| failed("missing child"))?;
+                let record = old
+                    .launch
+                    .as_deref()
+                    .and_then(crate::profiles::LaunchRecord::from_json)
+                    .ok_or_else(|| failed("missing child policy"))?;
+                let mut entries = Vec::new();
+                let mut before = None;
+                let mut size = 0;
+                loop {
+                    let (page, more) = self.store.page(&old.child_session, before, 200)?;
+                    size += serde_json::to_vec(&page).map_err(failed)?.len();
+                    if size > 1024 * 1024 {
+                        return Err(failed(
+                            "full child transcript exceeds follow-up context limit",
+                        ));
+                    }
+                    before = page.first().map(|e| e.id);
+                    entries.splice(0..0, page);
+                    if !more {
+                        break;
+                    }
+                }
+                return orchestration_child::capture_follow_up(
+                    &authority.scope,
+                    &call,
+                    authority.binding(),
+                    &settings,
+                    &launch,
+                    &tools,
+                    &resources.prompt,
+                    &record,
+                    old,
+                    prior.revision,
+                    &entries,
+                    now_ms(),
+                )
+                .map(Arc::new)
+                .map_err(failed);
+            }
             let policy = capture(&[], 0)?;
             if !policy.inherits() {
                 return Ok(Arc::new(policy));

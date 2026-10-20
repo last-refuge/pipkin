@@ -311,7 +311,9 @@ impl Store {
                     serde_json::from_str(&stored.1).map_err(|_| StoreError::ExecutionConflict)?;
                 let new: Value = serde_json::from_str(policy.snapshot())
                     .map_err(|_| StoreError::ExecutionConflict)?;
-                if old["cliNative"]["personIntent"] != new["cliNative"]["personIntent"] {
+                if old["cliNative"]["personIntent"] != new["cliNative"]["personIntent"]
+                    || old["followUp"]["intent"] != new["followUp"]["intent"]
+                {
                     return Err(StoreError::ExecutionConflict);
                 }
                 return Ok(Created {
@@ -343,6 +345,25 @@ impl Store {
                 created: false,
                 revision: None,
             });
+        }
+        let follow: serde_json::Value =
+            serde_json::from_str(policy.snapshot()).map_err(|_| StoreError::ExecutionConflict)?;
+        let continues = follow["followUp"]["intent"]["child"].as_u64();
+        if let Some(child) = continues {
+            let old =
+                Self::task_by_child(c, parent, child)?.ok_or(StoreError::ExecutionConflict)?;
+            let revision: u64 = c.query_row(
+                "SELECT revision FROM sessions WHERE id=?1",
+                [&old.child_session],
+                |r| r.get(0),
+            )?;
+            if !old.finished()
+                || old.parent_session != *parent
+                || Some(revision) != follow["followUp"]["revision"].as_u64()
+                || Some(old.child_session.as_str()) != follow["followUp"]["session"].as_str()
+            {
+                return Err(StoreError::ExecutionConflict);
+            }
         }
         let caps = policy.caps();
         let (live, total) = Self::child_counts(c, parent)?;
@@ -383,6 +404,12 @@ impl Store {
             return Err(StoreError::ExecutionConflict);
         }
         Self::set_task_launch(c, child, &launch)?;
+        if let Some(previous) = continues {
+            c.execute(
+                "UPDATE subagent_tasks SET continues=?2 WHERE child_session=?1",
+                params![child, previous],
+            )?;
+        }
         c.execute("INSERT INTO cli_agent_child_policies(child,parent,parent_call,digest,snapshot) VALUES(?1,?2,?3,?4,?5)",
             params![child,parent,policy.call(),policy.digest(),policy.snapshot()])?;
         let task = Self::task_by_session(c, child)?.ok_or(StoreError::ExecutionConflict)?;

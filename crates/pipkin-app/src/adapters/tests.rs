@@ -52,6 +52,7 @@ impl Harness {
     fn exec(&mut self, outcome: Outcome) {
         for effect in outcome.effects {
             match effect {
+                Effect::SaveDashboard { .. } => {}
                 Effect::Backend(request) => self.backend.request(request),
                 Effect::JournalLocalCliCreation {
                     conversation,

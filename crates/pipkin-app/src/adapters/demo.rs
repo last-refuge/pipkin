@@ -388,6 +388,7 @@ impl Worker {
 
     fn handle(&mut self, request: BackendRequest) {
         match request {
+            BackendRequest::Dashboard(_) => {},
             BackendRequest::CliApproval(request) => {
                 let (conversation, generation, op) = request.tuple();
                 self.ctx.emit(conversation, generation, Some(op), EventKind::CliApproval(Box::new(request.failed())));

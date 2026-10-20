@@ -12,6 +12,7 @@
 //! No network, process or person is awaited while a transaction is open: callers prepare
 //! everything, then commit in one short transaction.
 
+pub mod activity;
 pub mod cli_agent;
 pub(crate) mod cli_agent_children;
 pub mod cli_agent_turns;

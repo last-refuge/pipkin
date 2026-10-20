@@ -351,6 +351,7 @@ pub struct Goal {
 }
 
 pub struct AppState {
+    pub dashboard: crate::dashboard::State,
     pub cli_approvals: crate::cli_approvals::CliApprovals,
     pub cli_approval_port: crate::CliApprovalPort,
     pub local_cli: crate::local_cli::LocalCliState,
@@ -447,6 +448,7 @@ impl AppState {
         cli_approvals.tick(boot.now.saturating_mul(1000));
         AppState {
             cli_approvals,
+            dashboard: crate::dashboard::State::restore(&prefs.dashboard),
             cli_approval_port: Default::default(),
             local_cli: Default::default(),
             projects: boot.projects,
@@ -836,6 +838,11 @@ impl AppState {
             // Questions from extensions cannot be answered without the engine; its own state is
             // read again when it is reachable.
             if !self.connection.is_ready() {
+                self.dashboard.freshness = crate::dashboard::Freshness::Reconnecting;
+                self.dashboard.pending_send = None;
+                if let Some(p) = &mut self.dashboard.control {
+                    p.uncertain = true;
+                }
                 self.local_cli_disconnected();
                 self.set_cli_approvals_available(false);
                 for c in &mut self.conversations {
@@ -912,6 +919,10 @@ impl AppState {
     }
 
     pub fn availability(&self) -> Availability {
+        self.availability_for(self.selected)
+    }
+
+    pub fn availability_for(&self, target: Option<ConversationId>) -> Availability {
         // Every action below reaches the backend, so none is offered until it is connected.
         if !self.connection.is_ready() {
             return Availability::default();
@@ -928,7 +939,7 @@ impl AppState {
         };
         let new_conversation =
             creation_available && self.pending_create.is_none() && self.current_project().is_some();
-        let Some(c) = self.current() else {
+        let Some(c) = target.and_then(|id| self.conversation(id)) else {
             return Availability {
                 new_conversation,
                 ..Availability::default()
@@ -954,7 +965,8 @@ impl AppState {
             | ExecutionProfile::LocalCliRestrictedWrite => true,
             ExecutionProfile::Unsupported => false,
         };
-        let can_send = !self.provider_selection_pending(c.id)
+        let can_send = !self.conversation_is_closed(c.id)
+            && !self.provider_selection_pending(c.id)
             && profile != ExecutionProfile::Unsupported
             && self.read_only.is_none()
             && c.execution_blocked.is_none()
@@ -1112,6 +1124,30 @@ impl AppState {
     }
 
     pub fn dispatch(&mut self, cmd: Command) -> Outcome {
+        if let Command::Dashboard(command) = cmd {
+            return self.dispatch_dashboard(command);
+        }
+        if self.dashboard.open {
+            let action = match cmd {
+                Command::Submit => Some(crate::dashboard::Action::Send),
+                Command::QueueFollowUp => Some(crate::dashboard::Action::Queue),
+                Command::Steer => Some(crate::dashboard::Action::Steer),
+                Command::Cancel => Some(crate::dashboard::Action::Stop),
+                _ => None,
+            };
+            if let Some(action) = action {
+                let Some(row) = self.dashboard.selected_row() else {
+                    return Outcome::default();
+                };
+                return self.dispatch_dashboard(crate::dashboard::Command::Act {
+                    session: row.worker.session.clone(),
+                    generation: self.dashboard.detail.generation,
+                    revision: row.worker.revision,
+                    draft_revision: self.dashboard_draft().1,
+                    action,
+                });
+            }
+        }
         let before = self.reconcile_cli_approvals();
         let mut out = self.dispatch_scoped(cmd);
         if self.reconcile_cli_approvals() || before {
@@ -1219,6 +1255,7 @@ impl AppState {
             return out;
         }
         match cmd {
+            Command::Dashboard(_) => unreachable!("dashboard dispatched separately"),
             Command::LocalCli(_) | Command::CliApproval(_) => {
                 unreachable!("scoped commands are routed first")
             }
@@ -1394,6 +1431,9 @@ impl AppState {
                 out.merge(self.dispatch(Command::SelectConversation(id)));
             }
             Command::SelectConversation(id) => {
+                if self.dashboard.open && self.conversation(id).is_some() {
+                    out.merge(self.dispatch_dashboard(crate::dashboard::Command::Close));
+                }
                 let real = self.mode == Mode::Real;
                 let prev = self.selected;
                 let Some(c) = self.conv_mut(id) else {
@@ -3024,6 +3064,7 @@ impl AppState {
         let id = ev.conversation;
         let mut out = self.apply_event_scoped(ev);
         self.reveal_unsettled_conversation(id, &mut out);
+        out.merge(self.dashboard_continue_send());
         if self.reconcile_cli_approvals() || before {
             out.notes.push(Note::Other);
         }
@@ -4770,3 +4811,6 @@ impl AppState {
         out
     }
 }
+
+#[path = "dashboard_state.rs"]
+mod dashboard_state;

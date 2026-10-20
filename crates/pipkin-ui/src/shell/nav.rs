@@ -490,6 +490,34 @@ impl Workspace {
                 },
             )
         };
+        let dashboard_btn = {
+            let model = self.model.clone();
+            let counts = self.state(cx).dashboard.global_counts.unwrap_or_default();
+            util_row(
+                "open-orchestration",
+                "panel-right",
+                "Orchestration",
+                None,
+                cx,
+            )
+            .aria_label(format!(
+                "Orchestration, {} running, {} need attention",
+                counts.running, counts.attention
+            ))
+            .child(
+                div()
+                    .text_sm()
+                    .child(format!("{} / {}", counts.running, counts.attention)),
+            )
+            .on_click(move |_, _, cx| {
+                model.update(cx, |m, cx| {
+                    m.dispatch(
+                        Command::Dashboard(pipkin_core::dashboard::Command::Open),
+                        cx,
+                    )
+                })
+            })
+        };
         let palette_btn = {
             let this = cx.entity();
             util_row("open-palette", "command", "Commands", Some("Ctrl K"), cx).on_click(
@@ -584,6 +612,7 @@ impl Workspace {
                     .flex()
                     .flex_col()
                     .gap(px(2.0))
+                    .child(dashboard_btn)
                     .child(palette_btn)
                     .child(usage_btn)
                     .child(prefs_btn),

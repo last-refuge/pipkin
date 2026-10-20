@@ -1656,3 +1656,6 @@ pub(crate) fn artifact_lines(artifacts: &[SubagentArtifact]) -> String {
     }
     text
 }
+
+#[path = "subagent_follow_up.rs"]
+mod follow_up;

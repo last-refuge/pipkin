@@ -379,11 +379,34 @@ impl Shared {
         self: &Arc<Self>,
         session: &str,
     ) -> Result<Reply, ProtoError> {
-        // Signal before waiting for session/publication/storage locks. No native recovery,
-        // goal advancement or queued prompt execution is borrowed from the API backend.
-        self.cli_agents.stop(session);
+        self.stop_cli_agent_root_expecting(session, None).await
+    }
+
+    pub(super) async fn stop_cli_agent_root_expecting(
+        self: &Arc<Self>,
+        session: &str,
+        expected: Option<u64>,
+    ) -> Result<Reply, ProtoError> {
+        // Unguarded Stop must still cancel preparation before waiting for the session lock.
+        if expected.is_none() {
+            self.cli_agents.stop(session);
+        }
         let sess = self.session(session)?;
         let _lock = sess.lock.lock().await;
+        if let Some(expected) = expected {
+            let active = sess
+                .active
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .map(|a| a.run);
+            if active != Some(expected)
+                || self.store.open_run(session)?.map(|r| r.id) != Some(expected)
+            {
+                return Err(super::session::run_ended());
+            }
+            self.cli_agents.stop(session);
+        }
         let active = sess
             .active
             .lock()
@@ -395,7 +418,7 @@ impl Shared {
             });
         let run=self.commit(&sess,|tx| {
             let Some(run)=crate::store::Store::open_run_in(tx,session)? else {return Ok((None,vec![]));};
-            if active!=Some(run.id) {return Ok((None,vec![]));}
+            if active!=Some(run.id) || expected.is_some_and(|e| e!=run.id) {return Ok((None,vec![]));}
             tx.execute("UPDATE runs SET state='stopping',stop_requested_at=COALESCE(stop_requested_at,?2) WHERE id=?1",
                 rusqlite::params![run.id as i64,now_ms()])?;
             let mut changes=vec![SessionChange::RunChanged {run:crate::store::Store::run_in(tx,run.id)?.and_then(|r|r.view())}];

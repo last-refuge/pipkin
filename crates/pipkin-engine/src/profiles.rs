@@ -67,6 +67,8 @@ pub enum ContextMode {
     Fresh,
     /// The task plus a bounded excerpt of the parent's recent conversation.
     Inherit,
+    /// Full prior child history, available only through explicit FollowUpSubagent.
+    Continue,
 }
 
 impl ContextMode {
@@ -82,6 +84,7 @@ impl ContextMode {
         match self {
             ContextMode::Fresh => "fresh",
             ContextMode::Inherit => "inherit",
+            ContextMode::Continue => "continue",
         }
     }
 }

@@ -1,21 +1,14 @@
 # Orchestration dashboard implementation plan
 
-Status: retained design reference only. The user explicitly excluded dashboard implementation
-from goal6; tasks54–61 are cancelled, not delivered. They intend to build the dashboard using the
-completed Claude CLI integration. No dashboard implementation should proceed under this goal. Shared CLI
-orchestration work is tracked in [the native orchestration implementation](claude-cli-native-orchestration.md).
-Gates292/295/298/301/304 qualify an inactive authenticated native-tool driver, durable tool/root
-records, immutable storage bindings, private native-only launch construction and owner-controlled
-channel closure. Gate308 additionally seals stored root launch inputs and a strict, display-only
-native MCP stdout observer. Gate312 joins an internal root supervisor with persisted display
-projection; gate320 adds private independent revocable ownership. SessionRt/live publication,
-full context/workflows and the approved public model route remain. These offline gates do not
-qualify installed CLI orchestration, live dashboard publication or any dashboard UI/control.
-Baseline: `826615e` on `main`.
+Status: implemented and qualified on Linux under the owner’s 2026-10-19 request to finish,
+test, commit and push the dashboard. This supersedes the earlier exclusion from goal6.
+The settled UX decisions remain in
+[orchestration-dashboard-contracts.md](orchestration-dashboard-contracts.md).
 
-Milestone 1 (UX and contracts) is drafted in
-[orchestration-dashboard-contracts.md](orchestration-dashboard-contracts.md); its open owner
-decisions are listed in §10 of that document. Nothing is implemented yet.
+Protocol 42 now implements the activity directory, store-only observation, guarded Stop and
+linked child follow-up. Desktop work includes the independent dashboard page and history
+projection, canonical root drafts, separate persisted child drafts, a secondary execution
+attachment, and acknowledged control receipts. Qualification results and platform/provider limits are recorded below. No live Claude prompts are authorized or used for this work.
 
 ## Objective
 
@@ -217,7 +210,7 @@ above its composer and actions. All actions report pending, accepted, refused or
 7. **Persistence/recovery:** restore finished history, dashboard preferences/drafts and cached
    observations; prove reconnect/crash behavior without replay or selection leakage.
 8. **Verification and release readiness:** run all gates below, document coverage and remaining
-   platform/provider limitations. Rebuilding/installing and commit/push require separate approval.
+   platform/provider limitations. The current owner request authorizes commit and push to main after verification.
 
 The first five milestones form a useful read-only oversight slice, **not** the completed feature.
 The requested orchestration dashboard is complete only when action and recovery milestones pass.
@@ -257,3 +250,54 @@ Pinned multi-stream views with an explicit subscription cap; named agent groups;
 and dependency graphs; launch templates; opt-in notifications; carefully confirmed bulk controls.
 These should build on the same global identities, observation feed and command receipts, rather
 than creating a second execution engine inside the dashboard.
+
+## Delivery qualification — 2026-10-19
+
+Milestones 1–7 are implemented. The desktop exposes **Orchestration** above Commands,
+`Ctrl+Shift+A` / `Cmd+Shift+A`, overview/status/project/backend/kind/search filters, paged
+worker history, Markdown/tool output, and explicit owner-review navigation. Dashboard reads
+do not change the normal selection or open workers for execution. Root send/queue/steer use
+one secondary attachment and the existing journal; child controls persist an acknowledged
+receipt first. Follow-up creates a linked child under the original policy and includes the
+recorded prior context, refusing oversized combined context before creating a task.
+
+Protocol42 supplies the read and control APIs. Engine schema35 adds a covering index for the
+child summary projection; upgrades back up the old schema first. The projection is maintained
+by SQLite in the same transaction as its source records. A shared, short-lived composed cache
+avoids copying the entire directory for each page. There is no separate mutable activity table.
+
+**Observed in isolated native Wayland windows:** the sidebar entry and shortcut; independent
+child history with the shared Markdown table/code renderer; child follow-up completing through
+a local synthetic provider; separate child and ordinary-conversation drafts surviving navigation;
+Escape returning to the original conversation; a split layout at 1440×960 and single-detail
+layout with Back at 720×800 (logical window sizes). The windows used scratch profiles and
+`guard.sh` for every synthetic key. They were closed after verification. The user's running
+app, conversations, credentials and compositor configuration were not changed.
+
+**Measured release performance:** ten requests over a 10,000-worker filtered fixture with
+large retained child results: uncached page median **26.84 ms**, range **18.98–30.08 ms**;
+cached page median **1.51 ms**. The projection index brought the fresh page below the 50 ms
+threshold. Measurements include the local protocol request and response. Retained evidence:
+`dist/orchestration-dashboard/performance.json`, native captures in the same directory.
+
+**Unverified in this slice:** installed-Claude dashboard actions, other operating systems,
+screen-reader operation, real IME composition, different display scales, suspend/resume,
+long-duration multi-session memory soak and compositor presentation latency. No new live
+Claude prompts were authorized or spent. Existing offline CLI lifecycle checks remain the
+qualification for that backend. Reviews, job details, attachment changes and workspace changes
+use **Open owning conversation / review requests** and its existing controls.
+
+**Final automated gates:** `cargo test --offline --workspace --no-fail-fast`: **2,692 passed,
+13 ignored, zero failures**, across 48 suite results. Strict workspace/all-target Clippy,
+`cargo fmt --all --check` and `git diff --check` passed. Tests include exact-target secondary
+send, stale observation, separate drafts, persisted/lost control receipts, native and fake-CLI
+follow-up idempotency and original policy, oversized-context refusal without a stranded child,
+stale Stop during CLI preparation, 4,100 children under one root, 10,000 workers without runtime
+creation, schema35 backfill/backup and transactionally updated projection values. No Claude
+prompts. Source/test-input manifest: `dist/orchestration-dashboard/tested-source.json`;
+manifest SHA256 `d817a7b878615b38b407658a4f4d384c6da91682b8767c799939455bdc1f5960`.
+
+**Release:** the locked release build passed, followed by an isolated `--diagnose --probe`:
+protocol42/schema35, no sessions in the fresh profile, and a clean worker shutdown. Run the
+updated desktop with `scripts/setup.sh --run` after quitting the previous app. The dashboard
+is available from the sidebar or `Ctrl+Shift+A` (`Cmd+Shift+A` on macOS; macOS unverified here).

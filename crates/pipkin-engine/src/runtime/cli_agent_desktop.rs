@@ -201,6 +201,7 @@ impl Shared {
             | Call::JobCancel { session, .. }
             | Call::SetSubagentsEnabled { session, .. }
             | Call::StopSubagent { session, .. }
+            | Call::FollowUpSubagent { session, .. }
             | Call::LaunchSubagent { session, .. }
             | Call::SteerSubagent { session, .. } => session,
             _ => return None,
@@ -222,6 +223,25 @@ impl Shared {
         session: &str,
         call: &Call,
     ) -> Result<Reply, ProtoError> {
+        if let Call::FollowUpSubagent {
+            child,
+            request,
+            text,
+            ..
+        } = call
+        {
+            return self
+                .launch_cli_desktop_child_inner(
+                    owner,
+                    session,
+                    request,
+                    text,
+                    &None,
+                    &None,
+                    Some(*child),
+                )
+                .await;
+        }
         if let Call::LaunchSubagent {
             request,
             task,

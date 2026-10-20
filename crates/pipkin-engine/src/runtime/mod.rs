@@ -1,6 +1,7 @@
 //! The engine runtime: one tokio runtime, the store, the catalog/auth layer, per-session
 //! execution, and client connections.
 
+mod activity;
 mod ask;
 mod cli_agent_desktop;
 mod cli_agent_desktop_children;
@@ -105,6 +106,7 @@ pub struct Shared {
     clients: Mutex<HashMap<u64, crate::delivery::Delivery>>,
     cursors: Mutex<HashMap<u64, (u64, u64)>>,
     sessions: Mutex<lifecycle::Sessions>,
+    activity_cache: Mutex<activity::Cache>,
     handle: tokio::runtime::Handle,
     me: std::sync::Weak<Shared>,
 }
@@ -399,6 +401,7 @@ impl EngineHandle {
         );
         let shared = Arc::new_cyclic(|me| Shared {
             me: me.clone(),
+            activity_cache: Mutex::default(),
             mcp,
             jobs: jobs::JobsRuntime::default(),
             subagent_watchers: Mutex::new(std::collections::HashSet::new()),
@@ -582,7 +585,7 @@ impl EngineHandle {
                             | Call::LookupLocalCliCreation { .. } | Call::LocalCliSessionStatus { .. });
                         let interruptible = cli_setup || matches!(&frame.call,
                             Call::Prompt { .. } | Call::Enqueue { .. } | Call::CancelQueued { .. }
-                            | Call::Stop { .. } | Call::WaitForPrompt { .. });
+                            | Call::Stop { .. } | Call::StopRun { .. } | Call::WaitForPrompt { .. });
                         let result = tokio::select! {
                             biased;
                             _ = request.cancel.cancelled(), if interruptible => {
@@ -820,6 +823,10 @@ async fn dispatch_call(
                     "contextUsage".into(),
                     "compaction".into(),
                     "toolOutput".into(),
+                    CAPABILITY_ACTIVITY_DIRECTORY.into(),
+                    CAPABILITY_ACTIVITY_OBSERVE.into(),
+                    CAPABILITY_GUARDED_STOP.into(),
+                    CAPABILITY_SUBAGENT_FOLLOW_UP.into(),
                 ]
                 .into_iter()
                 .chain(
@@ -1413,30 +1420,94 @@ async fn dispatch_call(
             providers,
         } => import::credentials(shared, agent_dir, providers).await,
         Call::Shutdown => Ok(Reply::Ok),
+        Call::StopRun {
+            session,
+            expected_run,
+        } => {
+            shared
+                .stop_by_backend_expecting(&session, Some(expected_run))
+                .await
+        }
+        Call::Activity {
+            filter,
+            group,
+            after,
+            limit,
+        } => shared.activity(filter, group, after, limit),
+        Call::ActivityRows { sessions } => shared.activity_rows(sessions),
+        Call::ObserveHistory {
+            session,
+            before,
+            limit,
+        } => shared.observe_history(&session, before, limit),
+        Call::ObserveChildren {
+            session,
+            after,
+            limit,
+        } => shared.observe_children(&session, after, limit),
+        Call::LookupFollowUpSubagent {
+            session,
+            child,
+            request,
+        } => {
+            let old = shared.authorized_child(&session, child)?;
+            let row = shared.store.read(|c| {
+                Store::task_for_call(c, &old.parent_session, &format!("followup:{request}"))
+            })?;
+            match row {
+                Some(row) => Ok(Reply::Subagent(shared.subagent_row(&session, row.child)?)),
+                None => Ok(Reply::Ok),
+            }
+        }
+        Call::FollowUpSubagent {
+            session,
+            child,
+            request,
+            text,
+        } => Ok(Reply::Subagent(
+            shared
+                .follow_up_subagent(&session, child, &request, &text)
+                .await?,
+        )),
     }
 }
 
 impl Shared {
     fn summaries(&self) -> Result<Vec<SessionSummary>, ProtoError> {
         let catalog = self.auth.catalog();
+        let mut unavailable = HashMap::new();
         Ok(self
             .store
             .root_sessions()?
             .iter()
-            .map(|row| {
-                let mut summary = self.execution_summary(row);
-                if row.execution_backend.native_execution()
-                    && summary.blocked.is_none()
-                    && let Some(key) = &row.model
-                    && let Some(model) = catalog.find(key)
-                    && let Err(crate::auth::AuthError::Unavailable(why)) =
-                        self.auth.availability(model)
-                {
-                    summary.blocked = Some(why);
-                }
-                summary
-            })
+            .map(|row| self.root_summary(row, &catalog, &mut unavailable))
             .collect())
+    }
+
+    /// A root's catalog summary, including why it cannot run here. Metadata checks only;
+    /// `unavailable` memoizes the credential check per model across one listing.
+    pub(super) fn root_summary(
+        &self,
+        row: &SessionRow,
+        catalog: &crate::auth::Catalog,
+        unavailable: &mut HashMap<String, Option<String>>,
+    ) -> SessionSummary {
+        let mut summary = self.execution_summary(row);
+        if row.execution_backend.native_execution()
+            && summary.blocked.is_none()
+            && let Some(key) = &row.model
+        {
+            summary.blocked = unavailable
+                .entry(key.clone())
+                .or_insert_with(
+                    || match catalog.find(key).map(|m| self.auth.availability(m)) {
+                        Some(Err(crate::auth::AuthError::Unavailable(why))) => Some(why),
+                        _ => None,
+                    },
+                )
+                .clone();
+        }
+        summary
     }
 
     fn create_session(&self, cwd: &str, request: &str) -> Result<Reply, ProtoError> {

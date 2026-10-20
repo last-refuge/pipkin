@@ -531,13 +531,36 @@ impl Shared {
     /// Persist Stop intent and withdraw queued inputs, then cancel the active run. Settlement
     /// is published by the run itself (or here, when no run is executing in this process).
     pub async fn stop(self: &Arc<Self>, session: &str) -> Result<Reply, ProtoError> {
-        // The goal that exists at this instant pauses; one set afterwards is a replacement.
-        self.goal_on_stop(session);
+        self.stop_expecting(session, None).await
+    }
+
+    /// `stop`, or with `expected` set, a guarded stop (`StopRun`) that touches nothing unless
+    /// that run is the open one: no goal pause, compaction stop, queue withdrawal or cancel.
+    pub async fn stop_expecting(
+        self: &Arc<Self>,
+        session: &str,
+        expected: Option<u64>,
+    ) -> Result<Reply, ProtoError> {
         let sess = self.session(session)?;
         let _guard = sess.lock.lock().await;
+        if let Some(expected) = expected
+            && self.store.open_run(session)?.map(|r| r.id) != Some(expected)
+        {
+            return Err(run_ended());
+        }
+        // Admission uses this same lock, so a stale guarded Stop cannot pause a newer goal.
+        self.goal_on_stop(session);
+        let mut ended = false;
         let run = self.commit(&sess, |tx| {
+            // Checked again in the transaction that records the intent, so the run marked
+            // stopping is exactly the one expected.
+            let open = Store::open_run_in(tx, session)?;
+            if expected.is_some() && open.as_ref().map(|r| r.id) != expected {
+                ended = true;
+                return Ok((None, vec![]));
+            }
             Store::stop_compactions(tx, session)?;
-            let Some(run) = Store::open_run_in(tx, session)? else {
+            let Some(run) = open else {
                 return Ok((None, vec![]));
             };
             let now = now_ms();
@@ -567,6 +590,9 @@ impl Shared {
             }
             Ok((Some(run.id), changes))
         })?;
+        if ended {
+            return Err(run_ended());
+        }
         // This also applies when the coding run has finished or never existed. Keep the
         // session lock through signaling so a newer manual request starts after this Stop.
         for cancel in sess
@@ -931,4 +957,9 @@ impl Shared {
             Ok((entry.clone(), vec![SessionChange::EntryAppended { entry }]))
         })
     }
+}
+
+/// A guarded stop found a different run, or none, open.
+pub(super) fn run_ended() -> ProtoError {
+    ProtoError::new(ErrorCode::Conflict, "That run already ended")
 }

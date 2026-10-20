@@ -7,6 +7,7 @@ pub mod backend;
 pub mod cli_approval_port;
 pub mod cli_approvals;
 mod conversations;
+pub mod dashboard;
 pub mod diagnostics;
 mod execution;
 pub mod ids;

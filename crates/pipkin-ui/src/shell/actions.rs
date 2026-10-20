@@ -4,6 +4,9 @@ actions!(
     pi,
     [
         OpenPalette,
+        ToggleDashboard,
+        DashboardNext,
+        DashboardPrevious,
         NewConversation,
         OpenProject,
         ToggleNav,
@@ -35,6 +38,11 @@ actions!(
 
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
+        KeyBinding::new("down", DashboardNext, Some("Orchestration")),
+        KeyBinding::new("up", DashboardPrevious, Some("Orchestration")),
+        KeyBinding::new("escape", CloseOverlay, Some("Orchestration")),
+        KeyBinding::new("ctrl-shift-a", ToggleDashboard, None),
+        KeyBinding::new("cmd-shift-a", ToggleDashboard, None),
         KeyBinding::new("ctrl-k", OpenPalette, None),
         KeyBinding::new("ctrl-shift-p", OpenPalette, None),
         KeyBinding::new("ctrl-n", NewConversation, None),

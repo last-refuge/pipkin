@@ -59,3 +59,11 @@ pub const MAX_GOAL_CRITERIA: usize = 20;
 pub const MAX_CRITERION_EVIDENCE: usize = 10;
 /// Longest criterion text, evidence reference, note or reason (UTF-16 units).
 pub const MAX_GOAL_TEXT_CHARS: usize = 1000;
+/// Most rows in one activity directory page.
+pub const MAX_ACTIVITY_PAGE: u32 = 200;
+/// Most sessions in one `ActivityRows` refetch.
+pub const MAX_ACTIVITY_ROWS: usize = 64;
+/// Most rows in one `ObserveChildren` page.
+pub const MAX_OBSERVE_CHILDREN: u32 = 500;
+/// Longest activity search text.
+pub const MAX_ACTIVITY_TEXT_CHARS: usize = 256;

@@ -8,11 +8,13 @@ Slice26 implements child continuation and inherited context with a passing offli
 gate. Slice27 adds goal lifecycle/auditors; slice28 adds context, compaction and queued input.
 Slice34 adds explicit desktop activation and routing; slice35 adds effort, person children/steering, MCP settings and Skip-audit. Live qualification remains below.
 
-Status: slice34 exposes an explicitly approved orchestration mode in owned Linux desktop builds. **Not released or broadly live-qualified.** The live-qualified
-`cli-unattended-coding-v1` path remains unchanged and is not native orchestration parity.
-Dashboard implementation is explicitly excluded by the user; tasks54–61 are cancelled, not
-delivered. They will build dashboards using the completed integration. No release/install,
-credential access, user configuration changes or further live inference are authorized here.
+Status: orchestration is available through explicit desktop setup in owned Linux builds.
+Broader installed-CLI lifecycle qualification remains incomplete; dashboard tests do not
+replace it. The live-qualified `cli-unattended-coding-v1` path retains its separate executor.
+The previous dashboard exclusion was superseded by the owner’s 2026-10-19 request to finish,
+test, commit and push it. See [dashboard qualification](orchestration-dashboard-plan.md) for
+the protocol42/schema35 dashboard and its independent native-window checks. Historical slices
+below retain their original scope. No additional live inference was authorized or used.
 
 ## Current capability checklist (360 plus resumed slices22–35)
 
@@ -23,6 +25,7 @@ continues to use its separate executor.
 
 | Capability | Current state |
 | --- | --- |
+| Orchestration dashboard | Implemented: global directory, independent Markdown viewer, explicit root actions and linked child follow-ups, durable drafts/control receipts. Native and fake-CLI tests; no new installed-Claude qualification. See the dashboard plan for measured gates. |
 | Existing CLI Coding path | Separate executor; 2026-10-19 fix accepts late CLI-owned tool observations and collapses output/thinking with shared assistant Markdown formatting when expanded. Repeated per-turn init preserves work and revalidates the catalog. Coding aggregates held per-turn results at EOF, retaining errors and counting identified usage once. Uncertain interrupted turns remain fenced; updated live behavior awaits user use |
 | Ordinary Coding clean Stop and historical recovery | Implemented offline: new clean Stops preserve continuation; older clean Stops can recover through fresh matching reconnect with a schema34 audit. Same CLI session and new instruction only; old receipts/actions preserved, no prompt replay. Unknown failures stay locked; installed recovery/resume remains unverified |
 | Native bridge, tool effects, root execution/history/receipts | Working offline; installed CLI2.1.301/Sonnet fresh and same-UUID resumed native Write passed after SIGINT fix |

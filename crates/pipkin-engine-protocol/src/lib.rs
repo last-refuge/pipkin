@@ -7,12 +7,14 @@
 //! Versioning: [`PROTOCOL_VERSION`] changes whenever a message changes shape incompatibly. The
 //! engine refuses a client with a different protocol in [`api::Call::Hello`]; it never guesses.
 
+pub mod activity;
 pub mod api;
 pub mod content;
 pub mod frame;
 pub mod limits;
 pub mod view;
 
+pub use activity::*;
 pub use api::*;
 pub use content::*;
 pub use view::*;
@@ -47,7 +49,10 @@ pub use view::*;
 // Version 34 adds explicit, metadata-only local CLI setup and immutable creation calls.
 // Version 36 adds inert CLI-reported action blocks, never native tool calls.
 // Version 37 captures immutable CLI setup mode. 38 adds owner-scoped external approvals.
-pub const PROTOCOL_VERSION: u32 = 41;
+// Version 42 adds the store-only activity directory for the orchestration dashboard:
+// `Activity`, `ActivityRows`, `ObserveHistory`, `ObserveChildren`, the guarded `StopRun` and
+// `FollowUpSubagent`, gated by the capabilities in [`activity`].
+pub const PROTOCOL_VERSION: u32 = 42;
 
 mod cli_approvals;
 pub use cli_approvals::*;

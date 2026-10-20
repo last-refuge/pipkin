@@ -8,6 +8,7 @@ use crate::state::Bootstrap;
 /// authoritative state and must never be dropped, so the sink behind them is unbounded.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LifecycleEvent {
+    Dashboard(crate::dashboard::Event),
     Connection(Connection),
     /// Explicit service capability, not conversation trust or execution readiness.
     LocalCliSetupAvailable(bool),

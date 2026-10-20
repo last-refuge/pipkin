@@ -311,3 +311,43 @@ fn owner_reapproval_is_required_and_old_grant_cannot_launch_or_approve() {
     assert_eq!(launches(&f), 1);
     no_native(&shared, &provider);
 }
+
+#[test]
+fn dashboard_stale_guarded_stop_does_not_cancel_a_new_cli_preflight() {
+    let f = Fixture::new();
+    let provider = Scripted::echo("never");
+    let mut engine = start(&f, &provider, true, true);
+    let shared = engine.handle.shared().clone();
+    let cli = fake(&f, "normal");
+    let setup = approve(&mut engine, &cli, false);
+    create(&mut engine, &setup);
+    let turn = shared
+        .local_cli_setups
+        .begin_turn(engine.conn.client_id(), "cli")
+        .unwrap();
+    assert_eq!(
+        engine
+            .call(Call::StopRun {
+                session: "cli".into(),
+                expected_run: 1
+            })
+            .unwrap_err()
+            .code,
+        ErrorCode::Conflict
+    );
+    assert!(
+        !turn.cancel.is_cancelled(),
+        "a stale dashboard Stop must not cancel fresh preparation"
+    );
+    engine
+        .call(Call::Stop {
+            session: "cli".into(),
+        })
+        .unwrap();
+    assert!(
+        turn.cancel.is_cancelled(),
+        "ordinary Stop still cancels preparation"
+    );
+    assert_eq!(launches(&f), 0);
+    no_native(&shared, &provider);
+}

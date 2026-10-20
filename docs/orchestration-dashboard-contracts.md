@@ -1,11 +1,13 @@
 # Orchestration dashboard: milestone 1 contracts
 
-Status: **draft specification, nothing implemented.** This is milestone 1 of
+Status: **specification; owner decisions settled (§10).** This is milestone 1 of
 [the dashboard plan](orchestration-dashboard-plan.md). It settles the navigation, identity,
 status and coverage models, the capability matrix, the independent-viewer semantics and the
 completed-child follow-up behaviour, and it specifies the protocol and storage changes and their
-compatibility tests. Owner decisions still open are collected in §10. Baseline `85d5d31`:
-protocol 41, storage schema 32.
+compatibility tests. Baseline `85d5d31`: protocol 41, storage schema 32. Milestone 2 has started:
+the protocol 42 types and wire tests are in `pipkin-engine-protocol/src/activity.rs`; the engine
+answers the new calls `Unsupported` and advertises none of the new capabilities until each one is
+implemented.
 
 All code references are to the baseline. Where the code contradicts an assumption in the plan,
 this document takes precedence and says so.
@@ -22,7 +24,7 @@ These are verified against the code and constrain everything below.
 | F4 | `event_outbox` gets a row on every `sessions.revision` change, for root **and** child sessions. Retention is 4,096 cursors. | `store/schema.rs:172` | Durable invalidations can drive directory reconciliation without a new event stream. |
 | F5 | Open questions live only in the in-memory `SessionRt` (`UiView`). CLI approvals are persisted (`external_permissions`). | `runtime/ask.rs`, `store/external/permissions.sql` | The attention state of an unloaded session can't include a question. A question only exists while its runtime is live, so the directory overlays live runtimes it finds and never materialises one. |
 | F6 | `subagent_tasks` has separate `root` and `parent_session` columns, so nested children are representable. CLI orchestration children (`claudeCliAgent`) are also `subagent_tasks` rows. | `store/schema.rs:126`, `store/cli_agent_children.sql` | One child directory covers native and CLI-orchestrated children. The parent link is `parent_session`, not `root`. |
-| F7 | `Stop { session }` stops whatever run is active. There is no run guard. | `api.rs`, `runtime/local_cli_runtime.rs:171` | A dashboard Stop can hit a newer run than the one observed. Needs `expected_run`. |
+| F7 | `Stop { session }` stops whatever run is active. There is no run guard. | `api.rs`, `runtime/local_cli_runtime.rs:171` | A dashboard Stop can hit a newer run than the one observed. Needs a guarded `StopRun` (§4.5). |
 | F8 | There is no project id. `SessionSummary.cwd` is the only project key; the desktop's `ProjectId` is derived client-side. | `view.rs:28` | Project filtering is by normalised `cwd`. |
 | F9 | Handshake requires an exact protocol match (`runtime/mod.rs:781`). Capabilities are free-form strings. | `api.rs:126`, `runtime/mod.rs:794` | Every new call bumps the protocol. Capabilities express *configuration*, not version skew. |
 | F10 | No index on `subagent_tasks.status` or `sessions.updated_at`. `ListSessions` returns every root, unpaged. | `store/mod.rs:740` | The directory needs a migration (§6). |
@@ -196,7 +198,7 @@ must not materialise a `SessionRt`.
 |---|---|
 | `activityDirectory` | `Activity`, `ActivityRows` calls |
 | `activityObserve` | `ObserveHistory`, `ObserveChildren` calls |
-| `guardedStop` | `Stop.expected_run` honoured |
+| `guardedStop` | `StopRun` call |
 | `subagentFollowUp` | `FollowUpSubagent` call (§7) |
 
 `activityDirectory` and `activityObserve` are always advertised by a protocol-42 engine.
@@ -220,6 +222,7 @@ pub struct ActivityFilter {
     pub kind: Option<WorkerKind>,         // Root | Child
     pub backend: Option<ExecutionBackend>,
     pub text: Option<String>,             // ≤ 256 chars; title/task excerpt/cwd, case-folded
+    pub failed: bool,                     // only last run Failed/Interrupted (unseen failures)
 }
 
 pub struct ActivityPage {
@@ -234,6 +237,7 @@ pub struct ActivityCursor(String);        // opaque; engine-encoded (group, sort
 
 pub struct ActivityCounts {
     pub attention: u32, pub running: u32, pub finished_recent: u32,
+    pub failed_recent: u32,               // subset of finished_recent; see §3.3
     pub total: u32, pub jobs_active: u32,
 }
 
@@ -254,6 +258,7 @@ pub struct ActivityRow {
     pub local_cli_mode: Option<LocalCliMode>,
     pub model: Option<String>,
     pub state: WorkState,
+    pub raw_status: Option<String>,       // a child's stored status, verbatim
     pub run: Option<RunBrief>,            // current run or last settled run
     pub children_active: u32,
     pub jobs_active: u32,
@@ -316,7 +321,7 @@ Call::ObserveHistory { session: SessionId, before: Option<EntryId>, limit: u32 }
 Reply::Page { native_history_start, entries, has_older }        // existing reply shape
 
 Call::ObserveChildren { session: SessionId, after: Option<u64>, limit: u32 }  // ≤ 500
-Reply::ObservedChildren { rows: Vec<SubagentRow>, next: Option<u64>, through: u64 }
+Reply::ObservedChildren { rows: Vec<ActivityRow>, next: Option<u64>, through: u64 }
 ```
 
 - `ObserveHistory` is `HistoryPage` read **straight from the store**: no `shared.session()`, no
@@ -324,7 +329,9 @@ Reply::ObservedChildren { rows: Vec<SubagentRow>, next: Option<u64>, through: u6
   session ids alike, so a child's full transcript renders with the normal transcript machinery
   (closing gap 4 in plan §3).
 - `ObserveChildren` is the cursor-paged replacement for the 4,096-capped `Subagents` directory,
-  also store-only. `Subagents` stays as it is for compatibility.
+  also store-only. Its rows are `ActivityRow`s, which already carry the parent, the follow-up link
+  and the normalised state; `SubagentRow` keeps its shape. `Subagents` stays as it is for
+  compatibility.
 - Live growth of the selected worker uses the `Event::Session` stream already broadcast (F3),
   filtered by session id and stale-guarded by `ObserverGen`. A gap (`epoch/seq` discontinuity)
   re-reads the newest `ObserveHistory` page, the same continuity rule the subagent inspector uses.
@@ -334,12 +341,15 @@ Reply::ObservedChildren { rows: Vec<SubagentRow>, next: Option<u64>, through: u6
 ### 4.5 Guarded stop
 
 ```rust
-Call::Stop { session, #[serde(default)] expected_run: Option<u64> }
+Call::StopRun { session, expected_run: u64 }    // Control lane, like Stop
+Reply::Stopping { run }
 ```
 
-When `expected_run` is set and differs from the active run, or there is no active run, the reply
-is `Conflict` "That run already ended", and nothing is stopped. `None` keeps today's behaviour for
-the normal conversation view. Stopping a child keeps `StopSubagent { session, child, request }`,
+When `expected_run` differs from the active run, or there is no active run, the reply is
+`Conflict` "That run already ended", and nothing is stopped. `Stop { session }` is unchanged and
+stays the normal conversation view's call. A separate call (rather than an optional field on
+`Stop`) keeps every existing `Stop` caller untouched, and a `StopRun` without its run fails to
+decode instead of degrading to an unguarded stop. Stopping a child keeps `StopSubagent { session, child, request }`,
 which is already scoped to `ChildRef`.
 
 ## 5. Client core contract (`pipkin-core`)
@@ -450,10 +460,14 @@ CREATE INDEX subagent_tasks_by_status ON subagent_tasks(status, updated_at DESC)
 CREATE INDEX runs_by_session_ended ON runs(session, ended_at DESC);
 ```
 
-No denormalised activity table in the first release. The directory composes these queries with
-the in-memory question overlay (F5). If milestone 2 measures a 10,000-row page above 50 ms, the
-fallback is an `activity` table maintained in the same transactions that bump
-`sessions.revision`, plus a backfill in its migration.
+The directory composes these queries with the in-memory question overlay (F5). The measured
+10,000-row read exceeded 50 ms because child scans traversed large retained result/launch
+records. Schema35 therefore adds `subagent_tasks_activity_cover`, a compact covering index of
+the exact summary projection (including excerpt, result-presence flag and profile). This
+replaces the proposed manually maintained `activity` table: SQLite backfills and maintains
+the projection transactionally, without extra mutable summary state. Its excerpt expression
+must match `SUBAGENT_TASK_EXCERPT_CHARS` (160). Existing rows/results are unchanged; upgrading
+schema34 writes `engine.sqlite.v34.bak`. Older engines refuse schema35 normally.
 
 ## 7. Completed-child follow-up contract (proposed)
 
@@ -515,14 +529,15 @@ one-shot path.
 Protocol tests use the existing inline pattern: `round_trip` plus `serde_json::json!` wire
 assertions, as in `view.rs:907` `import_tests`.
 
-- **Wire names:** `Activity`, `ActivityRows`, `ObserveHistory`, `ObserveChildren`,
+- **Wire names:** `Activity`, `ActivityRows`, `ObserveHistory`, `ObserveChildren`, `StopRun`,
   `FollowUpSubagent`, every `WorkState`/`WaitReason`/`CoverageGap` variant, and `ActivityCursor`
   as an opaque string.
 - **Fail-closed decoding:** an unknown `WorkState` decodes to `Unknown`; an unknown `CoverageGap`
   decodes to `Other`; an unknown `ExecutionBackend` in a row decodes to `Unsupported`, and the
   client offers no controls for it.
-- **Defaults:** `Stop` without `expected_run` decodes to `None` and behaves as protocol 41 did.
-  `ActivityRow.continues` is absent → `None`.
+- **Defaults:** `Stop` keeps its protocol 41 shape; `StopRun` without `expected_run` is refused.
+  `ActivityRow.continues` and `raw_status` absent → `None`. As elsewhere in `Call`, variant
+  fields are snake_case on the wire (`expected_run`), while struct fields are camelCase.
 - `assert_eq!(PROTOCOL_VERSION, 42)`, and the `lib.rs` changelog comment gains an entry for 42.
 
 Migration tests:
@@ -540,19 +555,59 @@ Engine contract tests, which become the milestone 2 acceptance tests:
 - Counts equal a brute-force recount under concurrent inserts and settlements.
 - The handoff (§4.3) converges with out-of-order events, duplicate settled events and an outbox
   reset.
-- `Stop { expected_run: stale }` returns `Conflict` and the newer run keeps running.
+- `StopRun { expected_run: stale }` returns `Conflict` and the newer run keeps running.
 - `FollowUpSubagent` creates exactly one linked child per request key; a replay returns the same
   child; a running child is refused; the original child is byte-identical afterwards.
 
-## 10. Owner decisions needed before milestone 2
+## 10. Owner decisions (settled 2026-10-19)
 
-1. **Follow-up context (§7):** the new child gets the prior child's full transcript. The
-   alternative is the result only, which is cheaper and more private but loses the working
-   context. Recommendation: full transcript.
-2. **Secondary execution attachment (§5.7):** to send to a root, the adapter gets one extra
-   attachment. The alternative is to make dashboard sends switch the conversation selection,
-   which is simpler but breaks the "never select behind your back" rule. Recommendation:
-   secondary attachment.
+The owner accepted every recommendation:
+
+1. **Follow-up context (§7):** the new child starts from the prior child's full transcript and
+   result, not the result alone.
+2. **Secondary execution attachment (§5.7):** sending to a root from the dashboard uses one
+   extra adapter attachment. The conversation selection never changes behind the person's back.
 3. **Recent window:** Finished in Overview shows the last 24 hours.
 4. **Shortcut:** `Ctrl+Shift+A` / `Cmd+Shift+A`.
-5. **Unseen failures count as attention:** yes, until the person views them.
+5. **Unseen failures count as attention:** yes, until the person views them. Seen state is
+   client-local; the client finds candidates with `ActivityFilter.failed` within the recent
+   window, and `ActivityCounts.failed_recent` bounds how many there are.
+
+The implementation does not rely on every child/job event bumping its root: coalesced global
+invalidations refresh the directory, while row revisions fence individual updates (§4.3).
+
+
+## Implementation notes — 2026-10-19 qualification
+
+- The desktop uses a dedicated core dashboard state and a separate transcript projection. Its
+  read calls use `ObserveHistory`; only an explicit root send/queue/steer opens a secondary
+  execution attachment. Root text and attachments are submitted through the normal durable
+  intent journal. Keyboard send/queue/steer/Stop routes to the dashboard target while it is open.
+- Child follow-up uses a new request key, child session and `continues` link. Full recorded
+  history/result is reference data; old execution requests and tool journals are never replayed.
+  Oversized full context is refused before launch. Native and Claude orchestration children
+  retain their original backend, model and frozen permissions; absent profiles refuse clearly.
+- `LookupFollowUpSubagent` reads a committed receipt without admission, including after restart.
+  Dashboard controls persist an acknowledged, namespaced receipt before dispatch. Unknown
+  receipts restore as lookup-only; no automatic resend is allowed.
+- Directory windows are bounded to 2,000 rows, entry requests to the existing history page
+  limit, and selected history to 2,000 mapped items. Older-history paging pauses tail refresh;
+  **Latest history** resumes it. Paging beyond a directory window starts a new bounded window.
+- A short-lived composed directory cache is fenced by the durable outbox cursor and the set
+  of live questions. It never opens session runtimes or probes CLI executables.
+- Failure acknowledgments are local to the backend namespace and are sent as `seenFailures`
+  revision hints on directory reads. They do not mutate engine history or grant execution.
+- Review requests, job details, attachment management and workspace-change inspection use the
+  explicit **Open owning conversation / review requests** action and their existing controls.
+  Reading the dashboard never answers a question, grants approval, or reopens a closed session.
+
+The Overview lists each worker once, with unseen failures taking attention priority. `total`
+is the distinct worker count. `finished_recent` and `failed_recent` are outcome metrics for
+24 hours, so an unseen failed worker can contribute to both the attention badge and the
+finished outcome metric; these metrics must not be summed. The Finished tab retains older
+results as well. Viewing a failure acknowledges its current revision only.
+
+Child lifecycle publication bumps the parent where applicable, but the desktop also coalesces
+all session invalidations into directory refreshes. Correctness does not depend on a child or
+job update bumping a particular ancestor's revision. Directory refresh and detail observation
+remain separate from the execution attachment.

@@ -141,6 +141,9 @@ mod resize_tests {
 }
 
 pub struct Workspace {
+    dashboard: Entity<super::dashboard::DashboardView>,
+    dashboard_open: bool,
+    dashboard_return_focus: Option<FocusHandle>,
     pub(super) model: Entity<Model>,
     pasted_image_dir: PathBuf,
     pub(super) transcript: Entity<TranscriptView>,
@@ -247,6 +250,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let dashboard =
+            cx.new(|cx| super::dashboard::DashboardView::new(model.clone(), window, cx));
         let transcript = cx.new(|cx| TranscriptView::new(model.clone(), window, cx));
         let composer = cx.new(|cx| ComposerEditor::new(window, cx));
         let nav_search = cx.new(|cx| ComposerEditor::single_line(window, cx));
@@ -375,6 +380,9 @@ impl Workspace {
         }));
         let initial_entry = model.read(cx).entry;
         let mut ws = Workspace {
+            dashboard,
+            dashboard_open: false,
+            dashboard_return_focus: None,
             model,
             pasted_image_dir: data_dir,
             transcript,
@@ -502,6 +510,16 @@ impl Workspace {
     // ------------------------------------------------------------ model → view
 
     fn on_model(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let dashboard_open = self.state(cx).dashboard.open;
+        if dashboard_open != self.dashboard_open {
+            self.dashboard_open = dashboard_open;
+            if dashboard_open {
+                self.dashboard_return_focus = window.focused(cx);
+                self.dashboard.update(cx, |d, cx| d.focus_list(window, cx));
+            } else if let Some(focus) = self.dashboard_return_focus.take() {
+                window.focus(&focus, cx);
+            }
+        }
         if (matches!(self.overlay, Overlay::Model | Overlay::ModelSettings)
             && !self.state(cx).provider_picker_available())
             || (self.overlay == Overlay::Effort
@@ -1391,7 +1409,11 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.focus_composer(window, cx);
+        if self.state(cx).dashboard.open {
+            self.dashboard.update(cx, |d, cx| d.focus_input(window, cx));
+        } else {
+            self.focus_composer(window, cx);
+        }
     }
     fn on_focus_transcript(
         &mut self,
@@ -1399,6 +1421,11 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.state(cx).dashboard.open {
+            self.dashboard
+                .update(cx, |d, cx| d.focus_history(window, cx));
+            return;
+        }
         let h = if self.state(cx).current().is_some() {
             self.transcript.read(cx).focus_handle(cx)
         } else {
@@ -1510,6 +1537,13 @@ impl Workspace {
     }
 
     fn on_attach(&mut self, _: &AttachFiles, _: &mut Window, cx: &mut Context<Self>) {
+        if self.state(cx).dashboard.open {
+            self.show_toast(
+                "Open the owning conversation to manage its attachments.",
+                cx,
+            );
+            return;
+        }
         self.attach_files(cx);
     }
     fn on_next(&mut self, _: &NextConversation, _: &mut Window, cx: &mut Context<Self>) {
@@ -1521,6 +1555,13 @@ impl Workspace {
     fn on_close_overlay(&mut self, _: &CloseOverlay, window: &mut Window, cx: &mut Context<Self>) {
         if self.overlay != Overlay::None {
             self.close_overlay(window, cx);
+        } else if self.state(cx).dashboard.open {
+            let command = if self.state(cx).dashboard.selected.is_some() {
+                pipkin_core::dashboard::Command::Back
+            } else {
+                pipkin_core::dashboard::Command::Close
+            };
+            self.dispatch(Command::Dashboard(command), cx);
         } else {
             self.close_panel(window, cx);
         }
@@ -2046,8 +2087,18 @@ impl Render for Workspace {
             );
             row = row.child(self.divider("nav-divider", Split::Nav, cx));
         }
-        row = row.child(self.render_center(window, cx));
-        if insp_docked {
+        row = if self.state(cx).dashboard.open {
+            row.child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .child(self.dashboard.clone()),
+            )
+        } else {
+            row.child(self.render_center(window, cx))
+        };
+        if insp_docked && !self.state(cx).dashboard.open {
             row = row.child(self.divider("inspector-divider", Split::Inspector, cx));
             row = row.child(
                 div()
@@ -2069,6 +2120,14 @@ impl Render for Workspace {
             .text_color(t.colors.text)
             .text_size(t.ui_size())
             .font_family(t.ui_font())
+            .on_action(cx.listener(|this, _: &ToggleDashboard, _, cx| {
+                let command = if this.state(cx).dashboard.open {
+                    pipkin_core::dashboard::Command::Close
+                } else {
+                    pipkin_core::dashboard::Command::Open
+                };
+                this.dispatch(Command::Dashboard(command), cx);
+            }))
             .on_action(cx.listener(Self::on_open_palette))
             .on_action(cx.listener(Self::on_new_conversation))
             .on_action(cx.listener(Self::on_toggle_nav))

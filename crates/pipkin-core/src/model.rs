@@ -497,6 +497,7 @@ impl TextSize {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Prefs {
+    pub dashboard: String,
     /// Last explicit model choice, used for new conversations; never an app-wide send gate.
     pub provider_model: Option<crate::ProviderModel>,
     /// Unfinished provider changes block only their source conversation, never other providers.
@@ -526,6 +527,7 @@ pub struct Prefs {
 impl Default for Prefs {
     fn default() -> Self {
         Prefs {
+            dashboard: String::new(),
             provider_model: None,
             pending_provider_models: Default::default(),
             cli_provider_configured: false,

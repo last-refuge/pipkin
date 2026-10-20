@@ -265,6 +265,12 @@ pub enum Call {
     Stop {
         session: SessionId,
     },
+    /// `Stop`, but only when `expected_run` is the active run (`guardedStop`). Otherwise the
+    /// reply is a `Conflict` and nothing is stopped, so a stale view cannot stop a newer run.
+    StopRun {
+        session: SessionId,
+        expected_run: u64,
+    },
     SetModel {
         session: SessionId,
         model: String,
@@ -597,6 +603,51 @@ pub enum Call {
         agent_dir: Option<String>,
         providers: Vec<String>,
     },
+    /// One page of the engine-wide activity directory (`activityDirectory`). Store-only: it
+    /// never opens, recovers or attaches a session. `limit` is clamped to
+    /// `1..=MAX_ACTIVITY_PAGE`.
+    Activity {
+        #[serde(default)]
+        filter: crate::ActivityFilter,
+        group: crate::ActivityGroup,
+        #[serde(default)]
+        after: Option<crate::ActivityCursor>,
+        limit: u32,
+    },
+    /// Re-read these workers' rows after durable invalidations (at most
+    /// `MAX_ACTIVITY_ROWS`). Removed sessions come back in `missing`.
+    ActivityRows {
+        sessions: Vec<SessionId>,
+    },
+    /// `HistoryPage` read straight from the store, for a root or a child session id
+    /// (`activityObserve`). Answered by `Reply::Page`.
+    ObserveHistory {
+        session: SessionId,
+        before: Option<EntryId>,
+        limit: u32,
+    },
+    /// Every child of `session` as directory rows, by child number after `after`, at most
+    /// `MAX_OBSERVE_CHILDREN` per page. Store-only.
+    ObserveChildren {
+        session: SessionId,
+        #[serde(default)]
+        after: Option<u64>,
+        limit: u32,
+    },
+    /// Continue a terminal child as a new linked child (`subagentFollowUp`). It starts from
+    /// the old child's transcript and result, then `text`. The same `request` never creates
+    /// two. Answered by the new child's `Reply::Subagent`.
+    LookupFollowUpSubagent {
+        session: String,
+        child: u64,
+        request: String,
+    },
+    FollowUpSubagent {
+        session: SessionId,
+        child: u64,
+        request: String,
+        text: String,
+    },
     Shutdown,
 }
 
@@ -605,6 +656,7 @@ impl Call {
     pub fn lane(&self) -> Lane {
         match self {
             Call::Stop { .. }
+            | Call::StopRun { .. }
             | Call::Shutdown
             | Call::CancelRequest { .. }
             | Call::RevokeLocalCliSetup { .. }
@@ -741,6 +793,17 @@ pub enum Reply {
     Imported(ImportedView),
     ConfigImported(ConfigImportView),
     CredentialsImported(CredentialsImportView),
+    Activity(crate::ActivityPage),
+    ActivityRows {
+        rows: Vec<crate::ActivityRow>,
+        missing: Vec<SessionId>,
+        through: u64,
+    },
+    ObservedChildren {
+        rows: Vec<crate::ActivityRow>,
+        next: Option<u64>,
+        through: u64,
+    },
     Ok,
 }
 

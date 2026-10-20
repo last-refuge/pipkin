@@ -169,15 +169,24 @@ impl Shared {
     }
 
     pub async fn stop_by_backend(self: &Arc<Self>, session: &str) -> Result<Reply, ProtoError> {
+        self.stop_by_backend_expecting(session, None).await
+    }
+
+    /// With `expected`, the guarded `StopRun`: a `Conflict` unless that run is active.
+    pub async fn stop_by_backend_expecting(
+        self: &Arc<Self>,
+        session: &str,
+        expected: Option<u64>,
+    ) -> Result<Reply, ProtoError> {
         if self.cli_agents.owns_session(session) {
-            return self.stop_cli_agent_root(session).await;
+            return self.stop_cli_agent_root_expecting(session, expected).await;
         }
         let row = self
             .store
             .session(session)?
             .ok_or_else(|| ProtoError::new(ErrorCode::NotFound, "Session does not exist"))?;
         if row.execution_backend == ExecutionBackend::NativeAgent {
-            return self.stop(session).await;
+            return self.stop_expecting(session, expected).await;
         }
         if row.execution_backend != ExecutionBackend::LocalClaudeCli
             || row.parent.is_some()
@@ -185,12 +194,13 @@ impl Shared {
         {
             return Err(unavailable());
         }
-        let pending = self.local_cli_setups.stop_pending(session);
+        // Only an unguarded Stop may cancel preflight without an admitted run identity.
+        let pending = expected.is_none() && self.local_cli_setups.stop_pending(session);
         let sess = self.session(session)?;
         if !pending && sess.active_run().is_none() && !self.config.enable_local_claude_cli {
             return Err(unavailable());
         }
-        self.stop_external_prompt(session).await
+        self.stop_external_prompt_expecting(session, expected).await
     }
 
     fn local_cli_binding_valid(

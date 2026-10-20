@@ -7,6 +7,7 @@ mod cli_navigation;
 mod clipboard_image;
 pub mod commands;
 pub mod controls;
+mod dashboard;
 mod export_settings;
 mod inspector;
 mod jobs;

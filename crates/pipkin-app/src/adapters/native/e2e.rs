@@ -585,6 +585,19 @@ impl Harness {
     fn exec(&mut self, outcome: Outcome) {
         for effect in outcome.effects {
             match effect {
+                Effect::SaveDashboard { prefs, request } => {
+                    let (tx, rx) = mpsc::channel();
+                    self.storage.save_prefs_ack(prefs, move |r| {
+                        let _ = tx.send(r);
+                    });
+                    let out =
+                        self.state
+                            .dashboard_event(pipkin_core::dashboard::Event::Persisted {
+                                request,
+                                result: rx.recv_timeout(WAIT).unwrap(),
+                            });
+                    self.exec(out);
+                }
                 Effect::Backend(request) => self.backend.request(request),
                 Effect::JournalCliApproval(request) => {
                     let (tx, rx) = mpsc::channel();
@@ -747,6 +760,7 @@ impl Harness {
         let lifecycle: Vec<LifecycleEvent> = self.life.lock().unwrap().drain(..).collect();
         for event in lifecycle {
             let outcome = match event {
+                LifecycleEvent::Dashboard(event) => self.state.dashboard_event(event),
                 LifecycleEvent::Connection(c) => self.state.set_connection(c),
                 LifecycleEvent::CliApprovalsAvailable(available) => {
                     self.state.set_cli_approvals_available(available)
@@ -4242,4 +4256,76 @@ fn the_export_health_reaches_the_desktop_and_reports_a_bad_configuration() {
         health.summary()
     );
     h.stop();
+}
+
+#[test]
+fn dashboard_observation_and_secondary_send_keep_the_normal_conversation() {
+    use pipkin_core::dashboard::{Action, Command as D};
+    let fx = Fixture::start(|_, _| Reply::Text("dashboard reply".into()));
+    let db = fx.root.join("dashboard.sqlite3");
+    let mut h = Harness::start(&fx, &db);
+    h.open_new_conversation(&fx.project);
+    let first = h.state.selected.unwrap();
+    h.dispatch(Command::EditDraft("first".into()));
+    h.until("first ready", |s| s.availability().submit);
+    h.dispatch(Command::Submit);
+    h.until_asked(&fx, 1);
+    h.until("first settled", is_idle);
+    h.open_new_conversation(&fx.project);
+    h.until("second conversation", |s| {
+        s.selected != Some(first) && s.current().is_some_and(|c| c.opened)
+    });
+    let normal = h.state.selected.unwrap();
+    h.dispatch(Command::EditDraft("keep this draft".into()));
+    h.dispatch(Command::Dashboard(D::Open));
+    h.until("directory", |s| {
+        s.dashboard
+            .rows
+            .iter()
+            .any(|r| r.conversation == Some(first))
+    });
+    let target = h
+        .state
+        .dashboard
+        .rows
+        .iter()
+        .find(|r| r.conversation == Some(first))
+        .unwrap()
+        .worker
+        .session
+        .clone();
+    h.dispatch(Command::Dashboard(D::Select(target.clone())));
+    h.until("observed history", |s| {
+        !s.dashboard.detail.loading && !s.dashboard.detail.items.is_empty()
+    });
+    assert_eq!(h.state.selected, Some(normal));
+    assert_eq!(h.state.current().unwrap().draft.text, "keep this draft");
+    assert_eq!(fx.requests().len(), 1);
+    h.dispatch(Command::Dashboard(D::Edit("second via dashboard".into())));
+    h.until("fresh dashboard target", |s| {
+        s.dashboard.freshness == pipkin_core::dashboard::Freshness::Live
+    });
+    let row = h.state.dashboard.selected_row().unwrap();
+    let command = D::Act {
+        session: target,
+        generation: h.state.dashboard.detail.generation,
+        revision: row.worker.revision,
+        draft_revision: h.state.dashboard_draft().1,
+        action: Action::Send,
+    };
+    h.dispatch(Command::Dashboard(command));
+    h.until("secondary settled", |s| {
+        s.conversation(first).is_some_and(|c| {
+            c.draft.text.is_empty()
+                && matches!(c.run, RunState::Idle)
+                && c.items.iter().any(
+                    |i| matches!(&i.kind,ItemKind::User{text,..} if text=="second via dashboard"),
+                )
+        })
+    });
+    assert_eq!(fx.requests().len(), 2);
+    assert_eq!(h.state.selected, Some(normal));
+    assert_eq!(h.state.current().unwrap().draft.text, "keep this draft");
+    h.dispatch(Command::Dashboard(D::Close));
+    assert_eq!(h.state.selected, Some(normal));
 }

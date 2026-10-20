@@ -51,6 +51,20 @@ pub fn build(state: &AppState, demo: Option<&DemoControls>) -> Vec<Cmd> {
     let has_conv = state.current().is_some();
     let mut v = vec![
         cmd(
+            "Orchestration: open dashboard",
+            "Navigation",
+            Some("Ctrl+Shift+A"),
+            true,
+            Run::Dispatch(Command::Dashboard(pipkin_core::dashboard::Command::Open)),
+        ),
+        cmd(
+            "Orchestration: return to conversation",
+            "Navigation",
+            None,
+            state.dashboard.open,
+            Run::Dispatch(Command::Dashboard(pipkin_core::dashboard::Command::Close)),
+        ),
+        cmd(
             "New conversation",
             "Conversation",
             Some("Ctrl+N"),

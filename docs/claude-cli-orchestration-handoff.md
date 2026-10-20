@@ -1,6 +1,24 @@
 # Claude CLI orchestration — implementation handoff
 
-## Main commit qualification — 2026-10-19
+## Dashboard integration — 2026-10-19
+
+The owner authorized completion and publication of the dashboard after the isolated CLI fixes
+commit below. Protocol42 now adds global activity, store-only observation, run-guarded Stop
+and linked child follow-ups. Schema35 adds a compact covering index for child summaries with
+the standard pre-migration backup; SQLite maintains it in the same transactions as its source
+rows. Existing transcript and result data stays unchanged.
+
+The dashboard has separate observation state and one explicit secondary root attachment.
+Native and Claude orchestration child follow-ups use their original permissions and recorded
+context, create a new linked child, and never replay old requests. Unknown control receipts
+restore as lookup-only. Ordinary CLI Coding retains its existing lifecycle and capability
+limits. No new Claude prompts were spent.
+
+Current tests, native observations, performance measurements and limitations are recorded in
+[the dashboard plan](orchestration-dashboard-plan.md). The earlier “no dashboards” statements
+in this handoff describe historical slices and no longer exclude this authorized feature.
+
+## Historical CLI-fixes commit qualification — 2026-10-19
 
 The CLI stream, presentation, lifetime, clean-Stop continuation and historical recovery fixes
 were isolated from the unfinished orchestration dashboard work before commit. The committed

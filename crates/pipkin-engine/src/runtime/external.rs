@@ -499,6 +499,14 @@ impl Shared {
     }
 
     pub(super) async fn stop_external_prompt(&self, session: &str) -> Result<Reply, ProtoError> {
+        self.stop_external_prompt_expecting(session, None).await
+    }
+
+    pub(super) async fn stop_external_prompt_expecting(
+        &self,
+        session: &str,
+        expected: Option<u64>,
+    ) -> Result<Reply, ProtoError> {
         self.require_external_root(session)?;
         let sess = self.session(session)?;
         let _lock = sess.lock.lock().await;
@@ -508,6 +516,9 @@ impl Shared {
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
             .map(|a| (a.run, a.cancel.clone()));
+        if expected.is_some() && active.as_ref().map(|(run, _)| *run) != expected {
+            return Err(super::session::run_ended());
+        }
         let Some((run, cancel)) = active else {
             return Ok(Reply::Stopping { run: None });
         };

@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use super::{Result, StoreError};
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: u32 = 34;
+pub const SCHEMA_VERSION: u32 = 35;
 
 const V1: &str = r#"
 CREATE TABLE meta (
@@ -495,9 +495,20 @@ CREATE INDEX runs_by_session_ended ON runs(session, ended_at DESC);
 ALTER TABLE subagent_tasks ADD COLUMN continues INTEGER;
 "#;
 const V34: &str = include_str!("external/stop_recovery.sql");
+// A compact, transactionally maintained activity projection. SQLite backfills this covering
+// index on upgrade; reads never walk large retained task results/launch bodies.
+const V35: &str = r#"
+CREATE INDEX subagent_tasks_activity_cover ON subagent_tasks (
+    root, child, parent_session, child_session, substr(task, 1, 160), status,
+    result IS NOT NULL, created_at, updated_at,
+    CASE WHEN json_valid(launch) AND json_type(launch, '$.profile') = 'text'
+         THEN json_extract(launch, '$.profile') END,
+    origin, note, continues
+);
+"#;
 const MIGRATIONS: &[&str] = &[
     V1, V2, V3, "", "", V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19, V20, V21,
-    V22, V23, V24, V25, V26, V27, V28, V29, V30, V31, V32, V33, V34,
+    V22, V23, V24, V25, V26, V27, V28, V29, V30, V31, V32, V33, V34, V35,
 ];
 
 /// Historical-schema fixtures remove v33 and later objects before setting an older version.
@@ -514,6 +525,7 @@ pub(crate) fn remove_v33_for_test(c: &Connection) -> Result<()> {
 /// Restore the previous immutable-binding trigger for historical migration fixtures.
 #[cfg(test)]
 pub(crate) fn remove_v34_for_test(c: &Connection) -> Result<()> {
+    c.execute_batch("DROP INDEX IF EXISTS subagent_tasks_activity_cover;")?;
     c.execute_batch("DROP TRIGGER cli_binding_immutable; DROP TABLE cli_stop_recoveries;")?;
     let original = include_str!("external.sql");
     let start = original
