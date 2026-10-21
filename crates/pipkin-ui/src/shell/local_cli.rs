@@ -4,8 +4,9 @@ mod guided;
 mod tests;
 use gpui::{App, Context, IntoElement, ParentElement, Role, Styled, Window, div, prelude::*, px};
 use pipkin_core::{
-    AppState, CliMode, CliModel, Command as CoreCommand, LOCAL_CLI_RECOVERY_CAPACITY,
-    LocalCliCommand as C, LocalCliDraft, LocalCliStage, LocalCliTarget, Mode,
+    AppState, CliMode, CliModel, Command as CoreCommand, ConversationId,
+    LOCAL_CLI_RECOVERY_CAPACITY, LocalCliCommand as C, LocalCliDraft, LocalCliStage,
+    LocalCliTarget, Mode,
 };
 
 use super::{
@@ -67,20 +68,61 @@ fn stage_label(stage: LocalCliStage) -> &'static str {
 }
 
 impl Workspace {
+    fn pending_cli_reconnect(&self, id: ConversationId, cx: &App) -> bool {
+        let s = self.state(cx);
+        s.local_cli.guided
+            && s.local_cli.stage != LocalCliStage::Created
+            && matches!(&s.local_cli.target, Some(LocalCliTarget::Existing { conversation, generation, session })
+                if *conversation == id
+                    && s.conversation(id).is_some_and(|c| c.generation == *generation)
+                    && self.model.read(cx).local_cli_session(id) == Some(session))
+    }
+
+    pub(super) fn local_cli_reconnect_enabled(&self, id: ConversationId, cx: &App) -> bool {
+        let s = self.state(cx);
+        s.conversation(id).is_some_and(|c| c.profile.is_local_cli())
+            && !s.owned_elsewhere(id)
+            && !s.conversation_is_closed(id)
+            && self.model.read(cx).local_cli_session(id).is_some()
+            && (self.pending_cli_reconnect(id, cx) || s.local_cli_availability().begin)
+    }
+
+    pub(super) fn open_local_cli_for(
+        &mut self,
+        id: ConversationId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.local_cli_reconnect_enabled(id, cx) {
+            return;
+        }
+        // Dismissal/reopening must not discard tickets or resend an uncertain check.
+        if !self.pending_cli_reconnect(id, cx) {
+            let session = self.model.read(cx).local_cli_session(id).unwrap().clone();
+            self.local_cli_advanced = false;
+            self.dispatch(
+                CoreCommand::LocalCli(C::BeginGuidedExisting {
+                    conversation: id,
+                    session,
+                }),
+                cx,
+            );
+        }
+        self.reconcile_local_cli_inputs(cx);
+        self.open_overlay(Overlay::LocalCli, window, cx);
+    }
+
     pub(super) fn local_cli_entry_enabled(&self, existing: bool, cx: &App) -> bool {
         let s = self.state(cx);
         if !existing && s.pending_cli_conversation_setup() {
             return true; // Viewing an existing flow/recovery does not execute or restart it.
         }
-        if !s.local_cli_availability().begin {
-            return false;
+        if existing {
+            return s
+                .selected
+                .is_some_and(|id| self.local_cli_reconnect_enabled(id, cx));
         }
-        !existing
-            || s.current().is_some_and(|c| {
-                c.profile.is_local_cli()
-                    && !s.owned_elsewhere(c.id)
-                    && self.model.read(cx).local_cli_session(c.id).is_some()
-            })
+        s.local_cli_availability().begin
     }
 
     pub(super) fn open_local_cli(
@@ -92,21 +134,15 @@ impl Workspace {
         if !self.local_cli_entry_enabled(existing, cx) {
             return;
         }
+        if existing {
+            self.open_local_cli_for(self.state(cx).selected.unwrap(), window, cx);
+            return;
+        }
         if !existing && self.state(cx).pending_cli_conversation_setup() {
             self.open_overlay(Overlay::LocalCli, window, cx);
             return;
         }
-        let command = if existing {
-            // Capture both IDs before dispatch/async work; never consult selection on reply.
-            let id = self.state(cx).current().unwrap().id;
-            let session = self.model.read(cx).local_cli_session(id).unwrap().clone();
-            C::BeginGuidedExisting {
-                conversation: id,
-                session,
-            }
-        } else {
-            C::BeginProviderSetup
-        };
+        let command = C::BeginProviderSetup;
         self.local_cli_advanced = false;
         self.dispatch(CoreCommand::LocalCli(command), cx);
         self.reconcile_local_cli_inputs(cx);

@@ -15,6 +15,11 @@ macro_rules! icons {
 }
 
 icons!(
+    "monitor",
+    "git-branch",
+    "box",
+    "list",
+    "chevron-left",
     "plus",
     "search",
     "folder",

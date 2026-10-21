@@ -599,3 +599,109 @@ fn palette_and_receipt_labels_do_not_claim_execution() {
     assert!(status(S::Recorded(R::Consumed)).contains("NOT proof"));
     assert!(WARNING.contains("not a sandbox"));
 }
+
+#[gpui::test]
+fn dashboard_cli_review_targets_graph_thread_and_returns_to_its_dialog(cx: &mut TestAppContext) {
+    let (mut s, context, review) = fixture();
+    s.selected = Some(ConversationId(2));
+    s.conversations[1].draft.text = "other thread draft".into();
+    s.dashboard.open = true;
+    s.dashboard.available = true;
+    s.dashboard.freshness = dashboard::Freshness::Live;
+    s.dashboard.attachment = Some((ConversationId(1), 1));
+    s.apply_event(BackendEvent {
+        conversation: ConversationId(1),
+        generation: 1,
+        op: None,
+        kind: EventKind::ConversationLifecycleReady(true),
+    });
+    let worker = crate::shell::dashboard::test_row(
+        "engine-session",
+        "/captured/project",
+        dashboard::WorkState::Waiting {
+            reason: dashboard::WaitReason::CliApproval,
+        },
+    )
+    .worker;
+    s.dashboard.rows.push(dashboard::Row {
+        worker,
+        conversation: Some(ConversationId(1)),
+        root: Some(ConversationId(1)),
+    });
+    let effects = Rc::new(RefCell::new(vec![]));
+    let captured = effects.clone();
+    let window = cx.add_window(|window, cx| {
+        let model = cx.new(|_| {
+            let mut m = crate::model::Model::new(s);
+            m.set_effect_handler(Box::new(move |e, _| captured.borrow_mut().push(e)));
+            m
+        });
+        Workspace::new(model, Default::default(), window, cx)
+    });
+    let root = window.root(cx).unwrap();
+    let cx = &mut VisualTestContext::from_window(window.into(), cx);
+    root.update_in(cx, |w, window, cx| {
+        w.dashboard.update(cx, |v, cx| {
+            v.open_flyup("engine-session".into(), window, cx)
+        })
+    });
+    cx.run_until_parked();
+    effects.borrow_mut().clear();
+    let bounds = cx
+        .debug_bounds("dashboard-cli-approvals")
+        .expect("dashboard review entry");
+    cx.simulate_click(bounds.center(), Default::default());
+    cx.run_until_parked();
+    root.update_in(cx, |w, window, cx| {
+        assert_eq!(w.overlay, Overlay::CliApprovals);
+        assert_eq!(
+            w.cli_approval_panel.target.unwrap().conversation,
+            ConversationId(1)
+        );
+        let req = last_request(&effects, w, cx);
+        assert_eq!(req.context, context);
+        assert_eq!(req.action, CliApprovalAction::List);
+        w.model.update(cx, |m, cx| {
+            m.apply_event(
+                finish(
+                    &req,
+                    CliApprovalResult::Listed {
+                        run: Some(context.run.clone()),
+                        reviews: vec![review.clone()],
+                    },
+                ),
+                cx,
+            )
+        });
+        w.reconcile_cli_approval_text(cx);
+        w.approval_action(
+            context.clone(),
+            CliApprovalAction::Decide {
+                id: review.id.clone(),
+                decision: D::AllowOnce,
+            },
+            cx,
+        );
+        let decision = last_request(&effects, w, cx);
+        assert_eq!(decision.context, context);
+        assert!(matches!(
+            decision.action,
+            CliApprovalAction::Decide {
+                decision: D::AllowOnce,
+                ..
+            }
+        ));
+        w.close_overlay(window, cx);
+        assert!(w.state(cx).dashboard.open);
+        assert!(w.dashboard.read(cx).thread_dialog_open());
+        assert_eq!(w.state(cx).selected, Some(ConversationId(2)));
+        assert_eq!(
+            w.state(cx).conversations[1].draft.text,
+            "other thread draft"
+        );
+        assert_eq!(
+            w.state(cx).dashboard.selected.as_deref(),
+            Some("engine-session")
+        );
+    });
+}

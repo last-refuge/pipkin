@@ -30,6 +30,7 @@ pub enum Overlay {
     Session,
     About,
     LocalCli,
+    DashboardNew,
     CliApprovals,
     /// A question an extension asked, for the first one waiting.
     Question,
@@ -141,7 +142,11 @@ mod resize_tests {
 }
 
 pub struct Workspace {
-    dashboard: Entity<super::dashboard::DashboardView>,
+    pub(super) dashboard: Entity<super::dashboard::DashboardView>,
+    pub(super) dashboard_new_generation: u64,
+    pub(super) dashboard_new_draft: pipkin_core::LocalCliDraft,
+    pub(super) dashboard_new_pending: Option<String>,
+    pub(super) dashboard_cli_pending: Option<(ConversationId, u64, super::dashboard_cli::Action)>,
     dashboard_open: bool,
     dashboard_return_focus: Option<FocusHandle>,
     pub(super) model: Entity<Model>,
@@ -338,6 +343,18 @@ impl Workspace {
         });
         composer.update(cx, |e, _| e.set_placeholder("Ask anything\u{2026}"));
         let mut subs = Vec::new();
+        subs.push(
+            cx.subscribe_in(&dashboard, window, |this, _, request, window, cx| {
+                this.on_dashboard_cli(request, window, cx);
+            }),
+        );
+        subs.push(cx.subscribe_in(
+            &dashboard,
+            window,
+            |this, _, _: &super::dashboard_cli::NewThread, window, cx| {
+                this.open_dashboard_new(window, cx);
+            },
+        ));
         for editor in [&local_cli_executable, &local_cli_project] {
             subs.push(
                 cx.subscribe_in(editor, window, |this, _, event, window, cx| {
@@ -381,6 +398,10 @@ impl Workspace {
         let initial_entry = model.read(cx).entry;
         let mut ws = Workspace {
             dashboard,
+            dashboard_new_generation: 0,
+            dashboard_new_draft: Default::default(),
+            dashboard_new_pending: None,
+            dashboard_cli_pending: None,
             dashboard_open: false,
             dashboard_return_focus: None,
             model,
@@ -454,7 +475,9 @@ impl Workspace {
             _subs: subs,
         };
         ws.on_model(window, cx);
-        ws.focus_composer(window, cx);
+        if !ws.state(cx).dashboard.open {
+            ws.focus_composer(window, cx);
+        }
         ws
     }
 
@@ -475,6 +498,7 @@ impl Workspace {
         // The composer is absent on welcome and when no conversation is selected.
         // Focusing an unmounted editor disconnects all workspace keyboard actions.
         let h = if self.model.read(cx).entry == onboarding::EntrySurface::Workspace
+            && !self.state(cx).dashboard.open
             && self.state(cx).current().is_some()
         {
             self.composer.read(cx).focus_handle(cx)
@@ -510,6 +534,7 @@ impl Workspace {
     // ------------------------------------------------------------ model → view
 
     fn on_model(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.reconcile_dashboard_cli(window, cx);
         let dashboard_open = self.state(cx).dashboard.open;
         if dashboard_open != self.dashboard_open {
             self.dashboard_open = dashboard_open;
@@ -599,8 +624,17 @@ impl Workspace {
             && self.state(cx).local_cli.guided
             && self.state(cx).local_cli.stage == LocalCliStage::Created
         {
+            if self.state(cx).local_cli.dashboard_creation && self.state(cx).dashboard.open {
+                self.dashboard_new_pending = self
+                    .state(cx)
+                    .local_cli
+                    .created
+                    .as_ref()
+                    .map(|c| c.identity.session.0.clone());
+            }
             self.close_overlay(window, cx);
         }
+        self.reconcile_dashboard_new(window, cx);
         self.reconcile_cli_approval_text(cx);
         match current {
             Some((id, epoch, text)) => {
@@ -1073,7 +1107,8 @@ impl Workspace {
                     window.focus(&handle, cx);
                 }
             }
-            Overlay::ModelSettings
+            Overlay::DashboardNew
+            | Overlay::ModelSettings
             | Overlay::Project
             | Overlay::Prefs
             | Overlay::Session
@@ -1352,6 +1387,12 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.state(cx).dashboard.open {
+            if self.overlay == Overlay::None {
+                self.open_dashboard_new(window, cx);
+            }
+            return;
+        }
         self.close_panel(window, cx);
         self.begin_conversation(window, cx);
     }
@@ -1778,6 +1819,81 @@ mod diagnostics_tests {
     use super::*;
 
     #[gpui::test]
+    fn dashboard_navigation_controls_reach_workspace_actions(cx: &mut TestAppContext) {
+        cx.update(crate::text::init);
+        cx.update(super::super::actions::bind_keys);
+        let created = std::rc::Rc::new(std::cell::Cell::new(false));
+        let captured = created.clone();
+        let window = cx.open_window(gpui::size(px(1600.), px(1000.)), |window, cx| {
+            let mut state = AppState::new(
+                Bootstrap {
+                    projects: vec![Project {
+                        id: ProjectId(1),
+                        name: "Test".into(),
+                        path: "/synthetic".into(),
+                    }],
+                    models: vec![],
+                    conversations: vec![],
+                    now: 0,
+                },
+                Prefs {
+                    selected_project: Some(ProjectId(1)),
+                    ..Default::default()
+                },
+            );
+            state.mode = Mode::Real;
+            state.can_create = true;
+            state.dashboard.open = true;
+            state.dashboard.available = true;
+            let model = cx.new(|_| Model::new(state));
+            model.update(cx, |m, cx| {
+                m.explore_workspace(cx);
+                m.set_effect_handler(Box::new(move |effect, _| {
+                    if matches!(
+                        effect,
+                        Effect::Backend(BackendRequest::CreateConversation { .. })
+                    ) {
+                        captured.set(true);
+                    }
+                }));
+            });
+            Workspace::new(model, PathBuf::new(), window, cx)
+        });
+        let root = window.root(cx).unwrap();
+        let cx = &mut VisualTestContext::from_window(window.into(), cx);
+        cx.run_until_parked();
+        for (id, overlay) in [
+            ("rail-settings", Overlay::Prefs),
+            ("rail-commands", Overlay::Palette),
+        ] {
+            let bounds = cx.debug_bounds(id).unwrap();
+            cx.simulate_click(bounds.center(), Default::default());
+            cx.run_until_parked();
+            root.update_in(cx, |w, window, cx| {
+                assert_eq!(w.overlay, overlay);
+                assert!(w.state(cx).dashboard.open);
+                w.close_overlay(window, cx);
+            });
+            cx.run_until_parked();
+        }
+        let bounds = cx.debug_bounds("graph-new-thread").unwrap();
+        cx.simulate_click(bounds.center(), Default::default());
+        cx.run_until_parked();
+        assert!(
+            !created.get(),
+            "Opening the picker must not create a conversation"
+        );
+        root.update_in(cx, |w, window, cx| {
+            assert!(w.state(cx).dashboard.open);
+            assert_eq!(w.overlay, Overlay::DashboardNew);
+            w.close_overlay(window, cx);
+            w.on_new_conversation(&NewConversation, window, cx);
+            assert_eq!(w.overlay, Overlay::DashboardNew);
+            assert!(w.state(cx).dashboard.open);
+        });
+    }
+
+    #[gpui::test]
     fn empty_workspace_and_welcome_exploration_keep_keyboard_actions(cx: &mut TestAppContext) {
         cx.update(crate::text::init);
         cx.update(super::super::actions::bind_keys);
@@ -2061,7 +2177,7 @@ impl Render for Workspace {
         let t = cx.theme().clone();
         let size = window.viewport_size();
         let width = f32::from(size.width);
-        let nav_docked = self.nav_docked(window);
+        let nav_docked = self.nav_docked(window) && !self.state(cx).dashboard.open;
         let insp_docked = self.inspector_docked(window, cx);
         let nav_w = if nav_docked {
             docked_nav_width(

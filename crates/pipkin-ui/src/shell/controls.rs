@@ -166,6 +166,11 @@ impl RenderOnce for Btn {
             c.bg_active
         };
         let ring = c.accent;
+        #[cfg(test)]
+        let selector = match &self.id {
+            ElementId::Name(name) => Some(name.to_string()),
+            _ => None,
+        };
         let mut el: Stateful<Div> = div()
             .id(self.id)
             .flex()
@@ -213,6 +218,10 @@ impl RenderOnce for Btn {
                         })
                     })
             });
+        #[cfg(test)]
+        if let Some(selector) = selector {
+            el = el.debug_selector(|| selector);
+        }
         if let Some(i) = self.icon {
             el = el.child(icon(i, px(16.0 * t.scale.max(1.0)), fg));
         }

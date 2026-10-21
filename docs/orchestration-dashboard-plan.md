@@ -321,3 +321,150 @@ no live Claude prompts are needed.
 the release build passed. Guarded native checks covered the 1440×960 and 720×800 layouts
 and keyboard access to all three disclosures. Evidence is retained locally in
 `dist/orchestration-dashboard-redesign/`. No real-IME or screen-reader qualification is claimed.
+
+## Workspace graph and quick conversation sheet — 2026-10-20
+
+The dashboard now opens in a spatial workspace graph, with a List fallback. The
+connected engine links to projects keyed by full working directory, then to thread
+cards. Project cards retain loaded attention counts when collapsed. Selection
+highlights the path, expands the target project, and reveals offscreen targets;
+scrolling/middle-drag pans, and zoom/Fit controls adjust the viewport. The ordinary
+conversation sidebar is hidden on this page to give the map the available width.
+A docked attention queue is shown on wide windows; narrow windows retain a compact
+next-attention control.
+
+Fit measures the actual graph canvas and compares column arrangements to maximize
+card size while keeping visible nodes in view. Row heights use visible content
+instead of fixed empty slots; remaining space is distributed between groups and
+incomplete rows are centered. Collapsing or expanding a project can reflow the
+fitted layout. Fit resets panning and pending selection-reveal movement; manual
+zoom starts from the current fitted scale. The `--dense` preview option reproduces
+five projects with 133 simulated threads for visual inspection.
+
+Double-click a thread, press Enter on its focused card, or use Ctrl+L on the selected
+thread to open the conversation dialog, centered horizontally and vertically in
+the application. It reuses the independent Markdown history
+viewer and target-owned composer. Escape, backdrop click, and Keep waiting return
+to the map without discarding a draft. Tab navigation stays inside the sheet.
+Known select, confirmation and text requests use their actual engine-provided
+question/choices. Answers are guarded by session, observer generation, row revision,
+request identity, execution profile, ownership, connection and lifecycle readiness.
+Answer drafts are separate from the thread's next-prompt draft. Sending never
+optimistically marks an engine request resolved.
+
+This is the first implementation of the two design references. The live directory
+still observes one engine connection, not multiple simultaneous servers. It does
+not invent the sample hosts, branch names, test counts, review actions or tool
+activity shown in the mockups. Explicit request loading and CLI permission/connection
+dialogs now stay inside the dashboard (see the CLI integration update below).
+Complex questionnaires still use their existing owning-conversation surface. Automatic advancement
+after an acknowledged action, minimap, model filter, multi-server aggregation and
+inline file review remain follow-up work. The attention queue can be stepped
+manually without leaving the graph.
+
+For reproducible native visual inspection, run:
+
+```sh
+cargo run -p pipkin-app --example orchestration_preview
+```
+
+This explicitly simulated fixture uses no provider, engine, storage or network. It
+shows sample project/thread cards and real UI question controls; actions do not
+execute work. Native verification must still obey `scripts/guard.sh`.
+
+## Visual design pass — 2026-10-20
+
+The dashboard adopts the approved navy-and-amber concept: a compact navigation rail,
+quieter surface borders, raised thread cards within distinct project groups, and teal
+active-work indicators separate from amber attention. The connected workspace remains
+one real engine connection; the mockup's extra servers are not fabricated.
+
+Graph cards show a two-line title, loaded activity/request context, and a compact
+status/model/last-update footer. Project headers display loaded thread and attention
+counts; paging and collapse keep their existing behavior. Fit uses the revised group
+geometry. The header's All threads, Needs you, Running and Finished controls use the
+engine's activity groups, and search uses its existing filter. No model or server
+selector is shown without a corresponding backend capability.
+
+The right inspector leads with the selected request, offers Reply/Open thread and an
+owning-conversation link, and lists other attention items with project and update age.
+It never invents test results, file changes or agent recommendations. With no selection
+or pending attention it shows an all-clear state.
+
+The centered dialog now uses the thread title and project context as its header, with
+no bottom-sheet handle. Pending requests open directly to their question and keyboard-
+selectable option cards or text editor, with history available through View conversation.
+Engine Select/Confirm answers remain typed choices; Input requests accept free text.
+There is no decorative free-text box on choice requests that would imply unsupported
+combined answers. Forms/unloaded requests retain an explicit Open full thread route.
+Existing stale guards, draft isolation, response errors and focus trapping are retained.
+
+The native fixture accepts --decision (preselect a waiting thread), --dense (133 threads),
+--small and --light for visual inspection. It remains isolated and clearly simulated.
+
+## Control wiring audit — 2026-10-20
+
+The audit traced rendered controls through `Command::Dashboard`, the state guards,
+and the native adapter. Read-only queries against the installed engine database
+found 133 sessions in five projects (27 roots, 106 children; 122 native and 11 local
+Claude). Every child had a task record and an existing root. Only aggregate metadata
+was retained in `dist/orchestration-controls/real-profile-summary.json`; no real
+prompt, approval, Stop, or follow-up was submitted during this audit.
+
+| Controls | Route / verification |
+| --- | --- |
+| Search, activity groups, Clear filters, Refresh | Native `Activity` watch; rendered-control tests plus the native adapter/provider fixture verify filtering, restoration, refresh and zero provider requests during observation. Saved search text now stays synchronized, and graph view exposes active filters. |
+| Graph/List, project expansion, Fit, zoom, map rail | Local view state; rendered-control tests. Collapse considers visible projects, selecting an early thread preserves expanded siblings, and zoom-out works below the former manual minimum. |
+| Attention navigation and quick dialog | Uses the new selected session directly; compact navigation no longer reopens its old target. An empty queue is disabled. |
+| History, earlier pages, latest refresh, tool output | Store-only history/output requests with observer generation fences. The dialog now includes latest refresh, allowing return from an older-history page to live updates. |
+| Send, Queue, Steer, Stop, child Follow up | Shared core/UI availability checks, captured target/revision/draft, explicit secondary attachment and durable control receipts. Unsupported local-Claude Queue/Steer, empty messages, unavailable states, read-only/offline/owned targets and pending actions are disabled/refused. The native fixture verifies a secondary send preserves the main selection and draft. |
+| Question answers | Known typed questions retain exact request identity and lifecycle checks. Explicit Load thread requests attaches the selected root to retrieve live questions; CLI permission review opens over the graph. Complex forms retain the full-conversation surface. Observing a graph node never opens an execution attachment just to load a question. |
+| Open conversation, New thread, Commands, Settings | Existing workspace actions; rendered integration tests exercise creation, palette and preferences. Child links now say “Open owning conversation,” matching their destination. |
+| Unknown control outcome | Existing status reconciliation remains lookup-only; it does not resend the original action. |
+
+Native/provider mutation tests use isolated synthetic fixtures. This does not claim
+that a prompt was sent, work stopped, or permission approved on the user's live threads.
+
+
+## Claude CLI dashboard integration — 2026-10-21
+
+The thread dialog now opens the existing full-argument CLI approval review and guided
+reconnect flow over the graph. Both capture the graph thread, independent of the main
+conversation. Closing a panel returns to the same thread dialog and graph position.
+Reopening an unfinished reconnect preserves its setup ticket and pending operation.
+
+An explicit request-loading action creates a secondary attachment with a new generation;
+ordinary graph selection remains store-only. Reconnect's authoritative refresh uses that
+same secondary route while the dashboard is open. Subsequent sends reuse a ready attachment.
+The main selection, its draft, and the target draft are preserved by reconnect. Attachment
+failures appear in the thread dialog and cannot clear a newer attachment's state.
+
+Permission review retains full escaped arguments, Allow once/Deny, exact invocation and
+argument identity, journal-before-send, receipt lookup, expiry and stale-run guards.
+A captured approval panel can stop its graph-selected run without selecting the main chat.
+No permission decision or uncertain request is automatically replayed.
+
+Mode distinctions are unchanged: ordinary Coding runs CLI tools automatically and has no
+per-tool approval dialogs; legacy RestrictedWrite uses the existing approval protocol;
+ChatOnly and Coding remain text-only with no Queue/Steer; ClaudeCliAgent retains its existing
+orchestration capabilities. Reconnect does not convert a saved thread to a different mode.
+External CLI sessions that were not created/known by Pipkin are not imported by this change.
+
+Verification is recorded in `docs/scorecard.md`. Automated mutation coverage uses the
+synthetic CLI fixture, never the user's real account, prompts, or pending approvals.
+
+### Dashboard Claude creation (2026-10-21)
+
+New thread opens a centered picker over the existing graph. It offers Claude Code CLI,
+known project folders (including their paths), another-folder browsing, and the fixed
+Haiku/Sonnet/Opus aliases. Standard creation remains available as a separate action.
+The Claude entry captures these choices without changing the main conversation's provider,
+project or draft, then reuses guided discovery, inspection, connection and journaled creation.
+Opening/canceling the picker sends no CLI request. Reopening unfinished setup preserves it.
+
+After correlated creation and authoritative catalog reconciliation, the secondary attachment
+opens the exact new conversation. The dashboard switches to All and clears filters so the
+idle thread is visible, keeping the graph entity, layout state and viewport alive. When the
+creation dialog is still open, the new thread's conversation sheet opens for the first prompt.
+If the user has left the dashboard, completion does not select their main conversation.
+Existing login, approval policy and uncertain-result recovery are unchanged.

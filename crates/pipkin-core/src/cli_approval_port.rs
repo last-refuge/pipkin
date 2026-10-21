@@ -185,11 +185,39 @@ impl AppState {
         op: Option<OperationId>,
     ) -> Option<Command> {
         if !self.cli_approval_panel_available(id)
-            || self.selected != Some(id)
             || !self
                 .conversation(id)
                 .is_some_and(|c| c.generation == generation && op.is_some() && c.run.op() == op)
         {
+            return None;
+        }
+        if self.dashboard.open {
+            let context = self
+                .cli_approval_context(id)
+                .filter(|c| c.generation == generation && Some(c.run_op) == op)?;
+            let row = self.dashboard.selected_row().filter(|r| {
+                r.conversation == Some(id)
+                    && r.worker.session == context.run.session
+                    && r.worker
+                        .run
+                        .as_ref()
+                        .is_some_and(|run| run.id == context.run.prompt)
+            })?;
+            if self
+                .dashboard_action_unavailable(crate::dashboard::Action::Stop)
+                .is_some()
+            {
+                return None;
+            }
+            return Some(Command::Dashboard(crate::dashboard::Command::Act {
+                session: row.worker.session.clone(),
+                generation: self.dashboard.detail.generation,
+                revision: row.worker.revision,
+                draft_revision: self.dashboard_draft().1,
+                action: crate::dashboard::Action::Stop,
+            }));
+        }
+        if self.selected != Some(id) {
             return None;
         }
         let a = self.availability();

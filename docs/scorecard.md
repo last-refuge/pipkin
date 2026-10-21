@@ -1,5 +1,80 @@
 # Scorecard
 
+## Orchestration control wiring — 2026-10-20
+
+**Implemented:** synchronized and clearable graph filters, functional map navigation,
+correct compact attention selection, stable group expansion, consistent action availability,
+latest-history refresh inside the dialog, and accurate child-conversation link labels.
+
+**Measured focused checks:** 13 dashboard UI/layout tests and the workspace navigation
+integration test passed. Tests click rendered controls and capture scoped backend effects.
+
+**Observed read-only:** installed database metadata contains 133 threads across five
+projects, with 27 roots, 106 children and no orphaned child/root or child/task links.
+No real prompt, approval, Stop or child follow-up was submitted. Audit matrix and
+boundaries: `docs/orchestration-dashboard-plan.md`, control wiring audit.
+
+**Measured full gates:** 2,708 tests passed, zero failed, 13 ignored;
+workspace/all-target Clippy and formatting passed. Source hashes remained unchanged.
+Evidence: `dist/orchestration-controls/qualification.json`.
+
+**Installed:** version `1.1.0-native-117f33310a7e`; locked release build, isolated
+engine probe and installed/package binary checksum comparison passed.
+
+**Unverified:** this audit does not exercise mutations in the user’s live threads or
+claim native mouse, IME, screen-reader or display-scale verification.
+
+## Orchestration visual design — 2026-10-20
+
+**Implemented:** navy surface hierarchy, amber attention, teal running states, compact
+navigation, engine-backed group filters, project group backdrops, two-line thread
+cards, model/update footers, an attention queue and a centered decision-first dialog.
+Choice cards retain typed engine answers; history remains available on demand.
+
+**Observed natively:** owned, isolated simulated Wayland previews at 2400×1450 and
+900×760 logical sizes; dark workspace, centered question and keyboard choice selection,
+compact light-theme dialog, and the five-project/133-thread fixture. Single-thread
+groups were tightened after inspection. Captures: `dist/orchestration-polish/`.
+The existing compositor opacity affects the captures despite opaque application surfaces.
+Preview windows were closed; no real provider requests or user conversations were used.
+
+**Measured focused checks:** eight dashboard tests passed, including option selection
+without submission, history disclosure, answer isolation on thread switch, modal focus
+trapping and Fit geometry. Source hashes are retained beside the captures.
+
+**Initial full-suite failure:** the user runtime tmpfs had only ~376 MiB free while
+backend fixtures copied a ~1,092 MiB helper. The log reported “No space left on device”
+and helper snapshot failures. Verification was rerun with a private disk-backed TMPDIR;
+no backend checks were weakened. The first disk-backed run passed the engine suite but
+failed two non-repository tests because its temporary folders inherited the source Git
+repository. A Git ceiling did not change that result because the application deliberately
+clears inherited Git environment. Qualification therefore uses a private disk-backed
+TMPDIR outside the source repository. Logs: `/tmp/pipkin-polish-*.log`.
+
+**Measured full gates:** 2,701 tests passed, 13 ignored and zero failures; workspace/all-target
+Clippy and formatting passed. The source manifest stayed unchanged through qualification.
+Evidence: `dist/orchestration-polish/qualification.json`.
+
+**Installed:** locked release build and isolated engine handshake passed. Version
+`1.1.0-native-c0a0228f463a` installed through `scripts/setup.sh --install`; its
+binary checksum matches the release build and packaged metadata.
+
+**Unverified:** installed-provider interaction, real IME, screen reader, other platforms,
+other display scales and motion/presentation latency.
+
+## Centered thread dialog — 2026-10-20
+
+**Implemented:** the orchestration thread dialog is centered on both axes within
+the application overlay.
+
+**Measured:** full workspace rerun passed 2,700 tests, with 13 ignored and zero
+failures; all-target Clippy and formatting passed. The initial run failed the
+engine's concurrent publication count assertion (81 events instead of 80); that
+test passed in isolation and in the full rerun. Logs: `/tmp/pipkin-centered-*.log`.
+
+**Unverified natively:** centered dialog appearance. The isolated preview built
+and launched, but guarded input was refused because another application had focus.
+
 ## Dashboard presentation refinement — 2026-10-19
 
 **Implemented:** compact task rows, state icons, quieter badges, a conversation-first detail
@@ -2232,6 +2307,67 @@ do not close those native gates. Native and clean-system qualification remain se
 Full app/engine revisions, environment, artifact checksum, evidence boundaries, and open gates are in
 [v1-release-gates.md](v1-release-gates.md).
 
+## Orchestration workspace graph and thread sheet (2026-10-20)
+
+The first implementation of the graph and fly-up mockups is described in
+[orchestration-dashboard-plan.md](orchestration-dashboard-plan.md#workspace-graph-and-quick-conversation-sheet--2026-10-20).
+
+- **Measured (automated).** Regression tests cover full-path project identity,
+  stable project slots through activity updates, expanding a hidden attention
+  target, authoritative attention clearing, modal focus containment and retained
+  per-thread drafts. The targeted answer test checks observer generation, row
+  revision, valid choices, connection freshness and duplicate submission without
+  changing the selected conversation or optimistically resolving the request.
+  Workspace qualification: **2,698 passed, 0 failed, 13 ignored** with
+  `cargo test -j 2 --workspace --no-fail-fast`; the final focus correction also
+  passed all **227 UI tests**. Workspace Clippy (all targets), formatting and
+  `git diff --check` passed.
+- **Environment failure resolved.** The initial workspace run using default
+  `/tmp` failed 30 CLI permission/socket tests: the permission helper correctly
+  rejects world-writable ancestors. Re-running with `TMPDIR` set to a fresh,
+  private directory under `/run/user/1000` passed the full suite above. No socket
+  provenance checks were weakened. Logs are retained locally at
+  `/tmp/pipkin-graph-private-tests.log`, `/tmp/pipkin-graph-ui-final.log` and
+  `/tmp/pipkin-graph-clippy-final.log`.
+- **Observed (native).** The isolated `orchestration_preview` example rendered four
+  projects and nine simulated threads in a 2400×1450 logical window on the existing
+  125% display. Guarded keyboard selection and Ctrl+L opened the selected pending
+  question in a fly-up. Escape restored the graph with its selected node, highlighted
+  path and attention panel intact. Startup focus on a hidden composer was found and
+  fixed. Local captures: `dist/orchestration-graph/workspace.png` and
+  `dist/orchestration-graph/thread-sheet.png`. The user's existing compositor
+  transparency remains visible; no desktop configuration was changed.
+- **Unverified / follow-up.** Native mouse double-click, panning, narrow-window
+  layouts, real IME and screen-reader interaction were not exercised in this pass.
+  No live provider prompt or real permission approval was sent. The live graph
+  currently observes one engine; multi-server aggregation, minimap, model filter,
+  inline file review and automatic advancement after an acknowledged action remain
+  follow-up work. The preview does not execute work and is labeled simulated.
+
+## Fit workspace layout refinement (2026-10-20)
+
+- **Measured (automated).** Geometry regressions cover the reported five-project
+  distribution, wide versus tall canvas layouts, short project rows, collapsed
+  groups, expanded groups and small/large/extreme aspect ratios. Visible node
+  bounds remain within the fitted canvas; short rows no longer reserve unused
+  thread slots. Final workspace run: **2,700 passed, 0 failed, 13 ignored**,
+  using a private runtime `TMPDIR` and `RUST_TEST_THREADS=8`. Workspace Clippy,
+  formatting and the locked release build passed.
+- **Transient failure.** The first full run failed the existing
+  `helper_closure_before_terminal_preserves_success_and_exit_failure_distinction`
+  engine test with an unexpected cancellation while a release build was also
+  running. It passed in isolation and in the full rerun above; no engine code was
+  changed. This does not establish the cause of that intermittent failure.
+- **Observed (native).** The isolated `orchestration_preview --dense` fixture
+  rendered five projects and 133 simulated threads in a 2400×1450 logical window.
+  Fit arranged three projects across the first row and centered the other two
+  beneath them, using the canvas width while preserving the right attention panel.
+  Capture: `dist/orchestration-graph/fit-workspace.png`. This was an isolated
+  preview; no real conversation or provider action was used.
+- **Unverified.** Native mouse activation of Fit, native interactive resizing and
+  additional display scales were not exercised. Existing compositor transparency
+  remains visible in the capture.
+
 ## Historical prototype scorecard
 
 The measurements, test counts, and recommendation below describe the original prototype; they are not current
@@ -2266,3 +2402,78 @@ GPUI delivered the hard parts on the target machine: real input-handler composer
 
 ### Historical capture matrix status
 Captured (`docs/captures/`): dark streaming + diff, light + diff, light 1024 and 720, palette, selection and paste, persistence recovery, 10,000-message history, steer/queue/running, stopping, stopped with queue kept, scrolled-away with Jump to latest, empty state, dark 720 px with navigation drawer. **Not captured:** failure/recovery scenario, expanded-tool close-up, screen recording.
+
+## 2026-10-21 — Claude CLI controls inside orchestration
+
+The graph's centered thread dialog now opens full CLI approval review and guided
+reconnect without selecting the main conversation. Cold/unloaded CLI threads first
+load their authoritative execution context through an explicit secondary attachment.
+The graph position, dialog, selected thread and drafts survive returning from these
+panels. Pending reconnects reopen without restarting checks or discarding tickets.
+
+Added checks cover:
+
+- Captured graph target versus a different main conversation, including a cold CLI
+  profile and returning focus to the still-open thread dialog.
+- Reconnect's authoritative refresh preserving both drafts and normal selection.
+- Full-argument approval routing, journal-before-decision, and captured Stop refusing
+  a newer graph run. Uncertain Stop exposes status lookup in the thread dialog.
+- Explicit attachment generation/revision fences, offline/read-only restrictions,
+  and stale Open failures not overwriting a newer attachment.
+- Synthetic CLI integration: reconnect, send, permission request, Allow once,
+  completion, and a second prompt on the same secondary attachment without native
+  inference or changes to the main conversation.
+
+Unverified: live-account CLI prompts/approvals, native desktop pointer interaction,
+IME, screen reader and compositor presentation. The automated fixture uses an
+isolated executable and project; no user thread was sent a prompt or permission
+decision. Ordinary Claude Coding keeps its existing automatic-tool policy; legacy
+RestrictedWrite keeps its existing per-request approval protocol.
+
+Measured: the final workspace test run passed **2,714 tests**, with **0 failures**
+and **13 intentionally ignored** tests (`RUST_TEST_THREADS=4`). Clippy for all workspace
+targets and `cargo fmt --all --check` passed without warnings. The synthetic CLI
+workflow completed two prompts and approval/resume cycles on the secondary thread.
+
+Earlier fixture attempts failed because setup inherited the CLI provider, the default
+Overview excluded an idle thread, and the fake executable required its fixed prompt;
+the fixtures now exercise the intended path. The captured Stop test acknowledges
+its durable journal before expecting a backend request. Two engine tests timed out
+during overlapping compilation; both passed in the final run without overlapping builds.
+
+Evidence: `dist/orchestration-cli-dashboard/qualification.json` records source hashes
+and results. Logs: `/tmp/pipkin-cli-dashboard-final-tests.log`,
+`/tmp/pipkin-cli-dashboard-clippy.log`, and `/tmp/pipkin-cli-dashboard-format.log`.
+Installed `1.1.0-native-2adc05fef1f3` using `scripts/setup.sh --install`. The installed app
+checksum matches the release binary (`2adc05fef1f3e70f2d5311ac4d68d01188df1655ff22803fcbedd007d9425f62`). The fresh-profile engine probe
+and installed offline handshake both passed; existing app data was preserved.
+Installer log: `/tmp/pipkin-cli-dashboard-install.log`. The running app was not restarted.
+
+## Dashboard New Claude thread — 2026-10-21
+
+Implemented: centered provider/project/model picker, saved folders plus directory browsing,
+Claude Haiku/Sonnet/Opus selection, inline guided connection setup, exact secondary attachment,
+and return to the created thread's graph dialog. Graph viewport and main conversation/draft
+are retained; successful creation switches to All threads and clears search filters.
+
+Measured: the full workspace suite passed **2,718 tests**, with **0 failures** and
+**13 intentionally ignored** tests. This includes GPUI clicks for project/model choices,
+reopening unfinished setup, opening the newly created thread, keyboard entry, catalog/receipt
+arrival ordering, and creation through the embedded engine with saved project/model checks.
+The engine fixture verified that no prompt was sent and the main draft remained intact.
+
+The first fake-CLI attempt lacked coding-mode help flags; the fixture now advertises them.
+Earlier full-suite attempts were interrupted after sandbox endpoint restrictions and the
+approval fixtures' deliberate rejection of `/tmp` socket ancestry. The passing run used an
+owned private directory under `~/.cache`, outside the repository, with four test workers.
+Evidence: `/tmp/pipkin-new-thread-private-tests.log`.
+Native visual inspection, actual Claude account authentication and real model inference remain
+unverified for this change. Automated tests use a synthetic CLI and send no real prompts.
+
+Clippy for all workspace targets and `cargo fmt --all --check` passed without warnings.
+Logs: `/tmp/pipkin-new-thread-clippy.log`, `/tmp/pipkin-new-thread-format.log`.
+
+Installed `1.1.0-native-9a2c254b67fd` with `scripts/setup.sh --install`. Source and installed offline
+engine probes passed; the installed executable matches the release binary. Existing app data
+was preserved and the running app was not restarted. Evidence: `dist/orchestration-new-thread/qualification.json`
+and `/tmp/pipkin-new-thread-install.log`.

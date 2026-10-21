@@ -370,3 +370,64 @@ fn pending_discovery_is_bounded_and_capability_does_not_issue_requests() {
         .is_empty()
     );
 }
+
+#[test]
+fn dashboard_approval_stop_is_scoped_to_graph_selection_and_run() {
+    let mut s = state();
+    s.selected = Some(ConversationId(2));
+    let req = discover(&mut s, 1);
+    install(&mut s, &req);
+    let context = s.cli_approval_context(ConversationId(1)).unwrap().clone();
+    s.dashboard.open = true;
+    s.dashboard.freshness = dashboard::Freshness::Live;
+    s.dashboard.selected = Some("s1".into());
+    s.dashboard.rows.push(dashboard::Row {
+        worker: serde_json::from_value(serde_json::json!({"session":"s1","revision":3,"kind":"root","root":"s1","cwd":"/p","state":{"state":"waiting","reason":"cliApproval"},"run":{"id":41,"phase":"running","startedAtMs":1},"createdAtMs":0,"updatedAtMs":0,"sortAtMs":0})).unwrap(),
+        conversation: Some(ConversationId(1)), root: Some(ConversationId(1)),
+    });
+    s.dashboard.rows[0].worker.run.as_mut().unwrap().id = 42;
+    assert!(
+        s.cli_approval_stop_command(
+            context.conversation,
+            context.generation,
+            Some(context.run_op)
+        )
+        .is_none(),
+        "a newer graph run must not be stopped by an old review"
+    );
+    s.dashboard.rows[0].worker.run.as_mut().unwrap().id = 41;
+    let stop = s
+        .cli_approval_stop_command(
+            context.conversation,
+            context.generation,
+            Some(context.run_op),
+        )
+        .expect("captured dashboard stop");
+    assert!(matches!(
+        stop,
+        Command::Dashboard(dashboard::Command::Act {
+            action: dashboard::Action::Stop,
+            ..
+        })
+    ));
+    let out = s.dispatch(stop);
+    assert!(!out.effects.iter().any(|e| matches!(e, Effect::Backend(_))));
+    let request = s.dashboard.control.as_ref().unwrap().request.clone();
+    let out = s.dashboard_event(dashboard::Event::Persisted {
+        request,
+        result: Ok(()),
+    });
+
+    assert!(out.effects.iter().any(|e| matches!(e, Effect::Backend(BackendRequest::Dashboard(dashboard::Request::Control { session, run: Some(41), action: dashboard::Action::Stop, .. })) if session == "s1")));
+    assert_eq!(s.selected, Some(ConversationId(2)));
+    s.dashboard.control = None;
+    s.dashboard.selected = None;
+    assert!(
+        s.cli_approval_stop_command(
+            context.conversation,
+            context.generation,
+            Some(context.run_op)
+        )
+        .is_none()
+    );
+}

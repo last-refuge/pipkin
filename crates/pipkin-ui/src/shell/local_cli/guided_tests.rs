@@ -277,3 +277,227 @@ fn guided_confirmation_is_visible_explicit_and_dispatches_only_one_check(cx: &mu
             })
     )));
 }
+
+#[gpui::test]
+fn dashboard_reconnect_captures_other_thread_and_reopens_without_restarting(
+    cx: &mut TestAppContext,
+) {
+    let mut s = AppState::new(
+        Bootstrap {
+            projects: vec![],
+            models: vec![],
+            now: 1,
+            conversations: vec![
+                (ConversationId(1), ProjectId(1), "normal".into(), 1),
+                (ConversationId(2), ProjectId(1), "CLI".into(), 1),
+            ],
+        },
+        Prefs::default(),
+    );
+    s.mode = Mode::Real;
+    s.selected = Some(ConversationId(1));
+    s.dashboard.open = true;
+    s.dashboard.freshness = dashboard::Freshness::Live;
+    s.conversations[0].draft.text = "normal draft".into();
+    s.dashboard.rows.push(dashboard::Row {
+        worker: crate::shell::dashboard::test_row(
+            "cli-session",
+            "/project",
+            dashboard::WorkState::Blocked {
+                reason: "Reconnect required".into(),
+            },
+        )
+        .worker,
+        conversation: Some(ConversationId(2)),
+        root: Some(ConversationId(2)),
+    });
+    s.dashboard.rows[0].worker.execution_backend = dashboard::ExecutionBackend::LocalClaudeCli;
+    let effects = Rc::new(RefCell::new(vec![]));
+    let captured = effects.clone();
+    let window = cx.add_window(|window, cx| {
+        let model = cx.new(|_| {
+            let mut m = crate::model::Model::new(s);
+            m.set_effect_handler(Box::new(move |e, _| captured.borrow_mut().push(e)));
+            m
+        });
+        model.update(cx, |m, cx| {
+            m.set_local_cli_catalog(
+                true,
+                [(ConversationId(2), EngineSessionId("cli-session".into()))],
+                cx,
+            )
+        });
+        Workspace::new(model, Default::default(), window, cx)
+    });
+    let root = window.root(cx).unwrap();
+    let cx = &mut VisualTestContext::from_window(window.into(), cx);
+    root.update_in(cx, |w, window, cx| {
+        w.dashboard
+            .update(cx, |v, cx| v.open_flyup("cli-session".into(), window, cx))
+    });
+    cx.run_until_parked();
+    effects.borrow_mut().clear();
+    let bounds = cx
+        .debug_bounds("dashboard-cli-reconnect")
+        .expect("reconnect from thread dialog");
+    cx.simulate_click(bounds.center(), Default::default());
+    cx.run_until_parked();
+    root.update(cx, |w, cx| {
+        assert_eq!(w.overlay, Overlay::None);
+        assert!(w.dashboard_cli_pending.is_some());
+        let generation = w
+            .state(cx)
+            .conversation(ConversationId(2))
+            .unwrap()
+            .generation;
+        w.model.update(cx, |m, cx| {
+            m.state.conversations[1].opened = true;
+            m.apply_event(
+                BackendEvent {
+                    conversation: ConversationId(2),
+                    generation,
+                    op: None,
+                    kind: EventKind::ExecutionContext {
+                        profile: ExecutionProfile::LocalCliCoding,
+                        execution_blocked: Some("Reconnect required".into()),
+                    },
+                },
+                cx,
+            );
+            m.apply_event(
+                BackendEvent {
+                    conversation: ConversationId(2),
+                    generation,
+                    op: None,
+                    kind: EventKind::ConversationLifecycleReady(true),
+                },
+                cx,
+            );
+        });
+    });
+    cx.run_until_parked();
+    root.update_in(cx, |w, window, cx| {
+        assert_eq!(w.overlay, Overlay::LocalCli);
+        assert!(matches!(&w.state(cx).local_cli.target, Some(LocalCliTarget::Existing { conversation: ConversationId(2), session, .. }) if session.0 == "cli-session"));
+        let revision = w.state(cx).local_cli.input_revision();
+        assert!(!w.state(cx).local_cli_availability().session_status);
+        w.close_overlay(window, cx);
+        effects.borrow_mut().clear();
+        w.open_local_cli_for(ConversationId(2), window, cx);
+        assert_eq!(w.state(cx).local_cli.input_revision(), revision);
+        assert!(effects.borrow().is_empty(), "reopening is not a new request");
+        assert_eq!(w.state(cx).selected, Some(ConversationId(1)));
+        assert_eq!(w.state(cx).conversations[0].draft.text, "normal draft");
+        assert!(w.state(cx).dashboard.open);
+        w.close_overlay(window, cx);
+        assert!(w.dashboard.read(cx).thread_dialog_open());
+    });
+}
+
+#[gpui::test]
+fn dashboard_new_picker_captures_project_and_model_without_leaving_graph(cx: &mut TestAppContext) {
+    cx.update(crate::text::init);
+    let effects = Rc::new(RefCell::new(Vec::new()));
+    let captured = effects.clone();
+    let mut s = state();
+    s.projects = vec![
+        Project {
+            id: ProjectId(1),
+            name: "First".into(),
+            path: "/first".into(),
+        },
+        Project {
+            id: ProjectId(2),
+            name: "Second".into(),
+            path: "/second".into(),
+        },
+    ];
+    s.dashboard.open = true;
+    let window = cx.open_window(gpui::size(px(1600.), px(1000.)), |window, cx| {
+        let model = cx.new(|_| {
+            let mut m = crate::model::Model::new(s);
+            m.set_effect_handler(Box::new(move |e, _| captured.borrow_mut().push(e)));
+            m
+        });
+        model.update(cx, |m, cx| m.explore_workspace(cx));
+        Workspace::new(model, Default::default(), window, cx)
+    });
+    let root = window.root(cx).unwrap();
+    let cx = &mut VisualTestContext::from_window(window.into(), cx);
+    cx.run_until_parked();
+    let bounds = cx.debug_bounds("graph-new-thread").unwrap();
+    cx.simulate_click(bounds.center(), Default::default());
+    cx.run_until_parked();
+    root.update(cx, |w, cx| {
+        assert_eq!(w.overlay, Overlay::DashboardNew);
+        assert!(w.state(cx).dashboard.open);
+    });
+    assert!(
+        !effects
+            .borrow()
+            .iter()
+            .any(|e| matches!(e, Effect::Backend(BackendRequest::LocalCli { .. })))
+    );
+    let bounds = cx.debug_bounds("new-cli-project-2").unwrap();
+    cx.simulate_click(bounds.center(), Default::default());
+    cx.run_until_parked();
+    let bounds = cx.debug_bounds("new-cli-opus").unwrap();
+    cx.simulate_click(bounds.center(), Default::default());
+    cx.run_until_parked();
+    let bounds = cx.debug_bounds("new-thread-create").unwrap();
+    cx.simulate_click(bounds.center(), Default::default());
+    cx.run_until_parked();
+    root.update_in(cx, |w, window, cx| {
+        assert_eq!(w.overlay, Overlay::LocalCli);
+        assert!(w.state(cx).dashboard.open);
+        assert_eq!(w.state(cx).local_cli.draft.project, "/second");
+        assert_eq!(w.state(cx).local_cli.draft.model, CliModel::Opus);
+        let generation = w.state(cx).local_cli.input_revision();
+        w.close_overlay(window, cx);
+        w.open_dashboard_new(window, cx);
+        assert_eq!(w.overlay, Overlay::LocalCli);
+        assert_eq!(w.state(cx).local_cli.input_revision(), generation);
+    });
+    assert_eq!(
+        effects
+            .borrow()
+            .iter()
+            .filter(|e| matches!(
+                e,
+                Effect::Backend(BackendRequest::LocalCli {
+                    request: LocalCliRequest::Discover { .. },
+                    ..
+                })
+            ))
+            .count(),
+        1
+    );
+    root.update(cx, |w, cx| {
+        w.model.update(cx, |m, cx| {
+            m.state.local_cli.stage = LocalCliStage::Created;
+            m.state.local_cli.created = Some(LocalCliCreated {
+                identity: LocalCliCreationId {
+                    session: EngineSessionId("new-cli".into()),
+                    setup: SetupId("setup".into()),
+                },
+                conversation: ConversationId(3),
+            });
+            m.state
+                .dashboard
+                .rows
+                .push(crate::shell::dashboard::test_row(
+                    "new-cli",
+                    "/second",
+                    dashboard::WorkState::Ready,
+                ));
+            cx.notify();
+        });
+    });
+    cx.run_until_parked();
+    root.update(cx, |w, cx| {
+        assert_eq!(w.overlay, Overlay::None);
+        assert!(w.state(cx).dashboard.open);
+        assert_eq!(w.state(cx).dashboard.selected.as_deref(), Some("new-cli"));
+        assert!(w.dashboard.read(cx).thread_dialog_open());
+    });
+}

@@ -1,4 +1,14 @@
 //! Independent activity page. The history projection uses the ordinary transcript renderer.
+mod cli;
+#[cfg(test)]
+mod controls_tests;
+mod dialog;
+mod graph;
+mod graph_layout;
+#[cfg(test)]
+pub(in crate::shell) use graph_layout::tests::row as test_row;
+mod presentation;
+
 use super::controls::{Btn, BtnKind, chip, icon};
 use crate::{
     model::Model,
@@ -14,10 +24,18 @@ use pipkin_core::{
 
 pub(super) struct DashboardView {
     focus: FocusHandle,
+    modal_focus: FocusHandle,
+    modal_open: bool,
+    modal_history: bool,
+    request_choice: Option<(String, UiAnswer)>,
+    graph: graph_layout::GraphState,
     model: Entity<Model>,
     projection: Entity<Model>,
     transcript: Entity<TranscriptView>,
     editor: Entity<ComposerEditor>,
+    answer_editor: Entity<ComposerEditor>,
+    answer_key: Option<(String, String)>,
+    answer_drafts: std::collections::BTreeMap<(String, String), String>,
     search: Entity<ComposerEditor>,
     scroll: UniformListScrollHandle,
     filters_open: bool,
@@ -28,6 +46,8 @@ pub(super) struct DashboardView {
     draft_key: (Option<String>, u64),
     _subs: Vec<Subscription>,
 }
+impl EventEmitter<super::dashboard_cli::NewThread> for DashboardView {}
+impl EventEmitter<super::dashboard_cli::Request> for DashboardView {}
 impl DashboardView {
     pub fn new(model: Entity<Model>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let state = AppState::new(
@@ -70,12 +90,33 @@ impl DashboardView {
             e.set_label("Message to selected task", cx);
             e.set_placeholder("Message this task…");
         });
+        let answer_editor = cx.new(|cx| ComposerEditor::new(window, cx));
+        answer_editor.update(cx, |e, cx| {
+            e.set_label("Answer to selected question", cx);
+            e.set_placeholder("Your answer…");
+        });
         let search = cx.new(|cx| ComposerEditor::single_line(window, cx));
         search.update(cx, |e, cx| {
             e.set_label("Filter workers", cx);
-            e.set_placeholder("Search tasks…");
+            e.set_placeholder("Find a thread…");
         });
         let subs = vec![
+            cx.subscribe_in(
+                &answer_editor,
+                window,
+                |this, _, event, window, cx| match event {
+                    ComposerEvent::Changed => {
+                        if let Some(key) = &this.answer_key {
+                            this.answer_drafts
+                                .insert(key.clone(), this.answer_editor.read(cx).text());
+                        }
+                        cx.notify();
+                    }
+                    ComposerEvent::Submit => this.submit_reply(cx),
+                    ComposerEvent::Escape => this.close_flyup(window, cx),
+                    _ => {}
+                },
+            ),
             cx.observe_in(&model, window, |this, _, _, cx| this.sync(cx)),
             cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
                 ComposerEvent::Changed => {
@@ -83,22 +124,15 @@ impl DashboardView {
                     this.send(D::Edit(text), cx);
                 }
                 ComposerEvent::Submit => {
-                    let action = this.model.read(cx).state.dashboard.selected_row().map(|r| {
-                        if r.finished_child() {
-                            Control::FollowUp
-                        } else if r.worker.kind == d::WorkerKind::Child {
-                            Control::Steer
-                        } else {
-                            Control::Send
-                        }
-                    });
-                    if let Some(action) = action {
-                        this.act(action, cx);
-                    }
+                    this.submit_reply(cx);
                 }
                 ComposerEvent::Escape => {
-                    this.send(D::Back, cx);
-                    this.focus_list(window, cx);
+                    if this.modal_open {
+                        this.close_flyup(window, cx);
+                    } else {
+                        this.send(D::Back, cx);
+                        this.focus_list(window, cx);
+                    }
                 }
                 _ => {}
             }),
@@ -113,10 +147,18 @@ impl DashboardView {
         ];
         let mut view = Self {
             focus: cx.focus_handle(),
+            modal_focus: cx.focus_handle(),
+            modal_open: false,
+            modal_history: false,
+            request_choice: None,
+            graph: graph_layout::GraphState::default(),
             model,
             projection,
             transcript,
             editor,
+            answer_editor,
+            answer_key: None,
+            answer_drafts: Default::default(),
             search,
             scroll: UniformListScrollHandle::new(),
             filters_open: false,
@@ -139,7 +181,10 @@ impl DashboardView {
             return;
         }
         // A composing editor must retain its marked range, including when Tab is pressed.
-        if self.editor.read(cx).is_composing() || self.search.read(cx).is_composing() {
+        if self.editor.read(cx).is_composing()
+            || self.answer_editor.read(cx).is_composing()
+            || self.search.read(cx).is_composing()
+        {
             cx.stop_propagation();
             return;
         }
@@ -150,7 +195,11 @@ impl DashboardView {
             } else {
                 window.focus_next(cx);
             }
-            if self.focus.contains_focused(window, cx) {
+            if if self.modal_open {
+                self.modal_focus.contains_focused(window, cx)
+            } else {
+                self.focus.contains_focused(window, cx)
+            } {
                 window.prevent_default();
                 cx.stop_propagation();
                 return;
@@ -174,10 +223,53 @@ impl DashboardView {
             self.send(D::Select(row.worker.session.clone()), cx);
         }
     }
-    pub(super) fn focus_input(&self, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+    pub(super) fn focus_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.graph.list && !self.modal_open {
+            if let Some(id) = self.selected.clone() {
+                self.open_flyup(id, window, cx);
+            }
+            return;
+        }
+        let question = self
+            .model
+            .read(cx)
+            .state
+            .dashboard
+            .selected_row()
+            .filter(|row| requires_request_ui(row))
+            .and_then(|row| self.current_request(row, cx));
+        if question.is_some_and(|q| q.kind == UiRequestKind::Input) {
+            window.focus(&self.answer_editor.read(cx).focus_handle(cx), cx);
+        } else if self
+            .model
+            .read(cx)
+            .state
+            .dashboard
+            .selected_row()
+            .is_some_and(requires_request_ui)
+        {
+            window.focus(
+                if self.graph.list {
+                    &self.focus
+                } else {
+                    &self.modal_focus
+                },
+                cx,
+            );
+        } else {
+            window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+        }
     }
-    pub(super) fn focus_history(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn focus_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.graph.list && !self.modal_open {
+            if let Some(id) = self.selected.clone() {
+                self.open_flyup(id, window, cx);
+            } else {
+                return;
+            }
+        }
+        self.modal_history = true;
+        cx.notify();
         window.focus(&self.transcript.read(cx).focus_handle(cx), cx);
     }
     fn send(&self, command: D, cx: &mut Context<Self>) {
@@ -189,6 +281,9 @@ impl DashboardView {
         let Some(row) = state.dashboard.selected_row() else {
             return;
         };
+        if requires_request_ui(row) {
+            return;
+        }
         self.send(
             D::Act {
                 session: row.worker.session.clone(),
@@ -202,17 +297,46 @@ impl DashboardView {
     }
     fn sync(&mut self, cx: &mut Context<Self>) {
         let state = &self.model.read(cx).state;
+        self.graph.sync(&state.dashboard);
+        let dashboard_open = state.dashboard.open;
         let detail = state.dashboard.detail.clone();
         let selected = state.dashboard.selected.clone();
         let prefs = state.prefs.clone();
+        let search_text = state.dashboard.filter.text.clone().unwrap_or_default();
+        let answer_key = state.dashboard.selected_row().and_then(|r| {
+            r.conversation
+                .and_then(|id| state.conversation(id))
+                .and_then(|c| c.ui_requests.first())
+                .map(|q| (r.worker.session.clone(), q.id.clone()))
+        });
         let (text, rev) = state.dashboard_draft();
+        if self.search.read(cx).text() != search_text {
+            self.search.update(cx, |e, cx| e.set_text(&search_text, cx));
+        }
         let key = (selected.clone(), rev);
         if key != self.draft_key {
             self.draft_key = key;
             self.editor.update(cx, |e, cx| e.set_text(&text, cx));
         }
+        if answer_key != self.answer_key {
+            self.answer_key = answer_key;
+            let answer = self
+                .answer_key
+                .as_ref()
+                .and_then(|k| self.answer_drafts.get(k))
+                .cloned()
+                .unwrap_or_default();
+            self.answer_editor
+                .update(cx, |e, cx| e.set_text(&answer, cx));
+        }
         let changed = self.selected != selected;
+        if changed {
+            self.modal_history = false;
+        }
         self.selected = selected;
+        if self.selected.is_none() || !dashboard_open {
+            self.modal_open = false;
+        }
         let output = detail.output.clone();
         let generation = detail.generation;
         self.projection.update(cx, |m, cx| {
@@ -249,6 +373,10 @@ impl DashboardView {
             )
         });
         if changed {
+            self.request_choice = None;
+            if let Some(id) = &self.selected {
+                self.graph.reveal(id);
+            }
             self.details_open = false;
             self.output = None;
         }
@@ -308,12 +436,7 @@ impl DashboardView {
         let Some(row) = state.dashboard.selected_row() else {
             return Btn::new(id).label(label).disabled(true);
         };
-        let closed = row.root.is_some_and(|c| state.conversation_is_closed(c));
-        let disabled = closed
-            || !state.connection.is_ready()
-            || state.dashboard.freshness != d::Freshness::Live
-            || state.dashboard.detail.error.is_some()
-            || state.dashboard.control.is_some();
+        let unavailable = state.dashboard_action_unavailable(action);
         self.button(
             id,
             label,
@@ -325,7 +448,8 @@ impl DashboardView {
                 action,
             },
         )
-        .disabled(disabled)
+        .disabled(unavailable.is_some())
+        .hint(unavailable.unwrap_or(label))
         .kind(if action == Control::Stop {
             BtnKind::Danger
         } else {
@@ -333,15 +457,27 @@ impl DashboardView {
         })
     }
 }
+fn requires_request_ui(row: &d::Row) -> bool {
+    matches!(
+        row.worker.state,
+        d::WorkState::Waiting {
+            reason: d::WaitReason::Question | d::WaitReason::CliApproval
+        }
+    )
+}
+
 // Compact labels live in the presentation layer; the engine's full reason remains available.
 fn status(state: &d::WorkState, c: &crate::theme::Colors) -> (&'static str, &'static str, Hsla) {
     match state {
-        d::WorkState::Running => ("Working", "loader-circle", c.accent),
+        d::WorkState::Running => ("Running", "loader-circle", c.activity),
         d::WorkState::Pending | d::WorkState::Queued => ("Queued", "clock", c.text_muted),
-        d::WorkState::Waiting { .. } => ("Needs you", "circle-alert", c.warning),
+        d::WorkState::Waiting {
+            reason: d::WaitReason::Question | d::WaitReason::CliApproval,
+        } => ("Needs you", "circle-alert", c.accent),
+        d::WorkState::Waiting { .. } => ("Waiting", "clock", c.text_muted),
         d::WorkState::Stopping => ("Stopping", "square", c.warning),
-        d::WorkState::Completing => ("Finishing", "loader-circle", c.accent),
-        d::WorkState::Ready => ("Ready", "circle-check", c.success),
+        d::WorkState::Completing => ("Finishing", "loader-circle", c.activity),
+        d::WorkState::Ready => ("Ready", "clock", c.text_muted),
         d::WorkState::Completed => ("Done", "check", c.success),
         d::WorkState::Failed { .. } => ("Failed", "circle-alert", c.danger),
         d::WorkState::Stopped => ("Stopped", "square", c.text_muted),
@@ -358,13 +494,12 @@ fn project_name(path: &str) -> String {
         .unwrap_or(path)
         .to_owned()
 }
-impl Render for DashboardView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+impl DashboardView {
+    fn render_list(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let c = theme.colors.clone();
         let state = &self.model.read(cx).state;
         let projects = state.projects.clone();
-        let closed_roots = state.prefs.closed_conversations.clone();
         let dash = state.dashboard.clone();
         let selected = dash.selected_row().cloned();
         let narrow = window.viewport_size().width < px(1100.0);
@@ -396,6 +531,7 @@ impl Render for DashboardView {
             .min_h_0()
             .bg(c.bg_app)
             .text_color(c.text)
+            .child(self.view_switch(cx))
             .child(
                 div()
                     .flex()
@@ -847,248 +983,263 @@ impl Render for DashboardView {
             body = body.child(rail);
         }
         if let Some(row) = selected {
-            let (label, symbol, color) = status(&row.worker.state, &c);
-            let view = cx.entity();
-            let mut header = div()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .px(px(16.))
-                .py(px(12.))
-                .when(narrow, |d| {
-                    d.child(self.icon_button(
-                        "back-workers",
-                        "panel-left",
-                        "Back to tasks",
-                        D::Back,
-                    ))
-                })
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w_0()
-                        .gap(px(4.))
-                        .child(
-                            div()
-                                .truncate()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .child(row.title().to_owned()),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(6.))
-                                .text_size(theme.small_size())
-                                .text_color(c.text_muted)
-                                .child(icon("folder", px(12.), c.text_faint))
-                                .child(div().truncate().child(project_name(&row.worker.cwd))),
-                        ),
-                )
-                .child(chip(label, color, color.opacity(0.10), cx).child(icon(
-                    symbol,
-                    px(12.),
-                    color,
-                )))
-                .child(self.icon_button(
-                    "latest-worker-history",
-                    "arrow-down",
-                    "Latest history",
-                    D::Select(row.worker.session.clone()),
-                ))
-                .child(
-                    Btn::new("worker-details")
-                        .icon("ellipsis")
-                        .aria("Task details")
-                        .hint("Task details")
-                        .selected(self.details_open)
-                        .tab_stop(true)
-                        .on_click(move |_, cx| {
-                            view.update(cx, |v, cx| {
-                                v.details_open = !v.details_open;
-                                cx.notify();
-                            })
-                        }),
-                );
-            if let Some(root) = row.root {
-                let model = self.model.clone();
-                header = header.child(
-                    Btn::new("open-owner")
-                        .icon("arrow-right")
-                        .aria("Open conversation and requests")
-                        .hint("Open conversation and requests")
-                        .tab_stop(true)
-                        .on_click(move |_, cx| {
-                            model.update(cx, |m, cx| {
-                                m.dispatch(Command::Dashboard(D::Close), cx);
-                                m.dispatch(Command::SelectConversation(root), cx);
-                            })
-                        }),
-                );
-            }
-            let mut detail = div()
-                .flex()
-                .flex_col()
-                .flex_1()
-                .min_w_0()
-                .min_h_0()
-                .bg(c.bg_surface)
-                .child(header);
-            if self.details_open {
-                let mut info = div()
-                    .mx(px(16.))
-                    .mb(px(8.))
-                    .p(px(12.))
-                    .rounded(px(8.))
-                    .bg(c.bg_pane)
+            body = body.child(self.thread_detail(row, narrow, cx));
+        }
+        page.child(body).into_any_element()
+    }
+    fn thread_detail(&self, row: d::Row, narrow: bool, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme().clone();
+        let c = theme.colors.clone();
+        let state = &self.model.read(cx).state;
+        let dash = state.dashboard.clone();
+        let closed_roots = state.prefs.closed_conversations.clone();
+        let (label, symbol, color) = status(&row.worker.state, &c);
+        let view = cx.entity();
+        let mut header = div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .px(px(16.))
+            .py(px(12.))
+            .when(narrow, |d| {
+                d.child(self.icon_button("back-workers", "panel-left", "Back to tasks", D::Back))
+            })
+            .child(
+                div()
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
-                    .text_size(theme.small_size())
-                    .text_color(c.text_muted)
-                    .child(row.worker.cwd.clone())
+                    .flex_1()
+                    .min_w_0()
+                    .gap(px(4.))
                     .child(
-                        row.worker
-                            .model
-                            .clone()
-                            .unwrap_or("Model unavailable".into()),
+                        div()
+                            .truncate()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(row.title().to_owned()),
                     )
-                    .child(row.label().to_owned());
-                if let Some(parent) = &row.worker.parent {
-                    let name = dash
-                        .rows
-                        .iter()
-                        .find(|r| &r.worker.session == parent)
-                        .map(|r| r.title())
-                        .unwrap_or("Owning conversation");
-                    info = info.child(format!("Child of {name}"));
-                }
-                if let Some(child) = row.worker.continues {
-                    info = info.child(format!("Follow-up to child {child}"));
-                }
-                if row.worker.children_active > 0 {
-                    info = info.child(format!("{} active child tasks", row.worker.children_active));
-                }
-                if row.worker.jobs_active > 0 {
-                    info = info.child(format!("{} background jobs", row.worker.jobs_active));
-                }
-                detail = detail.child(info);
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .text_size(theme.small_size())
+                            .text_color(c.text_muted)
+                            .child(icon("folder", px(12.), c.text_faint))
+                            .child(div().truncate().child(project_name(&row.worker.cwd))),
+                    ),
+            )
+            .child(chip(label, color, color.opacity(0.10), cx).child(icon(symbol, px(12.), color)))
+            .child(self.icon_button(
+                "latest-worker-history",
+                "arrow-down",
+                "Latest history",
+                D::Select(row.worker.session.clone()),
+            ))
+            .child(
+                Btn::new("worker-details")
+                    .icon("ellipsis")
+                    .aria("Task details")
+                    .hint("Task details")
+                    .selected(self.details_open)
+                    .tab_stop(true)
+                    .on_click(move |_, cx| {
+                        view.update(cx, |v, cx| {
+                            v.details_open = !v.details_open;
+                            cx.notify();
+                        })
+                    }),
+            );
+        if let Some(root) = row.root {
+            let model = self.model.clone();
+            header = header.child(
+                Btn::new("open-owner")
+                    .icon("arrow-right")
+                    .aria("Open conversation and requests")
+                    .hint("Open conversation and requests")
+                    .tab_stop(true)
+                    .on_click(move |_, cx| {
+                        model.update(cx, |m, cx| {
+                            m.dispatch(Command::Dashboard(D::Close), cx);
+                            m.dispatch(Command::SelectConversation(root), cx);
+                        })
+                    }),
+            );
+        }
+        let mut detail = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .bg(if self.modal_open {
+                c.bg_elevated
+            } else {
+                c.bg_surface
+            })
+            .when(!self.modal_open, |d| d.child(header));
+        if self.details_open {
+            let mut info = div()
+                .mx(px(16.))
+                .mb(px(8.))
+                .p(px(12.))
+                .rounded(px(8.))
+                .bg(c.bg_pane)
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .text_size(theme.small_size())
+                .text_color(c.text_muted)
+                .child(row.worker.cwd.clone())
+                .child(
+                    row.worker
+                        .model
+                        .clone()
+                        .unwrap_or("Model unavailable".into()),
+                )
+                .child(row.label().to_owned());
+            if let Some(parent) = &row.worker.parent {
+                let name = dash
+                    .rows
+                    .iter()
+                    .find(|r| &r.worker.session == parent)
+                    .map(|r| r.title())
+                    .unwrap_or("Owning conversation");
+                info = info.child(format!("Child of {name}"));
             }
-            // An actionable reason must remain visible without opening metadata.
-            if let d::WorkState::Blocked { reason } = &row.worker.state {
-                detail = detail.child(
-                    div()
-                        .px(px(16.))
-                        .pb(px(8.))
-                        .text_color(c.warning)
-                        .child(reason.clone()),
-                );
+            if let Some(child) = row.worker.continues {
+                info = info.child(format!("Follow-up to child {child}"));
             }
-            if let Some(error) = &dash.detail.error {
-                detail = detail.child(div().px(px(16.)).text_color(c.danger).child(error.clone()));
+            if row.worker.children_active > 0 {
+                info = info.child(format!("{} active child tasks", row.worker.children_active));
             }
+            if row.worker.jobs_active > 0 {
+                info = info.child(format!("{} background jobs", row.worker.jobs_active));
+            }
+            detail = detail.child(info);
+        }
+        // An actionable reason must remain visible without opening metadata.
+        if let d::WorkState::Blocked { reason } = &row.worker.state {
             detail = detail.child(
                 div()
-                    .flex_1()
-                    .w_full()
-                    .min_w_0()
-                    .min_h_0()
-                    .child(self.transcript.clone()),
+                    .px(px(16.))
+                    .pb(px(8.))
+                    .text_color(c.warning)
+                    .child(reason.clone()),
             );
-            if dash.detail.has_older {
-                detail = detail.child(
-                    div().flex().justify_center().gap(px(8.)).child(
-                        self.button("older-worker-history", "Earlier", D::Older)
-                            .compact()
-                            .disabled(dash.detail.loading),
-                    ),
+        }
+        if let Some(error) = &dash.error {
+            detail = detail.child(div().px(px(16.)).text_color(c.danger).child(error.clone()));
+        }
+        if let Some(error) = &dash.detail.error {
+            detail = detail.child(div().px(px(16.)).text_color(c.danger).child(error.clone()));
+        }
+        if let Some(error) = row
+            .conversation
+            .and_then(|id| state.conversation(id))
+            .and_then(|c| c.intent_error.as_ref())
+        {
+            detail = detail.child(div().px(px(16.)).text_color(c.danger).child(error.clone()));
+        }
+        detail = detail.child(
+            div()
+                .flex_1()
+                .w_full()
+                .min_w_0()
+                .min_h_0()
+                .child(self.transcript.clone()),
+        );
+        if dash.detail.has_older {
+            detail = detail.child(
+                div().flex().justify_center().gap(px(8.)).child(
+                    self.button("older-worker-history", "Earlier", D::Older)
+                        .compact()
+                        .disabled(dash.detail.loading),
+                ),
+            );
+        }
+        let closed = row.root.is_some_and(|c| closed_roots.contains(&c.0));
+        if requires_request_ui(&row) {
+            detail = detail.child(self.request_panel(&row, cx));
+        } else if closed {
+            detail = detail.child(
+                div()
+                    .p(px(16.))
+                    .text_size(theme.small_size())
+                    .text_color(c.text_muted)
+                    .child("Reopen this conversation to continue."),
+            );
+        } else {
+            let mut actions = div().flex().items_center().flex_wrap().gap(px(6.));
+            if row.worker.run.as_ref().is_some_and(|r| r.phase.is_some())
+                || (!row.finished_child() && row.worker.kind == d::WorkerKind::Child)
+            {
+                actions = actions.child(
+                    self.control("stop-worker", "Stop", Control::Stop, cx)
+                        .icon("square"),
                 );
             }
-            let closed = row.root.is_some_and(|c| closed_roots.contains(&c.0));
-            if closed {
-                detail = detail.child(
-                    div()
-                        .p(px(16.))
-                        .text_size(theme.small_size())
-                        .text_color(c.text_muted)
-                        .child("Reopen this conversation to continue."),
+            if dash.control.as_ref().is_some_and(|p| p.uncertain) {
+                actions = actions.child(
+                    self.button("check-worker-action", "Check status", D::Reconcile)
+                        .icon("refresh-cw"),
                 );
-            } else {
-                let mut actions = div().flex().items_center().flex_wrap().gap(px(6.));
-                if row.worker.run.as_ref().is_some_and(|r| r.phase.is_some())
-                    || (!row.finished_child() && row.worker.kind == d::WorkerKind::Child)
-                {
-                    actions = actions.child(
-                        self.control("stop-worker", "Stop", Control::Stop, cx)
-                            .icon("square"),
-                    );
-                }
-                if dash.control.as_ref().is_some_and(|p| p.uncertain) {
-                    actions = actions.child(
-                        self.button("check-worker-action", "Check status", D::Reconcile)
-                            .icon("refresh-cw"),
-                    );
-                }
-                actions = actions.child(div().flex_1());
-                if row.worker.kind == d::WorkerKind::Root {
-                    actions = actions
-                        .child(
-                            self.control("queue-worker", "Queue", Control::Queue, cx)
-                                .kind(BtnKind::Ghost)
-                                .hint("Queue a message for this conversation"),
-                        )
-                        .child(
-                            self.control("steer-worker", "Steer", Control::Steer, cx)
-                                .kind(BtnKind::Ghost)
-                                .hint("Guide the current turn"),
-                        )
-                        .child(
-                            self.control("send-worker", "Send", Control::Send, cx)
-                                .kind(BtnKind::Primary)
-                                .icon("arrow-up"),
-                        );
-                } else if row.finished_child() {
-                    actions = actions.child(
-                        self.control("follow-child", "Follow up", Control::FollowUp, cx)
-                            .kind(BtnKind::Primary)
-                            .icon("arrow-up")
-                            .hint("Start a linked child with the recorded context"),
-                    );
-                } else {
-                    actions = actions.child(
-                        self.control("steer-child", "Steer", Control::Steer, cx)
+            }
+            actions = actions.child(div().flex_1());
+            if row.worker.kind == d::WorkerKind::Root {
+                actions = actions
+                    .child(
+                        self.control("queue-worker", "Queue", Control::Queue, cx)
+                            .kind(BtnKind::Ghost)
+                            .hint("Queue a message for this conversation"),
+                    )
+                    .child(
+                        self.control("steer-worker", "Steer", Control::Steer, cx)
+                            .kind(BtnKind::Ghost)
+                            .hint("Guide the current turn"),
+                    )
+                    .child(
+                        self.control("send-worker", "Send", Control::Send, cx)
                             .kind(BtnKind::Primary)
                             .icon("arrow-up"),
                     );
-                }
-                detail = detail.child(
-                    div()
-                        .m(px(16.))
-                        .mt(px(8.))
-                        .p(px(12.))
-                        .rounded(px(12.))
-                        .border_1()
-                        .border_color(c.border_strong)
-                        .bg(c.bg_input)
-                        .flex()
-                        .flex_col()
-                        .gap(px(10.))
-                        .child(
-                            div()
-                                .w_full()
-                                .min_w_0()
-                                .max_h(px(160.))
-                                .min_h(px(48.))
-                                .child(self.editor.clone()),
-                        )
-                        .child(actions),
+            } else if row.finished_child() {
+                actions = actions.child(
+                    self.control("follow-child", "Follow up", Control::FollowUp, cx)
+                        .kind(BtnKind::Primary)
+                        .icon("arrow-up")
+                        .hint("Start a linked child with the recorded context"),
+                );
+            } else {
+                actions = actions.child(
+                    self.control("steer-child", "Steer", Control::Steer, cx)
+                        .kind(BtnKind::Primary)
+                        .icon("arrow-up"),
                 );
             }
-            body = body.child(detail);
+            detail = detail.child(
+                div()
+                    .m(px(16.))
+                    .mt(px(8.))
+                    .p(px(12.))
+                    .rounded(px(12.))
+                    .border_1()
+                    .border_color(c.border_strong)
+                    .bg(c.bg_input)
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.))
+                    .child(
+                        div()
+                            .w_full()
+                            .min_w_0()
+                            .max_h(px(160.))
+                            .min_h(px(48.))
+                            .child(self.editor.clone()),
+                    )
+                    .child(actions),
+            );
         }
-        page.child(body).into_any_element()
+        detail.into_any_element()
     }
 }
 
@@ -1150,5 +1301,186 @@ mod tests {
             effects.borrow().is_empty(),
             "navigation must never dispatch work"
         );
+    }
+    #[gpui::test]
+    fn flyup_traps_focus_and_keeps_target_drafts_on_dismissal(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            crate::text::init(cx);
+            cx.set_global(crate::theme::Theme::new(
+                Theme::Dark,
+                TextSize::Normal,
+                true,
+            ));
+        });
+        let effects = Rc::new(RefCell::new(Vec::new()));
+        let captured = effects.clone();
+        let window = cx.add_window(|window, cx| {
+            let mut state = AppState::new(
+                Bootstrap {
+                    projects: vec![],
+                    models: vec![],
+                    conversations: vec![],
+                    now: 0,
+                },
+                Prefs::default(),
+            );
+            state.dashboard.open = true;
+            state.dashboard.available = true;
+            state.dashboard.rows = vec![
+                super::graph_layout::tests::row(
+                    "one",
+                    "/app",
+                    pipkin_core::dashboard::WorkState::Ready,
+                ),
+                super::graph_layout::tests::row(
+                    "two",
+                    "/other",
+                    pipkin_core::dashboard::WorkState::Ready,
+                ),
+            ];
+            let model = cx.new(|_| Model::new(state));
+            model.update(cx, |m, _| {
+                m.set_effect_handler(Box::new(move |e, _| captured.borrow_mut().push(e)))
+            });
+            DashboardView::new(model, window, cx)
+        });
+        let root = window.root(cx).unwrap();
+        let cx = &mut VisualTestContext::from_window(window.into(), cx);
+        root.update_in(cx, |v, w, cx| v.open_flyup("one".into(), w, cx));
+        cx.run_until_parked();
+        cx.simulate_input("keep this draft");
+        for _ in 0..25 {
+            cx.simulate_keystrokes("tab");
+            root.update_in(cx, |v, w, cx| {
+                assert!(v.modal_focus.contains_focused(w, cx))
+            });
+        }
+        root.update_in(cx, |v, w, cx| {
+            v.close_flyup(w, cx);
+            assert_eq!(
+                v.model.read(cx).state.dashboard_draft().0,
+                "keep this draft"
+            );
+            v.open_flyup("two".into(), w, cx);
+        });
+        cx.run_until_parked();
+        root.update(cx, |v, cx| assert_eq!(v.editor.read(cx).text(), ""));
+        root.update_in(cx, |v, w, cx| v.close_flyup(w, cx));
+        root.update_in(cx, |v, w, cx| v.open_flyup("one".into(), w, cx));
+        cx.run_until_parked();
+        root.update(cx, |v, cx| {
+            assert_eq!(v.editor.read(cx).text(), "keep this draft")
+        });
+        assert!(!effects.borrow().iter().any(|e| matches!(
+            e,
+            pipkin_core::Effect::Backend(
+                pipkin_core::BackendRequest::Submit { .. }
+                    | pipkin_core::BackendRequest::UiRespond { .. }
+            )
+        )));
+    }
+    #[gpui::test]
+    fn decision_options_are_keyboard_selectable_without_submitting_or_losing_context(
+        cx: &mut TestAppContext,
+    ) {
+        use pipkin_core::*;
+        cx.update(|cx| {
+            crate::text::init(cx);
+            cx.set_global(crate::theme::Theme::new(
+                Theme::Dark,
+                TextSize::Normal,
+                true,
+            ));
+        });
+        let effects = Rc::new(RefCell::new(Vec::new()));
+        let captured = effects.clone();
+        let window = cx.add_window(|w, cx| {
+            let mut state = AppState::new(
+                Bootstrap {
+                    projects: vec![],
+                    models: vec![],
+                    conversations: vec![],
+                    now: 0,
+                },
+                Prefs::default(),
+            );
+            state.dashboard.open = true;
+            state.dashboard.available = true;
+            state.dashboard.freshness = dashboard::Freshness::Live;
+            let mut conversation =
+                ConversationState::new(ConversationId(1), ProjectId(1), "Retry policy".into(), 0);
+            conversation.opened = true;
+            conversation.ui_requests.push(UiRequest {
+                id: "retry".into(),
+                kind: UiRequestKind::Select,
+                title: "Which policy?".into(),
+                message: None,
+                items: vec![UiRequestItem {
+                    value: "backoff".into(),
+                    label: "Backoff".into(),
+                    description: Some("With jitter".into()),
+                }],
+                placeholder: None,
+                default_value: None,
+                deadline: None,
+                form: None,
+                source: None,
+            });
+            let generation = conversation.generation;
+            state.dashboard.attachment = Some((conversation.id, generation));
+            state.conversations.push(conversation);
+            state.apply_event(BackendEvent {
+                conversation: ConversationId(1),
+                generation,
+                op: None,
+                kind: EventKind::ConversationLifecycleReady(true),
+            });
+            let mut row = super::graph_layout::tests::row(
+                "one",
+                "/app",
+                dashboard::WorkState::Waiting {
+                    reason: dashboard::WaitReason::Question,
+                },
+            );
+            row.conversation = Some(ConversationId(1));
+            state.dashboard.rows = vec![
+                row,
+                super::graph_layout::tests::row("two", "/other", dashboard::WorkState::Ready),
+            ];
+            let model = cx.new(|_| Model::new(state));
+            model.update(cx, |m, _| {
+                m.set_effect_handler(Box::new(move |e, _| captured.borrow_mut().push(e)))
+            });
+            DashboardView::new(model, w, cx)
+        });
+        let root = window.root(cx).unwrap();
+        let cx = &mut VisualTestContext::from_window(window.into(), cx);
+        root.update_in(cx, |v, w, cx| v.open_flyup("one".into(), w, cx));
+        cx.run_until_parked();
+        cx.simulate_keystrokes("tab tab enter");
+        root.update(cx, |v, _| {
+            assert_eq!(
+                v.request_choice,
+                Some(("retry".into(), UiAnswer::Choice("backoff".into())))
+            );
+            assert!(!v.modal_history);
+        });
+        // Skip Send and open the history disclosure. The chosen answer stays a draft.
+        cx.simulate_keystrokes("tab tab enter");
+        root.update(cx, |v, _| {
+            assert!(v.modal_history);
+            assert!(v.request_choice.is_some());
+        });
+        assert!(
+            !effects
+                .borrow()
+                .iter()
+                .any(|e| matches!(e, Effect::Backend(BackendRequest::UiRespond { .. })))
+        );
+        root.update_in(cx, |v, w, cx| v.open_flyup("two".into(), w, cx));
+        root.update(cx, |v, _| {
+            assert!(v.request_choice.is_none());
+            assert!(!v.modal_history);
+        });
     }
 }

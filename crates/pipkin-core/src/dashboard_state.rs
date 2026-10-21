@@ -1,6 +1,57 @@
 use super::*;
 use crate::dashboard::{self as d, Action, Freshness, Request};
 impl AppState {
+    pub fn dashboard_attachment_ready(&self, id: ConversationId) -> bool {
+        self.conversation(id).is_some_and(|c| {
+            c.opened
+                && c.lifecycle_ready
+                && (self.selected == Some(id)
+                    || self.dashboard.attachment == Some((id, c.generation)))
+        })
+    }
+    pub fn dashboard_attach_available(&self) -> bool {
+        self.mode == Mode::Real
+            && self.dashboard.open
+            && self.connection.is_ready()
+            && self.dashboard.freshness == Freshness::Live
+            && self.read_only.is_none()
+            && self.dashboard.pending_send.is_none()
+            && self.dashboard.control.is_none()
+            && self.dashboard.selected_row().is_some_and(|r| {
+                r.worker.kind == d::WorkerKind::Root
+                    && r.conversation.is_some_and(|id| {
+                        !self.conversation_is_closed(id)
+                            && !self.owned_elsewhere(id)
+                            && !self.local_cli.reconnect_unsettled(id)
+                            && !self.cli_approvals.busy(id)
+                            && self.conversation(id).is_some_and(|c| {
+                                self.dashboard.attachment != Some((id, c.generation))
+                                    || self.dashboard_attachment_ready(id)
+                                    || self.dashboard.attachment_error.is_some()
+                            })
+                    })
+            })
+    }
+
+    /// Called only by explicit request loading or a verified reconnect, never observation.
+    pub(crate) fn dashboard_attach(&mut self, id: ConversationId) -> Outcome {
+        let Some(c) = self.conv_mut(id) else {
+            return Outcome::default();
+        };
+        c.generation += 1;
+        c.opened = false;
+        c.lifecycle_ready = false;
+        c.status_check_pending = false;
+        c.changes_state = ChangesState::Unscanned;
+        c.intent_error = None;
+        let generation = c.generation;
+        self.dashboard.attachment = Some((id, generation));
+        self.dashboard.attachment_error = None;
+        Self::dashboard_request(Request::Attach {
+            conversation: id,
+            generation,
+        })
+    }
     fn dashboard_request(request: Request) -> Outcome {
         Outcome {
             effects: vec![Effect::Backend(BackendRequest::Dashboard(request))],
@@ -35,12 +86,136 @@ impl AppState {
             .cloned()
             .unwrap_or_default()
     }
+    pub fn dashboard_answer_ready(&self) -> bool {
+        self.dashboard
+            .selected_row()
+            .and_then(|r| r.conversation)
+            .is_some_and(|id| {
+                self.dashboard.open
+                    && self.connection.is_ready()
+                    && self.dashboard.freshness == Freshness::Live
+                    && self.read_only.is_none()
+                    && self.dashboard.detail.error.is_none()
+                    && !self.conversation_is_closed(id)
+                    && !self.owned_elsewhere(id)
+                    && self.dashboard_attachment_ready(id)
+                    && self.conversation(id).is_some_and(|c| {
+                        c.opened && c.lifecycle_ready && c.execution_blocked.is_none()
+                    })
+            })
+    }
+
+    /// Shared by dashboard controls and dispatch; observation alone never attaches a session.
+    pub fn dashboard_action_unavailable(&self, action: Action) -> Option<&'static str> {
+        use d::{WorkState as W, WorkerKind as K};
+        let Some(row) = self.dashboard.selected_row() else {
+            return Some("Select a thread first.");
+        };
+        if !self.dashboard.open
+            || !self.connection.is_ready()
+            || self.dashboard.freshness != Freshness::Live
+        {
+            return Some("Wait for a live connection before taking action.");
+        }
+        if self.read_only.is_some() {
+            return Some("This workspace is read-only.");
+        }
+        if self.dashboard.detail.error.is_some() {
+            return Some("Refresh this thread before taking action.");
+        }
+        if self.dashboard.control.is_some() || self.dashboard.pending_send.is_some() {
+            return Some("Wait for the pending action, or check its status.");
+        }
+        if action != Action::Stop
+            && row
+                .conversation
+                .is_some_and(|id| self.local_cli.reconnect_unsettled(id))
+        {
+            return Some("Finish the pending Claude connection check before sending a prompt.");
+        }
+        if row
+            .root
+            .is_some_and(|id| self.conversation_is_closed(id) || self.owned_elsewhere(id))
+        {
+            return Some("Open this thread in its owning window before taking action.");
+        }
+        if action != Action::Stop
+            && matches!(
+                row.worker.state,
+                W::Waiting {
+                    reason: d::WaitReason::Question | d::WaitReason::CliApproval
+                }
+            )
+        {
+            return Some("Review the pending question or permission request first.");
+        }
+        if action != Action::Stop && self.dashboard_draft().0.trim().is_empty() {
+            return Some("Write a message first.");
+        }
+        let active = matches!(
+            row.worker.state,
+            W::Running | W::Pending | W::Queued | W::Waiting { .. }
+        );
+        match action {
+            Action::Send
+                if row.worker.kind != K::Root
+                    || row.conversation.is_none()
+                    || !matches!(
+                        row.worker.state,
+                        W::Ready | W::Stopped | W::Failed { .. } | W::Interrupted
+                    ) =>
+            {
+                Some("Send is available when a conversation is ready for its next prompt.")
+            }
+            Action::Queue | Action::Steer if !active => {
+                Some("Queue and Steer require an active thread.")
+            }
+            Action::Queue | Action::Steer
+                if row.worker.execution_backend == d::ExecutionBackend::LocalClaudeCli
+                    || row.worker.execution_backend == d::ExecutionBackend::Unsupported =>
+            {
+                Some(
+                    "This Claude CLI mode does not support Queue or Steer. Send another prompt after the current turn finishes.",
+                )
+            }
+            Action::Queue if row.worker.kind != K::Root => {
+                Some("Child tasks support Steer instead of Queue.")
+            }
+            Action::Stop
+                if !active
+                    || (row.worker.run.as_ref().is_none_or(|r| r.phase.is_none())
+                        && row.worker.child.is_none()) =>
+            {
+                Some("This thread has no active run to stop.")
+            }
+            Action::FollowUp if !row.finished_child() => {
+                Some("Follow up is available for finished child tasks.")
+            }
+            _ => None,
+        }
+    }
     pub fn dispatch_dashboard(&mut self, command: d::Command) -> Outcome {
         let mut out = Outcome {
             effects: vec![],
             notes: vec![Note::Other],
         };
         match command {
+            d::Command::Attach {
+                session,
+                generation,
+                revision,
+            } => {
+                if self.dashboard_attach_available()
+                    && generation == self.dashboard.detail.generation
+                    && let Some(id) = self
+                        .dashboard
+                        .selected_row()
+                        .filter(|r| r.worker.session == session && r.worker.revision == revision)
+                        .and_then(|r| r.conversation)
+                {
+                    out.merge(self.dashboard_attach(id));
+                }
+            }
             d::Command::Open => {
                 self.dashboard.open = true;
                 out.merge(self.dashboard_watch());
@@ -173,6 +348,9 @@ impl AppState {
                 else {
                     return out;
                 };
+                if self.dashboard_action_unavailable(action).is_some() {
+                    return out;
+                }
                 if generation != self.dashboard.detail.generation
                     || self.read_only.is_some()
                     || !self.connection.is_ready()
@@ -199,20 +377,8 @@ impl AppState {
                         return out;
                     }
                     self.dashboard.pending_send = Some((id, rev, action));
-                    if self.selected != Some(id)
-                        || !self
-                            .conversation(id)
-                            .is_some_and(|c| c.opened && c.lifecycle_ready)
-                    {
-                        if let Some(c) = self.conv_mut(id) {
-                            c.generation += 1;
-                            c.opened = false;
-                            c.lifecycle_ready = false;
-                            out.merge(Self::dashboard_request(Request::Attach {
-                                conversation: id,
-                                generation: c.generation,
-                            }));
-                        }
+                    if !self.dashboard_attachment_ready(id) {
+                        out.merge(self.dashboard_attach(id));
                     } else {
                         out.merge(self.dashboard_continue_send());
                     }
@@ -255,6 +421,72 @@ impl AppState {
                         request,
                     });
                 }
+            }
+            d::Command::Answer {
+                session,
+                generation,
+                revision,
+                request,
+                answer,
+            } => {
+                let target = self
+                    .dashboard
+                    .selected_row()
+                    .filter(|r| {
+                        r.worker.session == session
+                            && r.worker.revision == revision
+                            && r.worker.kind == d::WorkerKind::Root
+                    })
+                    .and_then(|r| r.conversation);
+                let Some(id) = target else {
+                    return out;
+                };
+                let allowed = self.conversation(id).is_some_and(|c| {
+                    c.execution_profile(self.mode)
+                        .allows_command(&Command::AnswerUiRequest {
+                            id: request.clone(),
+                            answer: answer.clone(),
+                        })
+                });
+                if self.refuse_if_profile_disallows(id, allowed, &mut out) {
+                    return out;
+                }
+                if !self.dashboard_answer_ready()
+                    || generation != self.dashboard.detail.generation
+                    || self.read_only.is_some()
+                    || !self.connection.is_ready()
+                    || self.dashboard.freshness != Freshness::Live
+                    || self.conversation_is_closed(id)
+                    || self.owned_elsewhere(id)
+                    || self.refuse_if_execution_blocked(id, &mut out)
+                {
+                    return out;
+                }
+                let Some(c) = self.conv_mut(id) else {
+                    return out;
+                };
+                let Some(q) = c.ui_requests.iter().find(|q| q.id == request) else {
+                    return out;
+                };
+                let valid = match (&q.kind, &answer) {
+                    (UiRequestKind::Select, UiAnswer::Choice(value)) => {
+                        q.items.iter().any(|i| &i.value == value)
+                    }
+                    (UiRequestKind::Confirm, UiAnswer::Confirm(_)) => true,
+                    (UiRequestKind::Input, UiAnswer::Text(value)) => !value.trim().is_empty(),
+                    _ => false, // Complex questionnaires retain their existing dedicated UI.
+                };
+                if !valid || !c.opened || !c.lifecycle_ready || c.ui_answering.contains(&request) {
+                    return out;
+                }
+                c.ui_answering.push(request.clone());
+                c.ui_error = None;
+                out.effects.push(Effect::Backend(BackendRequest::UiRespond {
+                    conversation: id,
+                    generation: c.generation,
+                    id: request,
+                    answer,
+                }));
             }
             d::Command::Reconcile => {
                 if let Some(p) = self.dashboard.control.clone().filter(|p| p.uncertain) {
@@ -630,6 +862,88 @@ mod tests {
         })
     }
     #[test]
+    fn dashboard_explicit_attach_is_scoped_and_stale_failures_are_ignored() {
+        let mut s = state();
+        s.mode = Mode::Real;
+        s.conversations[0].draft.text = "normal draft".into();
+        let attach = |generation, revision| d::Command::Attach {
+            session: "target".into(),
+            generation,
+            revision,
+        };
+        assert!(
+            !s.dispatch_dashboard(attach(6, 3))
+                .effects
+                .iter()
+                .any(|e| matches!(e, Effect::Backend(_)))
+        );
+        assert!(
+            !s.dispatch_dashboard(attach(7, 2))
+                .effects
+                .iter()
+                .any(|e| matches!(e, Effect::Backend(_)))
+        );
+        s.read_only = Some("readonly".into());
+        assert!(
+            !s.dispatch_dashboard(attach(7, 3))
+                .effects
+                .iter()
+                .any(|e| matches!(e, Effect::Backend(_)))
+        );
+        s.read_only = None;
+        let out = s.dispatch_dashboard(attach(7, 3));
+        let generation = s.conversations[1].generation;
+        assert!(out.effects.iter().any(|e| matches!(
+            e,
+            Effect::Backend(BackendRequest::Dashboard(Request::Attach {
+                conversation: ConversationId(2),
+                ..
+            }))
+        )));
+        assert_eq!(s.selected, Some(ConversationId(1)));
+        assert_eq!(s.conversations[0].draft.text, "normal draft");
+        assert!(!s.dashboard_attachment_ready(ConversationId(2)));
+        for (g, error) in [(generation - 1, "stale"), (generation, "connect failed")] {
+            s.apply_event(BackendEvent {
+                conversation: ConversationId(2),
+                generation: g,
+                op: None,
+                kind: EventKind::OpenFailed {
+                    message: error.into(),
+                },
+            });
+        }
+        assert_eq!(
+            s.dashboard.attachment_error.as_deref(),
+            Some("connect failed")
+        );
+        s.dispatch_dashboard(attach(7, 3));
+        assert!(s.dashboard.attachment_error.is_none());
+    }
+
+    #[test]
+    fn controls_follow_live_state_backend_and_write_guards() {
+        let mut s = state();
+        assert!(s.dashboard_action_unavailable(Action::Send).is_some());
+        s.dispatch_dashboard(d::Command::Edit("next prompt".into()));
+        assert!(s.dashboard_action_unavailable(Action::Send).is_none());
+        assert!(s.dashboard_action_unavailable(Action::Queue).is_some());
+        s.dashboard.rows[0].worker.state = d::WorkState::Running;
+        assert!(s.dashboard_action_unavailable(Action::Send).is_some());
+        assert!(s.dashboard_action_unavailable(Action::Steer).is_none());
+        s.dashboard.rows[0].worker.execution_backend = d::ExecutionBackend::LocalClaudeCli;
+        for a in [Action::Queue, Action::Steer] {
+            assert!(s.dashboard_action_unavailable(a).is_some());
+            assert!(action(&mut s, a).effects.is_empty());
+        }
+        s.dashboard.rows[0].worker.state = d::WorkState::Ready;
+        assert!(s.dashboard_action_unavailable(Action::Send).is_none());
+        s.dashboard.freshness = Freshness::Reconnecting;
+        assert!(s.dashboard_action_unavailable(Action::Send).is_some());
+        assert!(action(&mut s, Action::Send).effects.is_empty());
+    }
+
+    #[test]
     fn observation_and_editing_keep_normal_selection_and_its_draft() {
         let mut s = state();
         s.conversations[0].draft.text = "normal draft".into();
@@ -758,5 +1072,70 @@ mod tests {
             has_older: true,
         });
         assert_eq!(s.dashboard.detail.oldest, None);
+    }
+    #[test]
+    fn scoped_answer_keeps_selection_and_fences_stale_or_duplicate_answers() {
+        let mut s = state();
+        let c = &mut s.conversations[1];
+        c.opened = true;
+        c.lifecycle_ready = true;
+        s.dashboard.attachment = Some((ConversationId(2), c.generation));
+        c.ui_requests.push(UiRequest {
+            id: "question".into(),
+            kind: UiRequestKind::Select,
+            title: "Retry policy".into(),
+            message: None,
+            items: vec![UiRequestItem {
+                value: "backoff".into(),
+                label: "Backoff".into(),
+                description: None,
+            }],
+            placeholder: None,
+            default_value: None,
+            deadline: None,
+            form: None,
+            source: None,
+        });
+        let answer = |generation, revision, value: &str| d::Command::Answer {
+            session: "target".into(),
+            generation,
+            revision,
+            request: "question".into(),
+            answer: UiAnswer::Choice(value.into()),
+        };
+        for command in [
+            answer(6, 3, "backoff"),
+            answer(7, 2, "backoff"),
+            answer(7, 3, "invented"),
+        ] {
+            assert!(
+                !s.dispatch_dashboard(command)
+                    .effects
+                    .iter()
+                    .any(|e| matches!(e, Effect::Backend(BackendRequest::UiRespond { .. })))
+            );
+        }
+        s.dashboard.freshness = Freshness::Reconnecting;
+        assert!(
+            !s.dispatch_dashboard(answer(7, 3, "backoff"))
+                .effects
+                .iter()
+                .any(|e| matches!(e, Effect::Backend(BackendRequest::UiRespond { .. })))
+        );
+        s.dashboard.freshness = Freshness::Live;
+        let out = s.dispatch_dashboard(answer(7, 3, "backoff"));
+        assert!(out.effects.iter().any(|e| matches!(e, Effect::Backend(BackendRequest::UiRespond { conversation: ConversationId(2), id, answer: UiAnswer::Choice(value), .. }) if id == "question" && value == "backoff")));
+        assert_eq!(s.selected, Some(ConversationId(1)));
+        assert!(
+            !s.dispatch_dashboard(answer(7, 3, "backoff"))
+                .effects
+                .iter()
+                .any(|e| matches!(e, Effect::Backend(BackendRequest::UiRespond { .. })))
+        );
+        assert_eq!(
+            s.dashboard.rows[0].worker.state,
+            d::WorkState::Ready,
+            "sending does not optimistically clear authoritative state"
+        );
     }
 }

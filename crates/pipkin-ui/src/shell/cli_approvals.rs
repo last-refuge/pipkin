@@ -112,8 +112,21 @@ impl Workspace {
             })
     }
     pub(super) fn open_cli_approvals(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(id) = self.state(cx).selected {
+            self.open_cli_approvals_for(id, window, cx);
+        }
+    }
+    pub(super) fn open_cli_approvals_for(
+        &mut self,
+        id: ConversationId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let s = self.state(cx);
-        let Some(c) = s.current().filter(|c| s.cli_approval_panel_available(c.id)) else {
+        let Some(c) = s
+            .conversation(id)
+            .filter(|c| s.cli_approval_panel_available(c.id))
+        else {
             return;
         };
         let target = Target {
@@ -147,8 +160,8 @@ impl Workspace {
         self.cli_approval_panel = Panel {
             target: Some(target),
             heading: format!(
-                "Captured conversation {} · attachment {} · workspace: {escaped}",
-                c.id.0, c.generation
+                "{} · Captured conversation {} · attachment {} · workspace: {escaped}",
+                c.title, c.id.0, c.generation
             )
             .into(),
             ..Default::default()
@@ -414,7 +427,7 @@ impl Workspace {
                 .child(self.scope_button("cli-approval-refresh", "Refresh reviews", refresh, t, Self::refresh_reviews, cx))
                 .child(self.scope_button("cli-approval-reattach", "Reattach receipts (read only)", reattach, t, Self::reattach_receipts, cx))
                 .child(self.scope_button("cli-approval-stop", "Stop captured run", stop.is_some(), t, Self::stop_captured_run, cx)))
-                .child("Stop here requires the captured conversation to remain selected. Its normal Stop is also available; neither restores permission or undoes effects.");
+                .child("Stop requires this captured thread and run to remain selected in the current view. It neither restores permission nor undoes effects.");
         }
         if let Some(context) = context {
             let s = self.state(cx);

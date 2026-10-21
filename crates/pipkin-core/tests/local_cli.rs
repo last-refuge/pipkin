@@ -1164,3 +1164,40 @@ fn desktop_controls_effort_change_retires_old_confirmation_and_freezes_new_inten
     answer(&mut s, &second, LocalCliEvent::Inspected(ticket));
     assert!(s.local_cli.ticket.is_some());
 }
+
+#[test]
+fn dashboard_reconnect_refreshes_exact_thread_without_selection_or_prompt() {
+    let mut s = state();
+    existing(&mut s);
+    cmd(&mut s, LocalCliCommand::Edit(draft()));
+    let mut v = inspect(&mut s);
+    let checked = check(&mut s);
+    v.stage = LocalCliMetadataStage::MetadataVerified;
+    answer(&mut s, &checked, LocalCliEvent::Checked(v));
+    s.selected = Some(ConversationId(2));
+    s.dashboard.open = true;
+    s.dashboard.selected = Some("saved-engine-session".into());
+    s.conversations[0].draft.text = "CLI draft".into();
+    s.conversations[1].draft.text = "normal draft".into();
+    let out = cmd(&mut s, LocalCliCommand::ReturnToConversation);
+    assert!(s.dashboard.open);
+    assert_eq!(s.selected, Some(ConversationId(2)));
+    assert_eq!(
+        s.dashboard.selected.as_deref(),
+        Some("saved-engine-session")
+    );
+    assert_eq!(s.conversations[0].draft.text, "CLI draft");
+    assert_eq!(s.conversations[1].draft.text, "normal draft");
+    assert!(!s.dashboard_attachment_ready(ConversationId(1)));
+    assert!(out.effects.iter().any(|e| matches!(
+        e,
+        Effect::Backend(BackendRequest::Dashboard(dashboard::Request::Attach {
+            conversation: ConversationId(1),
+            generation: 13
+        }))
+    )));
+    assert!(!out.effects.iter().any(|e| matches!(
+        e,
+        Effect::Backend(BackendRequest::Submit { .. } | BackendRequest::Open { .. })
+    )));
+}

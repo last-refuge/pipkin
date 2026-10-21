@@ -93,9 +93,18 @@ impl Workspace {
             .role(Role::Dialog).aria_label("Claude Code connection")
             .w(px(580.)).max_h(px(650.)).overflow_y_scroll()
             .p(px(20.)).flex().flex_col().gap(px(12.))
-            .child(div().flex().justify_between().child(if existing { "Reconnect Claude Code" } else if s.provider_only { "Configure Claude Code provider" } else { "Connect Claude Code conversation" })
-                .child(Btn::new("guided-close").label("Close").on_click(move |window, cx| close.update(cx, |w,cx| w.close_overlay(window,cx)))))
-            .child(if s.provider_only { "Uses Claude Code's normal login. Verification configures this provider only; choose a model from the normal model picker to start a conversation. Other providers remain usable." } else { "Uses Claude Code's normal login. Connecting opens a separate CLI conversation; it never converts an existing chat or forwards its draft. No message is sent by setup." });
+            .child(div().flex().justify_between().child(if existing { "Reconnect Claude Code" } else if s.provider_only { "Configure Claude Code provider" } else if s.dashboard_creation { "Create Claude thread" } else { "Connect Claude Code conversation" })
+                .child(Btn::new("guided-close").label(if s.dashboard_creation { "Back to graph" } else if state.dashboard.open { "Back to thread" } else { "Close" }).on_click(move |window, cx| close.update(cx, |w,cx| w.close_overlay(window,cx)))))
+            .child(if s.provider_only { "Uses Claude Code's normal login. Verification configures this provider only; choose a model from the normal model picker to start a conversation. Other providers remain usable." } else if existing { "Reconnects this captured thread using its saved executable and project. No message is sent; your draft and workspace position are preserved." } else { "Uses Claude Code's normal login. Connecting opens a separate CLI conversation; it never converts an existing chat or forwards its draft. No message is sent by setup." });
+        if let Some(LocalCliTarget::Existing { conversation, .. }) = &s.target
+            && let Some(thread) = state.conversation(*conversation)
+        {
+            panel = panel.child(
+                div()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(thread.title.clone()),
+            );
+        }
         if existing && s.draft.executable.is_empty() {
             panel = panel.child(if s.error.is_some() {
                 "Saved configuration is unavailable. No installation or model has been substituted."
@@ -268,8 +277,9 @@ impl Workspace {
             LocalCliStage::Creating | LocalCliStage::Reconciling => panel = panel.child("Preparing your conversation… No message is being sent."),
             LocalCliStage::CheckUnknown => panel = panel.child("The check's outcome is unknown. Check its status; it will not be repeated automatically.").child(self.cli_button("guided-status","Check status",a.status,C::Status,cx)),
             LocalCliStage::CreateUnknown => panel = panel.child("Conversation creation is uncertain. Look up the original request before doing anything else.").child(self.cli_button("guided-lookup","Look up conversation",a.lookup_creation,C::LookupCreation,cx)),
+            LocalCliStage::Created if existing => panel = panel.child("Connection checked. Return to the thread to see its live readiness and continue your draft."),
             LocalCliStage::Verified if s.provider_only => panel = panel.child("Provider verified. Close Settings and choose Claude Code CLI · Haiku, Sonnet or Opus in the normal model picker. New coding conversations connect automatically to this configured executable."),
-            LocalCliStage::Verified => panel = panel.child(self.cli_button("guided-continue",if existing { "Return to conversation" } else { "Create conversation" },if existing { a.return_to_conversation } else { a.create },if existing { C::ReturnToConversation } else { C::Create },cx)),
+            LocalCliStage::Verified => panel = panel.child(self.cli_button("guided-continue",if existing { if state.dashboard.open { "Return to thread" } else { "Return to conversation" } } else { "Create conversation" },if existing { a.return_to_conversation } else { a.create },if existing { C::ReturnToConversation } else { C::Create },cx)),
             _ => {}
         }
         if a.inspect && !s.discovering {

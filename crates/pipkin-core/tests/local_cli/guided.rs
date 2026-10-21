@@ -499,3 +499,106 @@ fn configuration_edits_never_reuse_a_previously_confirmed_ticket() {
     no_effect(answer(&mut s, &check, LocalCliEvent::Checked(verified)));
     assert!(!s.local_cli.trust_executable && s.local_cli.creation.is_none());
 }
+
+#[test]
+fn dashboard_creation_keeps_main_context_and_attaches_exact_created_thread() {
+    for catalog_first in [false, true] {
+        let mut s = state();
+        s.selected = Some(ConversationId(1));
+        s.conversations[0].draft.text = "keep main draft".into();
+        s.dashboard.open = true;
+        s.dashboard.filter.text = Some("old search".into());
+        let provider = s.prefs.provider_model.clone();
+        let project = s.prefs.selected_project;
+        let discovery = call(cmd(
+            &mut s,
+            LocalCliCommand::BeginDashboardNew(LocalCliDraft {
+                project: "/another-project".into(),
+                model: CliModel::Opus,
+                mode: CliMode::Coding,
+                ..Default::default()
+            }),
+        ));
+        assert!(
+            matches!(&discovery.request, LocalCliRequest::Discover { project, .. } if project == "/another-project")
+        );
+        let inspect = call(answer(
+            &mut s,
+            &discovery,
+            LocalCliEvent::Discovered(vec!["/bin/claude".into()]),
+        ));
+        assert!(
+            matches!(&inspect.request, LocalCliRequest::Inspect { target: LocalCliInspectTarget::New { project, model: CliModel::Opus, .. }, .. } if project == "/another-project")
+        );
+        let mut ticket = view(&inspect);
+        ticket.project = "/another-project".into();
+        answer(&mut s, &inspect, LocalCliEvent::Inspected(ticket.clone()));
+        let check = call(cmd(
+            &mut s,
+            LocalCliCommand::ConfirmAndConnect {
+                setup: ticket.setup.clone(),
+            },
+        ));
+        ticket.stage = LocalCliMetadataStage::MetadataVerified;
+        let checked = answer(&mut s, &check, LocalCliEvent::Checked(ticket));
+        let Effect::JournalLocalCliCreation {
+            conversation,
+            generation,
+            op,
+            identity,
+        } = checked
+            .effects
+            .iter()
+            .find(|e| matches!(e, Effect::JournalLocalCliCreation { .. }))
+            .unwrap()
+        else {
+            panic!()
+        };
+        let create =
+            call(s.local_cli_creation_persisted(*conversation, *generation, *op, identity, Ok(())));
+        let LocalCliRequest::Create { identity } = &create.request else {
+            panic!()
+        };
+        if catalog_first {
+            s.apply_catalog(boot(&[1, 2, 3]));
+        }
+        let mut result = answer(
+            &mut s,
+            &create,
+            LocalCliEvent::Created(LocalCliCreated {
+                identity: identity.clone(),
+                conversation: ConversationId(3),
+            }),
+        );
+        if !catalog_first {
+            result = s.apply_catalog(boot(&[1, 2, 3]));
+        }
+        assert_eq!(s.local_cli.stage, LocalCliStage::Created);
+        assert!(s.dashboard.open);
+        assert_eq!(s.selected, Some(ConversationId(1)));
+        assert_eq!(s.conversations[0].draft.text, "keep main draft");
+        assert_eq!(s.prefs.provider_model, provider);
+        assert_eq!(s.prefs.selected_project, project);
+        assert_eq!(s.dashboard.group, Some(dashboard::ActivityGroup::All));
+        assert!(s.dashboard.filter.text.is_none());
+        assert!(result.effects.iter().any(|e| matches!(
+            e,
+            Effect::Backend(BackendRequest::Dashboard(dashboard::Request::Attach {
+                conversation: ConversationId(3),
+                ..
+            }))
+        )));
+    }
+}
+
+#[test]
+fn dashboard_creation_rejects_invalid_entry() {
+    let mut s = state();
+    no_effect(cmd(&mut s, LocalCliCommand::BeginDashboardNew(draft())));
+    s.dashboard.open = true;
+    let mut invalid = draft();
+    invalid.project = "relative".into();
+    no_effect(cmd(&mut s, LocalCliCommand::BeginDashboardNew(invalid)));
+    s.read_only = Some("test".into());
+    no_effect(cmd(&mut s, LocalCliCommand::BeginDashboardNew(draft())));
+}

@@ -4301,6 +4301,38 @@ fn dashboard_observation_and_secondary_send_keep_the_normal_conversation() {
     assert_eq!(h.state.selected, Some(normal));
     assert_eq!(h.state.current().unwrap().draft.text, "keep this draft");
     assert_eq!(fx.requests().len(), 1);
+    h.dispatch(Command::Dashboard(D::Filter(
+        pipkin_core::dashboard::ActivityFilter {
+            text: Some("no thread has this audit search phrase".into()),
+            ..Default::default()
+        },
+    )));
+    h.until(
+        "filtered directory preserves only the inspected thread",
+        |s| {
+            s.dashboard.freshness == pipkin_core::dashboard::Freshness::Live
+                && s.dashboard.rows.len() == 1
+                && s.dashboard.rows[0].worker.session == target
+        },
+    );
+    h.dispatch(Command::Dashboard(D::Filter(Default::default())));
+    h.dispatch(Command::Dashboard(D::Group(Some(
+        pipkin_core::dashboard::ActivityGroup::All,
+    ))));
+    h.until("all conversations restored", |s| {
+        s.dashboard.freshness == pipkin_core::dashboard::Freshness::Live
+            && s.dashboard.rows.len() >= 2
+    });
+    h.dispatch(Command::Dashboard(D::Refresh));
+    h.until("explicit refresh completes", |s| {
+        s.dashboard.freshness == pipkin_core::dashboard::Freshness::Live
+    });
+    assert_eq!(
+        fx.requests().len(),
+        1,
+        "filters and refresh never ask the provider"
+    );
+    assert_eq!(h.state.selected, Some(normal));
     h.dispatch(Command::Dashboard(D::Edit("second via dashboard".into())));
     h.until("fresh dashboard target", |s| {
         s.dashboard.freshness == pipkin_core::dashboard::Freshness::Live

@@ -141,6 +141,8 @@ pub enum LocalCliCommand {
     BeginNew(LocalCliDraft),
     /// Guided setup only discovers filesystem metadata until explicit confirmation.
     BeginGuided,
+    /// Create from an explicit dashboard draft without changing the main provider or project.
+    BeginDashboardNew(LocalCliDraft),
     /// Configure the provider without selecting a model or creating a conversation.
     BeginProviderSetup,
     BeginGuidedExisting {
@@ -300,6 +302,7 @@ struct Pending {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LocalCliState {
     pub guided: bool,
+    pub dashboard_creation: bool,
     pub provider_only: bool,
     pub(crate) provider_origin: Option<(ConversationId, crate::ProviderModel)>,
     pub candidates: Vec<String>,
@@ -364,6 +367,11 @@ impl LocalCliState {
 
     fn unresolved(&self) -> bool {
         self.creation.is_some() && self.stage != LocalCliStage::Created
+    }
+
+    pub(crate) fn reconnect_unsettled(&self, id: ConversationId) -> bool {
+        matches!(&self.target, Some(LocalCliTarget::Existing { conversation, .. }) if *conversation == id)
+            && (self.pending.is_some() || self.stage == LocalCliStage::CheckUnknown)
     }
 
     fn invalidate(&mut self) {
@@ -577,6 +585,7 @@ impl AppState {
         let a = self.local_cli_availability();
         match command {
             C::BeginNew(draft) if a.begin => {
+                self.local_cli.dashboard_creation = false;
                 self.local_cli.guided = false;
                 self.local_cli.provider_only = false;
                 self.local_cli.provider_origin = None;
@@ -602,6 +611,7 @@ impl AppState {
                     return out;
                 }
                 let generation = c.generation;
+                self.local_cli.dashboard_creation = false;
                 self.local_cli.guided = false;
                 self.local_cli.provider_only = false;
                 self.local_cli.provider_origin = None;
@@ -835,6 +845,12 @@ impl AppState {
     }
 
     fn local_cli_refresh(&mut self, id: ConversationId, out: &mut Outcome) {
+        // A dashboard reconnect refreshes the captured thread in place. Selecting it
+        // normally would close the graph and replace the user's main conversation.
+        if self.dashboard.open {
+            out.merge(self.dashboard_attach(id));
+            return;
+        }
         // Force Open even if already selected; SelectConversation handles generation and prefs.
         if let Some(c) = self.conversations.iter_mut().find(|c| c.id == id) {
             c.opened = false;
@@ -864,7 +880,16 @@ impl AppState {
         let origin = self.local_cli.provider_origin.take();
         let select = self.provider_origin_current(&origin);
         self.finish_provider_origin(origin, out);
-        if select {
+        if self.local_cli.dashboard_creation {
+            if self.dashboard.open {
+                // Show the newly created idle thread even when an attention/search filter
+                // excluded it. Keep the graph entity and its viewport alive.
+                self.dashboard.group = Some(crate::dashboard::ActivityGroup::All);
+                self.dashboard.filter = Default::default();
+                out.merge(self.dispatch(Command::Dashboard(crate::dashboard::Command::Refresh)));
+                out.merge(self.dashboard_attach(id));
+            }
+        } else if select {
             self.local_cli_refresh(id, out);
         }
         self.coalesce_provider_prefs(out);

@@ -237,6 +237,7 @@ impl Workspace {
             Overlay::Rename(_) => self.render_rename(cx).into_any_element(),
             Overlay::Prefs => self.render_prefs(window, cx).into_any_element(),
             Overlay::LocalCli => self.render_local_cli(cx).into_any_element(),
+            Overlay::DashboardNew => self.render_dashboard_new(window, cx).into_any_element(),
             Overlay::CliApprovals => self.render_cli_approvals(window, cx).into_any_element(),
             Overlay::Session => self.render_session(window, cx).into_any_element(),
             Overlay::About => self.render_about(cx).into_any_element(),
@@ -306,7 +307,15 @@ impl Workspace {
                 .top(px(52.0))
                 .child(panel)
                 .into_any_element(),
-            Overlay::Prefs => div()
+            Overlay::LocalCli if self.state(cx).dashboard.open => div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(panel)
+                .into_any_element(),
+            Overlay::Prefs | Overlay::DashboardNew => div()
                 .absolute()
                 .inset_0()
                 .flex()

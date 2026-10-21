@@ -8,6 +8,7 @@ mod clipboard_image;
 pub mod commands;
 pub mod controls;
 mod dashboard;
+mod dashboard_cli;
 mod export_settings;
 mod inspector;
 mod jobs;

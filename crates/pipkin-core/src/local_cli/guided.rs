@@ -17,6 +17,19 @@ impl AppState {
         let a = self.local_cli_availability();
         let mut out = Outcome::default();
         match command {
+            C::BeginDashboardNew(draft)
+                if a.begin && self.dashboard.open && draft.project.starts_with('/') =>
+            {
+                if self.local_cli.target.is_some() && self.local_cli.stage != LocalCliStage::Created
+                {
+                    self.local_cli_cancel(&mut out);
+                }
+                out.merge(self.dispatch_local_cli(C::BeginNew(draft.clone())));
+                self.local_cli.guided = true;
+                self.local_cli.dashboard_creation = true;
+                self.local_cli.candidates.clear();
+                out.merge(self.dispatch_local_cli(C::Discover));
+            }
             C::BeginGuided | C::BeginProviderSetup if a.begin => {
                 let provider_only = matches!(command, C::BeginProviderSetup);
                 if provider_only && self.pending_cli_conversation_setup() {
@@ -125,7 +138,8 @@ impl AppState {
                 out.effects.push(Effect::SavePrefs(self.prefs.clone()));
                 out.merge(self.dispatch_local_cli(C::Check));
             }
-            C::BeginGuided
+            C::BeginDashboardNew(_)
+            | C::BeginGuided
             | C::BeginProviderSetup
             | C::BeginGuidedExisting { .. }
             | C::Discover

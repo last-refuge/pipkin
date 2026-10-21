@@ -37,8 +37,10 @@ impl Workspace {
     /// focus that the user moved, switch overlays, or focus an actionable control.
     pub(super) fn retain_cli_navigation(&self, window: &mut Window, cx: &mut Context<Self>) {
         let overlay = self.overlay;
-        if !matches!(overlay, Overlay::LocalCli | Overlay::CliApprovals)
-            || !self.menu_focus.contains_focused(window, cx)
+        if !matches!(
+            overlay,
+            Overlay::LocalCli | Overlay::CliApprovals | Overlay::DashboardNew
+        ) || !self.menu_focus.contains_focused(window, cx)
         {
             return;
         }
@@ -68,7 +70,10 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !matches!(self.overlay, Overlay::LocalCli | Overlay::CliApprovals) {
+        if !matches!(
+            self.overlay,
+            Overlay::LocalCli | Overlay::CliApprovals | Overlay::DashboardNew
+        ) {
             return;
         }
         if self.overlay == Overlay::LocalCli

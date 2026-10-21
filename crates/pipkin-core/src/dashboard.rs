@@ -2,7 +2,7 @@
 use crate::{ConversationId, TranscriptItem};
 pub use pipkin_engine_protocol::{
     ActivityCounts, ActivityCursor, ActivityFilter, ActivityGroup, ActivityPage, ActivityRow,
-    Coverage, ExecutionBackend, WorkState, WorkerKind,
+    Coverage, ExecutionBackend, WaitReason, WorkState, WorkerKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -99,12 +99,26 @@ pub enum Command {
     More,
     Older,
     Edit(String),
+    /// Explicitly load live requests for this root without changing normal selection.
+    Attach {
+        session: String,
+        generation: u64,
+        revision: u64,
+    },
     Act {
         session: String,
         generation: u64,
         revision: u64,
         draft_revision: u64,
         action: Action,
+    },
+    /// Answer a known root-session question without changing the conversation selection.
+    Answer {
+        session: String,
+        generation: u64,
+        revision: u64,
+        request: String,
+        answer: crate::UiAnswer,
     },
     Reconcile,
     Back,
@@ -230,6 +244,8 @@ pub struct State {
     pub child_drafts: BTreeMap<String, (String, u64)>,
     pub seen: BTreeMap<String, u64>,
     pub pending_send: Option<(ConversationId, u64, Action)>,
+    pub attachment: Option<(ConversationId, u64)>,
+    pub attachment_error: Option<String>,
 }
 impl State {
     pub fn selected_row(&self) -> Option<&Row> {

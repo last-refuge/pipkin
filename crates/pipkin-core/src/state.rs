@@ -3060,6 +3060,15 @@ impl AppState {
     // ------------------------------------------------------------------ events
 
     pub fn apply_event(&mut self, ev: BackendEvent) -> Outcome {
+        if self.dashboard.attachment == Some((ev.conversation, ev.generation))
+            && self
+                .conversation(ev.conversation)
+                .is_some_and(|c| c.generation == ev.generation)
+            && let EventKind::OpenFailed { message } = &ev.kind
+        {
+            self.dashboard.attachment_error = Some(message.clone());
+            self.dashboard.pending_send = None;
+        }
         let before = self.reconcile_cli_approvals();
         let id = ev.conversation;
         let mut out = self.apply_event_scoped(ev);

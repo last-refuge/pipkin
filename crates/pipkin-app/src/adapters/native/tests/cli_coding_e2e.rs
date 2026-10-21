@@ -19,7 +19,8 @@ fn install(fx: &Fixture) -> PathBuf {
         .to_str()
         .unwrap()
         .replace('\'', "'\\''");
-    let help = policy::REQUIRED_FLAGS.join("\n") + "\n--settings";
+    let help = policy::REQUIRED_FLAGS.join("\n")
+        + "\n--settings\n--setting-sources\n--dangerously-skip-permissions\n--append-system-prompt";
     let auth = r#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"fixture@example.invalid","orgId":"fixture"}"#;
     std::fs::write(&executable,format!("#!/bin/sh\ncase \"$1\" in\n--version) printf '%s\\n' '2.1.299 (Claude Code)'; exit ;;\n--help) printf '%s' '{help}'; exit ;;\nesac\nfor arg in \"$@\"; do\nif [ \"$arg\" = '--print' ]; then\nprintf '%s\\0' \"$@\" > fake-args\nprintf 'launch\\n' >> launches\nexport PIPKIN_APP_CODING_FIXTURE=1\nexec '{image}' --exact adapters::native::e2e::cli_coding_e2e::fixture_child --nocapture 3>&1 1>&2\nfi\ndone\nprintf '%s\\n' '{auth}'\n")).unwrap();
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -79,11 +80,13 @@ fn setup(fx: &Fixture, executable: &Path) -> Harness {
     h
 }
 fn discover(h: &mut Harness) -> (CliApprovalContext, CliApprovalReview) {
+    discover_for(h, h.state.selected.unwrap())
+}
+fn discover_for(h: &mut Harness, id: ConversationId) -> (CliApprovalContext, CliApprovalReview) {
     h.until("captured running prompt", |s| {
-        s.current()
+        s.conversation(id)
             .is_some_and(|c| matches!(c.run, RunState::Running { .. }))
     });
-    let id = h.state.selected.unwrap();
     let deadline = Instant::now() + WAIT;
     // Explicit fixture polling to wait for the fake process. No production polling is added.
     loop {
@@ -103,8 +106,24 @@ fn discover(h: &mut Harness) -> (CliApprovalContext, CliApprovalReview) {
         }
         assert!(
             Instant::now() < deadline,
-            "no verified review: {:?}",
-            h.notices
+            "no verified review: notices={:?}, target={:?}, discover={}, context={:?}, rows={:?}",
+            h.notices,
+            h.state.conversation(id).map(|c| (
+                c.generation,
+                c.opened,
+                c.profile,
+                &c.execution_blocked,
+                &c.run
+            )),
+            h.state.cli_approval_discovery_available(id),
+            h.state.cli_approval_context(id),
+            h.state
+                .dashboard
+                .rows
+                .iter()
+                .filter(|r| r.conversation == Some(id))
+                .map(|r| (&r.worker.state, &r.worker.run))
+                .collect::<Vec<_>>()
         );
         thread::sleep(Duration::from_millis(5));
     }
@@ -442,4 +461,195 @@ fn fixture_child() {
         writeln!(output,"{}",serde_json::json!({"type":"result","session_id":uuid,"subtype":"success","is_error":false,"result":"not answer text"})).unwrap();
     }
     std::process::exit(0);
+}
+
+#[test]
+fn dashboard_cli_reconnect_send_approval_and_resume_preserve_normal_conversation() {
+    use pipkin_core::dashboard::{Action, Command as Dash, Freshness};
+    let fx = Fixture::start(|_, _| panic!("native inference forbidden"));
+    let executable = install(&fx);
+    let mut h = setup(&fx, &executable);
+    let cli = h.state.selected.unwrap();
+    h.dispatch(Command::SelectProviderModel(
+        pipkin_core::ProviderModel::Native(h.state.models[0].id.clone()),
+    ));
+    h.open_new_conversation(&fx.project);
+    h.until("normal conversation ready", |s| {
+        s.selected != Some(cli) && s.current().is_some_and(|c| c.opened)
+    });
+    let normal = h.state.selected.unwrap();
+    h.dispatch(Command::EditDraft("keep normal draft".into()));
+    h.dispatch(Command::Dashboard(Dash::Open));
+    h.dispatch(Command::Dashboard(Dash::Group(Some(
+        pipkin_core::dashboard::ActivityGroup::All,
+    ))));
+    h.until("CLI in dashboard", |s| {
+        s.dashboard.freshness == Freshness::Live
+            && s.dashboard.rows.iter().any(|r| r.conversation == Some(cli))
+    });
+    let session = h
+        .state
+        .dashboard
+        .rows
+        .iter()
+        .find(|r| r.conversation == Some(cli))
+        .unwrap()
+        .worker
+        .session
+        .clone();
+    h.dispatch(Command::Dashboard(Dash::Select(session.clone())));
+    h.until("CLI history", |s| !s.dashboard.detail.loading);
+    h.dispatch(Command::LocalCli(Setup::BeginExisting {
+        conversation: cli,
+        session: pipkin_core::EngineSessionId(session.clone()),
+    }));
+    h.dispatch(Command::LocalCli(Setup::Edit(LocalCliDraft {
+        thinking: None,
+        mode: CliMode::RestrictedWrite,
+        executable: executable.display().to_string(),
+        project: fx.project.display().to_string(),
+        model: CliModel::Sonnet,
+    })));
+    h.dispatch(Command::LocalCli(Setup::Inspect));
+    h.until("dashboard reconnect inspection", |s| {
+        s.local_cli.stage == LocalCliStage::AwaitingTrust
+    });
+    h.dispatch(Command::LocalCli(Setup::TrustExecutable(true)));
+    h.dispatch(Command::LocalCli(Setup::TrustProject(true)));
+    h.dispatch(Command::LocalCli(Setup::Check));
+    h.until("dashboard reconnect verified", |s| {
+        s.local_cli.stage == LocalCliStage::Verified
+    });
+    h.dispatch(Command::LocalCli(Setup::ReturnToConversation));
+    h.until("secondary CLI attached", |s| {
+        s.dashboard_attachment_ready(cli)
+            && s.conversation(cli).unwrap().execution_blocked.is_none()
+    });
+    assert_eq!(h.state.selected, Some(normal));
+    assert!(h.state.dashboard.open);
+    for turn in 1..=2 {
+        h.until("live ready CLI row", |s| {
+            s.dashboard.freshness == Freshness::Live
+                && s.dashboard.selected_row().is_some_and(|r| {
+                    matches!(r.worker.state, pipkin_core::dashboard::WorkState::Ready)
+                })
+        });
+        h.dispatch(Command::Dashboard(Dash::Edit("synthetic prompt".into())));
+        let row = h.state.dashboard.selected_row().unwrap();
+        h.dispatch(Command::Dashboard(Dash::Act {
+            session: session.clone(),
+            revision: row.worker.revision,
+            generation: h.state.dashboard.detail.generation,
+            draft_revision: h.state.dashboard_draft().1,
+            action: Action::Send,
+        }));
+        let (context, review) = discover_for(&mut h, cli);
+        assert_eq!(context.conversation, cli);
+        act(
+            &mut h,
+            &context,
+            A::Decide {
+                id: review.id,
+                decision: D::AllowOnce,
+            },
+        );
+        h.until("secondary CLI resumed and completed", |s| {
+            s.conversation(cli)
+                .is_some_and(|c| matches!(c.run, RunState::Idle))
+        });
+        assert_eq!(h.state.selected, Some(normal));
+        assert!(h.state.dashboard.open);
+        assert_eq!(
+            h.state.dashboard.selected.as_deref(),
+            Some(session.as_str())
+        );
+        assert_eq!(
+            h.state.conversation(normal).unwrap().draft.text,
+            "keep normal draft"
+        );
+        assert_eq!(launch_count(&fx), turn);
+    }
+    assert_eq!(
+        std::fs::read_to_string(fx.project.join("effect")).unwrap(),
+        "synthetic effect\n"
+    );
+    assert!(fx.requests().is_empty());
+    h.stop();
+}
+
+#[test]
+fn dashboard_new_claude_thread_uses_chosen_project_and_model_without_navigation() {
+    use pipkin_core::dashboard::{Command as Dash, Freshness};
+    let fx = Fixture::start(|_, _| panic!("native inference forbidden"));
+    let executable = install(&fx);
+    let mut h = Harness::start(&fx, &fx.root.join("dashboard-create.db"));
+    h.until("setup capability", |s| {
+        s.connection.is_ready() && s.local_cli.available
+    });
+    h.open_new_conversation(&fx.project);
+    h.until("main conversation", |s| {
+        s.current().is_some_and(|c| c.opened)
+    });
+    let main = h.state.selected;
+    h.dispatch(Command::EditDraft("preserve main draft".into()));
+    let chosen = fx.root.join("chosen-project");
+    std::fs::create_dir(&chosen).unwrap();
+    h.state.prefs.cli_executable = Some(executable.display().to_string());
+    h.dispatch(Command::Dashboard(Dash::Open));
+    h.dispatch(Command::LocalCli(Setup::BeginDashboardNew(LocalCliDraft {
+        project: chosen.display().to_string(),
+        model: CliModel::Opus,
+        mode: CliMode::Coding,
+        ..Default::default()
+    })));
+    h.until("new thread inspection", |s| {
+        s.local_cli.stage == LocalCliStage::AwaitingTrust
+    });
+    let ticket = h.state.local_cli.ticket.as_ref().unwrap().clone();
+    assert_eq!(ticket.project, chosen.display().to_string());
+    h.dispatch(Command::LocalCli(Setup::ConfirmAndConnect {
+        setup: ticket.setup,
+    }));
+    h.until("new dashboard thread attached", |s| {
+        s.local_cli.stage == LocalCliStage::Created
+            && s.local_cli
+                .created
+                .as_ref()
+                .is_some_and(|c| s.dashboard_attachment_ready(c.conversation))
+            && s.dashboard.freshness == Freshness::Live
+    });
+    let created = h.state.local_cli.created.as_ref().unwrap().clone();
+    h.until("new graph node", |s| {
+        s.dashboard
+            .rows
+            .iter()
+            .any(|r| r.conversation == Some(created.conversation))
+    });
+    let row = h
+        .state
+        .dashboard
+        .rows
+        .iter()
+        .find(|r| r.conversation == Some(created.conversation))
+        .unwrap();
+    assert_eq!(row.worker.cwd, chosen.display().to_string());
+    assert!(h.state.dashboard.open);
+    assert_eq!(h.state.selected, main);
+    assert_eq!(h.state.current().unwrap().draft.text, "preserve main draft");
+    assert!(
+        !chosen.join("launches").exists(),
+        "Creation must not submit a prompt"
+    );
+    h.dispatch(Command::LocalCli(Setup::BeginExisting {
+        conversation: created.conversation,
+        session: created.identity.session,
+    }));
+    h.dispatch(Command::LocalCli(Setup::SessionStatus));
+    h.until("saved CLI configuration", |s| {
+        s.local_cli.session_status.is_some()
+    });
+    let saved = h.state.local_cli.session_status.as_ref().unwrap();
+    assert_eq!(saved.model, Some(CliModel::Opus));
+    assert_eq!(saved.project, chosen.display().to_string());
+    h.stop();
 }
