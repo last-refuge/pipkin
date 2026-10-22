@@ -788,9 +788,17 @@ fn offline_requests_are_refused_without_sending_anything() {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(5));
     }
+    backend.request(BackendRequest::CreateConversation {
+        project: pipkin_core::ProjectId(1),
+        cwd: "/project".into(),
+        request: RequestId("offline-create".into()),
+        model: Some("native/model".into()),
+    });
     backend.request(submit(ConversationId(1), 1, "k"));
     let event = events.recv_blocking().unwrap();
     assert!(matches!(event.kind, EventKind::Rejected { .. }));
+    assert!(life.lock().unwrap().iter().any(|e| matches!(e,
+        LifecycleEvent::NativeConversationCreationFailed { request, .. } if request.0 == "offline-create")));
     backend.shutdown();
 }
 

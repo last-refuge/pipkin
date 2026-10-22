@@ -457,7 +457,8 @@ synthetic CLI fixture, never the user's real account, prompts, or pending approv
 
 New thread opens a centered picker over the existing graph. It offers Claude Code CLI,
 known project folders (including their paths), another-folder browsing, and the fixed
-Haiku/Sonnet/Opus aliases. Standard creation remains available as a separate action.
+Haiku/Sonnet/Opus aliases. The all-provider picker below supersedes the original
+separate standard-creation action.
 The Claude entry captures these choices without changing the main conversation's provider,
 project or draft, then reuses guided discovery, inspection, connection and journaled creation.
 Opening/canceling the picker sends no CLI request. Reopening unfinished setup preserves it.
@@ -468,3 +469,34 @@ idle thread is visible, keeping the graph entity, layout state and viewport aliv
 creation dialog is still open, the new thread's conversation sheet opens for the first prompt.
 If the user has left the dashboard, completion does not select their main conversation.
 Existing login, approval policy and uncertain-result recovery are unchanged.
+
+
+### All-provider dashboard creation (2026-10-21)
+
+New thread now groups the live native model catalog by provider and includes Claude Code
+CLI as a separate typed choice. Provider, project and model selection all stay in the
+centered dialog over the graph. Saved projects show their paths; the folder browser works
+for either route. Models that disappear from the catalog cannot be submitted. No provider
+or model is silently substituted, and merely changing a picker choice does not change the
+main conversation's provider settings.
+
+Native creation captures the exact folder and model, uses the existing engine creation
+request, confirms the model on the returned session, and waits for its correlated receipt
+and catalog entry before attaching it as a secondary conversation. The new thread then
+opens in the graph's thread dialog. Main selection, project, model preference and draft are
+preserved. Closing the graph during creation never selects the completed thread in the
+main conversation. Closing and reopening an in-progress picker retains its captured choices.
+Duplicate clicks are blocked; failures, including a disconnect before the request can run,
+are reported against the matching creation request in the dialog. Unrelated background
+notices and late responses cannot clear a newer pending creation. There is no automatic
+retry or prompt submission.
+
+Claude CLI continues through the existing guided setup and journaled creation/recovery flow.
+Native model identifiers and CLI aliases remain distinct even when their display names or
+identifier prefixes resemble one another. Providers need an available model in the existing
+connected-provider catalog; this change does not add new provider integrations or bypass login.
+
+Automated coverage includes both receipt/catalog arrival orders, closing the dashboard,
+stale failures, duplicate clicks, unavailable choices, typed provider routing, rendered
+provider/project/model controls, and native engine creation with synthetic providers.
+Live account prompts and native mouse/accessibility verification were not performed.

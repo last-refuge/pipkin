@@ -774,6 +774,11 @@ impl Harness {
                     out.merge(self.state.select_initial());
                     out
                 }
+                LifecycleEvent::NativeConversationCreationFailed { request, message } => {
+                    self.notices.push(message.clone());
+                    self.state
+                        .native_conversation_creation_failed(&request, message)
+                }
                 LifecycleEvent::NativeConversationCreated {
                     request,
                     conversation,

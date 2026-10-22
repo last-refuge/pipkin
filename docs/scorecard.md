@@ -1,5 +1,35 @@
 # Scorecard
 
+## All-provider New thread dialog — 2026-10-21
+
+**Implemented:** the centered dashboard picker lists connected native providers/models
+alongside Claude CLI, with saved-project and folder selection. Native creation captures
+its choices, confirms the returned session's model, and opens its secondary thread dialog
+without switching the main conversation or changing its draft/provider preferences.
+Duplicate pending requests and unavailable choices are refused. Correlated errors remain
+in the dialog; closing/reopening preserves an in-progress creation. Catalog refreshes
+while the graph is open do not auto-select a conversation in an empty main area.
+
+**Measured focused checks:** rendered native and CLI picker workflows passed. Native
+engine fixtures verified both creation paths, chosen folder/model, secondary attachment,
+main-draft isolation and no inference during creation. Core coverage exercises receipt
+and catalog arrival in either order, closed graphs, stale failures, invalid selections,
+CLI-like native model identifiers, duplicate pending requests and empty-main selection.
+The offline backend test checks request-correlated creation failure.
+
+**Measured full gates:** 2,723 tests passed, zero failed, 13 intentionally ignored.
+Workspace/all-target Clippy and formatting passed. A final Clippy-only `then_some`
+cleanup was rechecked with the rendered dialog tests. Evidence: `dist/orchestration-all-providers/qualification.json` records the logs
+and source hashes.
+
+**Installed:** `1.1.0-native-1e802b81dcf1`; locked release build, isolated fresh-profile
+startup probe and installed offline handshake passed. Installed/release SHA-256 values
+match. The running user app was not restarted.
+
+**Unverified:** real account/model inference, native mouse interaction, IME, screen reader
+and display-scale behavior were not exercised for this change. Synthetic provider/CLI
+fixtures supplied mutation coverage; user threads and approvals were not modified.
+
 ## Orchestration control wiring — 2026-10-20
 
 **Implemented:** synchronized and clearable graph filters, functional map navigation,

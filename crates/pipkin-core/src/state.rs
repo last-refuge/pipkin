@@ -588,6 +588,74 @@ impl AppState {
         out
     }
 
+    pub fn dashboard_native_creation_available(&self) -> bool {
+        self.mode == Mode::Real
+            && self.dashboard.open
+            && self.connection.is_ready()
+            && self.read_only.is_none()
+            && self.can_create
+            && !self.pending_native_creation()
+            && !self.local_cli.setup_busy()
+    }
+
+    pub(crate) fn create_dashboard_native(&mut self, path: String, model: String) -> Outcome {
+        let mut out = Outcome::default();
+        if !self.dashboard_native_creation_available()
+            || !path.starts_with('/')
+            || !self.models.iter().any(|m| m.id == model)
+        {
+            return out;
+        }
+        let project = self
+            .projects
+            .iter()
+            .find(|p| p.path == path)
+            .map(|p| p.id)
+            .unwrap_or_else(|| project_id_for_path(&path));
+        if !self.projects.iter().any(|p| p.path == path) {
+            self.restore_project(&path);
+            out.effects.push(Effect::SaveProject { path: path.clone() });
+            out.notes.push(Note::ConversationsChanged);
+        }
+        let request = self.alloc_request();
+        self.pending_create = Some(request.clone());
+        self.pending_created = None;
+        self.provider_creation_origin = None;
+        self.dashboard.creation = Some(crate::dashboard::Creation::Pending(request.clone()));
+        out.effects
+            .push(Effect::Backend(BackendRequest::CreateConversation {
+                request,
+                project,
+                cwd: path,
+                model: Some(model),
+            }));
+        out.notes.push(Note::Other);
+        out
+    }
+
+    pub fn native_conversation_creation_failed(
+        &mut self,
+        request: &RequestId,
+        message: String,
+    ) -> Outcome {
+        if self.pending_create.as_ref() != Some(request) {
+            return Outcome::default();
+        }
+        self.pending_create = None;
+        self.pending_created = None;
+        self.provider_creation_origin = None;
+        if matches!(&self.dashboard.creation, Some(crate::dashboard::Creation::Pending(id)) if id == request)
+        {
+            self.dashboard.creation = Some(crate::dashboard::Creation::Failed(message));
+        } else {
+            self.notice = Some(message);
+        }
+        Outcome {
+            notes: vec![Note::Other],
+            ..Outcome::default()
+        }
+    }
+
     pub(crate) fn pending_native_creation(&self) -> bool {
         self.pending_create.is_some()
     }
@@ -611,7 +679,20 @@ impl AppState {
             .filter(|id| self.conversation(*id).is_some())
         {
             self.pending_created = None;
+            let dashboard = matches!(&self.dashboard.creation,
+                Some(crate::dashboard::Creation::Pending(request)) if Some(request) == self.pending_create.as_ref());
             self.pending_create = None;
+            if dashboard {
+                self.dashboard.creation = Some(crate::dashboard::Creation::Created(id));
+                if self.dashboard.open {
+                    self.dashboard.group = Some(crate::dashboard::ActivityGroup::All);
+                    self.dashboard.filter = Default::default();
+                    out.merge(self.dispatch_dashboard(crate::dashboard::Command::Refresh));
+                    out.merge(self.dashboard_attach(id));
+                }
+                out.notes.push(Note::Other);
+                return;
+            }
             let origin = self.provider_creation_origin.take();
             let select = self.provider_origin_current(&origin);
             self.finish_provider_origin(origin, out);
@@ -762,7 +843,13 @@ impl AppState {
     }
 
     pub fn set_notice(&mut self, message: String) -> Outcome {
-        self.pending_create = None;
+        // Unrelated background notices cannot cancel a correlated dashboard creation.
+        if !matches!(
+            self.dashboard.creation,
+            Some(crate::dashboard::Creation::Pending(_))
+        ) {
+            self.pending_create = None;
+        }
         self.notice = Some(message);
         Outcome {
             notes: vec![Note::Other],
@@ -798,6 +885,7 @@ impl AppState {
             self.reveal_unsettled_conversation(id, &mut out);
         }
         if self.selected.is_some()
+            || self.dashboard.open
             || self.pending_native_creation()
             || (self.mode == Mode::Real
                 && self.prefs.provider_model.is_some()

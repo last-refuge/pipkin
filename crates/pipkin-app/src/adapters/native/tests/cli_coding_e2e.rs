@@ -653,3 +653,63 @@ fn dashboard_new_claude_thread_uses_chosen_project_and_model_without_navigation(
     assert_eq!(saved.project, chosen.display().to_string());
     h.stop();
 }
+
+#[test]
+fn dashboard_new_native_thread_uses_chosen_project_and_model_without_navigation() {
+    use pipkin_core::dashboard::{Command as Dash, Creation, Freshness};
+    let fx = Fixture::start(|_, _| panic!("creation must never call inference"));
+    let mut h = Harness::start(&fx, &fx.root.join("dashboard-native-create.db"));
+    h.until("native catalog", |s| {
+        s.connection.is_ready() && !s.models.is_empty()
+    });
+    h.open_new_conversation(&fx.project);
+    h.until("main conversation", |s| {
+        s.current().is_some_and(|c| c.opened)
+    });
+    let main = h.state.selected;
+    h.dispatch(Command::EditDraft("preserve native main draft".into()));
+    let prefs = h.state.prefs.clone();
+    let chosen = fx.root.join("chosen-native-project");
+    std::fs::create_dir(&chosen).unwrap();
+    let model = h.state.models[0].id.clone();
+    h.dispatch(Command::Dashboard(Dash::Open));
+    h.dispatch(Command::Dashboard(Dash::CreateNative {
+        project: chosen.display().to_string(),
+        model: model.clone(),
+    }));
+    h.until("new native thread attached", |s| {
+        matches!(s.dashboard.creation, Some(Creation::Created(id)) if s.dashboard_attachment_ready(id))
+            && s.dashboard.freshness == Freshness::Live
+    });
+    let Some(Creation::Created(created)) = h.state.dashboard.creation else {
+        panic!("creation receipt missing")
+    };
+    h.until("new graph node", |s| {
+        s.dashboard
+            .rows
+            .iter()
+            .any(|r| r.conversation == Some(created))
+    });
+    let row = h
+        .state
+        .dashboard
+        .rows
+        .iter()
+        .find(|r| r.conversation == Some(created))
+        .unwrap();
+    assert_eq!(row.worker.cwd, chosen.display().to_string());
+    assert_eq!(
+        h.state.conversation(created).unwrap().provider_model,
+        Some(pipkin_core::ProviderModel::Native(model))
+    );
+    assert!(h.state.dashboard.open);
+    assert_eq!(h.state.selected, main);
+    assert_eq!(
+        h.state.current().unwrap().draft.text,
+        "preserve native main draft"
+    );
+    assert_eq!(h.state.prefs.selected_project, prefs.selected_project);
+    assert_eq!(h.state.prefs.provider_model, prefs.provider_model);
+    assert_eq!(h.state.prefs.model, prefs.model);
+    h.stop();
+}

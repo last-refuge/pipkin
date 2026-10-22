@@ -477,3 +477,183 @@ fn stale_or_unavailable_catalog_choice_is_not_silently_replaced() {
         Some(ExecutionProfile::NativeAgent)
     );
 }
+
+#[test]
+fn dashboard_native_creation_preserves_main_context_and_correlates_catalog() {
+    use dashboard::{Command as D, Creation};
+    for catalog_first in [false, true] {
+        for close_graph in [false, true] {
+            let mut s = providers();
+            s.dashboard.open = true;
+            let prefs = s.prefs.clone();
+            let selected = s.selected;
+            let out = s.dispatch(Command::Dashboard(D::CreateNative {
+                project: "/chosen/project".into(),
+                model: "native/claude".into(),
+            }));
+            let request = out
+                .effects
+                .iter()
+                .find_map(|e| match e {
+                    Effect::Backend(BackendRequest::CreateConversation {
+                        request,
+                        cwd,
+                        model,
+                        ..
+                    }) => {
+                        assert_eq!(cwd, "/chosen/project");
+                        assert_eq!(model.as_deref(), Some("native/claude"));
+                        Some(request.clone())
+                    }
+                    _ => None,
+                })
+                .unwrap();
+            assert!(!s.local_cli_availability().begin);
+            assert!(
+                s.dispatch(Command::Dashboard(D::CreateNative {
+                    project: "/other".into(),
+                    model: "native/gpt".into(),
+                }))
+                .effects
+                .iter()
+                .all(|e| !matches!(e, Effect::Backend(_))),
+                "double-click cannot duplicate creation"
+            );
+            s.set_notice("unrelated background notice".into());
+            assert!(matches!(s.dashboard.creation, Some(Creation::Pending(_))));
+            let created = ConversationId(400);
+            s.native_conversation_created(&RequestId("stale".into()), created);
+            if close_graph {
+                s.dispatch(Command::Dashboard(D::Close));
+            }
+            let catalog = Bootstrap {
+                projects: s.projects.clone(),
+                models: s.models.clone(),
+                now: 2,
+                conversations: s
+                    .conversations
+                    .iter()
+                    .map(|c| (c.id, c.project, c.title.clone(), c.updated_at))
+                    .chain(std::iter::once((
+                        created,
+                        project_id_for_path("/chosen/project"),
+                        "new".into(),
+                        2,
+                    )))
+                    .collect(),
+            };
+            let out = if catalog_first {
+                s.apply_catalog(catalog);
+                s.native_conversation_created(&request, created)
+            } else {
+                s.native_conversation_created(&request, created);
+                s.apply_catalog(catalog)
+            };
+            assert_eq!(s.dashboard.creation, Some(Creation::Created(created)));
+            assert_eq!(s.selected, selected);
+            assert_eq!(s.current().unwrap().draft.text, "explicit text");
+            assert_eq!(s.prefs.provider_model, prefs.provider_model);
+            assert_eq!(s.prefs.selected_project, prefs.selected_project);
+            assert_eq!(s.prefs.model, prefs.model);
+            assert_eq!(out.effects.iter().any(|e| matches!(e, Effect::Backend(BackendRequest::Dashboard(dashboard::Request::Attach { conversation, .. })) if *conversation == created)), !close_graph);
+            assert!(
+                !out.effects
+                    .iter()
+                    .any(|e| matches!(e, Effect::Backend(BackendRequest::Submit { .. })))
+            );
+        }
+    }
+}
+
+#[test]
+fn dashboard_native_creation_validates_choices_and_reports_correlated_failure() {
+    use dashboard::{Command as D, Creation};
+    let create = |path: &str, model: &str| {
+        Command::Dashboard(D::CreateNative {
+            project: path.into(),
+            model: model.into(),
+        })
+    };
+    let mut s = providers();
+    assert!(
+        s.dispatch(create("/chosen", "native/gpt"))
+            .effects
+            .iter()
+            .all(|e| !matches!(e, Effect::Backend(_)))
+    );
+    s.dashboard.open = true;
+    assert!(
+        s.dispatch(create("relative", "native/gpt"))
+            .effects
+            .iter()
+            .all(|e| !matches!(e, Effect::Backend(_)))
+    );
+    assert!(
+        s.dispatch(create("/chosen", "missing/model"))
+            .effects
+            .iter()
+            .all(|e| !matches!(e, Effect::Backend(_)))
+    );
+    s.read_only = Some("read only".into());
+    assert!(
+        s.dispatch(create("/chosen", "native/gpt"))
+            .effects
+            .iter()
+            .all(|e| !matches!(e, Effect::Backend(_)))
+    );
+    s.read_only = None;
+    s.models.push(ModelInfo {
+        id: "claude-cli/sonnet".into(),
+        name: "Native model".into(),
+        note: "custom provider".into(),
+    });
+    let out = s.dispatch(create("/chosen", "claude-cli/sonnet"));
+    let request = out
+        .effects
+        .iter()
+        .find_map(|e| match e {
+            Effect::Backend(BackendRequest::CreateConversation { request, model, .. }) => {
+                assert_eq!(model.as_deref(), Some("claude-cli/sonnet"));
+                Some(request.clone())
+            }
+            _ => None,
+        })
+        .unwrap();
+    s.native_conversation_creation_failed(&RequestId("stale".into()), "stale".into());
+    assert!(matches!(s.dashboard.creation, Some(Creation::Pending(_))));
+    s.native_conversation_creation_failed(&request, "Provider refused creation".into());
+    assert_eq!(
+        s.dashboard.creation,
+        Some(Creation::Failed("Provider refused creation".into()))
+    );
+    assert_eq!(s.current().unwrap().draft.text, "explicit text");
+    assert!(s.dashboard_native_creation_available());
+    s.dispatch(create("/chosen", "native/gpt"));
+    s.native_conversation_creation_failed(&request, "old failure".into());
+    assert!(matches!(s.dashboard.creation, Some(Creation::Pending(_))));
+}
+
+#[test]
+fn dashboard_native_creation_from_empty_main_does_not_trigger_initial_selection() {
+    use dashboard::{Command as D, Creation};
+    let mut s = providers();
+    s.selected = None;
+    s.prefs.selected_conversation = None;
+    s.dashboard.open = true;
+    s.dispatch(Command::Dashboard(D::CreateNative {
+        project: "/project".into(),
+        model: "native/gpt".into(),
+    }));
+    let Some(Creation::Pending(request)) = s.dashboard.creation.clone() else {
+        panic!("pending creation")
+    };
+    s.native_conversation_created(&request, B);
+    s.select_initial();
+    assert!(s.selected.is_none());
+    s.dispatch(Command::Dashboard(D::DismissCreation));
+    s.select_initial();
+    assert!(
+        s.selected.is_none(),
+        "later catalogs must also preserve the empty main area"
+    );
+}

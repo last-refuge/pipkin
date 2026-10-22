@@ -145,6 +145,7 @@ pub struct Workspace {
     pub(super) dashboard: Entity<super::dashboard::DashboardView>,
     pub(super) dashboard_new_generation: u64,
     pub(super) dashboard_new_draft: pipkin_core::LocalCliDraft,
+    pub(super) dashboard_new_model: Option<pipkin_core::ProviderModel>,
     pub(super) dashboard_new_pending: Option<String>,
     pub(super) dashboard_cli_pending: Option<(ConversationId, u64, super::dashboard_cli::Action)>,
     dashboard_open: bool,
@@ -400,6 +401,7 @@ impl Workspace {
             dashboard,
             dashboard_new_generation: 0,
             dashboard_new_draft: Default::default(),
+            dashboard_new_model: None,
             dashboard_new_pending: None,
             dashboard_cli_pending: None,
             dashboard_open: false,
@@ -1036,7 +1038,12 @@ impl Workspace {
             self.restore_focus = window.focused(cx);
         }
         let previous = self.overlay;
-        if previous != o && matches!(o, Overlay::LocalCli | Overlay::CliApprovals) {
+        if previous != o
+            && matches!(
+                o,
+                Overlay::LocalCli | Overlay::CliApprovals | Overlay::DashboardNew
+            )
+        {
             self.cli_dialog_scroll
                 .set_offset(gpui::point(px(0.), px(0.)));
             self.cli_review_scroll

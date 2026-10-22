@@ -91,6 +91,11 @@ pub enum Action {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
     Open,
+    CreateNative {
+        project: String,
+        model: String,
+    },
+    DismissCreation,
     Close,
     Refresh,
     Group(Option<ActivityGroup>),
@@ -222,8 +227,17 @@ pub struct PendingControl {
     pub action: Action,
     pub uncertain: bool,
 }
+#[derive(Clone, Debug, PartialEq)]
+pub enum Creation {
+    Pending(crate::RequestId),
+    Failed(String),
+    Created(ConversationId),
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct State {
+    /// A dashboard-local creation never replaces the main conversation.
+    pub creation: Option<Creation>,
     pub open: bool,
     pub available: bool,
     pub generation: u64,

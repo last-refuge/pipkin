@@ -200,6 +200,14 @@ impl AppState {
             notes: vec![Note::Other],
         };
         match command {
+            d::Command::CreateNative { project, model } => {
+                out.merge(self.create_dashboard_native(project, model));
+            }
+            d::Command::DismissCreation => {
+                if !matches!(self.dashboard.creation, Some(d::Creation::Pending(_))) {
+                    self.dashboard.creation = None;
+                }
+            }
             d::Command::Attach {
                 session,
                 generation,

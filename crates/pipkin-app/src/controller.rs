@@ -1284,6 +1284,11 @@ pub fn start(cx: &mut App, options: Options) -> Entity<Model> {
                             cx,
                         );
                     }
+                    LifecycleEvent::NativeConversationCreationFailed { request, message } => m
+                        .mutate(
+                            |state| state.native_conversation_creation_failed(&request, message),
+                            cx,
+                        ),
                     LifecycleEvent::NativeConversationCreated {
                         request,
                         conversation,

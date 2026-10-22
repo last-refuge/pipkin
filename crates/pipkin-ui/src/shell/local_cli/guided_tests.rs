@@ -501,3 +501,122 @@ fn dashboard_new_picker_captures_project_and_model_without_leaving_graph(cx: &mu
         assert!(w.dashboard.read(cx).thread_dialog_open());
     });
 }
+
+#[gpui::test]
+fn dashboard_new_native_picker_routes_provider_project_model_and_reveals_created_thread(
+    cx: &mut TestAppContext,
+) {
+    cx.update(crate::text::init);
+    let effects = Rc::new(RefCell::new(Vec::new()));
+    let captured = effects.clone();
+    let mut s = state();
+    s.can_create = true;
+    s.dashboard.open = true;
+    s.projects = vec![Project {
+        id: ProjectId(7),
+        name: "Chosen".into(),
+        path: "/chosen".into(),
+    }];
+    s.models = vec![
+        ModelInfo {
+            id: "openai/gpt".into(),
+            name: "GPT".into(),
+            note: "openai".into(),
+        },
+        ModelInfo {
+            id: "anthropic/sonnet".into(),
+            name: "Sonnet".into(),
+            note: "anthropic".into(),
+        },
+        ModelInfo {
+            id: "anthropic/opus".into(),
+            name: "Opus".into(),
+            note: "anthropic".into(),
+        },
+    ];
+    let window = cx.open_window(gpui::size(px(1600.), px(1000.)), |window, cx| {
+        let model = cx.new(|_| {
+            let mut m = crate::model::Model::new(s);
+            m.set_effect_handler(Box::new(move |e, _| captured.borrow_mut().push(e)));
+            m
+        });
+        model.update(cx, |m, cx| m.explore_workspace(cx));
+        Workspace::new(model, Default::default(), window, cx)
+    });
+    let root = window.root(cx).unwrap();
+    let cx = &mut VisualTestContext::from_window(window.into(), cx);
+    cx.run_until_parked();
+    for id in [
+        "graph-new-thread",
+        "new-provider-1",
+        "new-native-model-2",
+        "new-cli-project-7",
+    ] {
+        let bounds = cx
+            .debug_bounds(id)
+            .unwrap_or_else(|| panic!("missing {id}"));
+        cx.simulate_click(bounds.center(), Default::default());
+        cx.run_until_parked();
+    }
+    assert!(!effects.borrow().iter().any(|e| matches!(
+        e,
+        Effect::Backend(
+            BackendRequest::CreateConversation { .. } | BackendRequest::LocalCli { .. }
+        )
+    )));
+    let bounds = cx.debug_bounds("new-thread-create").unwrap();
+    cx.simulate_click(bounds.center(), Default::default());
+    cx.run_until_parked();
+    cx.simulate_click(bounds.center(), Default::default());
+    cx.run_until_parked();
+    let requests: Vec<_> = effects
+        .borrow()
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Backend(BackendRequest::CreateConversation {
+                request,
+                model,
+                cwd,
+                ..
+            }) => {
+                assert_eq!(model.as_deref(), Some("anthropic/opus"));
+                assert_eq!(cwd, "/chosen");
+                Some(request.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(requests.len(), 1);
+    root.update_in(cx, |w, window, cx| {
+        w.close_overlay(window, cx);
+        w.open_dashboard_new(window, cx);
+        assert_eq!(w.overlay, Overlay::DashboardNew);
+        assert_eq!(
+            w.dashboard_new_model,
+            Some(ProviderModel::Native("anthropic/opus".into()))
+        );
+        assert!(w.state(cx).dashboard.open);
+        w.model.update(cx, |m, cx| {
+            m.state.dashboard.creation = Some(dashboard::Creation::Created(ConversationId(31)));
+            let mut row = crate::shell::dashboard::test_row(
+                "new-native",
+                "/chosen",
+                dashboard::WorkState::Ready,
+            );
+            row.conversation = Some(ConversationId(31));
+            m.state.dashboard.rows.push(row);
+            cx.notify();
+        });
+    });
+    cx.run_until_parked();
+    root.update(cx, |w, cx| {
+        assert_eq!(w.overlay, Overlay::None);
+        assert!(w.state(cx).dashboard.open);
+        assert_eq!(
+            w.state(cx).dashboard.selected.as_deref(),
+            Some("new-native")
+        );
+        assert!(w.dashboard.read(cx).thread_dialog_open());
+        assert!(w.state(cx).selected.is_none());
+    });
+}

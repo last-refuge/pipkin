@@ -405,6 +405,13 @@ impl Worker {
             self.control.submitted(*conversation, *generation, *op);
         }
         match request {
+            BackendRequest::CreateConversation { request, .. } => {
+                (self.sink)(LifecycleEvent::NativeConversationCreationFailed {
+                    request,
+                    message: OFFLINE.into(),
+                });
+            }
+
             BackendRequest::CliApproval(request) => {
                 let (conversation, generation, op) = request.tuple();
                 self.emit_op(
@@ -2653,6 +2660,12 @@ impl Live {
                 model,
                 ..
             } => {
+                let failed = |message: String| {
+                    (worker.sink)(LifecycleEvent::NativeConversationCreationFailed {
+                        request: request.clone(),
+                        message,
+                    })
+                };
                 let result = self.call(Call::CreateSession {
                     cwd,
                     request: request.0.clone(),
@@ -2665,24 +2678,28 @@ impl Live {
                             // Publish no UI selection yet, but populate the authoritative index
                             // used by the shared native-execution guard for the new session.
                             if self.refresh_sessions().is_err() {
-                                worker.notice("The conversation was created but its identity could not be refreshed. No message was sent.".into());
+                                failed("The conversation was created but its identity could not be refreshed. No message was sent.".into());
                                 return;
                             }
                             let confirmation = self.call(Call::SetModel { session: summary.id.clone(), model });
                             if !matches!(confirmation, Ok(Reply::Ok)) {
-                                worker.notice("The conversation was created but its selected model could not be confirmed. No message was sent; inspect the conversation before continuing.".into());
+                                failed("The conversation was created but its selected model could not be confirmed. No message was sent; inspect the conversation before continuing.".into());
                                 return;
                             }
                         }
                         if self.refresh_sessions().is_ok() {
                             if let Some(conversation) = self.conversation_of(&summary.id) {
-                                (worker.sink)(LifecycleEvent::NativeConversationCreated { request, conversation });
+                                (worker.sink)(LifecycleEvent::NativeConversationCreated { request: request.clone(), conversation });
+                            } else {
+                                failed("The conversation was created but its identity is missing from the refreshed catalog. No message was sent.".into());
                             }
                             (worker.sink)(LifecycleEvent::Catalog(self.catalog(worker)));
+                        } else {
+                            failed("The conversation was created but its catalog could not be refreshed. Refresh the workspace before creating another thread. No message was sent.".into());
                         }
                     }
-                    Ok(_) => worker.notice("Could not confirm the created conversation's backend; no message was sent.".into()),
-                    Err(error) => worker.notice(format!("Could not create the conversation: {error}")),
+                    Ok(_) => failed("Could not confirm the created conversation's backend; no message was sent.".into()),
+                    Err(error) => failed(format!("Could not create the conversation: {error}")),
                 }
             }
             BackendRequest::LoadOlder {

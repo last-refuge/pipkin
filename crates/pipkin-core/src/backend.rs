@@ -15,6 +15,10 @@ pub enum LifecycleEvent {
     CliApprovalsAvailable(bool),
     /// Projects, models and conversation summaries known to the backend.
     Catalog(Bootstrap),
+    NativeConversationCreationFailed {
+        request: crate::RequestId,
+        message: String,
+    },
     NativeConversationCreated {
         request: crate::RequestId,
         conversation: ConversationId,

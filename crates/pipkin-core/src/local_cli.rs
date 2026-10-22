@@ -365,6 +365,10 @@ impl LocalCliState {
         &self.parked_creations
     }
 
+    pub(crate) fn setup_busy(&self) -> bool {
+        self.pending.is_some() || self.unresolved()
+    }
+
     fn unresolved(&self) -> bool {
         self.creation.is_some() && self.stage != LocalCliStage::Created
     }
@@ -465,7 +469,7 @@ impl AppState {
                 .as_ref()
                 .is_some_and(|t| t.stage == LocalCliMetadataStage::MetadataVerified);
         LocalCliAvailability {
-            begin: writable && editable,
+            begin: writable && editable && !self.pending_native_creation(),
             edit: s.target.is_some() && editable,
             trust: writable && live && free && ticket && s.stage == LocalCliStage::AwaitingTrust,
             inspect: writable
