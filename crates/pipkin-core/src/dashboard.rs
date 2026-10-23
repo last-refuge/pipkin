@@ -2,7 +2,8 @@
 use crate::{ConversationId, TranscriptItem};
 pub use pipkin_engine_protocol::{
     ActivityCounts, ActivityCursor, ActivityFilter, ActivityGroup, ActivityPage, ActivityRow,
-    Coverage, ExecutionBackend, WaitReason, WorkState, WorkerKind,
+    CompletionKey, Coverage, ExecutionBackend, RunBrief, RunOutcome, WaitReason, WorkState,
+    WorkerKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -100,7 +101,18 @@ pub enum Command {
     Refresh,
     Group(Option<ActivityGroup>),
     Filter(ActivityFilter),
+    Recency(Recency),
+    HideProject(String),
+    ShowProject(String),
+    HideThread(String),
+    ShowThread(String),
+    ShowAllHidden,
     Select(String),
+    MarkReviewed {
+        session: String,
+        generation: u64,
+        completion: CompletionKey,
+    },
     More,
     Older,
     Edit(String),
@@ -133,6 +145,7 @@ pub enum Command {
 pub enum Request {
     Watch {
         generation: u64,
+        closed: Vec<ConversationId>,
         filter: ActivityFilter,
         group: Option<ActivityGroup>,
     },
@@ -234,10 +247,43 @@ pub enum Creation {
     Created(ConversationId),
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Recency {
+    #[default]
+    Month,
+    TwoMonths,
+    ThreeMonths,
+}
+impl Recency {
+    pub fn days(self) -> u32 {
+        match self {
+            Self::Month => 30,
+            Self::TwoMonths => 60,
+            Self::ThreeMonths => 90,
+        }
+    }
+    pub fn next(self) -> Self {
+        match self {
+            Self::Month => Self::TwoMonths,
+            Self::TwoMonths => Self::ThreeMonths,
+            Self::ThreeMonths => Self::Month,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HiddenThread {
+    pub title: String,
+    pub project: String,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct State {
     /// A dashboard-local creation never replaces the main conversation.
     pub creation: Option<Creation>,
+    pub recency: Recency,
+    pub hidden_projects: std::collections::BTreeSet<String>,
+    pub hidden_threads: BTreeMap<String, HiddenThread>,
     pub open: bool,
     pub available: bool,
     pub generation: u64,
@@ -257,11 +303,15 @@ pub struct State {
     pub control: Option<PendingControl>,
     pub child_drafts: BTreeMap<String, (String, u64)>,
     pub seen: BTreeMap<String, u64>,
+    pub reviewed_completions: BTreeMap<String, CompletionKey>,
     pub pending_send: Option<(ConversationId, u64, Action)>,
     pub attachment: Option<(ConversationId, u64)>,
     pub attachment_error: Option<String>,
 }
 impl State {
+    pub fn completion_unread(&self, row: &Row) -> bool {
+        row.worker.completion_unread(&self.reviewed_completions)
+    }
     pub fn selected_row(&self) -> Option<&Row> {
         self.selected
             .as_ref()
@@ -274,21 +324,33 @@ impl State {
 
 #[derive(Default, Serialize, Deserialize)]
 struct Saved {
+    #[serde(default)]
+    recency: Recency,
+    #[serde(default)]
+    hidden_projects: std::collections::BTreeSet<String>,
+    #[serde(default)]
+    hidden_threads: BTreeMap<String, HiddenThread>,
     filter: ActivityFilter,
     group: Option<ActivityGroup>,
     selected: Option<String>,
     child_drafts: BTreeMap<String, (String, u64)>,
     seen: BTreeMap<String, u64>,
+    #[serde(default)]
+    reviewed_completions: BTreeMap<String, CompletionKey>,
     control: Option<PendingControl>,
 }
 impl State {
     pub fn saved(&self) -> String {
         serde_json::to_string(&Saved {
+            recency: self.recency,
+            hidden_projects: self.hidden_projects.clone(),
+            hidden_threads: self.hidden_threads.clone(),
             filter: self.filter.clone(),
             group: self.group,
             selected: self.selected.clone(),
             child_drafts: self.child_drafts.clone(),
             seen: self.seen.clone(),
+            reviewed_completions: self.reviewed_completions.clone(),
             control: self.control.clone(),
         })
         .unwrap_or_default()
@@ -298,11 +360,15 @@ impl State {
             return Self::default();
         };
         Self {
+            recency: saved.recency,
+            hidden_projects: saved.hidden_projects,
+            hidden_threads: saved.hidden_threads,
             filter: saved.filter,
             group: saved.group,
             selected: saved.selected,
             child_drafts: saved.child_drafts,
             seen: saved.seen,
+            reviewed_completions: saved.reviewed_completions,
             control: saved.control.map(|mut p| {
                 p.uncertain = true;
                 p

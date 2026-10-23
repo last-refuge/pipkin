@@ -611,3 +611,59 @@ Child lifecycle publication bumps the parent where applicable, but the desktop a
 all session invalidations into directory refreshes. Correctness does not depend on a child or
 job update bumping a particular ancestor's revision. Directory refresh and detail observation
 remain separate from the execution attachment.
+
+
+## Recent-workspace visibility amendment — 2026-10-22
+
+`ActivityFilter` accepts optional `inactiveDays` and `excludedRoots`. Omitted fields retain
+the original unfiltered directory API. Orchestration sends its saved 30/60/90-day window
+and desktop-local closed root identities. Live states, open runs, active child work and
+background jobs bypass age/closed exclusion. Other rows must be within the inclusive
+last-activity window and outside excluded root families. This predicate runs before
+counts and pagination. With `inactiveDays`, All's cursor anchor is last activity rather
+than creation time. Other group anchors are unchanged. Observation never updates activity.
+Raw `ActivityRows` remains an unrestricted read; clients must apply the same predicate
+before pinning its result into a filtered workspace. Visibility policy does not delete
+sessions, cancel work, reopen a runtime, or change history access outside orchestration.
+
+## Unreviewed completion amendment — 2026-10-22
+
+Orchestration sends `reviewedCompletions` (including an empty map) to opt into successful
+result attention. Each session acknowledgment identifies the execution backend, run ID and
+run start timestamp; unrelated session revisions cannot make an acknowledged turn unread.
+Terminal children without a run use their immutable session identity and creation time.
+Clients that omit this optional filter retain the previous success-attention behavior.
+
+Successful settled roots and completed child results show **Finished · unread**, an amber
+node border/status and project attention count, and appear in Needs you/Overview until
+explicitly marked reviewed or superseded by another turn. Waiting-for-input children also
+count as attention. Engine counts, pagination, the graph, list and dialog agree. Finished
+outcome metrics still overlap attention and must not be summed. The existing recent-workspace
+window and closed-root exclusion apply to unreviewed settled results too.
+
+**Mark reviewed** is available in the selected inspector, list detail and centered dialog.
+It acknowledges only the captured session/turn and detail generation; stale clicks cannot
+clear a newer result. Review state is saved in the desktop backend namespace and survives
+restart and filter changes. Merely selecting, opening or refreshing a thread does not
+acknowledge success. Reviewed results show **Awaiting next steps**. A new live turn clears
+the completion presentation; its successful finish requires review again. These local
+acknowledgments never send prompts, grant approvals or modify engine history.
+
+
+## Manual visibility amendment — 2026-10-22
+
+`ActivityFilter.hiddenProjects` and `hiddenSessions` are optional client-local exact-match
+sets, omitted when empty. Project paths match row `cwd`; session identities match either
+`session` or `root` so hiding a root also hides its descendants. Unlike age/closed exclusion,
+explicit hiding overrides live states, pending approvals and active children/jobs. This
+predicate applies before directory counts and pagination, to raw selected-row pinning, and
+to the desktop's retained rows. The engine never persists or mutates sessions for visibility.
+
+The core saves hidden project paths and hidden thread IDs with display title/project metadata
+in dashboard preferences, independently of ordinary filters, recency and review receipts.
+The metadata supports restoration even when no hidden rows are loaded. Hiding the selected
+row clears its detail selection/generation and pending send, preserving drafts and ongoing
+work. Show project does not clear individually hidden threads; Show thread does not clear a
+hidden project. Show all clears only manual hiding. Restoration retains ordinary filters and
+recency. The Hidden manager remains accessible in both graph and list, including an empty
+workspace. No hide/show command sends a prompt, grants approval or attaches a runtime.

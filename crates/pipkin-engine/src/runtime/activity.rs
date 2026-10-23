@@ -182,7 +182,7 @@ fn settled_state(outcome: Option<&RunOutcome>) -> WorkState {
 fn group_of(state: &WorkState, settled_at: Option<i64>, _now: i64) -> Option<ActivityGroup> {
     match state {
         WorkState::Waiting {
-            reason: WaitReason::Question | WaitReason::CliApproval,
+            reason: WaitReason::Question | WaitReason::CliApproval | WaitReason::Input,
         } => Some(ActivityGroup::Attention),
         WorkState::Pending
         | WorkState::Queued
@@ -432,8 +432,19 @@ impl Shared {
         let after = after.map(|c| decode_cursor(group, &c)).transpose()?;
         let limit = limit.clamp(1, MAX_ACTIVITY_PAGE) as usize;
         let Directory { workers, through } = self.directory()?;
+        if filter.excluded_roots.len() > 20_000
+            || filter.hidden_sessions.len() > 20_000
+            || filter.hidden_projects.len() > 20_000
+            || filter
+                .inactive_days
+                .is_some_and(|days| days == 0 || days > 3650)
+        {
+            return Err(invalid("Invalid activity visibility policy"));
+        }
+        let now = now_ms();
         let matches = |w: &Worker| {
-            filter.cwd.as_ref().is_none_or(|cwd| &w.row.cwd == cwd)
+            filter.includes_visibility(&w.row, now)
+                && filter.cwd.as_ref().is_none_or(|cwd| &w.row.cwd == cwd)
                 && filter.kind.is_none_or(|k| w.row.kind == k)
                 && filter.backend.is_none_or(|b| w.row.execution_backend == b)
                 && (!filter.failed || w.failed)
@@ -443,16 +454,24 @@ impl Shared {
         };
         let mut counts = ActivityCounts::default();
         let mut selected = Vec::new();
-        if filter.seen_failures.len() > 20_000 {
-            return Err(invalid("Too many acknowledged failures"));
+        if filter.seen_failures.len() > 20_000
+            || filter
+                .reviewed_completions
+                .as_ref()
+                .is_some_and(|seen| seen.len() > 20_000)
+        {
+            return Err(invalid("Too many acknowledged results"));
         }
-        let now = now_ms();
         for w in workers.iter().filter(|w| matches(w)) {
-            let unseen = w.failed
+            let unseen = (w.failed
                 && filter
                     .seen_failures
                     .get(&w.row.session)
-                    .is_none_or(|r| *r < w.row.revision);
+                    .is_none_or(|r| *r < w.row.revision))
+                || filter
+                    .reviewed_completions
+                    .as_ref()
+                    .is_some_and(|seen| w.row.completion_unread(seen));
             if unseen && w.group != Some(ActivityGroup::Attention) {
                 counts.attention += 1;
             }
@@ -481,7 +500,9 @@ impl Shared {
                         || (w.group == Some(ActivityGroup::Finished)
                             && now - w.anchor <= RECENT_MS)))
             {
-                let sort_at = if unseen && group == ActivityGroup::Overview {
+                let sort_at = if group == ActivityGroup::All && filter.inactive_days.is_some() {
+                    w.row.last_activity_ms()
+                } else if unseen && group == ActivityGroup::Overview {
                     30_000_000_000_000_000 - w.anchor
                 } else {
                     w.sort_at(group)

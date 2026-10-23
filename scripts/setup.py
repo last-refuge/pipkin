@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tempfile
 import uuid
+sys.dont_write_bytecode = True
+from build_storage import IDENTITY, MARKER, directory_lock
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -28,11 +30,11 @@ def target_for(system, machine):
 
 
 def owned_directory(path):
-    marker = path / '.pipkin-source-setup'
+    marker = path / MARKER
     if any(parent.is_symlink() for parent in [path, *path.parents] if parent != ROOT) or (path.exists() and not marker.is_file()):
         raise RuntimeError(f'Refusing unidentified setup directory: {path}')
     path.mkdir(parents=True, exist_ok=True)
-    marker.write_text('Pipkin checkout-local source setup v1\n')
+    marker.write_text(IDENTITY)
 
 
 def preflight(system):
@@ -79,7 +81,7 @@ def install_mac(app, destination):
     print(f'Installed {destination} (ad-hoc signed, not notarized).')
 
 
-def main():
+def setup_main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='check build prerequisites only; no download/build/install')
     parser.add_argument('--install', action='store_true', help='also install for this user: Linux ~/.local, Mac ~/Applications/Pipkin.app')
@@ -134,6 +136,15 @@ def main():
     print('\nReady: scripts/run.sh\nSubagents are included by default. Connect a provider/model in Pipkin; setup does not make paid requests.\nYou can rebuild while Pipkin runs: old build trees are retained. Quit the old app before launching the new one so its worker is not reused.')
     if options.run:
         os.execv(str(ROOT / 'scripts/run.sh'), [str(ROOT / 'scripts/run.sh')])
+
+
+def main():
+    # Cleanup cannot remove a tree while setup copies/probes it or switches current.
+    if sys.platform != 'linux':
+        setup_main()
+    else:
+        with directory_lock(ROOT, exclusive=False):
+            setup_main()
 
 
 if __name__ == '__main__':

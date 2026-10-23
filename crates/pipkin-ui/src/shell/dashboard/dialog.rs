@@ -283,7 +283,7 @@ impl DashboardView {
         let c = &t.colors;
         let decision = requires_request_ui(&row) && !self.modal_history;
         let available = (f32::from(window.viewport_size().height) - 48.).max(120.);
-        let (label, _, color) = status(&row.worker.state, c);
+        let (label, _, color) = row_status(&row, &self.model.read(cx).state.dashboard, c);
         let close = cx.entity();
         let backdrop = close.clone();
         let toggle = close.clone();
@@ -377,6 +377,24 @@ impl DashboardView {
                             )),
                     ),
             );
+        if let Some(button) = self.review_button(&row, "dialog-mark-reviewed", cx) {
+            dialog = dialog.child(
+                div()
+                    .px(px(24.))
+                    .py(px(10.))
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .bg(c.accent_bg)
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_color(c.accent)
+                            .child("Prompt finished · result not yet reviewed"),
+                    )
+                    .child(button),
+            );
+        }
         dialog = dialog.child(self.cli_controls(&row, cx));
         if decision {
             let dash = &state.dashboard;
@@ -449,6 +467,14 @@ impl DashboardView {
         {
             footer = footer.child(button);
         }
+        footer = footer.child(
+            self.button(
+                "dialog-hide-thread",
+                "Hide thread",
+                D::HideThread(row.worker.session.clone()),
+            )
+            .hint("Hide from orchestration without stopping work. Restore from Hidden."),
+        );
         footer = footer.child(div().flex_1()).child(
             Btn::new("keep-waiting")
                 .label("Close")

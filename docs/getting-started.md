@@ -5,6 +5,18 @@ checksums (no signing key yet). The supported target is x86_64 Arch/Omarchy with
 are experimental and other desktops and pure X11 are unverified. See the [changelog](../CHANGELOG.md),
 [platforms](platforms.md) and the [release gates](v1-release-gates.md) for what was and was not checked.
 
+## Launching an already running app
+
+On Linux, launching Pipkin again reuses the window for the same data folder instead of
+starting a second desktop or engine. `--project /path/to/project` is forwarded to that
+window; its existing engine settings remain in effect. Distinct `--data-dir` profiles can
+run independently. Version checks, diagnostics and engine-worker/server commands remain
+separate entry points. Window activation is verified on Hyprland; other compositors may
+apply their own focus policy.
+
+When upgrading from a build without single-instance support, quit all older Pipkin windows
+once before opening the updated build. Future repeated launches will bring that app forward.
+
 ## Local Claude CLI
 
 Normal Pipkin desktop launches enable chat and restricted Write hosting through the installed
@@ -40,6 +52,8 @@ After the [native prerequisites](source-setup.md#1-install-native-build-prerequi
 `scripts/setup.sh --run` builds and offline-checks the Rust app and built-in engine, then launches it.
 `scripts/run.sh` starts the last successful build; `scripts/setup.sh --install` installs for your user.
 No Pi checkout, Node/npm or manual server setup is required. See [source setup](source-setup.md).
+For build-cache maintenance on Linux, `python3 scripts/clean-builds.py` previews unused source
+builds; see [build storage cleanup](source-setup.md#keep-build-storage-manageable).
 
 ## Build a pacman-managed Arch package
 
@@ -79,6 +93,20 @@ is simulated; the scripted-provider test is offline. Neither establishes that yo
 
 The setup workflow is documented from the native implementation. A new-user installation to
 real first reply on a clean supported desktop remains an open qualification gate; no participant results are claimed.
+
+## Hide projects or threads in orchestration
+
+Use **Hide** on a project header, or select a thread and choose **Hide thread** / **Hide project**
+in its details. The thread dialog also has **Hide thread**. A hidden root thread hides its child
+tasks too. Hiding is a saved dashboard preference: it removes those items from the graph, list,
+search results and attention counts, including running work. It does not stop work, archive
+conversations, mark results reviewed, or discard drafts and history.
+
+Open **Hidden (N)** beside Graph/List to restore individual projects or threads, or choose
+**Show all hidden**. These choices survive restart and ordinary filter changes. Showing a
+project keeps individually hidden threads hidden; showing a thread inside a hidden project
+also requires showing the project. Restored items still follow the current search, status
+and 30/60/90-day recency filters. Conversations remain accessible outside orchestration.
 
 ## Know what the controls mean
 

@@ -93,9 +93,23 @@ pub enum ActivityGroup {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityFilter {
+    /// Hide settled/dormant workers older than this many days. Active work always survives.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inactive_days: Option<u32>,
+    /// Client-local closed roots, including their descendants; never persisted by the engine.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub excluded_roots: std::collections::BTreeSet<String>,
+    /// Explicit client-local hiding overrides even live work. Hidden roots hide descendants.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub hidden_sessions: std::collections::BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub hidden_projects: std::collections::BTreeSet<String>,
     /// Client-local acknowledged failure revisions; never stored by the engine.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub seen_failures: std::collections::BTreeMap<String, u64>,
+    /// Opt in to unread successful results; acknowledgments are local to the client.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewed_completions: Option<std::collections::BTreeMap<String, CompletionKey>>,
     /// Exact match on the normalised working directory.
     #[serde(default)]
     pub cwd: Option<String>,
@@ -131,6 +145,16 @@ pub struct ActivityCounts {
     pub total: u32,
     /// Background jobs; never counted as agents.
     pub jobs_active: u32,
+}
+
+/// Stable result identity. Session revisions also change on rename/model edits, so they
+/// cannot identify whether the user has reviewed a particular successful turn.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionKey {
+    pub backend: ExecutionBackend,
+    pub run: Option<u64>,
+    pub started_at_ms: i64,
 }
 
 /// The current run, or the last settled one.
@@ -202,6 +226,79 @@ pub struct ActivityRow {
     pub sort_at_ms: i64,
 }
 
+impl ActivityRow {
+    pub fn completion_key(&self) -> Option<CompletionKey> {
+        if !matches!(self.state, WorkState::Ready | WorkState::Completed) {
+            return None;
+        }
+        if let Some(run) = &self.run {
+            if run.phase.is_none() && run.outcome == Some(RunOutcome::Completed) {
+                return Some(CompletionKey {
+                    backend: self.execution_backend,
+                    run: Some(run.id),
+                    started_at_ms: run.started_at_ms,
+                });
+            }
+        } else if self.state == WorkState::Completed && self.has_result {
+            // Terminal child sessions are immutable results; a follow-up has a new session.
+            return Some(CompletionKey {
+                backend: self.execution_backend,
+                run: None,
+                started_at_ms: self.created_at_ms,
+            });
+        }
+        None
+    }
+
+    pub fn completion_unread(
+        &self,
+        reviewed: &std::collections::BTreeMap<String, CompletionKey>,
+    ) -> bool {
+        self.completion_key()
+            .is_some_and(|key| reviewed.get(&self.session) != Some(&key))
+    }
+
+    pub fn has_live_work(&self) -> bool {
+        self.children_active > 0
+            || self.jobs_active > 0
+            || self.run.as_ref().is_some_and(|r| r.phase.is_some())
+            || matches!(
+                self.state,
+                WorkState::Pending
+                    | WorkState::Queued
+                    | WorkState::Running
+                    | WorkState::Waiting { .. }
+                    | WorkState::Stopping
+                    | WorkState::Completing
+            )
+    }
+
+    pub fn last_activity_ms(&self) -> i64 {
+        self.created_at_ms.max(self.updated_at_ms).max(
+            self.run
+                .as_ref()
+                .map_or(0, |r| r.started_at_ms.max(r.ended_at_ms.unwrap_or(0))),
+        )
+    }
+}
+
+impl ActivityFilter {
+    /// Shared with clients so selection pinning cannot resurrect excluded history.
+    pub fn includes_visibility(&self, row: &ActivityRow, now_ms: i64) -> bool {
+        if self.hidden_projects.contains(&row.cwd)
+            || self.hidden_sessions.contains(&row.session)
+            || self.hidden_sessions.contains(&row.root)
+        {
+            return false;
+        }
+        row.has_live_work()
+            || (!self.excluded_roots.contains(&row.root)
+                && self.inactive_days.is_none_or(|days| {
+                    row.last_activity_ms() >= now_ms.saturating_sub(i64::from(days) * 86_400_000)
+                }))
+    }
+}
+
 /// Parts of the system the directory cannot see.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -245,6 +342,98 @@ mod tests {
 
     use super::*;
     use crate::api::{Call, Lane, Reply};
+
+    #[test]
+    fn manual_hiding_overrides_live_work_and_matches_exact_projects_and_root_families() {
+        let mut row: ActivityRow = serde_json::from_value(json!({"session":"child", "root":"root", "revision":1, "kind":"child", "cwd":"/project", "state":{"state":"running"}, "createdAtMs":0, "updatedAtMs":0, "sortAtMs":0})).unwrap();
+        let mut filter = ActivityFilter::default();
+        filter.hidden_projects.insert("/project-other".into());
+        assert!(filter.includes_visibility(&row, 0));
+        filter.hidden_projects.insert("/project".into());
+        assert!(!filter.includes_visibility(&row, 0));
+        filter.hidden_projects.clear();
+        filter.hidden_sessions.insert("root".into());
+        assert!(!filter.includes_visibility(&row, 0));
+        filter.hidden_sessions.clear();
+        filter.hidden_sessions.insert("child".into());
+        assert!(!filter.includes_visibility(&row, 0));
+        row.session = "sibling".into();
+        assert!(filter.includes_visibility(&row, 0));
+        let wire = serde_json::to_value(ActivityFilter::default()).unwrap();
+        assert!(wire.get("hiddenSessions").is_none());
+        assert!(wire.get("hiddenProjects").is_none());
+    }
+
+    #[test]
+    fn recency_visibility_preserves_weekends_and_live_work_but_expires_settled_failures() {
+        let day = 86_400_000;
+        let now = 100 * day;
+        let mut row: ActivityRow = serde_json::from_value(json!({"session":"s", "root":"s", "revision":1, "kind":"root", "cwd":"/p", "state":{"state":"ready"}, "createdAtMs":0, "updatedAtMs":now-3*day, "sortAtMs":0})).unwrap();
+        let mut filter = ActivityFilter {
+            inactive_days: Some(30),
+            ..Default::default()
+        };
+        assert!(filter.includes_visibility(&row, now));
+        row.updated_at_ms = now - 30 * day;
+        assert!(filter.includes_visibility(&row, now));
+        row.updated_at_ms -= 1;
+        for state in [
+            WorkState::Ready,
+            WorkState::Completed,
+            WorkState::Stopped,
+            WorkState::Failed { detail: None },
+            WorkState::Interrupted,
+            WorkState::Blocked {
+                reason: "offline".into(),
+            },
+        ] {
+            row.state = state;
+            assert!(!filter.includes_visibility(&row, now));
+        }
+        filter.excluded_roots.insert("s".into());
+        for state in [
+            WorkState::Running,
+            WorkState::Queued,
+            WorkState::Pending,
+            WorkState::Waiting {
+                reason: WaitReason::Question,
+            },
+            WorkState::Waiting {
+                reason: WaitReason::CliApproval,
+            },
+            WorkState::Waiting {
+                reason: WaitReason::Input,
+            },
+            WorkState::Stopping,
+            WorkState::Completing,
+        ] {
+            row.state = state;
+            assert!(filter.includes_visibility(&row, now));
+        }
+        row.state = WorkState::Ready;
+        row.jobs_active = 1;
+        assert!(filter.includes_visibility(&row, now));
+        row.jobs_active = 0;
+        row.children_active = 1;
+        assert!(filter.includes_visibility(&row, now));
+        row.children_active = 0;
+        row.updated_at_ms = now;
+        assert!(
+            !filter.includes_visibility(&row, now),
+            "closed roots remain hidden even when recent"
+        );
+        row.kind = WorkerKind::Child;
+        row.session = "child".into();
+        assert!(
+            !filter.includes_visibility(&row, now),
+            "closed roots also hide children"
+        );
+        filter.excluded_roots.clear();
+        assert!(
+            filter.includes_visibility(&row, now),
+            "real activity returns old threads"
+        );
+    }
 
     fn round_trip<T: Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug>(
         value: &T,
@@ -293,6 +482,58 @@ mod tests {
     }
 
     #[test]
+    fn completion_review_tracks_turns_not_session_edits_for_every_backend() {
+        for backend in [
+            ExecutionBackend::NativeAgent,
+            ExecutionBackend::ClaudeCliAgent,
+            ExecutionBackend::LocalClaudeCli,
+        ] {
+            let mut row = row();
+            row.kind = WorkerKind::Root;
+            row.state = WorkState::Ready;
+            row.execution_backend = backend;
+            row.run = None;
+            let mut reviewed = std::collections::BTreeMap::new();
+            assert!(
+                !row.completion_unread(&reviewed),
+                "never-run roots are not unread"
+            );
+            row.run = Some(RunBrief {
+                id: 1,
+                phase: None,
+                outcome: Some(RunOutcome::Completed),
+                started_at_ms: 100,
+                ended_at_ms: Some(200),
+            });
+            assert!(row.completion_unread(&reviewed));
+            reviewed.insert(row.session.clone(), row.completion_key().unwrap());
+            row.revision += 1;
+            row.title = Some("Renamed".into());
+            row.updated_at_ms += 100;
+            assert!(!row.completion_unread(&reviewed));
+            row.run.as_mut().unwrap().id = 2;
+            assert!(row.completion_unread(&reviewed), "next turn needs review");
+            row.state = WorkState::Running;
+            assert!(!row.completion_unread(&reviewed));
+            row.state = WorkState::Ready;
+            row.run.as_mut().unwrap().outcome = Some(RunOutcome::Aborted);
+            assert!(!row.completion_unread(&reviewed));
+        }
+        let mut child = row();
+        child.state = WorkState::Completed;
+        child.run = None;
+        child.has_result = true;
+        let reviewed = std::collections::BTreeMap::from([(
+            child.session.clone(),
+            child.completion_key().unwrap(),
+        )]);
+        child.revision += 1;
+        assert!(!child.completion_unread(&reviewed));
+        child.session = "follow-up".into();
+        assert!(child.completion_unread(&reviewed));
+    }
+
+    #[test]
     fn protocol_is_42() {
         assert_eq!(crate::PROTOCOL_VERSION, 42);
     }
@@ -307,6 +548,7 @@ mod tests {
                 backend: Some(ExecutionBackend::ClaudeCliAgent),
                 text: Some("fix".into()),
                 failed: true,
+                ..Default::default()
             },
             group: ActivityGroup::Attention,
             after: Some(ActivityCursor("opaque".into())),

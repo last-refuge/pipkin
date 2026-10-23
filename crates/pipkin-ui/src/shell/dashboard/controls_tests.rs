@@ -1,5 +1,6 @@
 use super::{D, DashboardView, graph_layout};
 use crate::model::Model;
+use crate::theme::ActiveTheme;
 use gpui::{AppContext as _, Entity, TestAppContext, VisualTestContext, px, size};
 use pipkin_core::{dashboard as d, *};
 use std::{cell::RefCell, rc::Rc};
@@ -226,4 +227,158 @@ fn send_control_targets_the_selected_thread_without_changing_the_main_conversati
             "message for target"
         );
     });
+}
+
+#[gpui::test]
+fn graph_recency_control_cycles_saved_policy_without_execution(cx: &mut TestAppContext) {
+    let (root, mut cx, effects) = fixture(cx, false, Default::default());
+    for days in [60, 90, 30] {
+        click(&mut cx, "graph-recency");
+        root.update(&mut cx, |v, cx| {
+            assert_eq!(v.model.read(cx).state.dashboard.recency.days(), days)
+        });
+        assert!(effects.borrow().iter().any(|e| matches!(e,
+            Effect::Backend(BackendRequest::Dashboard(d::Request::Watch { filter, .. })) if filter.inactive_days == Some(days))));
+    }
+    assert!(!effects.borrow().iter().any(|e| matches!(
+        e,
+        Effect::Backend(BackendRequest::Submit { .. } | BackendRequest::CreateConversation { .. })
+    )));
+}
+
+#[gpui::test]
+fn unread_completion_survives_opening_and_explicit_review_clears_the_graph(
+    cx: &mut TestAppContext,
+) {
+    let (root, mut cx, effects) = fixture(cx, false, Default::default());
+    root.update(&mut cx, |v, cx| {
+        v.model.update(cx, |m, cx| {
+            let row = m
+                .state
+                .dashboard
+                .rows
+                .iter_mut()
+                .find(|r| r.worker.session == "ready")
+                .unwrap();
+            row.worker.run = Some(d::RunBrief {
+                id: 1,
+                phase: None,
+                outcome: Some(d::RunOutcome::Completed),
+                started_at_ms: 0,
+                ended_at_ms: Some(1),
+            });
+            cx.notify();
+        });
+    });
+    cx.run_until_parked();
+    root.update_in(&mut cx, |v, w, cx| {
+        assert!(v.graph.attention.contains(&"ready".into()));
+        assert_eq!(
+            v.graph
+                .projects
+                .iter()
+                .find(|p| p.path == "/two")
+                .unwrap()
+                .attention,
+            2
+        );
+        v.open_flyup("ready".into(), w, cx);
+    });
+    cx.run_until_parked();
+    root.update(&mut cx, |v, cx| {
+        let dash = &v.model.read(cx).state.dashboard;
+        assert!(dash.completion_unread(dash.selected_row().unwrap()));
+    });
+    click(&mut cx, "dialog-mark-reviewed");
+    root.update(&mut cx, |v, cx| {
+        let dash = &v.model.read(cx).state.dashboard;
+        assert!(!dash.completion_unread(dash.selected_row().unwrap()));
+        assert!(!v.graph.attention.contains(&"ready".into()));
+        assert!(v.modal_open, "review keeps the graph and dialog in place");
+        assert_eq!(
+            super::presentation::row_status(dash.selected_row().unwrap(), dash, &cx.theme().colors)
+                .0,
+            "Awaiting next steps"
+        );
+    });
+    assert!(
+        effects
+            .borrow()
+            .iter()
+            .any(|e| matches!(e, Effect::SavePrefs(_)))
+    );
+    assert!(!effects.borrow().iter().any(|e| matches!(
+        e,
+        Effect::Backend(BackendRequest::Submit { .. } | BackendRequest::UiRespond { .. })
+    )));
+}
+
+#[gpui::test]
+fn manual_hiding_controls_restore_projects_and_threads_in_graph_and_list(cx: &mut TestAppContext) {
+    let (root, mut cx, effects) = fixture(cx, false, Default::default());
+    click(&mut cx, "hide-project:/one");
+    root.update(&mut cx, |v, cx| {
+        assert!(
+            v.model
+                .read(cx)
+                .state
+                .dashboard
+                .hidden_projects
+                .contains("/one")
+        );
+        assert!(!v.graph.attention.contains(&"one".into()));
+    });
+    root.update_in(&mut cx, |v, w, cx| v.open_flyup("two".into(), w, cx));
+    cx.run_until_parked();
+    click(&mut cx, "dialog-hide-thread");
+    root.update(&mut cx, |v, cx| {
+        assert!(!v.modal_open);
+        assert!(
+            v.model
+                .read(cx)
+                .state
+                .dashboard
+                .hidden_threads
+                .contains_key("two")
+        );
+    });
+    click(&mut cx, "hide-project:/two");
+    root.update(&mut cx, |v, cx| {
+        assert!(v.model.read(cx).state.dashboard.rows.is_empty())
+    });
+    click(&mut cx, "manage-hidden");
+    root.update(&mut cx, |v, _| {
+        assert!(v.hidden_open, "manager did not open")
+    });
+    assert!(
+        cx.debug_bounds("close-hidden").is_some(),
+        "manager controls not painted"
+    );
+    click(&mut cx, "show-project:/one");
+    root.update(&mut cx, |v, cx| {
+        let d = &v.model.read(cx).state.dashboard;
+        assert!(!d.hidden_projects.contains("/one"));
+        assert!(d.hidden_projects.contains("/two"));
+        assert!(d.hidden_threads.contains_key("two"));
+    });
+    click(&mut cx, "show-thread:two");
+    click(&mut cx, "show-all-hidden");
+    root.update(&mut cx, |v, cx| {
+        assert!(v.model.read(cx).state.dashboard.hidden_projects.is_empty())
+    });
+    click(&mut cx, "close-hidden");
+    click(&mut cx, "list-view");
+    click(&mut cx, "manage-hidden");
+    root.update(&mut cx, |v, cx| {
+        assert!(v.hidden_open);
+        assert!(v.model.read(cx).state.dashboard.hidden_threads.is_empty());
+    });
+    cx.simulate_keystrokes("tab shift-tab escape");
+    cx.run_until_parked();
+    root.update(&mut cx, |v, _| assert!(!v.hidden_open));
+    assert!(!effects.borrow().iter().any(|e| matches!(
+        e,
+        Effect::Backend(BackendRequest::Submit { .. } | BackendRequest::UiRespond { .. })
+    )));
+    assert!(effects.borrow().iter().any(|e| matches!(e, Effect::Backend(BackendRequest::Dashboard(d::Request::Watch { filter, .. })) if filter.hidden_sessions.contains("two"))));
 }

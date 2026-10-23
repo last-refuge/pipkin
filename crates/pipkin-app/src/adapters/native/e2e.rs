@@ -3556,6 +3556,9 @@ fn a_goal_stopped_mid_turn_can_be_resumed_or_cleared_after_a_relaunch() {
         s.selected == Some(conversation)
             && s.current().is_some_and(|c| {
                 c.opened
+                    // Resume is refused until the authoritative lifecycle read finishes.
+                    // Cached goal history can arrive before that read under suite load.
+                    && c.lifecycle_is_ready()
                     && c.goal_native
                     && c.goal
                         .as_ref()
@@ -4306,6 +4309,40 @@ fn dashboard_observation_and_secondary_send_keep_the_normal_conversation() {
     assert_eq!(h.state.selected, Some(normal));
     assert_eq!(h.state.current().unwrap().draft.text, "keep this draft");
     assert_eq!(fx.requests().len(), 1);
+    assert!(
+        h.state
+            .dashboard
+            .completion_unread(h.state.dashboard.selected_row().unwrap()),
+        "reading observed history must not clear unread"
+    );
+    assert_eq!(h.state.dashboard.counts.unwrap().attention, 1);
+    let completed = h
+        .state
+        .dashboard
+        .selected_row()
+        .unwrap()
+        .worker
+        .completion_key()
+        .unwrap();
+    h.dispatch(Command::Dashboard(D::MarkReviewed {
+        session: target.clone(),
+        generation: h.state.dashboard.detail.generation,
+        completion: completed.clone(),
+    }));
+    h.until("reviewed counts", |s| {
+        s.dashboard.freshness == pipkin_core::dashboard::Freshness::Live
+            && s.dashboard.counts.is_some_and(|c| c.attention == 0)
+            && s.dashboard.global_counts.is_some_and(|c| c.attention == 0)
+    });
+    assert!(
+        !h.state
+            .dashboard
+            .completion_unread(h.state.dashboard.selected_row().unwrap())
+    );
+    assert!(
+        !pipkin_core::dashboard::State::restore(&h.state.prefs.dashboard)
+            .completion_unread(h.state.dashboard.selected_row().unwrap())
+    );
     h.dispatch(Command::Dashboard(D::Filter(
         pipkin_core::dashboard::ActivityFilter {
             text: Some("no thread has this audit search phrase".into()),
@@ -4363,6 +4400,63 @@ fn dashboard_observation_and_secondary_send_keep_the_normal_conversation() {
     assert_eq!(fx.requests().len(), 2);
     assert_eq!(h.state.selected, Some(normal));
     assert_eq!(h.state.current().unwrap().draft.text, "keep this draft");
+    h.until("new completion becomes unread", |s| {
+        s.dashboard.selected_row().is_some_and(|r| {
+            r.worker
+                .completion_key()
+                .is_some_and(|key| key != completed)
+                && s.dashboard.completion_unread(r)
+        }) && s.dashboard.counts.is_some_and(|c| c.attention == 1)
+    });
     h.dispatch(Command::Dashboard(D::Close));
     assert_eq!(h.state.selected, Some(normal));
+}
+
+#[test]
+fn dashboard_recency_excludes_closed_roots_from_rows_and_counts_without_erasing_history() {
+    use pipkin_core::dashboard::{ActivityGroup, Command as D, Freshness};
+    let fx = Fixture::start(|_, _| panic!("observation must not infer"));
+    let mut h = Harness::start(&fx, &fx.root.join("dashboard-recency.db"));
+    h.open_new_conversation(&fx.project);
+    h.until("first ready", |s| s.current().is_some_and(|c| c.opened));
+    let first = h.state.selected.unwrap();
+    h.open_new_conversation(&fx.project);
+    h.until("second ready", |s| {
+        s.selected != Some(first) && s.current().is_some_and(|c| c.opened)
+    });
+    let normal = h.state.selected;
+    h.dispatch(Command::EditDraft("preserve current draft".into()));
+    // Restore a desktop-local closed flag; the engine deliberately has no such mutation.
+    h.state.prefs.closed_conversations.insert(first.0);
+    h.dispatch(Command::Dashboard(D::Open));
+    h.dispatch(Command::Dashboard(D::Group(Some(ActivityGroup::All))));
+    h.until("closed root excluded", |s| {
+        s.dashboard.freshness == Freshness::Live && s.dashboard.counts.is_some_and(|c| c.total == 1)
+    });
+    assert_eq!(h.state.dashboard.rows.len(), 1);
+    assert_eq!(h.state.dashboard.rows[0].conversation, normal);
+    assert!(h.state.conversation(first).is_some());
+    assert_eq!(
+        h.state.current().unwrap().draft.text,
+        "preserve current draft"
+    );
+    h.dispatch(Command::Dashboard(D::Recency(
+        pipkin_core::dashboard::Recency::ThreeMonths,
+    )));
+    h.until("closed still excluded in wider window", |s| {
+        s.dashboard.freshness == Freshness::Live
+    });
+    assert_eq!(h.state.dashboard.counts.unwrap().total, 1);
+    h.dispatch(Command::SelectConversation(first));
+    h.dispatch(Command::Dashboard(D::Open));
+    h.until("explicitly reopened history is available", |s| {
+        s.dashboard.freshness == Freshness::Live
+            && s.dashboard
+                .rows
+                .iter()
+                .any(|r| r.conversation == Some(first))
+    });
+    assert_eq!(h.state.dashboard.counts.unwrap().total, 2);
+    assert!(fx.requests().is_empty());
+    h.stop();
 }

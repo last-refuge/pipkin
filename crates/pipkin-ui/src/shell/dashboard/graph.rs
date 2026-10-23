@@ -4,11 +4,18 @@ use super::{graph_layout::*, presentation::*, *};
 
 impl Render for DashboardView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.graph.list {
+        let page = if self.graph.list {
             self.render_list(window, cx).into_any_element()
         } else {
             self.render_graph(window, cx).into_any_element()
-        }
+        };
+        div()
+            .relative()
+            .size_full()
+            .child(page)
+            .when(self.hidden_open, |d| {
+                d.child(self.hidden_manager(window, cx))
+            })
     }
 }
 impl DashboardView {
@@ -107,7 +114,25 @@ impl DashboardView {
                     }),
             );
         }
-        bar
+        let view = cx.entity();
+        let dash = &self.model.read(cx).state.dashboard;
+        bar.child(
+            Btn::new("manage-hidden")
+                .label(format!(
+                    "Hidden ({})",
+                    dash.hidden_projects.len() + dash.hidden_threads.len()
+                ))
+                .hint("Manage projects and threads hidden from orchestration")
+                .tab_stop(true)
+                .on_click(move |w, cx| {
+                    view.update(cx, |v, cx| {
+                        v.modal_open = false;
+                        v.hidden_open = true;
+                        w.focus(&v.modal_focus, cx);
+                        cx.notify();
+                    })
+                }),
+        )
     }
     fn render_graph(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let t = cx.theme().clone();
@@ -333,6 +358,11 @@ impl DashboardView {
                     ),
             );
         }
+        filters = filters.child(self.button(
+            "graph-recency",
+            format!("Recent · {} days", dash.recency.days()),
+            D::Recency(dash.recency.next()),
+        ).hint("Hide closed conversations and dormant threads. Active work and pending input stay visible. Click to choose 30, 60 or 90 days. Older conversations remain in history."));
         if dash.filter.text.is_some()
             || dash.filter.cwd.is_some()
             || dash.filter.kind.is_some()
@@ -725,7 +755,7 @@ impl DashboardView {
                     .absolute()
                     .left(x)
                     .top(y)
-                    .w(px(group_width * z))
+                    .w(px((group_width - 52.) * z))
                     .h(px(PROJECT_H * z))
                     .px(px(16. * z))
                     .rounded(px(10.))
@@ -821,12 +851,17 @@ impl DashboardView {
                     ))
                     .into_any_element(),
             );
+            nodes.push(div().absolute()
+                .left(x + px((group_width - 52.) * z)).top(y + px(10. * z))
+                .child(self.button(SharedString::from(format!("hide-project:{}", p.path)), "Hide", D::HideProject(p.path.clone()))
+                    .compact().hint("Hide this project from orchestration. Work continues; restore it from Hidden."))
+                .into_any_element());
             for (i, row) in visible.iter().enumerate() {
                 let pos = GraphState::thread_position(display_origin, i);
                 let (x, y) = coords(pos.0, pos.1);
                 let selected = dash.selected.as_ref() == Some(&row.worker.session);
                 let attention = needs_attention(row, &dash);
-                let (label, symbol, status_color) = status(&row.worker.state, &c);
+                let (label, symbol, status_color) = row_status(row, &dash, &c);
                 let view = cx.entity();
                 let key_view = view.clone();
                 let session = row.worker.session.clone();
@@ -842,21 +877,17 @@ impl DashboardView {
                         .p(px(12. * z))
                         .rounded(px(9.))
                         .border_1()
-                        .border_color(if selected {
+                        .border_color(if attention {
+                            c.accent.opacity(0.8)
+                        } else if selected {
                             c.border_strong
-                        } else if attention {
-                            c.accent.opacity(0.6)
                         } else {
                             c.border
                         })
                         .bg(if selected { c.bg_selected } else { c.bg_card })
                         .hover(|s| s.bg(c.bg_selected))
                         .role(Role::Button)
-                        .aria_label(format!(
-                            "{}. {}. Enter to open thread.",
-                            row.title(),
-                            row.label()
-                        ))
+                        .aria_label(format!("{}. {}. Enter to open thread.", row.title(), label))
                         .tab_index(0)
                         .tab_stop(true)
                         .cursor_pointer()
@@ -1160,7 +1191,7 @@ impl DashboardView {
             .flex_col()
             .gap(px(20.));
         if let Some(row) = selected {
-            let (label, symbol, color) = status(&row.worker.state, c);
+            let (label, symbol, color) = row_status(&row, dash, c);
             let question = self.current_request(&row, cx);
             let decision = requires_request_ui(&row);
             let view = cx.entity();
@@ -1225,6 +1256,8 @@ impl DashboardView {
                         Btn::new("quick-reply")
                             .label(if decision {
                                 "Reply to thread"
+                            } else if dash.completion_unread(&row) {
+                                "Review result"
                             } else {
                                 "Open thread"
                             })
@@ -1235,6 +1268,10 @@ impl DashboardView {
                                 view.update(cx, |v, cx| v.open_flyup(id.clone(), w, cx))
                             }),
                     );
+            content = content.child(self.hide_controls(&row, "inspector"));
+            if let Some(button) = self.review_button(&row, "inspector-mark-reviewed", cx) {
+                content = content.child(button);
+            }
             if let Some(button) =
                 self.open_owner_button(&row, "inspector-full-thread", "Open full conversation")
             {
@@ -1255,7 +1292,7 @@ impl DashboardView {
             content=content.child(div().flex().flex_col().gap(px(12.)).py(px(16.))
                 .child(icon(if count==0 {"circle-check"}else{"message-square"},px(28.),if count==0 {c.success}else{c.accent}))
                 .child(div().text_size(px(20.)).font_weight(FontWeight::MEDIUM).child(if count==0 {"You're all caught up"}else{"Choose a thread"}))
-                .child(div().text_color(c.text_muted).child(if count==0 {"No loaded threads need your input. Select a thread on the map to see its activity."}else{"Select an item below to review what it needs."})));
+                .child(div().text_color(c.text_muted).child(if count==0 {"No loaded threads need input or review. Select a thread on the map to see its activity."}else{"Select an item below to review what it needs."})));
         }
         let others: Vec<_> = self
             .graph
@@ -1277,7 +1314,7 @@ impl DashboardView {
                 let key_view = view.clone();
                 let id = id.clone();
                 let key_id = id.clone();
-                let (_, _, color) = status(&row.worker.state, c);
+                let (_, _, color) = row_status(row, dash, c);
                 content = content.child(
                     div()
                         .id(SharedString::from(format!("attention:{id}")))

@@ -164,6 +164,9 @@ impl AppState {
             out.effects.push(Effect::SavePrefs(self.prefs.clone()));
             out.notes.push(Note::ConversationsChanged);
             out.notes.push(Note::Other);
+            if self.dashboard.open {
+                out.merge(self.dispatch_dashboard(crate::dashboard::Command::Refresh));
+            }
         }
         out
     }
@@ -180,6 +183,9 @@ impl AppState {
             out.effects.push(Effect::SavePrefs(self.prefs.clone()));
             out.notes.push(Note::ConversationsChanged);
             self.coalesce_provider_prefs(out);
+            if self.dashboard.open {
+                out.merge(self.dispatch_dashboard(crate::dashboard::Command::Refresh));
+            }
         }
     }
 }

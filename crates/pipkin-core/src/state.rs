@@ -192,6 +192,11 @@ impl ConversationState {
         }
     }
 
+    /// The current attachment has finished loading its authoritative lifecycle state.
+    pub fn lifecycle_is_ready(&self) -> bool {
+        self.lifecycle_ready
+    }
+
     /// A goal mutation has no confirmed receipt yet. Refresh before offering another start.
     pub fn goal_start_unconfirmed(&self) -> bool {
         self.goal_start_pending.is_some()
@@ -494,6 +499,7 @@ impl AppState {
 
     pub fn set_now(&mut self, now: i64) {
         self.now = now;
+        self.prune_dashboard_history();
         self.cli_approvals.tick(now.saturating_mul(1000));
         self.local_cli_expire();
     }
@@ -1496,6 +1502,9 @@ impl AppState {
                     return out;
                 }
                 self.prefs.closed_conversations.insert(conversation.0);
+                if self.dashboard.open {
+                    out.merge(self.dispatch_dashboard(crate::dashboard::Command::Refresh));
+                }
                 if self.selected == Some(conversation) {
                     let project = self.conversation(conversation).unwrap().project;
                     self.prefs.selected_project.get_or_insert(project);

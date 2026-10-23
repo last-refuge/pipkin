@@ -8,6 +8,8 @@ mod graph_layout;
 #[cfg(test)]
 pub(in crate::shell) use graph_layout::tests::row as test_row;
 mod presentation;
+mod visibility;
+use presentation::row_status;
 
 use super::controls::{Btn, BtnKind, chip, icon};
 use crate::{
@@ -26,6 +28,7 @@ pub(super) struct DashboardView {
     focus: FocusHandle,
     modal_focus: FocusHandle,
     modal_open: bool,
+    hidden_open: bool,
     modal_history: bool,
     request_choice: Option<(String, UiAnswer)>,
     graph: graph_layout::GraphState,
@@ -149,6 +152,7 @@ impl DashboardView {
             focus: cx.focus_handle(),
             modal_focus: cx.focus_handle(),
             modal_open: false,
+            hidden_open: false,
             modal_history: false,
             request_choice: None,
             graph: graph_layout::GraphState::default(),
@@ -195,7 +199,7 @@ impl DashboardView {
             } else {
                 window.focus_next(cx);
             }
-            if if self.modal_open {
+            if if self.modal_open || self.hidden_open {
                 self.modal_focus.contains_focused(window, cx)
             } else {
                 self.focus.contains_focused(window, cx)
@@ -401,7 +405,7 @@ impl DashboardView {
         }
         cx.notify();
     }
-    fn button(&self, id: &'static str, label: impl Into<SharedString>, command: D) -> Btn {
+    fn button(&self, id: impl Into<ElementId>, label: impl Into<SharedString>, command: D) -> Btn {
         let model = self.model.clone();
         Btn::new(id)
             .label(label)
@@ -472,7 +476,7 @@ fn status(state: &d::WorkState, c: &crate::theme::Colors) -> (&'static str, &'st
         d::WorkState::Running => ("Running", "loader-circle", c.activity),
         d::WorkState::Pending | d::WorkState::Queued => ("Queued", "clock", c.text_muted),
         d::WorkState::Waiting {
-            reason: d::WaitReason::Question | d::WaitReason::CliApproval,
+            reason: d::WaitReason::Question | d::WaitReason::CliApproval | d::WaitReason::Input,
         } => ("Needs you", "circle-alert", c.accent),
         d::WorkState::Waiting { .. } => ("Waiting", "clock", c.text_muted),
         d::WorkState::Stopping => ("Stopping", "square", c.warning),
@@ -834,7 +838,8 @@ impl DashboardView {
                                 source.read(cx).state.dashboard.selected.as_ref() == Some(&session);
                             let model = source.clone();
                             let c = &colors;
-                            let (label, symbol, color) = status(&row.worker.state, c);
+                            let (label, symbol, color) =
+                                row_status(row, &source.read(cx).state.dashboard, c);
                             div()
                                 .id(("worker", i))
                                 .role(Role::Button)
@@ -846,7 +851,7 @@ impl DashboardView {
                                         "Conversation"
                                     },
                                     row.title(),
-                                    row.label(),
+                                    label,
                                     row.worker.cwd
                                 ))
                                 .on_click(move |_, _, cx| {
@@ -993,7 +998,7 @@ impl DashboardView {
         let state = &self.model.read(cx).state;
         let dash = state.dashboard.clone();
         let closed_roots = state.prefs.closed_conversations.clone();
-        let (label, symbol, color) = status(&row.worker.state, &c);
+        let (label, symbol, color) = row_status(&row, &dash, &c);
         let view = cx.entity();
         let mut header = div()
             .flex()
@@ -1049,6 +1054,10 @@ impl DashboardView {
                         })
                     }),
             );
+        header = header.child(self.hide_controls(&row, "list"));
+        if let Some(button) = self.review_button(&row, "list-mark-reviewed", cx) {
+            header = header.child(button);
+        }
         if let Some(root) = row.root {
             let model = self.model.clone();
             header = header.child(

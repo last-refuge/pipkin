@@ -108,9 +108,12 @@ pub(super) struct GraphState {
 
 pub(super) fn needs_attention(row: &Row, state: &State) -> bool {
     use pipkin_core::dashboard::WaitReason;
+    if state.completion_unread(row) {
+        return true;
+    }
     match row.worker.state {
         WorkState::Waiting {
-            reason: WaitReason::Question | WaitReason::CliApproval,
+            reason: WaitReason::Question | WaitReason::CliApproval | WaitReason::Input,
         } => true,
         WorkState::Failed { .. } | WorkState::Interrupted => state
             .seen
@@ -353,7 +356,7 @@ pub(crate) mod tests {
         assert!(graph.attention.is_empty());
     }
     #[test]
-    fn input_wait_and_seen_failures_do_not_invent_attention() {
+    fn input_wait_needs_attention_but_acknowledged_failures_do_not() {
         let mut state = State::default();
         let input = row(
             "input",
@@ -362,7 +365,7 @@ pub(crate) mod tests {
                 reason: pipkin_core::dashboard::WaitReason::Input,
             },
         );
-        assert!(!needs_attention(&input, &state));
+        assert!(needs_attention(&input, &state));
         let failed = row("failed", "/app", WorkState::Failed { detail: None });
         assert!(needs_attention(&failed, &state));
         state.seen.insert("failed".into(), 1);

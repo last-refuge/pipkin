@@ -7,6 +7,7 @@ const REFRESH: Duration = Duration::from_millis(500);
 pub(super) struct Watch {
     generation: u64,
     filter: pipkin_engine_protocol::ActivityFilter,
+    closed: Vec<ConversationId>,
     group: Option<pipkin_engine_protocol::ActivityGroup>,
     pub(super) open: bool,
     pub(super) dirty: bool,
@@ -25,16 +26,19 @@ impl Live {
         match request {
             Request::Watch {
                 generation,
+                closed,
                 filter,
                 group,
             } => {
-                if self.dashboard.filter != filter
+                if self.dashboard.closed != closed
+                    || self.dashboard.filter != filter
                     || self.dashboard.group != group
                     || !self.dashboard.open
                 {
                     self.dashboard.start = None;
                     self.dashboard.shown = 200;
                 }
+                self.dashboard.closed = closed;
                 self.dashboard.generation = generation;
                 self.dashboard.filter = filter;
                 self.dashboard.group = group;
@@ -67,8 +71,14 @@ impl Live {
             }
             Request::Close { .. } => {
                 let seen_failures = std::mem::take(&mut self.dashboard.filter.seen_failures);
+                let reviewed = self.dashboard.filter.reviewed_completions.take();
+                let hidden_sessions = std::mem::take(&mut self.dashboard.filter.hidden_sessions);
+                let hidden_projects = std::mem::take(&mut self.dashboard.filter.hidden_projects);
                 self.dashboard = Watch::default();
                 self.dashboard.filter.seen_failures = seen_failures;
+                self.dashboard.filter.reviewed_completions = reviewed;
+                self.dashboard.filter.hidden_sessions = hidden_sessions;
+                self.dashboard.filter.hidden_projects = hidden_projects;
             }
             Request::More {
                 generation,
@@ -200,6 +210,20 @@ impl Live {
             }
         }
     }
+    fn dashboard_visibility_filter(
+        &self,
+        mut filter: pipkin_engine_protocol::ActivityFilter,
+    ) -> pipkin_engine_protocol::ActivityFilter {
+        filter.inactive_days.get_or_insert(30);
+        filter.excluded_roots.extend(
+            self.dashboard
+                .closed
+                .iter()
+                .filter_map(|id| self.session_of(*id).map(|s| s.id.clone())),
+        );
+        filter
+    }
+
     fn dashboard_page(
         &mut self,
         worker: &Worker,
@@ -208,6 +232,7 @@ impl Live {
         group: Option<pipkin_engine_protocol::ActivityGroup>,
         after: Option<pipkin_engine_protocol::ActivityCursor>,
     ) {
+        let filter = self.dashboard_visibility_filter(filter);
         let append = after.is_some();
         let group = group.unwrap_or(pipkin_engine_protocol::ActivityGroup::Overview);
         let mut cursor = after.or_else(|| self.dashboard.start.clone());
@@ -261,7 +286,14 @@ impl Live {
                 sessions: vec![selected.clone()],
             }) {
                 Ok(Reply::ActivityRows { rows, missing, .. }) => {
-                    page.rows.extend(rows);
+                    let visible: Vec<_> = rows
+                        .into_iter()
+                        .filter(|r| filter.includes_visibility(r, unix_ms()))
+                        .collect();
+                    if visible.is_empty() {
+                        self.dashboard.detail = None;
+                    }
+                    page.rows.extend(visible);
                     if missing.contains(&selected) {
                         Self::dashboard_emit(
                             worker,
@@ -361,10 +393,14 @@ impl Live {
         }
     }
     pub(super) fn dashboard_counts(&self, worker: &Worker) {
-        let filter = pipkin_engine_protocol::ActivityFilter {
+        let filter = self.dashboard_visibility_filter(pipkin_engine_protocol::ActivityFilter {
+            inactive_days: self.dashboard.filter.inactive_days,
+            hidden_sessions: self.dashboard.filter.hidden_sessions.clone(),
+            hidden_projects: self.dashboard.filter.hidden_projects.clone(),
             seen_failures: self.dashboard.filter.seen_failures.clone(),
+            reviewed_completions: self.dashboard.filter.reviewed_completions.clone(),
             ..Default::default()
-        };
+        });
         if let Ok(Reply::Activity(page)) = self.call(Call::Activity {
             filter,
             group: pipkin_engine_protocol::ActivityGroup::Overview,
@@ -377,7 +413,7 @@ impl Live {
     pub(super) fn dashboard_tick(&mut self, worker: &Worker) {
         if self.dashboard.next.is_some_and(|n| Instant::now() >= n) {
             self.dashboard.next = None;
-            if std::mem::take(&mut self.dashboard.dirty) {
+            if std::mem::take(&mut self.dashboard.dirty) || self.dashboard.open {
                 self.dashboard_counts(worker);
                 if !self.dashboard.open {
                     return;
@@ -395,6 +431,9 @@ impl Live {
             {
                 self.dashboard_history(worker, generation, session, None);
             }
+            if self.dashboard.open {
+                self.dashboard.next = Some(Instant::now() + Duration::from_secs(60));
+            }
         }
     }
     pub(super) fn dashboard_invalidate(&mut self, session: &str) {
@@ -409,7 +448,8 @@ impl Live {
             {
                 self.dashboard.detail_dirty = true;
             }
-            self.dashboard.next.get_or_insert(Instant::now() + REFRESH);
+            let next = Instant::now() + REFRESH;
+            self.dashboard.next = Some(self.dashboard.next.map_or(next, |old| old.min(next)));
         }
     }
     pub(super) fn secondary_request(&self, request: &BackendRequest) -> bool {
@@ -425,4 +465,10 @@ impl Live {
             .as_ref()
             .is_some_and(|c| Some(c.conversation) == target)
     }
+}
+
+fn unix_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis().min(i64::MAX as u128) as i64)
 }

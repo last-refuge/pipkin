@@ -500,3 +500,50 @@ Automated coverage includes both receipt/catalog arrival orders, closing the das
 stale failures, duplicate clicks, unavailable choices, typed provider routing, rendered
 provider/project/model controls, and native engine creation with synthetic providers.
 Live account prompts and native mouse/accessibility verification were not performed.
+
+
+### Recent orchestration workspace (2026-10-22)
+
+Orchestration defaults to a 30-day activity window, with a visible Recent control that
+cycles through 30, 60 and 90 days. This preference survives restart and is independent
+of project/text/state filters; Clear filters does not expose all historical sessions.
+An inactive weekend does not remove a conversation. The cutoff is inclusive and uses
+the latest creation/update/run timestamp, never polling or merely displaying a card.
+
+Closed desktop conversations and their descendants are excluded. Settled/dormant roots
+and children beyond the window are also excluded, including old failures. Running,
+queued, stopping/completing and input/approval-waiting workers remain visible regardless
+of age, as do workers with active children or background jobs. Actual new activity makes
+an old conversation eligible again. Nothing is deleted or automatically archived: full
+conversation history and explicit reopen remain available outside orchestration.
+
+The engine applies the visibility predicate before counts, tab grouping and keyset paging.
+The recent All view orders by last activity so resumed conversations are discoverable.
+The native adapter maps desktop closed IDs to authoritative root-session identities.
+Selection pinning cannot bypass visibility; if a selected dormant thread expires its
+sheet closes, while its stored transcript and draft remain intact. Open dashboards query
+again at least once per minute even without events; activity events still refresh promptly.
+
+Verification covers boundary/weekend behavior, live work exemptions, stale failures,
+closed roots and children, paging/count consistency, resumed ordering, read-only timestamps,
+preference persistence, rendered controls and native adapter identity mapping. It uses
+isolated fixtures and does not submit prompts or alter the user's real conversations.
+
+## Completed-turn visibility — 2026-10-22
+
+Implemented a persistent successful-result review state across graph, list, inspector and
+thread dialog. Unreviewed results are amber and included in Needs you, including collapsed
+project counts. The explicit Mark reviewed control preserves the current graph/dialog and
+changes the status to Awaiting next steps. Native and CLI runs share the same stable result
+identity; a later successful turn re-enters attention. Polling or opening history never clears
+this state. Existing recency rules still remove dormant results after the chosen age window.
+
+Qualification is recorded in `docs/scorecard.md`.
+
+
+### Manual workspace visibility — 2026-10-22
+
+Added persistent, reversible Hide project / Hide thread controls and a centered Hidden manager
+in graph and list views. Explicit hiding includes running work, affects counts before paging,
+and never stops work or deletes history. Restore one or all; independent thread choices remain
+when restoring a project. Existing search, status and recency filters still apply on restoration.

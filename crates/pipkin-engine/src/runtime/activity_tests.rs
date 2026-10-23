@@ -845,3 +845,173 @@ fn dashboard_children_beyond_the_old_directory_cap_are_observable() {
     assert_eq!(seen, listed);
     assert!(provider.requests().is_empty());
 }
+
+#[test]
+fn recency_filters_before_counts_and_paging_and_returns_resumed_threads() {
+    let fx = Fixture::new();
+    let provider = Scripted::echo("unused");
+    let mut e = fx.start(&provider);
+    let shared = e.handle.shared().clone();
+    let now = crate::util::now_ms();
+    let day = 86_400_000;
+    shared.store.tx(|tx| {
+        for (id, age) in [("old",45), ("weekend",3), ("today",0), ("closed",1), ("waiting-root",80)] {
+            tx.execute("INSERT INTO sessions(id,cwd,title,created_at,updated_at,origin) VALUES (?1,?2,?1,?3,?3,'{\"kind\":\"native\"}')",
+                rusqlite::params![id,fx.project.display().to_string(),now-age*day])?;
+        }
+        for (id, root, status, age) in [("closed-child","closed","done",1), ("waiting-child","waiting-root","waiting",80), ("old-child","today","done",45)] {
+            tx.execute("INSERT INTO sessions(id,cwd,created_at,updated_at,parent,root,origin) VALUES (?1,?2,?3,?3,?4,?4,'{\"kind\":\"native\"}')",
+                rusqlite::params![id,fx.project.display().to_string(),now-age*day,root])?;
+            tx.execute("INSERT INTO subagent_tasks(root,child,parent_session,parent_call,child_session,task,status,created_at,updated_at) VALUES (?1,1,?1,?2,?2,'task',?3,?4,?4)",
+                rusqlite::params![root,id,status,now-age*day])?;
+        }
+        Ok(())
+    }).unwrap();
+    let filter = ActivityFilter {
+        inactive_days: Some(30),
+        excluded_roots: ["closed".into()].into(),
+        ..Default::default()
+    };
+    let first = page(&mut e, filter.clone(), ActivityGroup::All, None, 2);
+    assert_eq!(first.counts.total, 4);
+    assert_eq!(first.rows.len(), 2);
+    let second = page(&mut e, filter.clone(), ActivityGroup::All, first.next, 2);
+    assert_eq!(second.counts.total, 4);
+    assert_eq!(second.rows.len(), 2);
+    assert!(second.next.is_none());
+    let sessions: std::collections::BTreeSet<_> = first
+        .rows
+        .iter()
+        .chain(&second.rows)
+        .map(|r| r.session.as_str())
+        .collect();
+    assert_eq!(
+        sessions,
+        ["today", "weekend", "waiting-child", "waiting-root"].into()
+    );
+    assert_eq!(
+        all(&mut e).rows.len(),
+        8,
+        "history is retained in the store"
+    );
+    shared
+        .store
+        .tx(|tx| {
+            tx.execute(
+                "UPDATE sessions SET updated_at=?1,revision=revision+1 WHERE id='old'",
+                [now + 1],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    *shared.activity_cache.lock().unwrap() = Default::default();
+    let resumed = page(&mut e, filter, ActivityGroup::All, None, 2);
+    assert_eq!(resumed.counts.total, 5);
+    assert_eq!(
+        resumed.rows[0].session, "old",
+        "recent view sorts by meaningful activity, not creation date"
+    );
+    assert_eq!(
+        row(&mut e, "old").updated_at_ms,
+        now + 1,
+        "observation must not touch activity timestamps"
+    );
+    assert!(
+        shared.sessions.lock().unwrap().live.is_empty(),
+        "observation never creates runtimes"
+    );
+}
+
+#[test]
+fn unread_completions_are_counted_paged_and_rearmed_by_the_next_turn() {
+    let fx = Fixture::new();
+    let provider = Scripted::echo("result");
+    let mut e = fx.start(&provider);
+    let a = e.create(&fx.project, "a");
+    let b = e.create(&fx.project, "b");
+    let _idle = e.create(&fx.project, "idle");
+    for (session, request) in [(&a, "finish-a"), (&b, "finish-b")] {
+        e.prompt(session, request, "finish").unwrap();
+        assert_eq!(e.settled(request), RunOutcome::Completed);
+    }
+    let mut filter = ActivityFilter {
+        reviewed_completions: Some(Default::default()),
+        ..Default::default()
+    };
+    let first = page(&mut e, filter.clone(), ActivityGroup::Attention, None, 1);
+    assert_eq!(first.counts.attention, 2);
+    assert_eq!(first.rows.len(), 1);
+    let second = page(
+        &mut e,
+        filter.clone(),
+        ActivityGroup::Attention,
+        first.next,
+        1,
+    );
+    assert_eq!(second.counts.attention, 2);
+    assert_eq!(second.rows.len(), 1);
+    assert_ne!(first.rows[0].session, second.rows[0].session);
+    for row in first.rows.iter().chain(&second.rows) {
+        filter
+            .reviewed_completions
+            .as_mut()
+            .unwrap()
+            .insert(row.session.clone(), row.completion_key().unwrap());
+    }
+    e.call(Call::RenameSession {
+        session: a.clone(),
+        title: "Reviewed title".into(),
+    })
+    .unwrap();
+    let reviewed = page(&mut e, filter.clone(), ActivityGroup::Attention, None, 10);
+    assert_eq!(reviewed.counts.attention, 0);
+    assert!(reviewed.rows.is_empty());
+    let key = filter.reviewed_completions.as_ref().unwrap()[&a].clone();
+    e.prompt(&a, "next-a", "next step").unwrap();
+    assert_eq!(e.settled("next-a"), RunOutcome::Completed);
+    let unread = page(&mut e, filter, ActivityGroup::Attention, None, 10);
+    assert_eq!(unread.counts.attention, 1);
+    assert_eq!(unread.rows[0].session, a);
+    assert_ne!(unread.rows[0].completion_key(), Some(key));
+}
+
+#[test]
+fn manual_hiding_filters_attention_counts_and_pages_without_removing_history() {
+    let fx = Fixture::new();
+    let provider = Scripted::echo("result");
+    let mut e = fx.start(&provider);
+    let a = e.create(&fx.project, "a");
+    let b = e.create(&fx.project, "b");
+    let _idle = e.create(&fx.project, "idle");
+    for (session, request) in [(&a, "finish-a"), (&b, "finish-b")] {
+        e.prompt(session, request, "finish").unwrap();
+        assert_eq!(e.settled(request), RunOutcome::Completed);
+    }
+    let mut filter = ActivityFilter {
+        hidden_sessions: [a.clone()].into(),
+        reviewed_completions: Some(Default::default()),
+        ..Default::default()
+    };
+    let first = page(&mut e, filter.clone(), ActivityGroup::All, None, 1);
+    assert_eq!(first.counts.total, 2);
+    assert_eq!(first.counts.attention, 1);
+    assert_ne!(first.rows[0].session, a);
+    let second = page(&mut e, filter.clone(), ActivityGroup::All, first.next, 1);
+    assert_eq!(second.rows.len(), 1);
+    assert_ne!(second.rows[0].session, a);
+    assert!(second.next.is_none());
+    filter.hidden_projects.insert(row(&mut e, &b).cwd);
+    let hidden = page(&mut e, filter.clone(), ActivityGroup::All, None, 1);
+    assert_eq!(hidden.counts.total, 0);
+    assert_eq!(hidden.counts.attention, 0);
+    assert!(hidden.rows.is_empty() && hidden.next.is_none());
+    filter.hidden_projects.clear();
+    filter.hidden_sessions.clear();
+    let restored = page(&mut e, filter, ActivityGroup::All, None, 200);
+    assert_eq!(restored.counts.total, 3);
+    assert_eq!(
+        restored.counts.attention, 2,
+        "hiding never marks results reviewed"
+    );
+    assert_eq!(all(&mut e).rows.len(), 3);
+}

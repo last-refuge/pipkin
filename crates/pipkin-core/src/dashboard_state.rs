@@ -58,7 +58,35 @@ impl AppState {
             notes: vec![Note::Other],
         }
     }
+    fn dashboard_filter(&self) -> d::ActivityFilter {
+        let mut filter = self.dashboard.filter.clone();
+        filter.hidden_projects = self.dashboard.hidden_projects.clone();
+        filter.hidden_sessions = self.dashboard.hidden_threads.keys().cloned().collect();
+        filter.inactive_days = Some(self.dashboard.recency.days());
+        filter.reviewed_completions = Some(self.dashboard.reviewed_completions.clone());
+        filter
+    }
+    pub(crate) fn prune_dashboard_history(&mut self) {
+        let filter = self.dashboard_filter();
+        let now = self.now().saturating_mul(1000);
+        let closed = &self.prefs.closed_conversations;
+        let selected_was_visible = self.dashboard.selected_row().is_some();
+        self.dashboard.rows.retain(|r| {
+            filter.includes_visibility(&r.worker, now)
+                && (r.worker.has_live_work()
+                    || r.root
+                        .or(r.conversation)
+                        .is_none_or(|id| !closed.contains(&id.0)))
+        });
+        if selected_was_visible && self.dashboard.selected_row().is_none() {
+            self.dashboard.selected = None;
+            self.dashboard.detail.generation += 1;
+            self.dashboard.detail.items.clear();
+            self.dashboard.pending_send = None;
+        }
+    }
     fn dashboard_watch(&mut self) -> Outcome {
+        self.prune_dashboard_history();
         self.dashboard.filter.seen_failures = self.dashboard.seen.clone();
         self.dashboard.generation += 1;
         self.dashboard.loading = true;
@@ -66,7 +94,14 @@ impl AppState {
         self.dashboard.freshness = Freshness::Updating;
         Self::dashboard_request(Request::Watch {
             generation: self.dashboard.generation,
-            filter: self.dashboard.filter.clone(),
+            closed: self
+                .prefs
+                .closed_conversations
+                .iter()
+                .copied()
+                .map(ConversationId)
+                .collect(),
+            filter: self.dashboard_filter(),
             group: self.dashboard.group,
         })
     }
@@ -245,6 +280,50 @@ impl AppState {
                 self.dashboard.next = None;
                 out.merge(self.dashboard_watch());
             }
+            d::Command::HideProject(path) => {
+                if self.dashboard.rows.iter().any(|r| r.worker.cwd == path) {
+                    self.dashboard.hidden_projects.insert(path);
+                    self.dashboard.next = None;
+                    out.merge(self.dashboard_watch());
+                }
+            }
+            d::Command::HideThread(session) => {
+                if let Some(row) = self
+                    .dashboard
+                    .rows
+                    .iter()
+                    .find(|r| r.worker.session == session)
+                {
+                    let hidden = d::HiddenThread {
+                        title: row.title().to_owned(),
+                        project: row.worker.cwd.clone(),
+                    };
+                    self.dashboard.hidden_threads.insert(session, hidden);
+                    self.dashboard.next = None;
+                    out.merge(self.dashboard_watch());
+                }
+            }
+            d::Command::ShowProject(path) => {
+                self.dashboard.hidden_projects.remove(&path);
+                self.dashboard.next = None;
+                out.merge(self.dashboard_watch());
+            }
+            d::Command::ShowThread(session) => {
+                self.dashboard.hidden_threads.remove(&session);
+                self.dashboard.next = None;
+                out.merge(self.dashboard_watch());
+            }
+            d::Command::ShowAllHidden => {
+                self.dashboard.hidden_projects.clear();
+                self.dashboard.hidden_threads.clear();
+                self.dashboard.next = None;
+                out.merge(self.dashboard_watch());
+            }
+            d::Command::Recency(recency) => {
+                self.dashboard.recency = recency;
+                self.dashboard.next = None;
+                out.merge(self.dashboard_watch());
+            }
             d::Command::Filter(filter) => {
                 self.dashboard.filter = filter;
                 self.dashboard
@@ -252,6 +331,24 @@ impl AppState {
                     .retain(|r| Some(&r.worker.session) == self.dashboard.selected.as_ref());
                 self.dashboard.next = None;
                 out.merge(self.dashboard_watch());
+            }
+            d::Command::MarkReviewed {
+                session,
+                generation,
+                completion,
+            } => {
+                if self.dashboard.open
+                    && generation == self.dashboard.detail.generation
+                    && self.dashboard.selected_row().is_some_and(|row| {
+                        row.worker.session == session
+                            && row.worker.completion_key().as_ref() == Some(&completion)
+                    })
+                {
+                    self.dashboard
+                        .reviewed_completions
+                        .insert(session, completion);
+                    out.merge(self.dashboard_watch());
+                }
             }
             d::Command::Select(session) => {
                 if self
@@ -297,7 +394,7 @@ impl AppState {
                     self.dashboard.loading = true;
                     out.merge(Self::dashboard_request(Request::More {
                         generation: self.dashboard.generation,
-                        filter: self.dashboard.filter.clone(),
+                        filter: self.dashboard_filter(),
                         group: self.dashboard.group.unwrap_or(d::ActivityGroup::Overview),
                         after,
                     }));
@@ -689,6 +786,7 @@ impl AppState {
                         }
                     }
                 }
+                self.prune_dashboard_history();
                 if self.dashboard.selected_row().is_some()
                     && self.dashboard.selected.as_deref() != Some(&self.dashboard.detail.session)
                 {
@@ -860,6 +958,165 @@ mod tests {
         s.dashboard.freshness = Freshness::Live;
         s
     }
+    #[test]
+    fn completed_results_require_explicit_review_and_persist_by_turn() {
+        let mut s = state();
+        s.dashboard.rows[0].worker.run = Some(pipkin_engine_protocol::RunBrief {
+            id: 1,
+            phase: None,
+            outcome: Some(pipkin_engine_protocol::RunOutcome::Completed),
+            started_at_ms: 100,
+            ended_at_ms: Some(200),
+        });
+        let row = s.dashboard.rows[0].clone();
+        assert!(s.dashboard.completion_unread(&row));
+        // Automatic history refresh (even when selected) must not acknowledge a result.
+        s.dashboard_event(d::Event::Detail {
+            generation: 7,
+            session: "target".into(),
+            before: None,
+            items: vec![],
+            oldest: None,
+            has_older: false,
+        });
+        assert!(s.dashboard.completion_unread(&row));
+        let key = row.worker.completion_key().unwrap();
+        s.dispatch_dashboard(d::Command::MarkReviewed {
+            session: "target".into(),
+            generation: 6,
+            completion: key.clone(),
+        });
+        assert!(s.dashboard.completion_unread(&row));
+        let out = s.dispatch_dashboard(d::Command::MarkReviewed {
+            session: "target".into(),
+            generation: 7,
+            completion: key.clone(),
+        });
+        assert!(!s.dashboard.completion_unread(&row));
+        assert!(
+            out.effects
+                .iter()
+                .any(|e| matches!(e, Effect::SavePrefs(_)))
+        );
+        assert!(out.effects.iter().any(|e| matches!(e, Effect::Backend(BackendRequest::Dashboard(Request::Watch { filter, .. })) if filter.reviewed_completions.as_ref().is_some_and(|m| m.get("target") == Some(&key)))));
+        let restored = d::State::restore(&s.prefs.dashboard);
+        assert!(!restored.completion_unread(&row));
+        s.dashboard.rows[0].worker.run.as_mut().unwrap().id = 2;
+        // A late click for the previous turn cannot clear the new result.
+        s.dispatch_dashboard(d::Command::MarkReviewed {
+            session: "target".into(),
+            generation: 7,
+            completion: key,
+        });
+        assert!(s.dashboard.completion_unread(&s.dashboard.rows[0]));
+        s.dispatch_dashboard(d::Command::Filter(Default::default()));
+        assert_eq!(
+            s.dashboard.reviewed_completions,
+            restored.reviewed_completions
+        );
+    }
+
+    #[test]
+    fn manual_hiding_persists_and_preserves_work_drafts_and_individual_choices() {
+        let mut s = state();
+        s.conversations[1].draft.text = "keep draft".into();
+        s.dashboard.rows[0].worker.state = d::WorkState::Running;
+        let original = s.dashboard.rows[0].clone();
+        let mut child = original.clone();
+        child.worker.session = "child".into();
+        child.worker.kind = d::WorkerKind::Child;
+        s.dashboard.rows.push(child);
+        let out = s.dispatch_dashboard(d::Command::HideThread("target".into()));
+        assert!(
+            s.dashboard.rows.is_empty(),
+            "explicit hiding also hides active descendants"
+        );
+        assert!(s.dashboard.selected.is_none());
+        assert_eq!(s.dashboard.detail.generation, 8);
+        assert_eq!(s.conversations[1].draft.text, "keep draft");
+        assert!(s.prefs.closed_conversations.is_empty());
+        assert!(
+            out.effects
+                .iter()
+                .any(|e| matches!(e, Effect::SavePrefs(_)))
+        );
+        assert!(out.effects.iter().all(|e| !matches!(e, Effect::Backend(request) if !matches!(request, BackendRequest::Dashboard(Request::Watch { .. })))));
+        s.dashboard.rows.push(original.clone());
+        s.dispatch_dashboard(d::Command::HideProject("/p".into()));
+        s.dispatch_dashboard(d::Command::Filter(Default::default()));
+        let restored = d::State::restore(&s.prefs.dashboard);
+        assert!(restored.hidden_projects.contains("/p"));
+        assert_eq!(restored.hidden_threads["target"].title, original.title());
+        s.dashboard = restored;
+        s.dispatch_dashboard(d::Command::ShowProject("/p".into()));
+        assert!(
+            !s.dashboard_filter()
+                .includes_visibility(&original.worker, 0),
+            "showing a project retains individually hidden threads"
+        );
+        // A selected row returning in a later page cannot bypass the policy.
+        s.dashboard.rows.push(original.clone());
+        s.dashboard.selected = Some("target".into());
+        s.prune_dashboard_history();
+        assert!(s.dashboard.rows.is_empty());
+        s.dispatch_dashboard(d::Command::ShowThread("target".into()));
+        assert!(
+            s.dashboard_filter()
+                .includes_visibility(&original.worker, 0)
+        );
+        s.dashboard.hidden_projects.insert("/p".into());
+        s.dashboard.hidden_threads.insert(
+            "target".into(),
+            d::HiddenThread {
+                title: "target".into(),
+                project: "/p".into(),
+            },
+        );
+        s.dispatch_dashboard(d::Command::ShowAllHidden);
+        let restored = d::State::restore(&s.prefs.dashboard);
+        assert!(restored.hidden_projects.is_empty() && restored.hidden_threads.is_empty());
+    }
+
+    #[test]
+    fn recency_prunes_selected_and_closed_history_without_deleting_conversations() {
+        let mut s = state();
+        s.conversations[1].draft.text = "keep draft".into();
+        s.set_now(31 * 86_400);
+        assert!(s.dashboard.rows.is_empty());
+        assert!(s.dashboard.selected.is_none());
+        assert_eq!(
+            s.conversation(ConversationId(2)).unwrap().draft.text,
+            "keep draft"
+        );
+        assert_eq!(s.dashboard.detail.generation, 8);
+        let mut s = state();
+        let mut child = s.dashboard.rows[0].clone();
+        child.worker.session = "child".into();
+        child.worker.kind = d::WorkerKind::Child;
+        child.conversation = None;
+        s.dashboard.rows.push(child);
+        s.prefs.closed_conversations.insert(2);
+        let out = s.dispatch_dashboard(d::Command::Refresh);
+        assert!(s.dashboard.rows.is_empty());
+        assert!(out.effects.iter().any(|e| matches!(e, Effect::Backend(BackendRequest::Dashboard(Request::Watch { closed, filter, .. })) if closed == &vec![ConversationId(2)] && filter.inactive_days == Some(30))));
+        assert_eq!(s.conversations.len(), 2);
+    }
+
+    #[test]
+    fn recency_setting_survives_search_reset_and_restart_and_protects_active_rows() {
+        let mut s = state();
+        s.dashboard.rows[0].worker.state = d::WorkState::Waiting {
+            reason: d::WaitReason::CliApproval,
+        };
+        s.set_now(100 * 86_400);
+        assert_eq!(s.dashboard.rows.len(), 1);
+        s.dispatch_dashboard(d::Command::Recency(d::Recency::TwoMonths));
+        let out = s.dispatch_dashboard(d::Command::Filter(Default::default()));
+        assert!(out.effects.iter().any(|e| matches!(e, Effect::Backend(BackendRequest::Dashboard(Request::Watch { filter, .. })) if filter.inactive_days == Some(60))));
+        assert_eq!(d::State::restore(&s.dashboard.saved()).recency.days(), 60);
+        assert_eq!(d::State::restore(r#"{"filter":{},"group":null,"selected":null,"child_drafts":{},"seen":{},"control":null}"#).recency.days(), 30);
+    }
+
     fn action(s: &mut AppState, action: Action) -> Outcome {
         s.dispatch_dashboard(d::Command::Act {
             session: "target".into(),

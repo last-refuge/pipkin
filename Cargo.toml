@@ -14,6 +14,12 @@ license = "MIT"
 gpui = { git = "https://github.com/zed-industries/zed", rev = "a84689073d296dfd39987bc7dd478e43ef76d83a", default-features = false, features = ["wayland", "x11", "font-kit"] }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "a84689073d296dfd39987bc7dd478e43ef76d83a", default-features = false, features = ["wayland", "x11", "font-kit"] }
 
+# Tests inherit dev: retain useful backtraces without full variable/type metadata
+# or an unbounded incremental compilation cache. Release settings stay separate.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
 [profile.release]
 debug = "line-tables-only"
 

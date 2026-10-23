@@ -89,7 +89,7 @@ Immutable source builds are retained under `dist/source-setup`; no Pi checkout i
 Ask Pipkin to edit this checkout, then run `scripts/setup.sh` to produce the next build. Every build gets an
 **immutable native build directory**. Only after the offline probe passes is `current` switched atomically;
 a failed build leaves the previous working build runnable. Rebuilding does not overwrite the files used by
-your running app/engine. Old build trees are retained (they use disk space; remove them only when unused).
+your running app/engine. Old build trees are retained; use the explicit cleanup command below to prune unused ones.
 
 To use the new build, **Quit the old Pipkin instance** (⌘Q on Mac, Ctrl-Q on Linux), then `scripts/run.sh`
 or open the newly installed app. Closing a Mac window is not Quit.
@@ -129,3 +129,42 @@ and [hosted qualification](../llm-docs/pipkin-rust-engine-evidence/hosted-qualif
 Historical Pi-paired source-install measurements remain in Git before the native build-path retirement;
 they do not qualify the new package. Interactive macOS, additional desktops, signing and clean-machine
 acceptance remain separately tracked. Notice retention is not legal clearance.
+
+
+## Keep build storage manageable
+
+Development and test builds use line-table debug information and disable incremental compilation.
+Backtraces retain file/line information, but full variable/type debugging requires an explicit
+profile override. This saves disk space at the cost of slower recompilation after edits. Release
+settings are unchanged. These settings do not remove existing artifacts; the next build/test
+recreates only the artifacts it needs.
+
+On **Linux**, run this from the checkout:
+
+```sh
+python3 scripts/clean-builds.py                 # preview only; never deletes
+python3 scripts/clean-builds.py --apply         # prune unused immutable source builds
+python3 scripts/clean-builds.py --keep 5        # preview keeping the five newest instead of three
+python3 scripts/clean-builds.py --debug          # also preview Cargo's debug-artifact cleanup
+python3 scripts/clean-builds.py --debug --apply # also clean target/debug; next tests rebuild
+```
+
+The default retains the three newest source builds, plus `current` and any builds used by
+running processes or held by source-launch locks. Only marked setup-owned directories under
+`dist/source-setup/builds` are eligible; unknown names are retained and invalid markers/symlinks
+cause refusal. Sizes are allocated-block estimates; shared filesystem extents can affect the
+space actually recovered. Installed versions, app data, conversations, `target/release`, and
+unrelated `dist` files are never cleanup targets. No automatic schedule or deletion is enabled.
+
+The command refuses while Cargo/compiler/test activity or setup/packaging is detected for this
+checkout. Setup and `scripts/run.sh` coordinate with cleanup through directory locks; the launcher
+keeps its particular immutable build locked across exec. Process checks also protect older
+launchers. Don't directly launch historical build binaries while cleanup runs; use `scripts/run.sh`
+or the installed launcher. `--debug` delegates to Cargo's own build locking and refuses if a
+running process is using `target/debug`. Custom Cargo target environment overrides are rejected.
+
+Process inspection is Linux-only and refuses when app/build processes cannot be inspected.
+The two non-dumpable systemd user-session services are specifically recognized; opaque app
+processes are never silently skipped. macOS cleanup is not implemented; setup/launch still work.
+Tests use disposable files/processes: `python3 scripts/test-clean-builds.py` and
+`python3 scripts/test-source-setup.py`.

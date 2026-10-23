@@ -1,5 +1,178 @@
 # Scorecard
 
+## Build storage management — 2026-10-22
+
+**Implemented:** development/test line-table debug info and disabled incremental compilation;
+release settings unchanged. Linux cleanup defaults to a read-only preview, keeps the newest
+three immutable source builds plus current/running builds, and only deletes with `--apply`.
+`--debug` separately delegates debug artifact removal to Cargo. Installed app versions and
+user data are outside cleanup scope. Source setup and launch coordinate through directory
+locks; launch retains its build lock across exec. Raw compiler/Cargo activity is detected
+through process inspection; opaque app/build processes cause refusal.
+
+**Measured tooling checks:** 12 disposable Python regression tests passed, plus the existing
+source-setup contract test. Coverage includes default preview, actual fixture deletion,
+current/running/newest retention, directory and marker validation, changed-build refusal,
+late process detection, debug opt-in and path scoping, process visibility, and a real child
+process proving the source-build lock survives exec and releases on exit. Shell syntax and
+format checks passed. No real app windows were launched for these checks.
+
+**Measured full suite:** 2,743 Rust tests passed, zero failed, 13 intentionally ignored,
+using `RUST_TEST_THREADS=1 cargo test --workspace --no-fail-fast -j2` and a private temporary
+directory. The interrupted two-worker run had two CLI background-usage failures; both passed
+on isolated retries and in the complete serial run without code changes. The initial cause
+is unconfirmed. Full-run log: `/tmp/pipkin-build-storage-workspace-resumed.log`;
+isolated retries: `/tmp/pipkin-build-storage-recheck.log`.
+Workspace/all-target Clippy, formatting and whitespace checks passed without warnings.
+Logs: `/tmp/pipkin-build-storage-clippy.log`, `/tmp/pipkin-build-storage-format.log`.
+After tests and lint, `target/debug` measured **8.2 GiB**, with an empty incremental
+directory (previous debug tree: approximately **353 GiB**, including **183 GiB** incremental).
+This is a fresh-build measurement after the user's cleanup, not a guarantee of future size.
+
+**Observed read-only preview:** 49 unused source builds, allocated estimate **19.58 GiB**;
+current and newest builds retained. No source builds were deleted. While the Rust regression
+build was active, the cleanup command refused and named Cargo/compiler processes as blockers.
+The initial process scan refused the non-dumpable systemd user manager; the final scanner
+recognizes only that service and its PAM child as exceptions, with a dedicated regression test.
+Logs: `/tmp/pipkin-build-storage-tests.log`, `/tmp/pipkin-build-cleanup-preview.log`,
+and `/tmp/pipkin-build-cleanup-busy.log`. The final read-only preview after all checks also
+passed: `/tmp/pipkin-build-cleanup-preview-final.log`.
+
+**Unverified:** native macOS execution, adversarial same-user filesystem/process manipulation,
+and native visual/IME/accessibility behavior (no app UI changed). Cleanup is Linux-only. Direct
+manual launches of historical build binaries during deletion are not supported; use the guarded
+source launcher or installed app. No recurring cleanup job was created.
+
+## Manual dashboard visibility — 2026-10-22
+
+**Implemented:** persistent Hide project / Hide thread controls, root-family exclusion, and a
+centered Hidden manager in graph and list. Manual hiding overrides live work, filters counts
+and pagination, and cannot be bypassed by selected-row pinning. Work, drafts, review receipts
+and history remain intact. Restore one or all without clearing ordinary search/status/recency
+filters; showing a project retains individually hidden threads.
+
+**Measured focused checks:** four regression tests passed across protocol, pure core, engine
+and GPUI controls. Coverage includes active roots/children, exact project matching, saved
+preferences, preserved drafts and review state, attention counts/paging, and hide/restore
+clicks in graph and list. The initial UI fixture checked an unregistered debug selector;
+checking the actual rendered button and dialog state fixed the fixture without a product change.
+Log: `/tmp/pipkin-visibility-focused.log`.
+
+**Measured full suite:** 2,743 tests passed, zero failed, 13 intentionally ignored. The final
+GPUI check additionally covers an entirely hidden graph, Show all, Tab/Shift-Tab and Escape.
+Workspace/all-target Clippy, formatting and whitespace checks passed without warnings.
+Logs: `/tmp/pipkin-visibility-workspace.log`, `/tmp/pipkin-visibility-clippy.log`,
+and `/tmp/pipkin-visibility-format.log`.
+
+**Unverified:** native visual/keyboard/IME/screen-reader/display-scale testing and real provider
+account prompts. Automated tests use synthetic sessions and do not mutate user conversations.
+
+**Installed:** `1.1.0-native-be7a01b5181c` using the supported installer. The fresh-profile engine probe
+and installed offline handshake passed. Installed/release SHA-256 matches:
+`be7a01b5181cc2db3f1e2b67c80406f787bcab3b6cbd6e3c379e70d8f9714747`.
+Existing data was preserved and the running app was not restarted. Evidence:
+`/tmp/pipkin-visibility-install.log` and `dist/orchestration-visibility/qualification.json`.
+
+## Single-instance Linux desktop — 2026-10-22
+
+**Implemented:** a per-data-folder desktop lock acquired before GPUI, storage and engine
+startup. Repeat launches send bounded, same-user local requests to the owner and exit;
+project paths use the existing AddProject command. Lock/socket ownership is released by
+the OS on crash. Symlink aliases share an owner; distinct profiles remain independent.
+Workers, helpers, version checks and diagnostics bypass desktop election. Hyprland receives
+an explicit request to focus the existing app's own PID, alongside normal GPUI activation.
+
+**Measured focused checks:** six tests passed, including concurrent election, project
+forwarding, alias/isolation behavior, oversized-message refusal and killed-owner recovery.
+
+**Observed native check:** two test windows were launched on workspace 1 using isolated
+profiles. Relaunching the real-engine profile exited successfully, activated its existing
+window, retained the same engine PID and persisted the forwarded project. No third window
+was created. The user's real profile was not opened or altered. The cleanup key guard
+refused when Slack took focus; no key was sent. Only the owned test processes were then
+terminated. Evidence is saved with the final qualification record.
+
+**Unverified:** minimized-window restoration, other compositors, macOS/Windows single-instance
+behavior and real provider inference. This implementation is Linux-specific; native macOS
+reopen behavior is unchanged.
+
+**Measured full gates:** 2,739 tests passed, zero failed, 13 intentionally ignored in the
+final workspace run. Workspace/all-target Clippy and formatting passed without warnings.
+The only post-suite source change removed an unused unit binding in the launch callback;
+final Clippy checked all targets afterward. Logs: `/tmp/pipkin-instance-workspace.log`,
+`/tmp/pipkin-instance-clippy.log`, `/tmp/pipkin-instance-format.log`.
+
+**Installed:** `1.1.0-native-34978d41eca8`; the fresh-profile probe and installed offline
+engine handshake passed. Installed/release SHA-256 matches:
+`34978d41eca842ef77a47cb40c4a2fe24064336c684563ecedda0f503295f00b`.
+The user's running windows were not restarted. Evidence: `/tmp/pipkin-instance-install.log`
+and `dist/single-instance/qualification.json`.
+
+**Validation investigation:** the first full run exposed a pre-existing goal-resume fixture
+race: cached history could satisfy its wait before authoritative lifecycle readiness. The
+fixture now waits for the core readiness guard through a read-only accessor. A later full
+run hit the existing CLI early-helper-close test's cancellation race; it passed unchanged
+in isolation. The passing final full run used two test workers. Earlier logs are retained as
+`/tmp/pipkin-instance-workspace-first.log`, `/tmp/pipkin-instance-workspace-second.log`,
+and `/tmp/pipkin-instance-cli-recheck.log`.
+
+## Unreviewed dashboard results — 2026-10-22
+
+**Implemented:** stable per-turn review acknowledgments; Finished · unread labels, amber
+node borders and project attention badges; attention directory/counts; explicit Mark reviewed
+controls in graph inspector, list detail and centered dialog. Reviewed results show Awaiting
+next steps. New completions rearm attention; automatic selection/history reads do not clear it.
+Saved acknowledgments survive restart and search/filter changes. Existing recency remains.
+
+**Measured focused checks:** protocol turn identity across native and both CLI backends,
+rendered dialog review and graph/project attention updates passed. Core tests cover restart,
+stale acknowledgments and automatic history reads. The engine tests verify attention counts,
+paging and subsequent-turn rearming; the native adapter fixture verifies review counts,
+real synthetic completion delivery, and preservation of the main conversation/draft.
+
+**Measured full gates:** 2,733 tests passed, zero failed, 13 intentionally ignored.
+The final lint pass removed a redundant UI reference only; workspace/all-target Clippy and
+formatting passed on that source. Evidence: `/tmp/pipkin-unread-workspace.log`,
+`/tmp/pipkin-unread-focused.log`, `/tmp/pipkin-unread-clippy.log`, and
+`/tmp/pipkin-unread-format.log`.
+
+**Installed:** `1.1.0-native-6cc4a0e2ceae`; fresh-profile startup probe and installed
+offline engine handshake passed. The installed executable matches the release SHA-256
+`6cc4a0e2ceaea35b54fe530899e16da5514e73ebb6a8dae3781ce3088859b119`.
+The running user app was not restarted. Evidence: `/tmp/pipkin-unread-install.log`
+and `dist/orchestration-unread/qualification.json`.
+
+**Unverified:** native visual/keyboard/IME/screen-reader/display-scale testing and real provider
+account prompts. Tests use synthetic sessions and do not mutate the user’s conversations.
+
+## Recent orchestration workspace — 2026-10-22
+
+**Implemented:** a saved 30-day default activity window with a visible 30/60/90-day
+control. Closed roots and their historical children are hidden; old settled/dormant
+threads age out. Live work, pending input/approvals, active children and background
+jobs stay visible regardless of age. Visibility applies before counts and paging,
+and selection pinning cannot reintroduce excluded history. Recent All orders by last
+activity. Observation never refreshes a thread's activity timestamp. The open graph
+refreshes at least once per minute, while activity events retain prompt refresh.
+
+**Measured focused checks:** protocol boundary/weekend/live-state coverage, core pruning
+and saved-policy tests, engine counts/paging/reactivation tests, rendered control clicks,
+and native adapter closed-root mapping all passed. Engine observation created no runtime;
+synthetic provider inference was forbidden in the native closed-history test. History
+and drafts remain stored and are accessible outside orchestration.
+
+**Measured full gates:** 2,729 tests passed, zero failed, 13 intentionally ignored.
+Workspace/all-target Clippy passed without warnings; formatting passed. Logs and source
+hashes are recorded in `dist/orchestration-recency/qualification.json`.
+
+**Installed:** `1.1.0-native-971999ef96eb`; locked release build, isolated startup
+probe and installed offline engine handshake passed. Installed/release SHA-256 values
+match. The running user app and its sessions were not restarted.
+
+**Unverified:** native mouse/keyboard, screen reader, IME, display scale and mutations
+on the user's real conversations were not exercised. Automated tests use isolated
+engine/session fixtures. No real conversation was archived or deleted by this work.
+
 ## All-provider New thread dialog — 2026-10-21
 
 **Implemented:** the centered dashboard picker lists connected native providers/models

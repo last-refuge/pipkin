@@ -21,6 +21,12 @@ pub(super) fn updated_age(row: &d::Row, now: i64) -> String {
 }
 
 pub(super) fn activity(row: &d::Row, state: &AppState) -> String {
+    if state.dashboard.completion_unread(row) {
+        return "The prompt finished. Review the result or send next steps.".into();
+    }
+    if row.worker.completion_key().is_some() {
+        return "Reviewed · waiting for next steps".into();
+    }
     if requires_request_ui(row) {
         if let Some(q) = row
             .conversation
@@ -47,11 +53,45 @@ pub(super) fn activity(row: &d::Row, state: &AppState) -> String {
     }
 }
 
+pub(super) fn row_status(
+    row: &d::Row,
+    dash: &d::State,
+    c: &crate::theme::Colors,
+) -> (&'static str, &'static str, Hsla) {
+    if dash.completion_unread(row) {
+        ("Finished · unread", "circle-check", c.accent)
+    } else if row.worker.completion_key().is_some() {
+        ("Awaiting next steps", "check", c.text_muted)
+    } else {
+        status(&row.worker.state, c)
+    }
+}
+
 pub(super) fn status_dot(color: Hsla, size: f32) -> Div {
     div().size(px(size)).flex_none().rounded_full().bg(color)
 }
 
 impl DashboardView {
+    pub(super) fn review_button(&self, row: &d::Row, id: &'static str, cx: &App) -> Option<Btn> {
+        let dash = &self.model.read(cx).state.dashboard;
+        if !dash.completion_unread(row) {
+            return None;
+        }
+        Some(
+            self.button(
+                id,
+                "Mark reviewed",
+                D::MarkReviewed {
+                    session: row.worker.session.clone(),
+                    generation: dash.detail.generation,
+                    completion: row.worker.completion_key()?,
+                },
+            )
+            .icon("check")
+            .hint("Clear this result's unread highlight; the thread stays ready for next steps."),
+        )
+    }
+
     pub(super) fn open_owner_button(
         &self,
         row: &d::Row,
